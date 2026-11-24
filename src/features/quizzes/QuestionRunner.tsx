@@ -12,9 +12,11 @@ import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { CharCount, Input, InputError } from '@/components/ui/Input';
 import { AiWarning } from '@/features/questions/AiWarning';
+import { isLonePart } from '@/features/questions/groups';
 import { MatchingGrid } from '@/features/questions/MatchingGrid';
 import {
   AnswerView,
+  type BlockSection,
   ChoiceMarker,
   CorrectTag,
   choiceRowsClass,
@@ -29,21 +31,29 @@ import {
   TextView,
 } from '@/features/questions/QuestionView';
 import {
+  type CanvasBlock,
   GAP_MARKER,
   isAuthoredPart,
   type LearnerPart,
   type LearnerQuestion,
   multipleAnswers,
+  partAnswerCanvas,
   shownOptions,
   type TextBlock,
 } from '@/features/questions/types';
-import { m } from '@/i18n';
+import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
-import { DrawingAnswer } from './drawing/DrawingAnswer';
-import type { PinnedQuestion } from './drawing/DrawingBoardScreen';
-import { isDrawingValue } from './drawing/drawingValue';
-import { pinnedQuestion } from './drawing/pinnedQuestion';
+import { CanvasAnswer } from './drawing/CanvasAnswer';
+import { CanvasView } from './drawing/CanvasFrame';
+import {
+  canvasName,
+  drawingAnswered,
+  drawingParts,
+  sharingLabels,
+  sharingParts,
+} from './drawing/canvasParts';
+import { pinnedQuestion, pinnedSharedQuestion } from './drawing/pinnedQuestion';
 import {
   type Answer,
   type Answers,
@@ -137,6 +147,8 @@ export function QuestionRunner({
   headerMarks,
   partResults = true,
   layout = 'boxes',
+  canvasPictures = false,
+  pinFrom,
 }: {
   /** Learner questions (no answer key) only render without `review`, which
    * shows a question graded on the server: its key and each part's `awarded`. */
@@ -161,16 +173,100 @@ export function QuestionRunner({
    * it, or as plain lines with Your answer and Correct answer under them (a
    * member's result, Epo 2026-11-18). */
   layout?: AnswerLayout;
+  /** Every canvas as its picture, with nothing to open: an assignment
+   * answered on paper. */
+  canvasPictures?: boolean;
+  /** What a board pins when `question` lost its first line to the page's
+   * heading (an assignment): the question whole, with its number. */
+  pinFrom?: { number: number; question: Question | LearnerQuestion };
 }) {
+  const pinQuestion = pinFrom?.question ?? question;
+  const pinNumber = pinFrom ? pinFrom.number : questionNumber;
+  const wholePart = <P extends { id: string }>(part: P) =>
+    (pinQuestion.parts.find((item) => item.id === part.id) as P | undefined) ??
+    part;
+  // A part's canvas (Epo 2026-11-23): the one a Canvas part answers in is
+  // answered in place (`partAnswerCanvas`), any other only looked at.
+  const canvasBlock = (
+    part: QuestionPart | LearnerPart,
+    block: CanvasBlock,
+    index: number
+  ) => {
+    if (canvasPictures) return <QuestionBlockView block={block} />;
+    const pinned = pinnedQuestion(pinQuestion, wholePart(part), pinNumber);
+    const canvas = partAnswerCanvas(question, part);
+    return canvas?.place.section === 'part' && canvas.index === index ? (
+      <CanvasAnswer
+        canvas={block}
+        canvasName={canvasName(question, canvas.place)}
+        disabled={disabled}
+        onChange={(value) => onChange?.(part.id, value)}
+        partId={part.id}
+        pinned={pinned}
+        review={review}
+        value={answers[part.id] ?? emptyAnswer(part as QuestionPart)}
+      />
+    ) : (
+      <CanvasView block={block} pinned={pinned} />
+    );
+  };
+  // A stem's or group's canvas (S1, Epo 2026-11-23): answered in place for
+  // the parts that share it, its one drawing kept under the first of them
+  // (`drawingParts`), its hint naming them; with none, a figure, its picture
+  // alone.
+  const sharedCanvas = (
+    block: CanvasBlock,
+    index: number,
+    section: BlockSection
+  ) => {
+    const parts = canvasPictures ? [] : sharingParts(question, section, index);
+    const [lead] = parts;
+    const place = lead && partAnswerCanvas(question, lead)?.place;
+    if (!place) return <QuestionBlockView block={block} />;
+    const labels = sharingLabels(question, parts, section);
+    return (
+      <CanvasAnswer
+        canvas={block}
+        canvasName={canvasName(question, place)}
+        disabled={disabled}
+        hint={
+          isLonePart(question)
+            ? m.question_canvas_hint_student()
+            : m.question_canvas_hint_shared({
+                parts: new Intl.ListFormat(getLocale(), {
+                  type: 'conjunction',
+                }).format(labels),
+              })
+        }
+        onChange={(value) => onChange?.(lead.id, value)}
+        partId={lead.id}
+        pinned={pinnedSharedQuestion(
+          pinQuestion,
+          block,
+          parts.map(wholePart),
+          labels,
+          pinNumber,
+          section.groupId
+        )}
+        review={review}
+        value={answers[lead.id] ?? null}
+      />
+    );
+  };
   // A gaps part's text carries its own fields, one per numbered blank.
   const gapBlock: QuestionViewProps['renderBlock'] = (
     block,
     index,
     section
   ) => {
-    const part = question.parts.find(
-      (item) => item.id === section.partId && item.answer.type === 'gaps'
-    );
+    const owner = question.parts.find((item) => item.id === section.partId);
+    if (block.type === 'canvas' && !section.solution) {
+      const view = owner
+        ? canvasBlock(owner, block, index)
+        : sharedCanvas(block, index, section);
+      return renderBlock ? renderBlock(block, index, section, view) : view;
+    }
+    const part = owner?.answer.type === 'gaps' ? owner : undefined;
     if (part && block.type === 'text' && !section.solution) {
       const view = (
         <GapText
@@ -191,25 +287,32 @@ export function QuestionRunner({
       <QuestionBlockView block={block} />
     );
   };
+  // Parts answered in a canvas above read its drawing, kept under the first.
+  const drawings = drawingParts(question);
   const answer = (part: QuestionPart | LearnerPart) => {
-    const runner = (
-      <PartRunner
-        disabled={disabled}
-        key={part.id}
-        layout={layout}
-        onChange={(value) => onChange?.(part.id, value)}
-        part={part}
-        pinned={
-          part.answer.type === 'drawing'
-            ? pinnedQuestion(question, part, questionNumber)
-            : undefined
-        }
-        results={partResults}
-        review={review}
-        twoColumns={optionColumns(question)}
-        value={answers[part.id] ?? emptyAnswer(part as QuestionPart)}
-      />
-    );
+    const drawing = drawings.get(part.id) ?? part.id;
+    const place = partAnswerCanvas(question, part)?.place.section;
+    // Where its answer control would be (S1); a check gives its verdict.
+    const runner =
+      place && place !== 'part' && !review ? (
+        !canvasPictures && (
+          <p className="t-meta text-fg-muted">
+            {m.question_canvas_in_canvas_above()}
+          </p>
+        )
+      ) : (
+        <PartRunner
+          disabled={disabled}
+          key={part.id}
+          layout={layout}
+          onChange={(value) => onChange?.(part.id, value)}
+          part={part}
+          results={partResults}
+          review={review}
+          twoColumns={optionColumns(question)}
+          value={answers[drawing] ?? emptyAnswer(part as QuestionPart)}
+        />
+      );
     return (
       <div className="@container col-[2/-1] min-w-0">
         {frameAnswer ? frameAnswer(part.id, runner) : runner}
@@ -627,7 +730,6 @@ function OpenVerdict({
 
 function PartRunner({
   part,
-  pinned,
   value,
   onChange,
   review,
@@ -637,8 +739,6 @@ function PartRunner({
   twoColumns,
 }: {
   part: QuestionPart | LearnerPart;
-  /** A drawing part's question, pinned over its board. */
-  pinned?: PinnedQuestion;
   value: Answer;
   onChange: (value: Answer) => void;
   review: boolean;
@@ -932,22 +1032,12 @@ function PartRunner({
       </div>
     );
   }
-  if (answer.type === 'drawing' && pinned)
-    return (
-      <DrawingAnswer
-        disabled={disabled}
-        onChange={onChange}
-        partId={part.id}
-        pinned={pinned}
-        review={review}
-        value={value}
-        verdict={
-          review && isAuthoredPart(part) ? (
-            <OpenVerdict answered={isDrawingValue(value)} part={part} />
-          ) : undefined
-        }
-      />
-    );
+  // Answered on its canvas, in the part's text (`canvasBlock`): only a
+  // check's verdict is here.
+  if (answer.type === 'canvas')
+    return review && isAuthoredPart(part) ? (
+      <OpenVerdict answered={drawingAnswered(value)} part={part} />
+    ) : null;
   // A written answer sits on ruled lines, like exam paper.
   if (answer.type === 'open') {
     const text = typeof value === 'string' ? value : '';

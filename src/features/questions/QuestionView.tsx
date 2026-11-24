@@ -94,7 +94,35 @@ export function QuestionBlockView({ block }: { block: QuestionBlock }) {
       if ('assetId' in block.image)
         return <AssetFigure assetId={block.image.assetId} block={block} />;
       return <Figure block={block} src={block.image.url} />;
+    // A drawn canvas as its picture; an empty one shows nothing yet.
+    case 'canvas':
+      return 'board' in block ? <CanvasPicture image={block.image} /> : null;
   }
+}
+
+/** A drawn canvas's picture, an editor asset resolved as an image's, as wide
+ * as an image block may be (`className` may widen it): the canvas's 16:10
+ * area, on white. */
+export function CanvasPicture({
+  className,
+  image,
+}: {
+  className?: string;
+  image: string;
+}) {
+  const [asset, , onImageError] = useResolvedAsset(image);
+  if (asset.status === 'error' && asset.kind === 'removed')
+    return <RemovedMedia className="mx-auto w-fit max-w-full" />;
+  return (
+    <figure className={cn('mx-auto w-full max-w-[min(100%,36rem)]', className)}>
+      <img
+        alt={m.question_ui_canvas()}
+        className="block aspect-[8/5] w-full border border-line bg-white"
+        onError={onImageError}
+        src={asset.status === 'ready' ? asset.url : undefined}
+      />
+    </figure>
+  );
 }
 
 /** Quiz images are private editor assets; the signed URL is resolved per
@@ -526,7 +554,7 @@ export function QuestionView({
       {renderKey?.(part)}
       {review && isAuthoredPart(part) && (
         <div className="col-start-2 min-w-0 space-y-1 text-fg-secondary text-sm">
-          {/* A long or drawing part's key is its marking scheme; its sample
+          {/* A long or canvas part's key is its marking scheme; its sample
               answer opens the Solution. */}
           {!modelMarked(part.answer.type) && (
             <>

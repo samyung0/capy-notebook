@@ -214,6 +214,7 @@ function QuizEditorBody({
             opening={opening}
             picked={current?.id}
             questions={questions}
+            quizId={quizId}
             scrollTop={pick.scrollTop}
             topics={topics}
             uploadAsset={quizImageUpload(quizId)}

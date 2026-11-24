@@ -69,10 +69,17 @@ import { boardFirstState } from './boardFirstState';
 import { PICTURE_FLAVOUR, PictureStoreExtension } from './boardPicture';
 // The plane's and formula's modules register their element types.
 import './boardFormula';
-import { checkSavedBoard, storedElementFits } from './boardLoad';
+import { moveArea } from './boardArea';
+import { AREA_PROP } from './boardGeometry';
+import {
+  BoardLoadError,
+  checkSavedBoard,
+  storedElementFits,
+} from './boardLoad';
 import type { PlaneElementModel } from './boardPlane';
-import { ENUMS } from './boardRules';
+import { type BoardKind, ENUMS } from './boardRules';
 import { unknownStore } from './boardUnknown';
+import { lockQuestion } from './questionLock';
 import { openRoomStore } from './roomStore';
 
 /* The board's rules (boardRules.ts) on one corpus, read as a board reads them
@@ -136,7 +143,13 @@ type Steps = {
   editor: (write: (tab: Tab) => void) => Promise<void>;
   raw: (write: (doc: Y.Doc) => void, upTo?: number) => void;
 };
-type Case = { fits: boolean; name: string; steps: (s: Steps) => Promise<void> };
+/** A case reads its board as `board` does: the workspace canvas, unless it says. */
+type Case = {
+  board?: BoardKind;
+  fits: boolean;
+  name: string;
+  steps: (s: Steps) => Promise<void>;
+};
 
 const settled = () => new Promise((done) => setTimeout(done, 0));
 
@@ -188,21 +201,27 @@ async function updatesOf({ steps }: Case) {
 /** Whether a board opens with nothing drawn as a placeholder: its load check
  * (`checkSavedBoard`: every block and element, the block tree, each mind map's
  * nodes) finds no misfit, and every element is read for real as it is live. */
-function boardFits(board: Y.Doc) {
-  if (checkSavedBoard(Y.encodeStateAsUpdate(board), 'workspace').misfits.length)
-    return false;
+function boardFits(board: Y.Doc, kind: BoardKind) {
+  try {
+    if (checkSavedBoard(Y.encodeStateAsUpdate(board), kind).misfits.length)
+      return false;
+  } catch (error) {
+    // A question's board is refused at the first misfit.
+    if (error instanceof BoardLoadError) return false;
+    throw error;
+  }
   return [...canvasOf(board).entries()].every(([id, element]) =>
-    storedElementFits(id, element, 'workspace')
+    storedElementFits(id, element, kind)
   );
 }
 
 /** Each update applied in turn from the first state: whether the board fits
  * after it. */
-function verdicts(updates: Uint8Array[]) {
+function verdicts(updates: Uint8Array[], kind: BoardKind) {
   const board = firstState();
   return updates.map((update) => {
     Y.applyUpdate(board, update, ROOM);
-    return boardFits(board);
+    return boardFits(board, kind);
   });
 }
 
@@ -1598,6 +1617,45 @@ const CASES: Case[] = [
       blockIn(doc, 'affine:page').block.set('prop:title', 'Board')
     );
   }),
+
+  // A Canvas part's board (Epo 2026-11-23): the answer area's place, which only
+  // a question board's page holds (the board catalog's `props`), and the
+  // question's parts locked.
+  {
+    ...writes('the answer area moved on a question board', async (s) => {
+      await s.editor(({ store }) => moveArea(store, 640, -200));
+      await s.editor(({ store }) => moveArea(store, 1200.6, 80));
+    }),
+    board: 'question',
+  },
+  {
+    ...writes(
+      "a question's parts, locked by BlockSuite and by its copy",
+      async (s) => {
+        await s.editor(({ store, surface }) => {
+          const shape = addShape(surface);
+          surface.updateElement(shape, { lockedBySelf: true });
+          const note = addNote(store);
+          store.addBlock('affine:paragraph', {}, note);
+          store.updateBlock(store.getModelById(note) as NoteBlockModel, {
+            lockedBySelf: true,
+          });
+          surface.addElement({ points: [[0, 0]], type: 'brush' });
+        });
+        s.raw(lockQuestion);
+      }
+    ),
+    board: 'question',
+  },
+  misfits('an answer area on the workspace canvas', async (s) => {
+    s.raw((doc) => blockIn(doc, 'affine:page').block.set(AREA_PROP, [0, 0]));
+  }),
+  {
+    ...misfits('an answer area that is no place', async (s) => {
+      s.raw((doc) => blockIn(doc, 'affine:page').block.set(AREA_PROP, [0]));
+    }),
+    board: 'question',
+  },
 ];
 
 /** BlockSuite's own enums, as the rules hold them. */
@@ -1639,7 +1697,7 @@ it("holds BlockSuite's own enums", () => {
 
 for (const each of CASES)
   it(`${each.fits ? 'fits' : 'misfits'} ${each.name}`, async () => {
-    const results = verdicts(await updatesOf(each));
+    const results = verdicts(await updatesOf(each), each.board ?? 'workspace');
     expect(results.length).toBeGreaterThan(0);
     expect(results).toEqual([
       ...results.slice(0, -1).map(() => true),

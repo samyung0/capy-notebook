@@ -1,13 +1,13 @@
 {
-  "name": "drawing-no-markscheme-rejected",
-  "valid": false,
+  "name": "canvas-shown",
+  "valid": true,
   "policy": {},
   "question": {
     "id": "q1",
     "stem": [
       {
         "type": "text",
-        "text": "Drawn answers."
+        "text": "Look at the canvas."
       }
     ],
     "parts": [
@@ -16,13 +16,19 @@
         "blocks": [
           {
             "type": "text",
-            "text": "Draw it."
+            "text": "Is the triangle right-angled?"
+          },
+          {
+            "type": "canvas",
+            "board": "asset_board_2",
+            "image": "asset_image_2"
           }
         ],
         "answer": {
-          "type": "drawing"
+          "type": "boolean",
+          "correct": true
         },
-        "marks": 2,
+        "marks": 1,
         "solution": []
       }
     ],

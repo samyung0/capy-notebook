@@ -1,7 +1,7 @@
 import { createContext } from 'react';
 import { BOARD_CATALOG } from '@/api/board.generated';
 import { toBase64 } from '@/features/blocksuite/base64';
-import { deleteLocalDrawingDraft } from '@/lib/localDb';
+import { copyLocalDrawingDrafts } from '@/lib/localDb';
 import type { Answer, Answers } from '../grade';
 
 /** A drawing part's answer on this device, from its last Done: the board's
@@ -27,8 +27,8 @@ export const BOARD_IMAGES_MAX = BOARD_CATALOG.limits.BOARD_IMAGES_MAX;
  * page goes: a practice check may send them again (Check again). */
 const pictures = new Map<string, DrawingPicture[]>();
 
-/** Keeps a Done's pictures under `key` (the part's draft key, or any other
- * that is the part's alone), replacing the last Done's, and answers what the
+/** Keeps a Done's pictures under `key` (the canvas's draft key, or any other
+ * that is the board's alone), replacing the last Done's, and answers what the
  * value names them by: nothing when the board holds none. */
 export function holdDrawingPictures(key: string, held: DrawingPicture[]) {
   if (!held.length) {
@@ -61,27 +61,36 @@ export function isDrawingValue(value: Answer): value is DrawingValue {
   );
 }
 
-/** Epo's cap on a saved board (2026-11-06), undo history stripped first. */
-export const DRAWING_BOARD_MAX = 250 * 1024;
+/** Epo's cap on a saved board, undo history stripped first: the server's. */
+export { DRAWING_BOARD_MAX } from '@/api/limits.generated';
 
 /** Where a page's drawing answers are, so a board being drawn is kept on the
  * device under it until Done: the attempt or the quiz. None keeps no drafts. */
 export const DrawingDraftScope = createContext<string | null>(null);
 
-export const drawingDraftKey = (scope: string, partId: string) =>
-  `${scope}:${partId}`;
+/** A board's device draft, by its canvas (`canvasName`, Epo 2026-11-24), not
+ * the part its drawing is kept under: that part changing keeps it, and a
+ * canvas no part answers in for a while keeps it for when one does again. */
+export const drawingDraftKey = (scope: string, canvas: string) =>
+  `${scope}:${canvas}`;
+
+/** Copies the device drafts of the canvases an edit renamed (an Ungroup's,
+ * `renamedDrafts`) to their new names, before their boards read them. */
+export function copyDrawingDrafts(
+  scope: string,
+  renamed: readonly (readonly [from: string, to: string])[]
+) {
+  if (!renamed.length) return;
+  copyLocalDrawingDrafts(
+    renamed.map(
+      ([from, to]) =>
+        [drawingDraftKey(scope, from), drawingDraftKey(scope, to)] as const
+    )
+  ).catch(() => undefined);
+}
 
 /** A practice quiz's drafts: kept until Check sends their drawings. */
 export const quizDraftScope = (quizId: string) => `quiz:${quizId}`;
-
-/** Forgets the drafts of the drawings a check sent: they are on the server. */
-export function forgetDrawingDrafts(scope: string, answers: Answers) {
-  for (const [part, value] of Object.entries(answers))
-    if (isDrawingValue(value))
-      deleteLocalDrawingDraft(drawingDraftKey(scope, part)).catch(
-        () => undefined
-      );
-}
 
 /** Stores a drawing part's board with Done and returns its id, or with null
  * (Done on an emptied board) forgets it: an assignment's, whose attempt is on

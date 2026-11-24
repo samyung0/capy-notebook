@@ -117,13 +117,16 @@ type PaperPart struct {
 	Type string
 	// Listing is the part as the read call lists it, its options lettered as
 	// the member saw them; Question is its grading text, Items its marking
-	// points, for the open and drawing parts the AI grades.
+	// points, for the open and canvas parts the AI grades.
 	Listing   string
 	Question  string
 	Items     []string
 	ItemMarks []float64
-	// Figures are the question's images, in the order Question numbers them.
-	Figures []map[string]any
+	// Figures are the question's images, in the order Question numbers them,
+	// a canvas part's own canvas among them; SampleImage is a canvas part's
+	// drawn sample answer image, an editor asset (Epo 2026-11-23).
+	Figures     []map[string]any
+	SampleImage string
 }
 
 // Paper is a submitted paper with the parts its marking lists.
@@ -142,10 +145,11 @@ type Paper struct {
 	TextGap string
 }
 
-// paperTypes names each answer type as the read call's prompt does.
+// paperTypes names each answer type as the read call's prompt does (a canvas
+// part is still "drawing" there).
 var paperTypes = map[string]string{
 	"mcq": "choice", "boolean": "true/false", "short": "short", "gaps": "gaps",
-	"matching": "matching", "ordering": "ordering", "open": "open", "drawing": "drawing",
+	"matching": "matching", "ordering": "ordering", "open": "open", "canvas": "drawing",
 }
 
 func letter(i int) string { return string(rune('A' + i)) }
@@ -271,7 +275,8 @@ func (s *Store) GetPaper(ctx context.Context, attemptID string) (Paper, error) {
 			}
 			part := PaperPart{Label: label, QuestionID: qid, PartID: pid, Type: paperTypes[kind], Listing: listing}
 			if questions.ModelMarked(kind) {
-				part.Question, part.Figures = questions.GradingTextAndFigures(q, i)
+				part.Question, part.Figures = questions.PaperTextAndFigures(q, i)
+				part.SampleImage = questions.DrawnSampleImage(p)
 				part.Items, part.ItemMarks = questions.MarkItems(p)
 			}
 			out.Parts = append(out.Parts, part)

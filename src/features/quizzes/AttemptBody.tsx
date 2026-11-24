@@ -1,7 +1,9 @@
 import {
   type ReactNode,
   useCallback,
+  useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -26,6 +28,7 @@ import { m } from '@/i18n';
 import { scoreBucket, track } from '@/lib/analytics';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
+import { copyDrawingDrafts, DrawingDraftScope } from './drawing/drawingValue';
 import { type Answer, runScore } from './grade';
 import { QuestionRunner } from './QuestionRunner';
 import { QuizQuestionList, QuizScore, quizMeta } from './QuizPage';
@@ -38,7 +41,7 @@ import {
 import { QuizSplit, RowMark, useQuizPick } from './QuizSplit';
 import type { QuizRunControl } from './quizRun';
 import { ResetButton } from './ResetButton';
-import { keptAnswers, partsById } from './stillAnswers';
+import { keptAnswers, renamedDrafts } from './stillAnswers';
 
 /* Taking a quiz, shared by the app page and the public /share page. It knows
    no router or session: callers pass the frame, the top bar and how to grade. */
@@ -191,15 +194,18 @@ export function AttemptBody({
     []
   );
   // Questions update live under the learner (D9): answers that no longer
-  // point at what the part holds go.
-  const parts = useMemo(() => partsById(questions), [questions]);
-  const previousParts = useRef(parts);
-  useEffect(() => {
-    const before = previousParts.current;
-    previousParts.current = parts;
-    if (before !== parts)
-      setDrafts((current) => keptAnswers(before, parts, current));
-  }, [parts]);
+  // point at what the part holds go, and a drawing follows its canvas (Epo
+  // 2026-11-24). A device draft is kept by canvas, so only a canvas an edit
+  // renamed (an Ungroup's) copies it, before the boards' effects read it.
+  const scope = useContext(DrawingDraftScope);
+  const previousQuestions = useRef(questions);
+  useLayoutEffect(() => {
+    const before = previousQuestions.current;
+    previousQuestions.current = questions;
+    if (before === questions) return;
+    if (scope) copyDrawingDrafts(scope, renamedDrafts(before, questions));
+    setDrafts((current) => keptAnswers(before, questions, current));
+  }, [questions, scope]);
 
   const checkedById = useMemo(
     () => new Map(run.checked.map((q) => [q.id, q] as const)),

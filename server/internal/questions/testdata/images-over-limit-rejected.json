@@ -60,15 +60,6 @@
             "width": 4,
             "height": 3,
             "description": "Figure"
-          },
-          {
-            "type": "image",
-            "image": {
-              "assetId": "asset_0000000012"
-            },
-            "width": 4,
-            "height": 3,
-            "description": "Figure"
           }
         ],
         "answer": {
@@ -76,7 +67,35 @@
           "correct": true
         },
         "marks": 1,
-        "solution": []
+        "solution": [
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_0000000020"
+            },
+            "width": 4,
+            "height": 3,
+            "description": "Figure"
+          },
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_0000000021"
+            },
+            "width": 4,
+            "height": 3,
+            "description": "Figure"
+          },
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_0000000022"
+            },
+            "width": 4,
+            "height": 3,
+            "description": "Figure"
+          }
+        ]
       }
     ]
   }

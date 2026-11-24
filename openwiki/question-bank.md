@@ -179,7 +179,7 @@ on, each option row gets a lock button (`aria-pressed`, "Keep in place" /
 `editorFields.tsx`). Model prompts do not mention it. Only open parts carry a marking scheme: items of
 text and whole marks that add up to the part's marks, because the model grades against
 them. An open part takes at most one sample answer (`accepted`, 0 or 1 items),
-and it is optional, and grading never reads it (a drawing part's drawn sample
+and it is optional, and grading never reads it (a canvas part's drawn sample
 goes to the marker as an image). Every screen shows a sample answer (written or
 drawn) in its own Sample answer section after the marking scheme, before the
 Solution (Epo 2026-11-15, superseding the 2026-11-13 Solution's first block
@@ -187,7 +187,7 @@ behind a green Answer tag). The question card (the quiz editor's open card and
 the question dialog) edits it there: a written one in the question's text
 editor with its formatting row (B, I, U and formulas; no Insert, `textOnly` on
 `BlocksColumn`), a drawn one with `DrawnSampleField`, a trash beside its
-heading removing it. For a long answer or drawing without one, the footer has
+heading removing it. For a long answer or canvas part without one, the footer has
 Sample answer (Draw sample answer) beside Solution; on
 phones the card's ⋮ holds Solution and Sample answer. A closed part's answer is its own key and its solution explains it, so it
 has none; the editor sets a closed part's marks, and each marking point's, in a
@@ -271,53 +271,356 @@ v49), and generation and extraction write none. The TS, Go and Rust validators
 and the live quiz room refuse a `hints` key on an open answer as an unknown key
 (`open-hints-rejected.json`).
 
-### Drawing parts
+### Canvas parts
 
-A `drawing` part (Epo 2026-11-03) is answered on the drawing board
-(`src/features/blocksuite/drawingBoard.ts`) and marked like an open part: it
-carries a marking scheme, counts towards the quiz's AI-marked parts, and its
-`itemAwards` and `pending` work as an open part's. Its answer is `{type:
-'drawing'}` alone: every drawing part opens the same plain board, with no
-background types or starting board (Epo 2026-11-06, which replaced the blank,
-grid, axes and figure backgrounds agreed on 2026-11-03). Every validator
-refuses any other key on it, on the shared `drawing-*` fixtures. Go's
-`questions.ModelMarked`, Rust's `model_marked` and the browser's `modelMarked`
-say which types a model marks; the Rust validator keeps the frozen Node
-server's wording for a misplaced marking scheme. No model writes this type:
-generation, extraction and the bank pilot's schemas leave it out, since adding
-it would change what they are sent.
+A `canvas` part (Epo 2026-11-03 as `drawing`, renamed Canvas on 2026-11-23) is
+answered on the drawing board (`src/features/blocksuite/drawingBoard.ts`) and
+marked like an open part: it carries a marking scheme, counts towards the
+quiz's AI-marked parts, and its `itemAwards` and `pending` work as an open
+part's. Its answer is `{type: 'canvas'}` alone (plus a quiz's drawn sample,
+below), with no background types or starting board (Epo 2026-11-06, which
+replaced the blank, grid, axes and figure backgrounds agreed on 2026-11-03).
+Every validator refuses any other key on it, on the shared `canvas-*`
+fixtures. Go's `questions.ModelMarked`, Rust's `model_marked` and the
+browser's `modelMarked` say which types a model marks; the Rust validator
+keeps the frozen Node server's wording for a misplaced marking scheme. No
+model writes this type: generation, extraction and the bank pilot's schemas
+leave it out, since adding it would change what they are sent, and the paper
+read call still names it `drawing` (`paperTypes` in `store/paper.go`) for the
+same reason. The stored answer value stays `{"drawing": id}`, as do the
+`drawings` table and routes, `drawingDrafts` and Files › Canvas.
 
-Answering (`src/features/quizzes/drawing/`): before drawing, the part shows one
-generic squared grid with Draw answer (E1, Epo 2026-11-06), the same for every
-drawing part. It is a whole number of 52 px cells across (up to ten) and of 13 px
-rows down, about 52:30, with its closing right and bottom lines, so a narrow
-column such as a canvas card never cuts it mid-cell (Epo 2026-11-13). Draw answer opens the board full screen (`DrawingBoardScreen`,
-loaded with BlockSuite only then): the question pinned at the top left, folded to
-one line under a top bar on phones, and Done at the top right, both hidden while a
-card (a plane, a chart) is open full screen with its own Done. The board shows a dashed
-answer area of 1,920 × 1,200 board units with a small "Answer area" label at its top
-left (`answerArea`, W3 and W4, Epo 2026-11-07) and opens fitted to it, on phones too;
-drawing inside it stays under the wide-board line below. It is on the page only:
-never in the marking image, the saved board or a preview, and not shown read only. As it changes
-(800 ms after the last change, and at once on Done or when the board goes, so the last
-strokes stay), the board is kept on the device (`localDb` `drawingDrafts`) under the quiz
-or the assignment attempt (`DrawingDraftScope`), and reopens from there until Done. Done
-on an empty board leaves the part unanswered; past 250 KB (undo history stripped)
-it toasts and the board stays open; on a board whose marking image would be more
-than 2,000 board units on its longest side (`stats().span`, where lowercase
-labels fade in the 1,568 px image) it asks first, Keep drawing or Done anyway (W1,
-Epo 2026-11-07), though a time limit's Done never asks; otherwise the answer is the board's document
-and its WebP marking image, and the part shows the drawing with Edit drawing.
-Checked, it shows its verdict, the drawing and Open drawing, the whole board read
-only. A time limit running out with the board open presses its Done before the
-assignment is submitted; an assignment closing does not.
+Canvas blocks (Epo 2026-11-23): the stem, a group's `blocks` (a part with
+sub-parts) and a part's `blocks` may each hold one canvas, empty
+`{type: 'canvas'}` or drawn `{type: 'canvas', board, image}`, its board (a
+gzipped BlockSuite board, the `board` purpose) and picture (an ordinary quiz
+image) two of the quiz's editor assets, always together and with no other
+key; an explanation holds none. A canvas part answers on one canvas, which
+`partAnswerCanvas` (`questions/types.ts`, authored or learner questions) and
+Go's `questions.PartAnswerCanvas` return with where it sits (the stem, the
+group by id or the part) and its index there: the first of its own blocks, or,
+with `answer.shared: true` (the "Answer in" switch), the nearest one above,
+its group's first when it is in a group whose blocks hold one, else the
+stem's. Every other canvas is only looked at, a shared part's own too (a
+merge can leave one). A canvas part needs that canvas: its own ("A canvas
+part needs its canvas."), or one above for a shared part ("A canvas part
+answered in the canvas above needs one in the opening text or its group.",
+`question_validation_canvas_shared`); a part turned into a canvas part keeps
+its canvas, else gets an empty one (`withAnswer`). The TS, Go and Rust
+validators and the live quiz room refuse a canvas in a solution, a board
+without its picture, a `shared` other than `true`, a list's third, and in the
+bank any canvas wherever it sits and any canvas part. One a list is a counted
+cap (Epo 2026-11-22, "Yes, A everywhere"): the editor stops at one
+(`canvasCapIssue` through `passesCap`, each list by its `canvasLists` key),
+two editors' adds at once may leave two (`mergedCap`), the first then the one
+answered on, and a server write may add none past one (`check_written`, a
+list's canvases by rank). A question holds at most `QUESTION_CANVASES_MAX`
+(4) canvases, its canvas blocks in the stem, groups and parts and its drawn
+sample answers together (`questionCanvases`; Go `questionFigures`): one cap
+on every layer, as the image cap is, the dialog naming it
+(`question_validation_canvases`) and the validators refusing a fifth (the
+`canvases-*` fixtures). Two editors' adds at once may still pass it (Epo
+accepts the risk), which leaves the question out of the stored quiz until
+tuned. A drawn canvas is no image. The live quiz's content document keeps a
+drawn canvas as one plain value `drawn: {board, image}`, so a merge never
+splits the pair, and a shared part's `shared: true` in its answer map, which
+learners read too, as the learner view carries it. A drawn canvas's assets
+count, copy, remap and freeze with the quiz's others, as a drawn sample's do
+(`questionAssetIds`, `replaceAssetIds`, Go `AssetIDs` and `RewriteAssetIDs`,
+Rust `asset_ids`); a copy missing either asset drops the pair, leaving
+`{type: 'canvas'}`. Learner snapshots keep it. Marking (Epo 2026-11-23)
+grades a canvas part on its answered image, after its drawn sample's, and the
+canvas it answers in is no figure of its: its own, the first of its blocks
+(`questions.QuestionBlocks`), or, shared, the stem's or group's
+(`GradingTextAndFigures` leaves it out where it sits). Every other drawn canvas
+a part's text holds (the stem's, a group's, a view-only one in a part, a
+shared part's own or a second one a merge left beside a part's own too) is a
+question figure (`[Figure N]`) by its picture
+as set, in block order, so a part with its own canvas sees the stem's and
+groups' unfaded. An earlier canvas part's own canvas stays out of a later
+part's text (`QuestionBlocks`; grading with it waits on a new mechanism, Epo
+2026-11-23). A paper part (`PaperTextAndFigures`) gets every canvas as set as
+a figure, the one it answers in too, then its drawn sample and its pages.
+Views draw the picture
+(`CanvasPicture` in `QuestionView.tsx`) and nothing for an empty canvas, and
+exports print it as an image.
+
+Editor (Epo 2026-11-23, mocks `VH8763JihE9XbPfQJCTnsV` and Canvas levels E1
+to E4): a part's type menu offers Canvas, and Insert offers Canvas among the
+blocks of the stem, a group's text and a part's text (never a solution), one a
+list. Every bank editor (the shared bank, My bank and class banks: the
+question dialog, which uploads no boards) shows both disabled, reading "Bank
+questions can't hold a canvas yet." (`canvases` in `QuestionCard`, through
+`AnswerTypeSelect`'s `bank`). Insert's Canvas is disabled with "A question
+holds at most 4 canvases, sample answers included." at
+`QUESTION_CANVASES_MAX` (`questionCanvases`), else with "This part has one"
+(a part, a group) or "The question's text has one" (the stem) once its list
+holds one (`canvasOptions`); Draw sample answer is disabled at the cap with
+the same words (a tooltip; the phone's ⋮ item under its label), and the
+open card's number row then reads "4 canvases, the most a question holds"
+before its marks (`question_canvas_full`, E3). In a live
+quiz Insert also stops at a list's one (`figureRoom.insert`). The image cap
+is the validators' (`question_validation_images`, 4), with no editor stop. A
+canvas shows in its column as its card
+(`CanvasField`, `CanvasFrame`): drawn, its answer area from its board at the
+column's width (`drawBoardPreview`, area only, on white); empty, a dotted
+canvas reading "Start drawing". Edit canvas, at its top right, opens the
+teacher's board full screen (`DrawingBoardScreen` with `canvas`): its area
+labelled "Canvas area" and movable, no pictures, Done at the top right. Done
+uploads the board and its picture as a drawn sample's are (`quizSampleUpload`)
+and writes `{type: 'canvas', board, image}`, the later Done winning: an open
+board keeps the canvas it opened from while a co-editor's Done changes the
+block under it (`useHeldWhileOpen`), so its own Done writes over that one, and
+a drawn sample's board does the same; an emptied board leaves `{type: 'canvas'}`. With anything outside the area it asks first,
+"Part of the canvas is outside the canvas area", Keep editing or Done anyway.
+A canvas part's own canvas has the hint "Put the question inside the canvas.
+Students answer inside it." under it and no remove; the stem's and a group's
+have "Put the question inside the canvas. Students can answer directly in
+it." and the figure tools; any other canvas has the figure tools. While parts
+answer in a stem's or group's canvas its Remove is disabled, its label and
+tooltip naming them as the attempt's hint does (`sharingParts`,
+`sharingLabels`, `Intl.ListFormat`): "(a) and (b) answer in it", "(a) answers
+in it", or for a lone question's part "The answer goes in it" (Epo
+2026-11-24, `answered` on `CanvasOptions`). The stem's
+and a group's board pins the text above it (the stem, then the group's),
+titled with the question's number and the group's label, with the marks of
+the parts under it. A closed card shows a drawn canvas as its stored picture
+(`CanvasPreview` through `CanvasPicture`), at the open card's width with no
+buttons, so it fetches and draws no board; an empty one is the dotted "Start
+drawing" canvas. A board that could not be fetched (`useBoardAsset`) shows
+"This block cannot be shown" in place of Edit canvas or the drawn sample's
+button.
+
+Answer in (Epo 2026-11-23, E2 option B): a canvas part with a canvas above it
+(its group's or the stem's, `canvasAbove`) has an "Answer in" select, Same
+canvas ("The question's canvas, above", or "(b)'s canvas, above" for a
+sub-part whose group holds one) or New canvas ("A canvas of (a)'s own"; "A
+canvas of its own" for a lone part), its options' lines under their labels
+(`CanvasAnswerIn`). With no canvas above there is no select and the part has
+its own. On New it sits just above the part's own canvas, which with what
+follows it runs the card's width under the answer type (E3, `BlocksColumn`
+split at its first canvas); on Same it
+heads the answer, with "Students answer (a) in the question's canvas, above."
+(or "in (b)'s canvas"; "Students answer in the question's canvas, above." for
+a lone part) under it, and, when two or more parts answer in that canvas, the
+tip "Prefer combining the parts into just one single question. AI may
+allocate marks incorrectly for multiple parts on the same canvas" in the
+accent (`text-tint-accent-1-fg`) with an info icon. Same sets `shared` and
+takes the part's own canvas, its first, out of its blocks into the tab's
+memory (`answerAbove`, `keepCanvas`); New clears it and puts that canvas back
+where it sat, else appends an empty one (`answerOwn`, `keptCanvas`). The tab's
+memory changes only once the edit's write lands (Epo 2026-11-24): Same keeps
+the canvas, New forgets it (`forgetCanvas`), and a type switch keeps the type
+it leaves or holds a drawn sample off, only after the live quiz takes the
+write; a refused write leaves the memory as it was. A part
+already holding a canvas (a view-only one) on New takes that one as its own,
+and what Same took stays in the tab's memory (`answerOnOwn` in
+`QuestionCard`). A kept
+drawn canvas whose board or picture no longer loads (`canvasLoads`; the
+server trashes a quiz's unused assets and purges them a day later, its
+editors resolving them until then, Epo 2026-11-24) is an
+empty one instead, with the toast "The earlier canvas couldn't be loaded, so
+an empty one was added." New is disabled at the canvas cap only where it
+would add a canvas: a part holding one takes that one, adding none (Epo
+2026-11-24). A drawn sample
+keeps `shared` and starts from the canvas the part answers in. A folded part
+reads "Canvas · same canvas · 2 marks", or "Canvas · new canvas · …" while a
+canvas above could take it (`canvasWhere`).
+
+Add part on a lone question (Epo 2026-11-23, E1: "dont move any block to the
+new part"): every block of the lone part joins the stem, after the stem's;
+the part becomes a new blank part, as `newPart()` makes one, and a second
+blank part follows (`addPart` in `groups.ts`). Its answer (a drawn sample
+inside it), marking scheme, marks and explanation go to the tab's memory by
+quiz and question with the ids of the two blank parts (`keepPart`,
+`KeptPart.parts`, the part it blanked as `from`) once the write goes, a write
+the live quiz turns down (`editQuestion`, the card's `write` returning false)
+keeping nothing; it is one write, so Undo brings everything back. The part's
+own memory under its old id (its answers by type, the canvas Same took, a
+held drawn sample) goes with what was kept (`KeptPart.own`) and back under
+the id of the part it is restored into (`giveMemory`). When the stem already holds a
+canvas, the lone part's canvas goes to the tab's memory with its answer
+instead of the stem (`KeptPart.canvas`, its place in the part's blocks; one
+canvas a list), its other blocks still joining the stem, and the kept answer
+stays as it was (Epo 2026-11-24). A lone fill in the blanks part stays (a)
+whole, its text, blanks and answer with it, nothing moving to the stem or the
+tab's memory, and (b) is new and blank: its blanks live in its text, which
+can't sit in the stem (Epo 2026-11-24).
+Removing parts or a group down to one part puts what was kept back into that
+part (`writeBack` in `QuestionCard`, `withKeptPart`, `keptPart`, then
+`forgetPart` once the write lands) only when it
+is one of the blank parts made and still as `newPart()` made it
+(`isBlankPart`, Epo 2026-11-24): an author's own (a) is never written over,
+and what was kept goes either way. A kept canvas goes back into the part's
+blocks at its old place; its other blocks stay where they are, and a canvas
+answer whose own canvas went above (into the stem or, below, a group's text)
+answers in the canvas above (`shared`). Undo of Add part brings the lone part
+back with its own id, and the card then forgets what was kept for parts the
+question no longer holds any of (`forgetGoneParts`), so a later drop to one
+part restores nothing stale. What was kept for a part that a later Add
+sub-part blanked in turn stays while that one is kept (its `from` is one of
+the parts), so Undo of both can still restore it.
+Add sub-part follows Add part (Epo 2026-11-24, `splitPart`): the part's
+blocks become the new group's text, the part becomes a blank (i) and a blank
+(ii) follows, and its answer, marking scheme, marks and explanation are kept
+for the tab the same way; its own canvas, now the group's, is "(b)'s canvas"
+its sub-parts may answer in. A fill in the blanks part stays (i) whole and the
+group's text starts empty. Removing a sub-part down to one (ungrouped where
+its text fits) or the group's Ungroup, which gives the group's text back to
+its first sub-part, restores what was kept into that sub-part on the same
+terms, read as it was before the group's text joined it; removing the group
+leaves it to the question's own Add part memory. The group's canvas goes to
+that first sub-part with its text; a sub-part that answered in it on Same
+answers in it as its own then (`ungroup` clears `shared`, Epo 2026-11-24).
+While the group holds a canvas, Ungroup is disabled when another sub-part
+answers in it, with the canvas Remove's words ("(ii) answers in it",
+`ungroupCanvasIssue` `answered`), and Ungroup and the Remove sub-part that
+would ungroup are disabled when the receiving sub-part holds a canvas of its
+own, a list holding one: "(i) already has a canvas" (`canvas`,
+`question_canvas_ungroup_has_one`). On every one of these
+restores a kept drawn sample that would take the question past 4 canvases
+stays in the tab's memory as on a type switch (`sampleWithinCap`,
+`holdSample`), the rest of the kept answer coming back (Epo 2026-11-24). A
+kept canvas itself can't pass the cap there: Add part's goes back into a lone
+question (the stem's canvas, it and its sample at most), and Add sub-part
+keeps none.
+
+Type switches (Epo 2026-11-23, 2026-11-24): to Canvas, fresh or restored
+from the tab's memory, starts on New canvas, a canvas of its own: the one it
+holds, else the one Same took, else an empty one (`toCanvas`, `answerOnOwn`).
+At the question's canvas cap, where that would add a canvas (the part holds
+none), it starts on Same canvas when a canvas sits above, and with none above
+the answer type menu's Canvas is disabled with "A question holds at most 4
+canvases, sample answers included." as a bank disables it
+(`AnswerTypeSelect`'s `canvasOff`). A kept drawn sample that would pass the
+cap stays in the tab's memory (`holdSample`) and comes back on a later switch
+to Canvas that fits it (`sampleWithinCap`, `heldSample`); it is forgotten once
+the part's sample is drawn, replaced, removed or restored, so an older one
+never comes back over a newer one; from Canvas the canvas stays, view only, and the drawn sample
+goes; the marking scheme stays for Long answer, the other model-marked type
+(`withAnswer`), and goes for any other. The type a part leaves keeps its
+answer and marking scheme for the tab (`typeMemory.ts`, sessionStorage by
+quiz, part and type, never the server), and switching back restores them in
+place of an empty answer; a blanks answer's lists go back to its text's
+blanks in order, the text having kept them numbered. The question dialog
+(bank only) keeps nothing, for type switches and Add part alike.
+
+A canvas part's question is drawn by the teacher on a question board whose
+answer area (1,920 × 1,200 board units) is on for them too and moves by its
+label or edge (`answerArea.movable`); its top left is the page block's
+`prop:area` (board catalog `props`, question boards only; none is (0, 0)).
+The student answers on a copy of that board (`question.board`): every element
+and canvas block is part of the question, marked with BlockSuite's
+`lockedBySelf` in the saved board, so it can't be selected, moved, resized,
+edited, erased or deleted; hovering or pressing one shows "Part of the
+question", and question boards have no lock control. A drawn sample starts
+from the same copy, not kept in step with later edits of the canvas (an empty
+canvas starts it blank). The marking image, Download as image and every
+preview draw exactly the answer area, cut at its edge. The far-group pass and
+the 2,000-unit span check are gone.
+
+Answering (`src/features/quizzes/drawing/`, `CanvasAnswer`): a canvas part
+shows its canvas in place, drawn or the dotted empty one, with "Answer inside
+the canvas" under it and Answer in Canvas centred below that, never over the
+canvas (Epo 2026-11-23: over it, it covered the canvas's last line on phones);
+the normal answer slot shows nothing else. Answer in Canvas opens the board full screen
+(`DrawingBoardScreen`, loaded with BlockSuite only then, one board mounted
+ahead out of sight per page): the question pinned at the top left, folded to
+one line under a top bar on phones, its canvas left out, and Done at the top
+right, both hidden while a card (a plane, a chart) is open full screen with
+its own Done. The board is the canvas's copy, its dashed answer area labelled
+"Answer area" (`answerArea`), opened fitted to it, on phones too; the area's
+frame is on the page only, never in the saved board, and not shown read only.
+As it changes (800 ms after the last change, and at once on Done or when the
+board goes, so the last strokes stay), the board is kept on the device
+(`localDb` `drawingDrafts`) under the quiz or the assignment attempt
+(`DrawingDraftScope`) and its canvas (`canvasName`: the question's id and
+where the canvas sits, `stem`, `group:<id>` or `part:<id>`, Epo 2026-11-24),
+and reopens from there until Done; the open board is kept under the same
+name (`useOpenView`). Done on an empty
+board leaves the part unanswered; past 400 KiB (undo history stripped, the
+teacher's canvas counted in, Epo 2026-11-23; 250 KB before) it toasts and the
+board stays open; with the student's drawing outside the area
+(`outside()`, which skips the question's parts) it asks first, "Part of your
+answer is outside the answer area", Keep drawing or Done anyway, though a
+time limit's Done never asks; otherwise the answer is the board's document
+and its WebP marking image, and the canvas shows the answer, Answer in Canvas
+still under it.
+A part with two canvases is answered on the first; the others are view only.
+Canvas levels, the student's side (Epo 2026-11-23, mocks S1–S4 on Artifact
+`4iJC135Ej383bT8sgwmPwm`): a stem's or group's canvas that parts answer in
+(`shared`) is answered where it sits (`QuestionRunner`'s `sharedCanvas`, the
+parts from `sharingParts` in `drawing/canvasParts.ts`), the canvas first, its
+hint naming those parts by the labels beside them ("Answer (a) and (b) inside
+the canvas", `question_canvas_hint_shared`; a group's sub-parts as "(i)", a
+lone part the plain hint) and Answer in Canvas centred under it. Each of
+those parts shows its text and marks with "In the canvas above" where its
+answer control would be (`question_canvas_in_canvas_above`), and once checked
+its own verdict on the one drawing. Its board pins the stem, the group and
+each of those parts with its label, marks and text (`pinnedSharedQuestion`).
+A stem's or group's canvas no part answers in is a figure: its picture, no
+button. A part with its own canvas answers as before, the canvases above it
+showing where they sit; its board's pinned card holds the stem's, the
+group's and the part's text and figures, then each canvas above as a small
+picture headed "The question's canvas" with an enlarge button at its foot that
+opens it full screen (`PinnedCanvas` in `pinnedQuestion.tsx`, `MediaPreview`;
+`question_canvas_above`, `question_canvas_above_open`), phones stacking the
+same in the folded card. An assignment's page shows the question's first line
+as its heading and runs the rest, so its boards pin from the whole question
+and its number (`QuestionRunner`'s `pinFrom`). A shared part's own canvas (a merge can leave one) is
+view only. An assignment answered on paper shows every canvas as its picture
+and no "In the canvas above".
+Checked, it shows its verdict and the answer with Open canvas, the whole board
+read only. Any other part's drawn canvas is view only, with Open canvas (an
+icon button at its top right) showing it read only full screen; an empty one
+shows nothing. An assignment answered on paper shows every canvas as its
+picture, sized like an image block (`canvasPictures`). A time limit running
+out with the board open presses its Done before the assignment is submitted;
+an assignment closing does not. A canvas's board (and a drawn sample's) is
+fetched through the signed-in resolve, or on a shared page through the page's
+asset route (`AssetUrlContext`: `/p/quizzes/{token}/assets/{id}`, or the
+note's for a quiz it embeds), which the site Worker passes as `application/gzip`
+bytes for a quiz or a note, never a flashcard set (`workers/site/public.ts`).
+A board that could not be fetched shows "This block cannot be shown" in place
+of Answer in Canvas (the canvas not yet answered on) or Open canvas.
 
 Saving (migration 0156 `drawings`, `server/internal/store/drawings.go`): a
 practice board stays on the device until Check, which sends the board and its
 image with the answers; an assignment's goes up on Done (`PUT
 /api/assignment-attempts/{id}/drawings/{partId}`). The part's answer is then
 `{"drawing": id}`. The person attempting pays for the board (Epo 2026-11-06),
-through the storage gate. The marking image is kept only while its part waits on
+through the storage gate. The parts answering in one canvas share one drawing
+(Epo 2026-11-23), kept and stored once under the first of them in question
+order, their drawing part (`drawingParts` in `drawing/canvasParts.ts`, Go
+`questions.DrawingParts`): a check's answers, Done's `PUT
+…/drawings/{partId}` and the attempt's `{"drawing": id}` all name that part
+alone (the device draft names the canvas), and the others hold no answer of their own and
+count as answered by it (`partAnswer`; Go reads them through the same map).
+A drawing sent under another of them is refused with 422 (`drawingPartIn`,
+`planGrading`), so the storage it takes is counted once. A drawing follows
+its canvas (Epo 2026-11-24): a canvas is named by its question and where it
+sits (the stem, a group by id, a part's own by part id: `DrawingCanvases`, TS
+`drawingCanvases`), and when a republish or a live edit makes another part
+the first answering in it, the drawing moves to that part; one whose canvas
+no part answers in any more is dropped, as any answer its question no longer
+takes. A group's canvas that Ungroup (or removing its sub-parts down to one)
+hands to its first sub-part, which held none and now answers in it as its
+own, is that part's canvas (`UngroupedCanvases`, TS `ungroupedCanvases`), so
+its drawing stays. A running assignment attempt's row and `{"drawing": id}`
+move in the republish (`drawingTargets`, `moveDrawingsTx` in
+`dropStaleAnswersTx`, the dropped ones deleted first so a part may take a
+drawing in place of its own); a page holding answers moves them the same way
+(`drawingMoves`, `keptAnswers`), so Check names the current drawing part.
+Device drafts, kept by canvas, need no move and are never dropped by an edit:
+a canvas no part answers in for a while keeps its draft for when one does
+again, and only a canvas an Ungroup renamed has its draft copied to the new
+name, in a layout effect before the boards read it (`renamedDrafts`,
+`copyDrawingDrafts`). A check forgets the drafts of the canvases whose
+drawings it sent, read from the checked question (`forgetDrawingDrafts` in
+`canvasParts.ts`), and an assignment's Done its board's. A part switched to
+New thus leaves the stem's drawing to the next part answering there and
+starts on an empty canvas of its own; a part that answered on its own canvas
+and now shares loses that drawing. The marking image is kept only while its part waits on
 marking (Not marked), and never under "Manual grading only". No picture of a
 drawing is stored: answers, results, Approve, the report and Files › Canvas draw
 it from the board (`drawBoardPreview`, `DrawingPreview`), fetched through `GET
@@ -328,7 +631,10 @@ member keeps their unmarked boards and loses the marked ones.
 Files › Canvas (`CanvasTab`, mocks S2 and S3) lists the payer's drawings whose
 parts are marked (`GET /api/drawings`), named by the quiz with no score; the
 payer deletes one (`DELETE /api/drawings/{id}`) or all (`DELETE
-/api/drawings`), the marks staying, and the result then says "Drawing deleted".
+/api/drawings`), the marks staying, and the result then says "Drawing deleted". A shared drawing is listed (and
+deletable) only once every shared canvas part of its question is marked
+(`sharedUnmarkedSQL`; a question with a shared group canvas and a shared stem
+canvas waits on both), and every part it answers then says "Drawing deleted".
 Billing's storage bar splits into Files, "Images and audio" and Canvas
 (`BillingInfo.storageBreakdown`, recounted from the same rows as the meter;
 see [backend-storage-quota.md](backend-storage-quota.md#counter-model)).
@@ -340,12 +646,36 @@ checked against text and it gets no copy check. A part left Not marked keeps its
 image so Check again (practice) or Mark with AI (assignments) can give it its one
 marking later; the image goes once that marking lands (`DropDrawingImages`),
 before any approval. The grading slot requires `vision` (M4, Epo 2026-11-07,
-`models.slotRequirements`).
+`models.slotRequirements`). Each part answering in one canvas is marked as its
+own part (its text, marking scheme and drawn sample) on that drawing's
+marking image, the board copy of the stem's or group's canvas with the
+student's work and the question's parts at 25 % (`QUESTION_FADE`): a check
+builds one `openPart` per part carrying the same image (`planGrading`, from
+the drawing part's sent drawing), so `/grade` gets one call per part with
+that image as `image`; an assignment lists one `AnswerToMark` per part whose
+`DrawingPart` names the drawing (`attemptAnswersToMark`), reads each kept image
+once by drawing (`keptDrawingImages`) and gives it to every such part
+(`openPart.drawing` names it), so a `/grade-batch` call carries it in each
+part's body, the same bytes, and the pipeline sends it to the model once, with
+the first of them, the others pointing at it (Epo 2026-11-23; see
+[observability-metering.md](observability-metering.md)); `packBatches` counts
+it once. Those parts go to one call (Epo 2026-11-24): `markingOrder` puts
+them next to each other at the first one's place, `packBatches` starts a new
+call rather than split them when they fit a fresh one (more than four, or
+past 24 images, still split), and `splitWorking` sends them all with the
+calls with working when any of them has it. Check again does the same by drawing. `DRAWN_SECTION`'s first rule
+tells the grader "The canvas may hold the student's answers to other parts
+too; mark only the answer to the part in <question>." (Epo 2026-11-23, every
+canvas call; bench `bench/grading/reports/2026-11-23-canvas-levels.md`: no
+part credited with another's answer, with or without it, but an unlabelled
+answer that fits two parts earns both). The image stays until no part it
+answers still waits on the AI (`doneDrawings`, for `DropDrawingImages`, the
+first check's `keepCheckDrawings` and a hand mark).
 
-A quiz's drawing part may hold a drawn sample answer (Q3): `answer.sample:
+A quiz's canvas part may hold a drawn sample answer (Q3): `answer.sample:
 {board, image}`, two of the quiz's editor assets, the board gzipped under the
-`board` purpose (migration 0158, a drawing's 250 KB cap, kept out of Files ›
-Embeds) and the image an ordinary quiz image. The bank refuses it. The live
+`board` purpose (migrations 0158 and 0192, a drawing's 400 KiB cap, kept out of Files ›
+Embeds) and the image an ordinary quiz image. The bank holds no canvas part. The live
 quiz keeps it with the keys (`sampleBoard`, `sampleImage`), and it counts,
 copies and freezes with the quiz's other assets; a copy missing either asset
 drops it whole. Authors draw it as the first block of the part's Solution in
@@ -360,7 +690,7 @@ submitted nor charged. A board still being drawn on the device belongs to the
 signed-in account: `claimAccountData` deletes another account's drafts, and
 everyone's on sign-out.
 
-A checked model-marked part (open or drawing) shows its marking scheme in the
+A checked model-marked part (open or canvas) shows its marking scheme in the
 open, each point with a tick, a dash or a cross and its marks, with the
 sample answer under it and the Solution folded below (R1, Epo 2026-11-06;
 sample section 2026-11-15, `QuestionReview`).
@@ -404,10 +734,11 @@ question's part shows its marks in words ("2 marks"), as the board does, not
 In the question card (board Parts, Epo 2026-11-15) the footer's Add part adds a
 part at the end (in the card's ⋮ on phones, and in a one-part quiz card's ⋮).
 There is no separate Group item (Epo 2026-11-16): a top-level part's ⋮ has Add
-sub-part, which turns it into a group (`splitPart`): it stays (i) with its
-text, answer, marking points and explanation (every part needs text of its
-own), a new (ii) opens under it, and the group's shared text above starts
-empty for the teacher to fill. The shared text and figures sit at the card's top, then each part
+sub-part, which turns it into a group (`splitPart`): since 2026-11-24 as Add
+part does on a lone question (see Canvas parts), its blocks become the
+group's shared text, (i) and a new (ii) start blank with their own text, and
+its answer, marking points and explanation wait in the tab's memory; a fill in
+the blanks part stays (i) whole under an empty shared text. The shared text and figures sit at the card's top, then each part
 as one line (label, first words, answer type, marks) until clicked, with no
 dividers between them; the open part, unoutlined, keeps its label and text
 where its line had them and adds its own type menu, answer, Explanation button, marks and ⋮
@@ -419,7 +750,9 @@ Add sub-part, Ungroup and Remove. A group moves as a whole among the top-level
 items, past a part or another group, and a sub-part only among its group's
 parts, so nothing moves in or out of a group. Ungroup turns its
 parts into top-level parts where they are, its filled blocks joining its first
-part's top (off when they would not fit there), and Remove takes the group and
+part's top (off when they would not fit there, or, with a canvas in the
+group's text, when another part answers in it or the first part holds one,
+the reason under it), and Remove takes the group and
 its parts (off when they are all the question has). Removing a sub-part that
 leaves one turns the group back into a plain part, as Ungroup does
 (`removePart`), so Add sub-part then Remove sub-part on (ii) gives the part
@@ -684,7 +1017,7 @@ edited where it stands, with the formula
 tools and an Insert + of Text, Table, Chart, Graph and Image while editing), the
 answer type menu (`AnswerTypeSelect`: Multiple choice, Multiple answer,
 True / False; Short answer, Long answer, Fill in the blanks; Matching,
-Ordering, Drawing), the answer, marking points and Solution, then a footer of
+Ordering, Canvas), the answer, marking points and Solution, then a footer of
 Solution, Topic, Marks, Duplicate, Delete and ⋮ (Add to bank, Move up, Move
 down, Shuffle options for a choice part, Layout, Part labels). Tables, charts, graphs and
 plots show as figures with hover Insert below (+, the open text's Insert menu,
@@ -718,7 +1051,7 @@ the rest at the open card's width, each answer type as its editor draws it with 
 (`PartKey`): choice rows with "Correct", ordering's numbered rows, short
 answer's Accepted answers pills and Unit, the blanks' pills, matching's Rows
 and Columns lists (their Add rows' room kept) above the Correct answers grid,
-a long answer's or drawing's marking points with their marks, a
+a long answer's or canvas part's marking points with their marks, a
 group's ⋮ room; images centred at their size in both (Replace is in the open
 card's hover tools); a question of parts in a line a part, one column
 whatever the question's Layout (members' paper or split layout shows in
@@ -731,8 +1064,9 @@ is room, else in a bar at the bottom, and adds after it; a quiz with no
 questions shows it in the cards' column at every width. Picking Multiple choice
 on a part with several correct options keeps the first and drops the
 `multiple` flag (`answerOfKind`); turning Fill in the blanks into another type
-keeps the text, each numbered blank becoming a plain line, and drops only the
-untouched sample sentence (`withAnswer`). A text block open in its editor
+keeps the text with its numbered blanks, so lists kept for the tab match them
+again on the way back (Epo 2026-11-23), and drops only the untouched sample
+sentence while its blank is the only one (`withAnswer`). A text block open in its editor
 closes when its column's figures move or go, or when anyone else adds or
 removes a block in that column, since rows are keyed by place. A figure's Save
 writes into the question as it stands. It sits under
@@ -1312,8 +1646,9 @@ is built in Go (`questions.GradingText`) from the stem, earlier parts and the
 part, with images numbered as `[Figure N: description]` and sent with it
 (`questions.GradingTextAndFigures`, Epo 2026-11-23), graphs as their descriptions
 (`[Figure]` for one without), tables and chart data. A question holds at most
-`QUESTION_IMAGES_MAX` (5) images in its stem, groups and parts together, its
-explanations not counted, so a call of four parts stays inside the grading route's
+`QUESTION_IMAGES_MAX` (4, from 5 on 2026-11-23) images in its stem, groups and
+parts together, its explanations not counted and a drawn canvas none of them
+(canvases have their own cap, see Canvas parts), so a call of four parts stays inside the grading route's
 32 images; the dialog names the cap (`question_validation_images`) and Go refuses
 more, a Make a quiz extraction included. A group's text and figures come once, as `Shared context: …`
 before the group's first part (Epo 2026-11-04); a group with no blocks adds

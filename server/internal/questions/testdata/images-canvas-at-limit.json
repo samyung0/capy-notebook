@@ -1,0 +1,98 @@
+{
+  "name": "images-canvas-at-limit",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "layout": "paper",
+    "labels": "letters",
+    "stem": [
+      {
+        "type": "image",
+        "image": {
+          "assetId": "asset_0000000000"
+        },
+        "width": 4,
+        "height": 3,
+        "description": "Figure"
+      },
+      {
+        "type": "image",
+        "image": {
+          "assetId": "asset_0000000001"
+        },
+        "width": 4,
+        "height": 3,
+        "description": "Figure"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          },
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_0000000010"
+            },
+            "width": 4,
+            "height": 3,
+            "description": "Figure"
+          },
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_0000000011"
+            },
+            "width": 4,
+            "height": 3,
+            "description": "Figure"
+          },
+          {
+            "type": "canvas",
+            "board": "asset_board_2",
+            "image": "asset_image_2"
+          }
+        ],
+        "answer": {
+          "type": "boolean",
+          "correct": true
+        },
+        "marks": 1,
+        "solution": [
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_0000000020"
+            },
+            "width": 4,
+            "height": 3,
+            "description": "Figure"
+          },
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_0000000021"
+            },
+            "width": 4,
+            "height": 3,
+            "description": "Figure"
+          },
+          {
+            "type": "image",
+            "image": {
+              "assetId": "asset_0000000022"
+            },
+            "width": 4,
+            "height": 3,
+            "description": "Figure"
+          }
+        ]
+      }
+    ]
+  }
+}

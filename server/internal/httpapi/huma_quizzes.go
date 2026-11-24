@@ -303,7 +303,10 @@ func (a *api) checkQuizQuestion(ctx context.Context, in *checkQuizQuestionInput)
 // is ignored.
 func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInput, workspaceID string, held, answers map[string]any, order []string, marks map[string]float64) (*attemptDetailOutput, error) {
 	open := map[string]openPart{}
-	drawn := map[string]bool{}
+	// Each drawn part by the part its drawing is stored under: the parts
+	// answering in one canvas are marked on its one image.
+	drawn := map[string]string{}
+	owners := questions.DrawingParts(held)
 	parts, _ := held["parts"].([]any)
 	for i, raw := range parts {
 		p, _ := raw.(map[string]any)
@@ -316,30 +319,32 @@ func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInpu
 		question, figures := questions.GradingTextAndFigures(held, i)
 		open[id] = openPart{question: question, markscheme: items, itemMarks: itemMarks, answer: text, figures: figures,
 			sample: sampleOwner{assetID: questions.DrawnSampleImage(p), materialID: in.ID}}
-		if given, _ := answers[id].(map[string]any); given["drawing"] != nil {
-			drawn[id] = true
+		if owner, ok := owners[id]; ok {
+			if given, _ := answers[owner].(map[string]any); given["drawing"] != nil {
+				drawn[id] = owner
+			}
 		}
 	}
 	// A drawing left Not marked keeps its image for this one marking; one whose
-	// image is gone or unreadable stays Not marked.
+	// image is gone or unreadable leaves its parts Not marked.
 	if len(drawn) > 0 {
 		ids := make([]string, 0, len(drawn))
-		for id := range drawn {
-			ids = append(ids, id)
+		for _, owner := range drawn {
+			ids = append(ids, owner)
 		}
 		images, err := a.keptDrawingImages(ctx, in.Body.AttemptID, ids)
 		if err != nil {
 			return nil, hErr(err)
 		}
-		for _, id := range ids {
-			image, kept := images[id]
+		for id, owner := range drawn {
+			image, kept := images[owner]
 			if !kept {
 				delete(open, id)
 				delete(drawn, id)
 				continue
 			}
 			part := open[id]
-			part.image, part.imageType = image.data, image.contentType
+			part.image, part.imageType, part.drawing = image.data, image.contentType, owner
 			open[id] = part
 		}
 	}
@@ -368,10 +373,11 @@ func (a *api) recheckQuizQuestion(ctx context.Context, in *checkQuizQuestionInpu
 	if err != nil {
 		return nil, hErr(err)
 	}
-	// A drawing marked now has had its one marking: its image goes.
+	// A drawing marked now has had its one marking: its image goes, once no
+	// part it answers is left Not marked.
 	var marked []string
 	for id := range remarked {
-		if drawn[id] {
+		if drawn[id] != "" {
 			marked = append(marked, id)
 		}
 	}

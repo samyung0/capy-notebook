@@ -1,13 +1,18 @@
 {
-  "name": "drawing-sample",
-  "valid": true,
+  "name": "canvas-shared-false-rejected",
+  "valid": false,
   "policy": {},
   "question": {
     "id": "q1",
+    "layout": "paper",
+    "labels": "letters",
     "stem": [
       {
         "type": "text",
-        "text": "Drawn answers."
+        "text": "Look at the canvas."
+      },
+      {
+        "type": "canvas"
       }
     ],
     "parts": [
@@ -16,31 +21,22 @@
         "blocks": [
           {
             "type": "text",
-            "text": "Draw it."
+            "text": "Mark the right angle."
           }
         ],
         "answer": {
-          "type": "drawing",
-          "sample": {
-            "board": "asset_board_1",
-            "image": "asset_image_1"
-          }
+          "type": "canvas",
+          "shared": false
         },
-        "marks": 2,
+        "marks": 1,
         "markscheme": [
           {
             "text": "Shape right",
-            "marks": 1
-          },
-          {
-            "text": "Labelled",
             "marks": 1
           }
         ],
         "solution": []
       }
-    ],
-    "layout": "paper",
-    "labels": "letters"
+    ]
   }
 }

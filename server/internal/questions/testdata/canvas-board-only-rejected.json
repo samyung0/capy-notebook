@@ -1,13 +1,13 @@
 {
-  "name": "drawing",
-  "valid": true,
+  "name": "canvas-board-only-rejected",
+  "valid": false,
   "policy": {},
   "question": {
     "id": "q1",
     "stem": [
       {
         "type": "text",
-        "text": "Drawn answers."
+        "text": "Canvas answers."
       }
     ],
     "parts": [
@@ -17,10 +17,14 @@
           {
             "type": "text",
             "text": "Draw it."
+          },
+          {
+            "type": "canvas",
+            "board": "asset_board_2"
           }
         ],
         "answer": {
-          "type": "drawing"
+          "type": "canvas"
         },
         "marks": 2,
         "markscheme": [

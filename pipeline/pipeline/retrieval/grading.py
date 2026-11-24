@@ -6,9 +6,10 @@ for an assignment's marking, up to four parts of one attempt a call
 (bench/grading/reports/2026-11-03-deepseek-grading-round3.md) with the
 built-in rules Epo decided on 2026-11-04, and the question's images and
 BATCH_SECTION Epo approved on 2026-11-23
-(bench/grading/reports/2026-11-23-online-batching-and-figures.md); change it
-only with Epo. Marks are computed in Go: this answers each item's share and a
-comment.
+(bench/grading/reports/2026-11-23-online-batching-and-figures.md), a batch
+sending each image once (bench/grading/reports/2026-11-23-canvas-levels.md);
+change it only with Epo. Marks are computed in Go: this answers each item's
+share and a comment.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import asyncio
 import json
 import re
 import unicodedata
+from collections.abc import Callable
 from typing import Any
 
 from .. import elitellm
@@ -69,13 +71,33 @@ Reply with JSON only, in this shape, with one entry per marking item in the give
 "steps" lists the working of a calculation or proof in order, at most 12 entries; use [] for any other answer."""
 
 # Appended for drawn answers only (M1, Epo 2026-11-07): open-answer calls send
-# SYSTEM_PROMPT alone, unchanged. Change it only with Epo.
-DRAWN_SECTION = """
-
-Drawn answers: when the student's answer is an image instead of <student_answer> text, the image is the student's work and everything above applies to it.
+# SYSTEM_PROMPT alone, unchanged. Change them only with Epo.
+_DRAWN_RULES = """
 - Judge what is drawn and written: lines, curves, points, shapes, arrows, labels and any text or numbers. Accept freehand drawing; a point or value read from a grid or axes is right within half of the smallest grid square.
 - A sample answer image, when one comes before the student's image, shows one correct answer the scheme accepts, not the only one.
 - "quote" names, in at most 12 words, the part of the drawing that earns the credit, such as "the straight line from the origin to (6, 4)"."""
+
+# A canvas answer: drawn on the question's own canvas, so the image holds the
+# question's content too, drawn at 25% (Epo 2026-11-23, "faint" in
+# bench/grading/scripts/canvas_answers.py), and, when parts answer in one
+# canvas, their other answers (Epo 2026-11-23, bench/grading/scripts/
+# canvas_levels.py).
+DRAWN_SECTION = (
+    """
+
+Drawn answers: when the student's answer is an image instead of <student_answer> text, the image is the student's work on the question's canvas and everything above applies to it. Faded marks are the question's own text, diagrams, boxes and worked examples, printed before the student answered: they earn nothing, even where they match a marking item. Only marks at full strength are the student's work.
+- The canvas may hold the student's answers to other parts too; mark only the answer to the part in <question>."""
+    + _DRAWN_RULES
+)
+
+# Paper pages (paper.py) have no faded layer: the first line as benched for
+# them (2026-11-08), the question's canvas coming as a figure of its own.
+PAGE_DRAWN_SECTION = (
+    """
+
+Drawn answers: when the student's answer is an image instead of <student_answer> text, the image is the student's work and everything above applies to it."""
+    + _DRAWN_RULES
+)
 
 # Appended for calls that mark several parts (Epo 2026-11-23, benched four
 # to a call): every part's message goes inside <part id="pN">, in <parts>.
@@ -189,16 +211,53 @@ def _image(url: str) -> dict[str, Any]:
     return {"type": "image_url", "image_url": {"url": url}}
 
 
-def _figures(figures: list[str]) -> list[dict[str, Any]]:
+# Shows one image of a part: (url, label, name), the label written before it
+# ("" for a drawing with no sample, which goes bare), the name how a later
+# part of the call points at it.
+Show = Callable[[str, str, str], list[dict[str, Any]]]
+
+
+def _inline(url: str, label: str, name: str) -> list[dict[str, Any]]:
+    """The image after its label, as one part's call sends it."""
+    head = [{"type": "text", "text": f"{label}:"}] if label else []
+    return [*head, _image(url)]
+
+
+class SentOnce:
+    """One call's images, each sent with the first part that shows it (Epo
+    2026-11-23, "sending the root canvas once per call"): a later part keeps
+    its own label and points at where the image was, so it still knows which
+    is its figure, its sample answer and the student's drawing. Set `part`
+    to the part being written."""
+
+    def __init__(self) -> None:
+        self.part = ""
+        self._where: dict[str, str] = {}
+
+    def __call__(self, url: str, label: str, name: str) -> list[dict[str, Any]]:
+        if url in self._where:
+            # A bare drawing takes its label here, as beside a sample answer.
+            label = label or "Student's drawing"
+            text = f"{label}: the same image as {self._where[url]}."
+            return [{"type": "text", "text": text}]
+        self._where[url] = f"{name} in part {self.part}"
+        return _inline(url, label, name)
+
+
+def _figures(figures: list[str], show: Show = _inline) -> list[dict[str, Any]]:
     """The question's images as its text numbers them, each after "Figure N:"."""
     content: list[dict[str, Any]] = []
     for n, url in enumerate(figures, 1):
-        content += [{"type": "text", "text": f"Figure {n}:"}, _image(url)]
+        content += show(url, f"Figure {n}", f"Figure {n}")
     return content
 
 
 def answer_message(
-    question: str, items: list[dict[str, Any]], answer: str, figures: list[str]
+    question: str,
+    items: list[dict[str, Any]],
+    answer: str,
+    figures: list[str],
+    show: Show = _inline,
 ) -> str | list[dict[str, Any]]:
     """A typed answer's message: as text alone, or with the question's images
     between <marking_items> and <student_answer>."""
@@ -206,7 +265,7 @@ def answer_message(
         return user_message(question, items, answer)
     return [
         {"type": "text", "text": _question_and_items(question, items)},
-        *_figures(figures),
+        *_figures(figures, show),
         {
             "type": "text",
             "text": f"<student_answer>\n{_escape(answer)}\n</student_answer>",
@@ -220,21 +279,22 @@ def drawing_message(
     image: str,
     sample: str = "",
     figures: list[str] | None = None,
+    show: Show = _inline,
 ) -> list[dict[str, Any]]:
     """The question and items, the question's images, then the drawing in
     place of <student_answer>: after the sample answer's image when the part
     has one."""
     parts: list[dict[str, Any]] = [
         {"type": "text", "text": _question_and_items(question, items)},
-        *_figures(figures or []),
+        *_figures(figures or [], show),
     ]
     if sample:
-        parts += [
-            {"type": "text", "text": "Sample answer:"},
-            _image(sample),
-            {"type": "text", "text": "Student's drawing:"},
+        return [
+            *parts,
+            *show(sample, "Sample answer", "the sample answer"),
+            *show(image, "Student's drawing", "the student's drawing"),
         ]
-    return [*parts, _image(image)]
+    return [*parts, *show(image, "", "the student's drawing")]
 
 
 def decode(
@@ -370,9 +430,9 @@ async def _grade_drawing(
     return decode(getattr(message, "content", None), items, question, drawn=True)
 
 
-def _part_content(n: int, part: dict[str, Any]) -> list[dict[str, Any]]:
+def _part_content(n: int, part: dict[str, Any], show: Show) -> list[dict[str, Any]]:
     """One part of a batch as <part id="pN">: its message as one part's call
-    would send it."""
+    would send it, an image an earlier part sent pointing at it."""
     if part.get("image"):
         body = drawing_message(
             part["question"],
@@ -380,10 +440,15 @@ def _part_content(n: int, part: dict[str, Any]) -> list[dict[str, Any]]:
             part["image"],
             part.get("sample", ""),
             part.get("figures"),
+            show,
         )
     else:
         message = answer_message(
-            part["question"], part["items"], part["answer"], part.get("figures") or []
+            part["question"],
+            part["items"],
+            part["answer"],
+            part.get("figures") or [],
+            show,
         )
         body = (
             [{"type": "text", "text": message}] if isinstance(message, str) else message
@@ -396,8 +461,9 @@ def _part_content(n: int, part: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def batch_message(parts: list[dict[str, Any]]) -> str | list[dict[str, Any]]:
-    """The parts in <parts>, each in <part id="pN"> around its own message:
-    one text, as benched, when no part has an image."""
+    """The parts in <parts>, each in <part id="pN"> around its own message,
+    each image sent once (SentOnce): one text, as benched, when no part has an
+    image."""
     if not any(part.get("image") or part.get("figures") for part in parts):
         blocks = "\n\n".join(
             f'<part id="p{n}">\n'
@@ -406,9 +472,11 @@ def batch_message(parts: list[dict[str, Any]]) -> str | list[dict[str, Any]]:
             for n, part in enumerate(parts, 1)
         )
         return f"<parts>\n{blocks}\n</parts>"
+    once = SentOnce()
     content = [{"type": "text", "text": "<parts>"}]
     for n, part in enumerate(parts, 1):
-        content += _part_content(n, part)
+        once.part = f"p{n}"
+        content += _part_content(n, part, once)
     return [*content, {"type": "text", "text": "</parts>"}]
 
 

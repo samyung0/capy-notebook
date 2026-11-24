@@ -1388,8 +1388,9 @@ question it never showed counts 0. Saved answers that no longer mean what the me
 chose go with practice's rule (D9, `stillAnswers` in Go and in
 `features/quizzes/stillAnswers.ts`): a chosen option gone or moved, a changed set of
 ordering items, a matching option gone, another number of gaps. A change to the key
-or the wording keeps them. `dropStaleAnswersTx` does this in the republish for what
-was saved, and the open page for what it holds.
+or the wording keeps them. A canvas answer follows its canvas instead (Epo
+2026-11-24, see Shared canvas answers below). `dropStaleAnswersTx` does this in the
+republish for what was saved, and the open page for what it holds (`keptAnswers`).
 
 A submitted attempt keeps its graded copy and marks. What left the copy that a
 submission holds stays on the report (`withRemoved`), whole questions last and lost
@@ -1418,12 +1419,52 @@ saved. `auto_submitted` now means the time ran out (`attemptRow.timedOut`), so c
 never says so. During the grace the quiz is
 already open to them, the same short window a No late due date has.
 
+**Shared canvas answers** (Epo 2026-11-23). The parts answering in one stem's
+or group's canvas share one drawing, stored once, under the first of them in
+question order (their drawing part, `questions.DrawingParts`, TS
+`drawingParts`): Done stores it under that part, the attempt's answers name it
+there alone (`{"drawing": id}`), and every part sharing it counts as answered
+by it, waits on it at Submit (`gradeAttempt`) and is graded on its image as a
+part of its own (`attemptAnswersToMark` and `keptDrawingImages` read by
+drawing; see [question-bank.md](question-bank.md#canvas-parts)). Results and
+Grading show that drawing under each such part (`OpenPart`, `ReviewedDrawing`
+through `partAnswer`), "Drawing deleted" under each once its payer deletes it.
+Its storage is charged once
+([backend-storage-quota.md](backend-storage-quota.md#drawing-answers)); its
+marking image stays until no part it answers waits on the AI, and Files ›
+Canvas lists it once every shared canvas part of its question is marked.
+Its parts go to the AI in one marking call (Epo 2026-11-24, `markingOrder`,
+`packBatches`, `splitWorking`), unless there are more than a call holds.
+
+A drawing follows its canvas (Epo 2026-11-24). A canvas is named by its
+question and where it sits: the stem, a group by id, or a part's own by part
+id. Republish moves a running attempt's drawing row, and its `{"drawing": id}`,
+to the part its canvas's drawing is stored under in the new copy, the first
+part answering in it (`drawingTargets`, `moveDrawingsTx` in
+`dropStaleAnswersTx`); a drawing whose canvas no part answers in any more is
+deleted, which ends its charge, as any answer its question no longer takes.
+The dropped go first, so a part answering in a new canvas can take its
+drawing in place of the one it held. So with the stem's canvas shared by p1
+(its drawing part) and p2, reordering p2 above p1, switching p1 to New or
+removing p1 moves the drawing to p2, and p1 on New starts on an empty canvas
+of its own; a part that answered on its own canvas and now shares loses that
+drawing. A group's canvas that Ungroup hands to its first sub-part, which then
+answers in it as its own, keeps its drawing with that part
+(`questions.UngroupedCanvases`). The page taking it does the same to what it
+holds (`drawingMoves`, `keptAnswers` in `AssignmentTake`), as practice does
+live (`AttemptBody`), so a check names the current drawing part and
+`planGrading` takes it. A board's device draft and its open view are kept by
+canvas (`canvasName`), not by part, so a new first part changes neither and a
+canvas no part answers in for a while keeps its draft; only an Ungroup's
+renamed canvas has its draft copied to the new name (`renamedDrafts`,
+`copyDrawingDrafts`).
+
 **Submitting.** `POST …/submit` grades closed parts with the same deterministic
 Go scoring as a quiz (`questions.Graded`). An answered open part is left
 `pending` ("Not marked"), and the AI then marks it in the background, on the
 credits of the member attempting (`markAnswersSoon`, Epo 2026-11-08); a blank
-one earns 0. Its written and drawn parts go four to a call (`gradeInBatches`,
-`POST /grade-batch`, Epo 2026-11-23), each with its question's images; a quiz or
+one earns 0. Its written and drawn parts go up to four and 24 images to a call
+(`gradeInBatches`, `POST /grade-batch`, Epo 2026-11-23), each with its question's images; a quiz or
 review check still sends one part a call. One payer's marking runs at most four
 attempts or paper reads at once (`payerSlots`, Epo 2026-11-23), so Grade {k} with
 AI on a class is about four times faster than one at a time and leaves the payer
@@ -1618,7 +1659,8 @@ extension.
   the same grid in staff's Preview): a six-column grid in the list's place, each
   square filled when answered, dashed when partly, ringed when open, a bookmark
   in its corner, with what each look means under it; phones keep the number
-  strip above the question (`NumberStrip`).
+  strip above the question (`NumberStrip`). A part answered in a canvas above
+  counts as answered by that canvas's one drawing (`partAnswer`).
 - An upload attempt shows Your answers at the left (above the questions on
   phones) and every question in one scroll, read only: choices, matching and
   ordering show their options, written answer fields don't. Your answers lists
@@ -1757,10 +1799,11 @@ kind, submissions or average since Epo 2026-11-13), then its tabs,
 each with its link (`reportView` in `assignmentPage.ts`). A graded quiz (Epo
 2026-11-15, boards Main and Responses of todo-question-editor.md) has
 Questions (`tab` absent), Responses (`tab=responses`) and Settings; a draft
-Questions and Settings. Its header row ends in Preview (outline, the eye; only
-the eye on phones) and, for a draft, Publish (dark), with Release grades when it
-waits; while Questions shows, the quiz editor's save status and Undo and Redo sit
-before them (`FileActionsTarget`). Questions edits the graded quiz's own quiz
+Questions and Settings. Its header row ends, for a draft, in Publish (dark),
+with Release grades when it waits; while Questions shows, the quiz editor's
+save status and Undo and Redo sit before them (`FileActionsTarget`). Preview
+shows on Questions only, borderless (`ghost-hover`, Epo 2026-11-23): on the
+tabs row left of Full screen from `md`, in the header row on phones. Questions edits the graded quiz's own quiz
 (`manage.quizId`) in place with the quiz page's `QuizEditor`
 (`GradedQuizQuestions`; read only to someone who can't edit it, and the frozen
 questions to read when the quiz is gone); after publishing, edits reach members
@@ -1797,11 +1840,11 @@ amber, under 60% red, none before one answer is marked; a question's is its
 marked parts' averages over their marks. Per part: "Average" muted with the
 mean mark in a badge of its tint, "1.6 of 2", for every type (the report's
 `parts[].average`, Epo 2026-11-22; closed parts read "80%" before), "–" until
-one is marked, led by an "AI graded" badge on an open or drawing part unless
+one is marked, led by an "AI graded" badge on an open or canvas part unless
 Marking is Manual (Epo 2026-11-14); answer frequencies (an option's label and
 its bar halving the width), common wrong answers, how often each marking point
 was awarded; under them the part's answer key where the bars do not mark it,
-an open part's sample answer or a drawing part's drawn one, and the Solution.
+an open part's sample answer or a canvas part's drawn one, and the Solution.
 A member's Results draw their questions the same way, nothing folding, at most
 3xl wide and centred (`ResultBody` with `questionNumber`): each part's answer
 and marking where its answer would be, its outcome square, word and "1 / 2" at
@@ -1861,15 +1904,18 @@ resubmit; reopening hides it again.
 (Approve all). A row it has not marked (no credits, a file it can't read, a failed
 part, a restart, or a submission the sweep made, which starts no marking) reads Not
 graded in amber, whatever the cause (Epo 2026-11-14: no red No credits chip); the pane
-says why, and its AI column reads "–". `POST /api/assignments/{id}/mark-with-ai` runs
+says why, and its Awarded marks start empty. `POST /api/assignments/{id}/mark-with-ai` runs
 the AI over all of those across the assignment, one attempt at a time per payer,
 with "Grading 12 of 40 answers…" from the report's `marking` while it runs. Nothing
 retries by itself (Epo 2026-11-03).
 
 **Regrade with AI** (Epo 2026-11-23). One member's question, from the grading
 pane: Canvas regrades a question across every submission and Moodle whole
-attempts, while here staff pick the answer. The button sits on the pane's AI
-line unless Marking is Manual or nothing in the question is answered.
+attempts, while here staff pick the answer. The button sits on the pane's
+grade line unless Marking is Manual or nothing in the question is answered. That
+line reads the grade alone, "Grade 3 of 6", not the AI's mark beside it (Epo
+2026-11-23); only grading now, or why the AI couldn't (credits, the file, an
+error), goes before it.
 `POST /api/assignment-attempts/{id}/regrade` `{questionId}` (`RegradeQuestion`)
 grades the answer again on the assignment's latest copy of the question
 (Republish's; the attempt's own copy without its marks if Republish dropped
@@ -1891,15 +1937,18 @@ Responses from 2026-11-15, its own Grading tab since 2026-11-19, after
 Gradescope and Crowdmark; `ApproveTab`). A row above the columns holds what is assignment-wide: "{n} to
 approve · {k} not graded", Grade {k} with AI (only when some wait; Read papers again
 under manual marking), an "Only {name}" chip when opened from a member's "to approve"
-on Responses By member, Overview and Next to approve. Below, from `lg` three columns: every
+on Responses By member, and Overview, borderless, its label ending on the
+content's edge under Full screen (Epo 2026-11-23, which removed Next to approve
+and Next to grade: the columns already show what waits). Below, from `lg` three columns: every
 question (Epo 2026-11-19; the report's `answers` hold a row for every answer)
-under To approve (count of waiting answers; under Manual marking, To grade, as are the toolbar's "N to grade", Start grading, Next to grade and the form's Save marks, Epo 2026-11-20) and Done (tick), "AI marked" in the
+under To approve (count of waiting answers; under Manual marking, To grade, as are the toolbar's "N to grade", Start grading and the form's Save marks, Epo 2026-11-20) and Done (tick), "AI marked" in the
 accent colour after "Q3 · 6 marks" on one with a written or drawn part unless
 Marking is Manual; the chosen question's members (waiting first, Approve all),
 and the grading pane, showing a written answer as the member's results do (Epo
-2026-11-19: `OpenPart`, Your answer boxed, Marking points | AI | Awarded, the
-sample answer and Solution; under 448px of its own width the points and the
-mark alone). A question marked by rule opens the results' own staff
+2026-11-19: `OpenPart`, Your answer boxed, Marking points | Awarded, the
+Awarded marks starting as the AI's with no AI column (Epo 2026-11-23), the
+sample answer and Solution; under 448px of its own width the mark takes only
+its width and the chips go). A question marked by rule opens the results' own staff
 view (`ResultBody`: the member's answer against the key, a Mark field per
 part, a comment, Save marks), a read paper's pages above it, or the whole
 paper while it waits to be read. From `md` each column scrolls on its own, the two

@@ -311,3 +311,115 @@ def test_the_batch_route_answers_per_part(monkeypatch):
     done = http.post("/grade-batch", json=body, headers={"X-Pipeline-Secret": secret})
     assert done.status_code == 200
     assert done.json()["parts"]["q1:part:1"]["shares"] == [1.0]
+
+
+def test_canvas_calls_say_the_canvas_may_hold_other_parts_answers():
+    """Parts answering in one canvas are graded on one image (Epo 2026-11-23):
+    canvas calls say so, word for word; paper pages keep their own rule."""
+    line = (
+        "- The canvas may hold the student's answers to other parts too; "
+        "mark only the answer to the part in <question>."
+    )
+    assert line in grading.DRAWN_SECTION
+    assert line not in grading.PAGE_DRAWN_SECTION
+
+
+def _shown(content):
+    return [c.get("text") or c["image_url"]["url"] for c in content]
+
+
+def test_a_batch_sends_each_image_once():
+    """Images a call's parts share go with the first part that shows them; a
+    later part keeps its own label and points at it (Epo 2026-11-23)."""
+    stem, drawing, own = (
+        "data:image/jpeg;base64,U1RFTQ==",
+        "data:image/webp;base64,RFJBVw==",
+        "data:image/webp;base64,T1dO",
+    )
+    sample = "data:image/png;base64,U0FNUA=="
+    parts = [
+        {"id": "a", "question": "Q [Figure 1]", "items": ITEMS, "image": drawing},
+        {
+            "id": "b",
+            "question": "Q",
+            "items": ITEMS,
+            "image": drawing,
+            "sample": sample,
+        },
+        {
+            "id": "c",
+            "question": "Q [Figure 1]",
+            "items": ITEMS,
+            "image": own,
+            "figures": [stem],
+        },
+        {
+            "id": "d",
+            "question": "Q [Figure 1]",
+            "items": ITEMS,
+            "answer": ANSWER,
+            "figures": [stem],
+        },
+    ]
+    parts[0]["figures"] = [stem]
+    shown = _shown(grading.batch_message(parts))
+    # Each image once, at its first part.
+    assert [shown.count(url) for url in (stem, drawing, own, sample)] == [1, 1, 1, 1]
+    b = shown[shown.index('<part id="p2">') : shown.index('<part id="p3">')]
+    assert b[-3:] == [
+        sample,
+        "Student's drawing: the same image as the student's drawing in part p1.",
+        "</part>",
+    ]
+    c = shown[shown.index('<part id="p3">') :]
+    assert c[2] == "Figure 1: the same image as Figure 1 in part p1."
+    assert c[3] == own
+    d = shown[shown.index('<part id="p4">') :]
+    assert d[2] == "Figure 1: the same image as Figure 1 in part p1."
+    # One part's call is as before: every image after its label.
+    alone = _shown(grading.drawing_message("Q", ITEMS, drawing, sample, [stem]))
+    assert alone[1:] == [
+        "Figure 1:",
+        stem,
+        "Sample answer:",
+        sample,
+        "Student's drawing:",
+        drawing,
+    ]
+
+
+def test_a_part_takes_its_questions_images_and_canvases():
+    """A part carries up to its question's 4 images and 4 canvases (the
+    generated caps), and a batch counts an image its parts share once."""
+    from pydantic import ValidationError
+
+    from pipeline.generated.limits import QUESTION_CANVASES_MAX, QUESTION_IMAGES_MAX
+    from pipeline.retrieve import service
+
+    most = QUESTION_IMAGES_MAX + QUESTION_CANVASES_MAX
+    figures = [f"data:image/jpeg;base64,{n:04d}" for n in range(most)]
+    part = {"question": "Q", "items": ITEMS, "image": IMAGE, "figures": figures}
+    assert len(service.GradePartReq(**part).figures) == most
+    with pytest.raises(ValidationError):
+        service.GradePartReq(**{**part, "figures": [*figures, IMAGE]})
+    assert (
+        len(
+            service.PaperPart(
+                id="1", type="drawing", label="1", figures=figures
+            ).figures
+        )
+        == most
+    )
+    # Four parts of 9 images, all shared: 9 sent, though 36 are listed.
+    shared = [{**part, "id": f"p{n}"} for n in range(4)]
+    service.GradeBatchReq(parts=shared, spendSessionId="ps_1", thinking="low")
+    apart = [
+        {
+            **part,
+            "id": f"p{n}",
+            "figures": [f"data:image/jpeg;base64,{n}{f:03d}" for f in range(most)],
+        }
+        for n in range(4)
+    ]
+    with pytest.raises(ValidationError, match="at most 32 images"):
+        service.GradeBatchReq(parts=apart, spendSessionId="ps_1", thinking="low")

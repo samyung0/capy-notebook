@@ -47,7 +47,8 @@ func (l Limits) EditorAssetBytes(purpose string) int64 {
 	case "image":
 		return l.ImageBytes
 	case "board":
-		// A drawn sample answer's board: a drawing's own cap, gzipped or not.
+		// A canvas's or a drawn sample answer's board: a drawing's own cap,
+		// gzipped or not.
 		return fieldlimits.DrawingBoardBytes
 	}
 	return l.SourceFileBytes

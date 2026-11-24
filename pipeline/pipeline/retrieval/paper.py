@@ -2,10 +2,11 @@
 
 One read call (R) finds each part's pages and the closed parts' answers on
 every page at 1,024 px; then open and drawing parts are graded up to four to a
-call (SYSTEM_PROMPT + DRAWN_SECTION + P1 + B) on the union of their pages at
-1,568 px, each part with its question's images (Epo 2026-11-23), a call
-holding at most 32 images (`pack`). Go marks the closed answers against the
-key and computes marks.
+call (SYSTEM_PROMPT + PAGE_DRAWN_SECTION + P1 + B) on the union of their pages
+at 1,568 px, each part with its question's images (Epo 2026-11-23: every
+canvas among them, as set, and a canvas part's drawn sample answer), a call
+sending each image once and holding at most 24 (`pack`). Go marks the closed
+answers against the key and computes marks.
 
 R, P1 and B are approved by Epo word for word (2026-11-08, benched in
 bench/grading/reports/2026-11-08-paper-prompts.md); change them only with Epo.
@@ -50,15 +51,17 @@ Several parts: this time you mark every part listed in <parts> at once. Everythi
 - Mark only what the student wrote for that part.
 Reply with JSON only, one entry per part in the given order: {"parts": [{"part": "1a", "steps": [], "vocabulary_only": false, "injection_suspected": false, "comment": "", "items": [{"id": "m0", "quote": "", "reason": "", "choice": "full"}]}]}"""
 
-GRADE_SYSTEM = grading.SYSTEM_PROMPT + grading.DRAWN_SECTION + P1 + B
+GRADE_SYSTEM = grading.SYSTEM_PROMPT + grading.PAGE_DRAWN_SECTION + P1 + B
 
 # Epo's figure, held pending confirmation (todo-file-submissions.md 5a).
 PAPER_MAX_PAGES = 15
 READ_EDGE = 1024
 GRADE_EDGE = 1568
 BATCH = 4
-# Images one call may carry: Cloudflare, on the grading route, refuses more.
-CALL_IMAGES = 32
+# Images one call carries at most (Epo 2026-11-23, "around like 24"), under
+# the 32 Cloudflare's grading route takes; a part that would pass it starts the
+# next call.
+CALL_IMAGES = 24
 _READ_MAX_TOKENS = 6000
 GRADED = ("open", "drawing")
 
@@ -76,6 +79,8 @@ class Part:
     items: list[dict[str, Any]]
     # The question's images in the order `question` numbers them.
     figures: list[str] = field(default_factory=list)
+    # A canvas part's drawn sample answer image, after its figures.
+    sample: str = ""
 
 
 @dataclass
@@ -231,8 +236,9 @@ async def read(
 
 def _batch_message(batch: list[Part]) -> list[dict[str, Any]]:
     """The parts in <parts>, each with its question's images after its
-    <marking_items>; one text, as benched, when none has any."""
-    if not any(part.figures for part in batch):
+    <marking_items>, then its sample answer's, each image sent once
+    (grading.SentOnce); one text, as benched, when none has any."""
+    if not any(part.figures or part.sample for part in batch):
         blocks = "\n\n".join(
             f'<part id="{part.id}">\n{grading._question_and_items(part.question, part.items)}\n</part>'
             for part in batch
@@ -240,14 +246,21 @@ def _batch_message(batch: list[Part]) -> list[dict[str, Any]]:
         return [
             {"type": "text", "text": f"<parts>\n{blocks}\n</parts>\n\nStudent's pages:"}
         ]
+    once = grading.SentOnce()
     content: list[dict[str, Any]] = [{"type": "text", "text": "<parts>"}]
     for part in batch:
+        once.part = part.id
         content += [
             {
                 "type": "text",
                 "text": f'<part id="{part.id}">\n{grading._question_and_items(part.question, part.items)}',
             },
-            *grading._figures(part.figures),
+            *grading._figures(part.figures, once),
+            *(
+                once(part.sample, "Sample answer", "the sample answer")
+                if part.sample
+                else []
+            ),
             {"type": "text", "text": "</part>"},
         ]
     return [*content, {"type": "text", "text": "</parts>\n\nStudent's pages:"}]
@@ -256,18 +269,19 @@ def _batch_message(batch: list[Part]) -> list[dict[str, Any]]:
 def _images(
     batch: list[Part], pages_of: dict[str, list[int]], pages: list[Page]
 ) -> int:
-    """A batch's images: its parts' figures and the image pages they share."""
+    """A batch's images, each counted once as it is sent: its parts' figures
+    and samples, and the image pages they share."""
     union = {n for part in batch for n in pages_of[part.id]}
-    return sum(len(part.figures) for part in batch) + sum(
-        1 for n in union if pages[n - 1].text is None
-    )
+    shown = {url for part in batch for url in [*part.figures, part.sample] if url}
+    return len(shown) + sum(1 for n in union if pages[n - 1].text is None)
 
 
 def pack(
     graded: list[Part], pages_of: dict[str, list[int]], pages: list[Page]
 ) -> list[list[Part]]:
     """The parts in order, up to BATCH a call and CALL_IMAGES images a call.
-    One part alone always fits: at most 5 figures and PAPER_MAX_PAGES pages."""
+    One part alone always fits: its question's 4 images and 4 canvases (its
+    own and its drawn sample among them) and PAPER_MAX_PAGES pages, 23."""
     batches: list[list[Part]] = []
     for part in graded:
         last = batches[-1] if batches else None

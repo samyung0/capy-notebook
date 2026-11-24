@@ -179,6 +179,16 @@ export function AssignmentReport({
     manage?.showGrades === 'manual' &&
     !manage.gradesReleasedAt;
 
+  // Full screen: Grading with a list to cover, Questions while it edits, By
+  // question's split (Epo 2026-11-22).
+  const fullscreenHere =
+    (tab === 'grading' && !!data?.members.length) ||
+    (editing && !!quizId) ||
+    (marked && tab === 'responses' && byQuestion && !!data?.questions.length);
+  const previewHere = marked && tab === 'questions';
+  // A published one previews its frozen questions, so it waits for the report.
+  const previewWaits = !(draft || data || paper !== undefined);
+
   return (
     <PracticeFrame
       // The quiz editor fills the page under the tabs, as the quiz page does;
@@ -249,12 +259,14 @@ export function AssignmentReport({
                   <span className="flex items-center" ref={setEditorActions} />
                 </>
               )}
-              {/* A published one previews its frozen questions, so it waits
-                  for the report. */}
-              {marked && (
+              {/* On Questions only, borderless (Epo 2026-11-23): here on
+                  phones, on the tabs' row from a tablet up. */}
+              {previewHere && (
                 <PreviewButton
-                  disabled={!(draft || data || paper !== undefined)}
+                  className="md:hidden"
+                  disabled={previewWaits}
                   onClick={() => setPreviewing(true)}
+                  variant="ghost-hover"
                 />
               )}
               {marked && draft && <PublishButton assignment={assignment} />}
@@ -281,29 +293,36 @@ export function AssignmentReport({
           }))}
           value={tab}
         />
-        {/* Grading only with a list to cover; Questions while it edits; By
-            question's split (Epo 2026-11-22). */}
-        {((tab === 'grading' && !!data?.members.length) ||
-          (editing && !!quizId) ||
-          (marked &&
-            tab === 'responses' &&
-            byQuestion &&
-            !!data?.questions.length)) && (
-          <Button
-            // Its label ends on the content's edge: a graded quiz's Next to
-            // approve, or past the page's padding the hand-in file header's
-            // open-in-new-tab icon.
+        {(fullscreenHere || previewHere) && (
+          // The last label ends on the content's edge, or past the page's
+          // padding the hand-in file header's open-in-new-tab icon.
+          <div
             className={cn(
-              'absolute top-1/2 -translate-y-1/2 pr-1 pl-2 max-md:hidden',
+              'absolute top-1/2 flex -translate-y-1/2 items-center gap-1 max-md:hidden',
               marked ? 'right-[-4px]' : 'right-[-13px] lg:right-[-25px]'
             )}
-            iconLeft="maximize"
-            onClick={() => setFullscreen(true)}
-            size="sm"
-            variant="ghost-hover"
           >
-            {m.material_fullscreen()}
-          </Button>
+            {previewHere && (
+              <PreviewButton
+                className={cn('pl-2', fullscreenHere ? 'pr-2' : 'pr-1')}
+                disabled={previewWaits}
+                onClick={() => setPreviewing(true)}
+                size="sm"
+                variant="ghost-hover"
+              />
+            )}
+            {fullscreenHere && (
+              <Button
+                className="pr-1 pl-2"
+                iconLeft="maximize"
+                onClick={() => setFullscreen(true)}
+                size="sm"
+                variant="ghost-hover"
+              >
+                {m.material_fullscreen()}
+              </Button>
+            )}
+          </div>
         )}
       </div>
       {tab === 'settings' ? (

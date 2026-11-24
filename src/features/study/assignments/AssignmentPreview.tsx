@@ -2,6 +2,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import type { LearnerQuestion, Question } from '@/features/questions/types';
+import { partAnswer } from '@/features/quizzes/drawing/canvasParts';
 import { type Answers, emptyAnswer } from '@/features/quizzes/grade';
 import { useQuizFileQuestions } from '@/features/quizzes/liveQuizReads';
 import { QuizSplit } from '@/features/quizzes/QuizSplit';
@@ -85,10 +86,11 @@ export function AssignmentPreview({
       };
     });
   }, [question]);
+  // A part answered in the canvas above is answered by its drawing.
   const isAnswered = (q: Question | LearnerQuestion) =>
-    q.parts.some((part) => answered(answers[part.id]));
+    q.parts.some((part) => answered(partAnswer(q, answers, part)));
   const isComplete = (q: Question | LearnerQuestion) =>
-    q.parts.every((part) => answered(answers[part.id]));
+    q.parts.every((part) => answered(partAnswer(q, answers, part)));
   const go = (next: number) => setIndex(next);
   const open = (id: string) => go(questions.findIndex((q) => q.id === id));
   const items = questions.map((q) => ({

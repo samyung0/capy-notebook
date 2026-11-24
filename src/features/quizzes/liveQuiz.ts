@@ -5,6 +5,7 @@ import { applyTextChange, LOCAL_EDIT } from '@/features/collaboration/yText';
 import { repairGroups } from '@/features/questions/groups';
 import type { FigureAt, FigureRoom } from '@/features/questions/questionEdits';
 import {
+  canvasCount,
   gapNumbers,
   type LearnerAnswer,
   type LearnerQuestion,
@@ -20,6 +21,9 @@ import {
   shuffledOrder,
 } from '@/features/questions/types';
 import {
+  canvasCapIssue,
+  canvasLists,
+  PART_CANVASES_MAX,
   type QuizCounts,
   quizCapsIssue,
   quizCounts,
@@ -58,12 +62,15 @@ import { roomFigureBinding } from './roomFigureBinding';
  * 2026-10-10). The content document, which readers join too, holds
  * `questions`: question id -> {order, layout, labels, level?, topicIds?, stem,
  * groups?, parts} (topicIds a plain list, never empty), group id ->
- * {blocks}, part id -> {order, marks, blocks, answer, group?}. A group has no order of its own: it sits where its first part sits,
+ * {blocks}, part id -> {order, marks, blocks, answer, group?}, a canvas
+ * block (in any but a solution) holding its drawn `{board, image}` as one
+ * plain `drawn` value (Epo 2026-11-23). A group has no order of its own: it sits where its first part sits,
  * and what a merge leaves reads repaired (`repairGroups`, Epo 2026-11-04). The
  * answer map holds the type and what a learner may see: mcq options,
  * `multiple` (true while several are correct or the author's flag is set),
  * `shuffle` and `locked` (option id -> true; Shuffle options, Epo
- * 2026-11-15), a short answer's unit and matching left items. The keys document, which only
+ * 2026-11-15), a canvas part's `shared` (answered in the canvas above, Epo
+ * 2026-11-23), a short answer's unit and matching left items. The keys document, which only
  * editors with write access join, holds `keys`: part id -> {type, solution,
  * correct | accepted | markscheme | gaps | options | pairs | items},
  * and an mcq's author `multiple` flag (Multiple answer, Epo 2026-11-15). Editors type ordering
@@ -128,6 +135,13 @@ function readBlock(entry: YMap): QuestionBlock | null | typeof UNREADABLE {
     case 'plot':
     case 'graph':
       return readFigure(entry, type)?.block ?? null;
+    case 'canvas': {
+      // A drawn one's board and picture, one value replaced whole.
+      const drawn = plain<{ board?: unknown; image?: unknown }>(entry, 'drawn');
+      return typeof drawn?.board === 'string' && typeof drawn.image === 'string'
+        ? { board: drawn.board, image: drawn.image, type }
+        : { type };
+    }
     case undefined:
       return null;
     default:
@@ -242,12 +256,18 @@ function readAnswer(
         },
         markscheme: readMarkscheme(key),
       };
-    case 'drawing': {
+    case 'canvas': {
       // A drawn sample answer is a key: its board and image asset ids.
       const board = plain<string>(key, 'sampleBoard');
       const image = plain<string>(key, 'sampleImage');
       return {
-        answer: board && image ? { sample: { board, image }, type } : { type },
+        answer: {
+          type,
+          ...(board && image ? { sample: { board, image } } : {}),
+          ...(plain<boolean>(answer, 'shared') === true
+            ? { shared: true as const }
+            : {}),
+        },
         markscheme: readMarkscheme(key),
       };
     }
@@ -430,8 +450,13 @@ export function readLearnerQuestions(
             case 'gaps':
               learner = { gaps: gapNumbers(blocks).length, type };
               break;
-            case 'drawing':
-              learner = { type };
+            case 'canvas':
+              learner = {
+                type,
+                ...(plain<boolean>(answer, 'shared') === true
+                  ? { shared: true as const }
+                  : {}),
+              };
               break;
             default:
               learner = { type: type === 'boolean' ? 'boolean' : 'open' };
@@ -624,6 +649,15 @@ function writeBlockFields(entry: YMap, block: QuestionBlock) {
     case 'graph':
       writeFigure(entry, block);
       return;
+    case 'canvas':
+      setPlain(
+        entry,
+        'drawn',
+        'board' in block
+          ? { board: block.board, image: block.image }
+          : undefined
+      );
+      return;
     default: {
       const unknown: never = block;
       const { type } = unknown as { type: string };
@@ -756,6 +790,9 @@ function writeContentAnswer(part: YMap, answer: QuestionAnswer): PartIds {
     case 'short':
       setPlain(map, 'unit', answer.unit);
       break;
+    case 'canvas':
+      setPlain(map, 'shared', answer.shared);
+      break;
     case 'matching':
       ids.left = writeList(
         child(map, 'left'),
@@ -819,7 +856,7 @@ function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
       list('accepted', answer.accepted, 'acc');
       break;
     case 'open':
-    case 'drawing':
+    case 'canvas':
       if (answer.type === 'open') {
         writeSample(key, answer.accepted[0]);
       } else {
@@ -979,16 +1016,44 @@ function heldCounts(entry: unknown): QuizCounts {
   return counts;
 }
 
+/** A question entry's canvases by block list (`canvasLists` keys), as held. */
+function heldCanvases(entry: unknown): Map<string, number> {
+  const counts = new Map<string, number>();
+  if (!(entry instanceof Y.Map)) return counts;
+  const count = (key: string, blocks: YMap | undefined) => {
+    let held = 0;
+    blocks?.forEach((block) => {
+      if (block instanceof Y.Map && block.get('type') === 'canvas') held++;
+    });
+    counts.set(key, held);
+  };
+  count('stem', mapAt(entry as YMap, 'stem'));
+  for (const section of ['groups', 'parts'] as const)
+    mapAt(entry as YMap, section)?.forEach((item, id) => {
+      if (item instanceof Y.Map)
+        count(`${section}/${id}`, mapAt(item as YMap, 'blocks'));
+    });
+  return counts;
+}
+
 /** `writeQuestion` from an editor, checked against the quiz as it reads now
- * (`quizCapsIssue`): a write adding a part or an AI-marked part past the
- * quiz's caps does not go. Its message, or null once written. */
+ * (`quizCapsIssue`, `canvasCapIssue`): a write adding a part or an AI-marked
+ * part past the quiz's caps, or a canvas past a block list's one, does not go. Its
+ * message, or null once written. */
 export function editQuestion(
   content: Y.Doc,
   keys: Y.Doc,
   next: Question
 ): string | null {
   const questions = questionsScope(content) as YMap;
-  const held = heldCounts(questions.get(next.id));
+  const entry = questions.get(next.id);
+  // Only a block list past one canvas needs the held counts.
+  const canvases =
+    canvasLists(next).some(
+      ([, blocks]) => canvasCount(blocks) > PART_CANVASES_MAX
+    ) && canvasCapIssue(heldCanvases(entry), next);
+  if (canvases) return canvases;
+  const held = heldCounts(entry);
   const mine = quizCounts([next]);
   // Typing adds no part, so most writes skip counting the quiz.
   if (mine.parts > held.parts || mine.open > held.open) {
@@ -1083,6 +1148,14 @@ export function figureRoom(docs: QuizDocs): FigureRoom & { docs: QuizDocs } {
     insert: (place, block) => {
       const { doc, map } = sectionMap(docs, place.question, place.section);
       if (!map) return null;
+      // A block list holds one canvas: one a co-editor added meanwhile stands.
+      if (block.type === 'canvas') {
+        let held = 0;
+        map.forEach((entry) => {
+          if (entry instanceof Y.Map && entry.get('type') === 'canvas') held++;
+        });
+        if (held >= PART_CANVASES_MAX) return null;
+      }
       const ids = ordered(map).map((item) => item.id);
       const found = place.after ? ids.indexOf(place.after) : -1;
       const at = found >= 0 ? found + 1 : Math.min(place.index, ids.length);
@@ -1185,7 +1258,7 @@ export function withEmptyKeys(question: LearnerQuestion): Question {
           return full(answer);
         case 'open':
           return full({ accepted: [], type: answer.type });
-        case 'drawing':
+        case 'canvas':
           return full(answer);
         case 'gaps':
           return full({

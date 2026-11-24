@@ -2,7 +2,6 @@ import { Suspense, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import {
   boardFile,
-  boardFromAsset,
   gzipBoard,
   rememberBoardAsset,
 } from '@/features/blocksuite/boardAsset';
@@ -15,15 +14,18 @@ import { CannotShow } from '@/features/materials/CannotShow';
 import type { DrawnSample } from '@/features/questions/types';
 import { m } from '@/i18n';
 import { useBoardAhead } from './boardPrefetch';
+import { useBoardAsset, useHeldWhileOpen } from './CanvasFrame';
 import type { PinnedQuestion } from './DrawingBoardScreen';
 import { DrawingPreview } from './DrawingPreview';
 import type { DrawingValue } from './drawingValue';
 
-/** Stores a drawn sample answer as the quiz's own assets and returns them. */
+/** Stores a drawn board, a sample answer's or a canvas's, as the quiz's own
+ * assets and returns them. */
 export type UploadDrawnSample = (value: DrawingValue) => Promise<DrawnSample>;
 
-/** A quiz's drawn sample answer upload (Q3): the board gzipped as a `board`
- * asset, beside its image as an ordinary quiz image. */
+/** A quiz's drawn board upload (a sample answer, Q3; a canvas, Epo
+ * 2026-11-23): the board gzipped as a `board` asset, beside its image as an
+ * ordinary quiz image. */
 export function quizSampleUpload(quizId: string): UploadDrawnSample {
   return async ({ board, image }) => {
     // Its module holds the upload code, which learners never load.
@@ -42,32 +44,19 @@ export function quizSampleUpload(quizId: string): UploadDrawnSample {
   };
 }
 
-/** A drawn sample answer's board, base64, once fetched; null while it loads,
- * or when there is none or it can't be read. Fetched in the browser only. */
-export function useSampleBoard(sample: DrawnSample | undefined) {
-  const id = sample?.board;
-  const [held, setHeld] = useState<{ board: string; id: string } | null>(null);
-  useEffect(() => {
-    if (!id) return;
-    let live = true;
-    boardFromAsset(id)
-      .then((board) => live && setHeld({ board, id }))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [id]);
-  return held && held.id === id ? held.board : null;
-}
-
 /**
- * A drawing part's optional drawn sample answer in the quiz editor and the
- * question dialog, in its own Sample answer section (Epo 2026-11-15): the
- * drawing and Edit sample answer, or Draw sample answer while there is none. Either opens the full board for the author with the question
- * pinned (A3); Done stores it, and Done on an emptied board removes it. The
- * board's open state may be held outside, where a menu opens it directly. If
- * the board's code could not load, the button is "This block cannot be shown"
- * and the field closes.
+ * A canvas part's optional drawn sample answer in the quiz editor, in its own
+ * Sample answer section (Epo 2026-11-15): the drawing and Edit sample answer,
+ * or Draw sample answer while there is none. Either opens the full board for
+ * the author with the question pinned (A3); Done stores it, and Done on an
+ * emptied board removes it. A new sample starts as a copy of the part's canvas
+ * as it is then (`question`, its board asset), the canvas's parts held as on a
+ * student's board, with no sync after (Epo 2026-11-23). Open, the board keeps
+ * the boards it opened from while a co-editor's Done changes the sample or the
+ * canvas, so its own Done, the later one, wins. The board's open state may be
+ * held outside, where a menu opens it directly. If the board's code, or a
+ * board it opens from, could not load, the button is "This block cannot be
+ * shown" and the field closes.
  */
 export function DrawnSampleField({
   defaultOpen = false,
@@ -75,6 +64,7 @@ export function DrawnSampleField({
   onOpenChange,
   open: openProp,
   pinned,
+  question,
   sample,
   upload,
 }: {
@@ -83,6 +73,8 @@ export function DrawnSampleField({
   onOpenChange?: (open: boolean) => void;
   open?: boolean;
   pinned: PinnedQuestion;
+  /** The part's drawn canvas's board asset; none for an empty canvas. */
+  question: string | undefined;
   sample: DrawnSample | undefined;
   upload: UploadDrawnSample;
 }) {
@@ -92,10 +84,17 @@ export function DrawnSampleField({
     setOpenState(next);
     onOpenChange?.(next);
   };
-  const board = useSampleBoard(sample);
-  // An existing sample is mounted ahead once its board is here.
-  const ahead = useBoardAhead(!sample || !!board);
-  const failed = useCodeFailed(boardCode);
+  const { board, failed: sampleLost } = useBoardAsset(sample?.board);
+  const { board: canvas, failed: canvasLost } = useBoardAsset(question);
+  // Either board, the sample's or the canvas it starts from, is here first.
+  const here = (!sample || !!board) && (!question || !!canvas);
+  const live = { question: canvas ?? undefined, saved: board ?? undefined };
+  const opened = useHeldWhileOpen(open, here, live);
+  // Mounted ahead once its boards are here; open, as it opened.
+  const ahead = useBoardAhead(here);
+  const boards = opened?.value ?? live;
+  const codeFailed = useCodeFailed(boardCode);
+  const failed = codeFailed || ((sampleLost || canvasLost) && !opened);
   // A board that could not load closes, telling whoever holds the open state.
   useEffect(() => {
     if (failed && open) setOpen(false);
@@ -104,8 +103,7 @@ export function DrawnSampleField({
     <CannotShow />
   ) : (
     <Button
-      // An existing sample opens once its board is here.
-      disabled={!!sample && !board}
+      disabled={!here}
       iconLeft="pencil"
       onClick={() => setOpen(true)}
       variant="outline"
@@ -123,7 +121,7 @@ export function DrawnSampleField({
       ) : (
         <div>{button}</div>
       )}
-      {(open || ahead) && !failed && (
+      {(opened || (ahead && here)) && !failed && (
         <Suspense fallback={null}>
           <DrawingBoardScreen
             hidden={!open}
@@ -134,7 +132,8 @@ export function DrawnSampleField({
               ...pinned,
               title: `${m.question_ui_sample_answer_heading()} · ${pinned.short || pinned.title}`,
             }}
-            saved={board ?? undefined}
+            question={boards.question}
+            saved={boards.saved}
             store={async (value) => {
               if (!value) {
                 onChange(undefined);
@@ -153,8 +152,10 @@ export function DrawnSampleField({
   );
 }
 
-/** A checked drawing part's sample answer, drawn from its board (R1). */
+/** A checked canvas part's sample answer, drawn from its board (R1), or
+ * "This block cannot be shown" when its board could not be fetched. */
 export function DrawnSampleView({ sample }: { sample: DrawnSample }) {
-  const board = useSampleBoard(sample);
+  const { board, failed } = useBoardAsset(sample.board);
+  if (failed) return <CannotShow />;
   return board ? <DrawingPreview board={board} /> : null;
 }

@@ -1,5 +1,13 @@
 import { QUESTION_BLOCKS_MAX } from '@/api/limits.generated';
-import type { Question, QuestionGroup, QuestionPart } from './types';
+import type { KeptPart } from './typeMemory';
+import {
+  canvasCount,
+  partAnswerCanvas,
+  type Question,
+  type QuestionBlock,
+  type QuestionGroup,
+  type QuestionPart,
+} from './types';
 
 /* Grouped parts (Epo 2026-11-04). Flat, not nested: a group holds text and
  * figures, and parts stay the one unit for answers, marks, grading and review.
@@ -236,33 +244,123 @@ export function placeItem(
   return withLevel(question, source, rest);
 }
 
-/** A top-level part split into sub-parts (Epo 2026-11-16, a part's ⋮ Add
- * sub-part): it stays (i) with its text and answer, as every part needs text
- * of its own, `next` follows as (ii), and the shared text above starts empty. */
+/** A part blanked by Add part or Add sub-part (Epo 2026-11-24): its blocks
+ * join the list above it (`above`, the stem's or a new group's), but for its
+ * canvas when that list holds one already, which goes in `kept` with its
+ * answer, marking scheme, marks and explanation; `parts` are the blank parts
+ * made in its place. */
+function blankOut(
+  part: QuestionPart,
+  above: QuestionBlock[],
+  parts: string[]
+): { blocks: QuestionBlock[]; kept: KeptPart } {
+  const index = canvasCount(above)
+    ? part.blocks.findIndex((block) => block.type === 'canvas')
+    : -1;
+  const canvas = part.blocks[index];
+  return {
+    blocks: [...above, ...part.blocks.filter((_, i) => i !== index)],
+    kept: {
+      answer: part.answer,
+      ...(canvas?.type === 'canvas' && { canvas: { block: canvas, index } }),
+      from: part.id,
+      marks: part.marks,
+      markscheme: part.markscheme,
+      parts,
+      solution: part.solution,
+    },
+  };
+}
+
+/** A top-level part split into sub-parts (a part's ⋮ Add sub-part, Epo
+ * 2026-11-24 as Add part): its blocks become the group's text and it becomes
+ * `blank` as (i), `next` following as (ii), what it held in `kept`. A fill in
+ * the blanks part stays (i) whole, its blanks living in its text, and the
+ * group's text starts empty. */
 export function splitPart(
   question: Question,
   partId: string,
   groupId: string,
+  blank: QuestionPart,
   next: QuestionPart
-): Question {
+): { kept?: KeptPart; question: Question } {
   const index = question.parts.findIndex((part) => part.id === partId);
   const part = question.parts[index];
-  if (!part || part.group !== undefined) return question;
+  if (!part || part.group !== undefined) return { question };
+  const gaps = part.answer.type === 'gaps';
+  const { blocks, kept } = gaps
+    ? { blocks: [{ text: '', type: 'text' as const }], kept: undefined }
+    : blankOut(part, [], [blank.id, next.id]);
   const parts = [...question.parts];
   parts.splice(
     index,
     1,
-    { ...part, group: groupId },
+    { ...(gaps ? part : blank), group: groupId },
     { ...next, group: groupId }
   );
-  return repairGroups({
+  return {
+    kept,
+    question: repairGroups({
+      ...question,
+      groups: [...(question.groups ?? []), { blocks, id: groupId }],
+      parts,
+    }),
+  };
+}
+
+/** Add part (Epo 2026-11-23, E1): `part` after the others. On a lone
+ * question every block of its part joins the stem, after the stem's (its
+ * canvas kept back when the stem holds one, Epo 2026-11-24), and the part
+ * becomes `blank` (a new blank part), what it held in `kept`. A lone fill in
+ * the blanks part stays (a) whole, its blanks living in its text. */
+export function addPart(
+  question: Question,
+  part: QuestionPart,
+  blank: QuestionPart
+): { kept?: KeptPart; question: Question } {
+  if (!isLonePart(question))
+    return { question: { ...question, parts: [...question.parts, part] } };
+  const [lone] = question.parts;
+  if (lone.answer.type === 'gaps')
+    return { question: { ...question, parts: [lone, part] } };
+  const { blocks, kept } = blankOut(lone, question.stem, [blank.id, part.id]);
+  return {
+    kept,
+    question: { ...question, parts: [blank, part], stem: blocks },
+  };
+}
+
+/** The question with what Add part or Add sub-part kept back in part
+ * `partId`: the answer, marking scheme, marks and explanation, and a canvas
+ * kept back in its old place. A canvas answer whose own canvas went above
+ * (to the stem or its group's text) answers in the canvas above now. */
+export function withKeptPart(
+  question: Question,
+  partId: string,
+  kept: KeptPart
+): Question {
+  const { answer, canvas, markscheme, marks, solution } = kept;
+  return {
     ...question,
-    groups: [
-      ...(question.groups ?? []),
-      { blocks: [{ text: '', type: 'text' }], id: groupId },
-    ],
-    parts,
-  });
+    parts: question.parts.map((part) => {
+      if (part.id !== partId) return part;
+      const at = Math.min(canvas?.index ?? 0, part.blocks.length);
+      const blocks = canvas
+        ? [...part.blocks.slice(0, at), canvas.block, ...part.blocks.slice(at)]
+        : part.blocks;
+      const above =
+        answer.type === 'canvas' && !answer.shared && !canvasCount(blocks);
+      // Each key set, a closed answer's absent marking scheme too.
+      return {
+        ...part,
+        answer: above ? { ...answer, shared: true } : answer,
+        blocks,
+        marks,
+        markscheme,
+        solution,
+      };
+    }),
+  };
 }
 
 /** A new part after the group's last. */
@@ -299,8 +397,31 @@ export function canUngroup(question: Question, groupId: string): boolean {
   );
 }
 
+/** What stops a group's canvas going to its first part on Ungroup (Epo
+ * 2026-11-24): `canvas`, that part holds one of its own, and a list holds
+ * one; `answered`, another of its parts answers in the group's canvas, which
+ * can't be taken from it while it does. Null with no canvas in its text. */
+export function ungroupCanvasIssue(
+  question: Question,
+  groupId: string
+): 'answered' | 'canvas' | null {
+  const group = question.groups?.find((item) => item.id === groupId);
+  if (!group || !canvasCount(group.blocks)) return null;
+  const [first, ...others] = question.parts.filter(
+    (part) => part.group === groupId
+  );
+  if (first && canvasCount(first.blocks)) return 'canvas';
+  return others.some(
+    (part) => partAnswerCanvas(question, part)?.place.section === 'group'
+  )
+    ? 'answered'
+    : null;
+}
+
 /** Its parts become top-level parts where they are; no text or figure is lost:
- * the group's join its first part's top. */
+ * the group's join its first part's top. A first part that answered in the
+ * group's canvas answers in it as its own then, the same canvas (Epo
+ * 2026-11-24). */
 export function ungroup(question: Question, groupId: string): Question {
   const group = question.groups?.find((item) => item.id === groupId);
   if (!group) return question;
@@ -312,7 +433,15 @@ export function ungroup(question: Question, groupId: string): Question {
       const { group: _group, ...rest } = part;
       if (!first) return rest;
       first = false;
-      return { ...rest, blocks: [...filledBlocks(group), ...part.blocks] };
+      const blocks = [...filledBlocks(group), ...part.blocks];
+      if (
+        rest.answer.type !== 'canvas' ||
+        !rest.answer.shared ||
+        !canvasCount(group.blocks)
+      )
+        return { ...rest, blocks };
+      const { shared: _shared, ...answer } = rest.answer;
+      return { ...rest, answer, blocks };
     }),
   };
 }

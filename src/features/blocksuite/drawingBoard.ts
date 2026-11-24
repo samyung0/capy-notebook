@@ -103,6 +103,7 @@ import {
   type GfxBlockElementModel,
   type GfxController,
   GfxControllerIdentifier,
+  type GfxModel,
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_STEP,
@@ -142,6 +143,7 @@ import { m } from '@/i18n';
 import { BOARD_OFFLINE_MARGIN } from '@/lib/const';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
+import { anyOutside, mountAnswerArea, storedArea } from './boardArea';
 import { BoardBlobSource } from './boardBlobs';
 import { ChartElementModel, chartExtensions, openChart } from './boardChart';
 import { asImage } from './boardData';
@@ -153,7 +155,7 @@ import {
 } from './boardFormula';
 import { forgetFormulas } from './boardFormulaDraw';
 import { refusesAdds, setBoardFull } from './boardFull';
-import { closeUp, IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
+import { IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import type { BoardImages } from './boardImages';
 import { watchNoteLinks } from './boardNoteLinks';
 import {
@@ -197,6 +199,12 @@ import {
 import { unknownStore } from './boardUnknown';
 import { unknownViews } from './boardUnknownView';
 import { BoardUploads, boardUploads } from './boardUploads';
+import {
+  guardQuestion,
+  holdsQuestion,
+  isQuestionPart,
+  questionCopy,
+} from './questionLock';
 import { followTextEditors, openRoomStore } from './roomStore';
 
 // BlockSuite's notices show in the app's own toast (local change 33), in the
@@ -362,12 +370,25 @@ const FIRST_PLANE = { h: 520, ppu: 41, w: 820 };
 const DOWNLOAD_SIDE_MAX = 4096;
 /** The marking image's bytes after the shared compressor. */
 const IMAGE_BYTES_MAX = 300 * 1024;
+/** The strength of a question's parts over white in the marking image: at 0.4
+ * the grader still credited a worked example in the student's pen colour, at
+ * 0.25 none and the teacher's text reads (Epo 2026-11-23, grading bench). */
+const QUESTION_FADE = 0.25;
 
 export type DrawingBoardOptions = {
-  /** A dashed box with this label marks where to answer, and the first view fits it
-   * (Epo 2026-11-07, W3/W4). Only on screen: the image, save, span and previews leave
-   * it out, and a read-only board draws none. */
-  answerArea?: { label: string };
+  /** A question board's answer area (boardArea.ts): a dashed box with this label,
+   * which the first view fits (Epo 2026-11-07, W3/W4), on screen only; a
+   * read-only board draws none. The marking image, Download as image and
+   * previews draw exactly what lies inside it, wherever the board keeps it.
+   * `movable`, the teacher's question board: under Select, its label or edge
+   * drags it alone (Epo 2026-11-23). */
+  answerArea?: { label: string; movable?: boolean };
+  /** A Canvas part's question (Epo 2026-11-23): without `saved`, the board opens
+   * as a copy of the teacher's board (`board`, `save()`'s doc) whose every
+   * element and block is part of the question, its area where the teacher put
+   * it (questionLock.ts). On a board holding such parts (the copy, a saved
+   * answer or draft made from it), pressing or hovering one shows `tip`. */
+  question?: { board: string; tip: string };
   /** Room the first fit leaves around the drawing, [top, right, bottom, left] in
    * pixels, for what the page lays over the board (a pinned question, a top bar).
    * Without it, room for the board's own toolbar and undo. */
@@ -417,40 +438,6 @@ export { BoardLoadError } from './boardLoad';
 
 /** Where a board is looked at: its centre in board units, and its zoom. */
 export type BoardView = { centre: [number, number]; zoom: number };
-
-/** The answer area in board units; drawing inside it keeps span under the wide-board
- * warning's 2,000. */
-const AREA = new Bound(0, 0, 1920, 1200);
-
-/** The answer area's dashed box and label for the moving layer, kept the same size
- * on screen at every zoom by `zoom`. */
-function answerArea(label: string) {
-  const svg = 'http://www.w3.org/2000/svg';
-  const box = document.createElementNS(svg, 'svg');
-  box.style.cssText =
-    'position:absolute;left:0;top:0;width:1px;height:1px;overflow:visible';
-  const rect = document.createElementNS(svg, 'rect');
-  rect.setAttribute('width', String(AREA.w));
-  rect.setAttribute('height', String(AREA.h));
-  rect.setAttribute('fill', 'none');
-  rect.setAttribute('stroke', '#9aa0a6');
-  box.append(rect);
-  const chip = document.createElement('div');
-  chip.className = 'capy-answer-area';
-  chip.textContent = label;
-  chip.style.cssText =
-    'position:absolute;left:0;top:0;transform-origin:0 0;white-space:nowrap;height:20px;padding:0 7px;border-radius:4px 4px 4px 0;background:#222;color:#fff;font:600 12px/20px var(--affine-font-family)';
-  return {
-    box,
-    chip,
-    zoom: (zoom: number) => {
-      rect.setAttribute('stroke-width', String(1.5 / zoom));
-      rect.setAttribute('stroke-dasharray', `${8 / zoom} ${6 / zoom}`);
-      // Its bottom left on the box's top left corner.
-      chip.style.transform = `scale(${1 / zoom}) translateY(-100%)`;
-    },
-  };
-}
 
 function downloadBlob(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);
@@ -640,7 +627,11 @@ export function mountDrawingBoard(
   container: HTMLElement,
   options: DrawingBoardOptions
 ) {
-  const saved = options.saved ? fromBase64(options.saved) : null;
+  const saved = options.saved
+    ? fromBase64(options.saved)
+    : options.question
+      ? questionCopy(fromBase64(options.question.board))
+      : null;
   // A question's board that doesn't check out is refused here. A canvas opens with
   // what doesn't fit drawn as placeholders (boardUnknown.ts).
   const misfits = saved ? checkSavedBoard(saved, options.board).misfits : [];
@@ -746,6 +737,14 @@ export function mountDrawingBoard(
   const unguard = tools
     ? keepToCatalog(store, gfx.surface, options.board)
     : null;
+  // The question's parts on a Canvas part's board stay as the teacher left them
+  // (questionLock.ts); what is left is the board's own.
+  const question = options.board === 'question';
+  const own = (model: GfxModel) => !(question && isQuestionPart(model));
+  const unguardQuestion =
+    tools && question && holdsQuestion(store.spaceDoc)
+      ? guardQuestion(std, gfx, board, options.question?.tip)
+      : null;
   // Top right, left of any Done the page puts there: undo, redo and zoom, so the
   // bottom row holds only the toolbar (Epo 2026-11-08). A teacher's has zoom only.
   const zoomTo = (zoom: number) =>
@@ -804,14 +803,14 @@ export function mountDrawingBoard(
         ? []
         : [
             {
-              disabled: !gfx.gfxElements.length,
+              disabled: !gfx.gfxElements.some(own),
               icon: Delete02Icon,
               label: m.drawing_board_clear_all(),
               run: () => {
                 const crud = gfx.std.get(EdgelessCRUDIdentifier);
                 gfx.selection.clear();
                 store.captureSync();
-                for (const element of [...gfx.gfxElements])
+                for (const element of gfx.gfxElements.filter(own))
                   crud.removeElement(element.id);
                 store.captureSync();
               },
@@ -1060,13 +1059,18 @@ export function mountDrawingBoard(
     layer.style.transform = `scale(${gfx.viewport.zoom})`;
     area?.zoom(gfx.viewport.zoom);
   };
-  const area = tools
-    ? options.answerArea && answerArea(options.answerArea.label)
-    : null;
-  if (area) {
-    preview.before(area.box);
-    layer.append(area.chip);
-  }
+  const area =
+    tools && options.answerArea
+      ? mountAnswerArea({
+          board,
+          gfx,
+          label: options.answerArea.label,
+          layer,
+          movable: !!options.answerArea.movable,
+          store,
+          under: preview,
+        })
+      : null;
   const subscription = gfx.viewport.viewportUpdated.subscribe(place);
   const everything = () => {
     const elements = gfx.layer.canvasElements;
@@ -1075,30 +1079,13 @@ export function mountDrawingBoard(
       getCommonBound([...elements, ...blocks]) ?? new Bound(0, 0, 820, 520)
     );
   };
-  /** What the image draws: everything, a quiz drawing's far groups drawn nearer
-   * (FAR_GAP) on the marking image, with an 8-unit margin. `bound` is in board
-   * units. */
-  const framing = (nearer = true) => {
-    const items = [...gfx.layer.canvasElements, ...gfx.layer.blocks];
-    // Turned items by the box they turn into.
-    const bounds = items.map((item) => item.elementBound);
-    const whole = everything();
-    // A quiz's drawing only (Epo 2026-11-18): a workspace canvas has no
-    // answer area to keep the rest near.
-    const far =
-      nearer &&
-      options.board === 'question' &&
-      Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX;
-    const shifts = far ? closeUp(bounds) : bounds.map(() => ({ dx: 0, dy: 0 }));
-    const placed = bounds.map(
-      (box, i) =>
-        new Bound(box.x - shifts[i].dx, box.y - shifts[i].dy, box.w, box.h)
-    );
-    const all = getCommonBound(placed) ?? whole;
-    return {
-      bound: new Bound(all.x - 8, all.y - 8, all.w + 16, all.h + 16),
-      shiftOf: new Map(items.map((item, i) => [item.id, shifts[i]])),
-    };
+  /** What a picture draws, in board units: a question board's answer area
+   * exactly (Epo 2026-11-23), a workspace canvas everything with an 8-unit
+   * margin. */
+  const framing = () => {
+    if (question) return storedArea(store);
+    const all = everything();
+    return new Bound(all.x - 8, all.y - 8, all.w + 16, all.h + 16);
   };
   let room = options.fitPadding;
   let fitted = false;
@@ -1110,7 +1097,8 @@ export function mountDrawingBoard(
     ]);
     gfx.viewport.setViewportByBound(
       area
-        ? (getCommonBound([AREA, ...(drawn ? [drawn] : [])]) ?? AREA)
+        ? (getCommonBound([area.bound(), ...(drawn ? [drawn] : [])]) ??
+            area.bound())
         : everything(),
       room ??
         (gfx.viewport.width < PHONE_WIDTH
@@ -1197,43 +1185,51 @@ export function mountDrawingBoard(
     gfx.tool.setTool(DefaultTool);
   };
 
-  /** The board drawn layer by layer on white, its longest side at most `side`
-   * pixels: the marking image (see toImage) draws far groups nearer, a download
-   * draws the board as it lies. `missing`: an image whose file cannot load is a
-   * box saying so (a download, Q43); the marking image leaves it out. */
-  const drawImage = async (side: number, nearer: boolean, missing: boolean) => {
+  /** The board drawn layer by layer on white, framed as `framing` says: a
+   * question board's answer area exactly, what crosses its edge cut there. A
+   * download's longest side is at most DOWNLOAD_SIDE_MAX pixels and an image
+   * whose file cannot load is a box saying so (Q43). The marking image's is
+   * IMAGE_SIDE_MAX, leaves that image out, and fades the question's parts. */
+  const drawImage = async (use: 'download' | 'marking') => {
     await formulasDrawn(gfx);
     const renderer = surfaceOf(gfx)?.renderer;
     if (!(renderer instanceof CanvasRenderer))
       throw new Error('drawing board: no canvas renderer');
-    const { bound, shiftOf } = framing(nearer);
+    const bound = framing();
+    const side = use === 'download' ? DOWNLOAD_SIDE_MAX : IMAGE_SIDE_MAX;
     const scale = Math.min(2, side / Math.max(bound.w, bound.h));
-    const output = document.createElement('canvas');
-    output.width = Math.round(bound.w * scale);
-    output.height = Math.round(bound.h * scale);
-    const ctx = output.getContext('2d');
-    if (!ctx) throw new Error('drawing board: no 2d canvas');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, output.width, output.height);
-    // Layer by layer, so what's covered on the screen is covered here. BlockSuite's
-    // export draws every note under every stroke, at the device's scale. Each group
-    // drawn nearer is drawn on its own.
-    for (const layer of gfx.layer.layers) {
-      if (layer.type === 'canvas') {
-        const byShift = new Map<string, typeof layer.elements>();
-        for (const element of layer.elements) {
-          const { dx, dy } = shiftOf.get(element.id) ?? { dx: 0, dy: 0 };
-          const key = `${dx},${dy}`;
-          byShift.set(key, [...(byShift.get(key) ?? []), element]);
-        }
-        for (const [key, elements] of byShift) {
-          const [dx, dy] = key.split(',').map(Number);
-          const from = new Bound(bound.x + dx, bound.y + dy, bound.w, bound.h);
+    const width = Math.round(bound.w * scale);
+    const height = Math.round(bound.h * scale);
+    // Only what reaches into the frame is drawn: a note outside it is never
+    // captured.
+    const seen = (item: GfxModel) =>
+      item.elementBound.isOverlapWithBound(bound);
+    const sheet = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('drawing board: no 2d canvas');
+      return { canvas, ctx };
+    };
+    /** What `draws` takes, layer by layer onto `ctx`, so what's covered on the
+     * screen is covered here. BlockSuite's export draws every note under every
+     * stroke, at the device's scale. */
+    const drawLayers = async (
+      ctx: CanvasRenderingContext2D,
+      draws: (item: GfxModel) => boolean
+    ) => {
+      for (const layer of gfx.layer.layers) {
+        if (layer.type === 'canvas') {
+          const elements = layer.elements.filter(
+            (element) => draws(element) && seen(element)
+          );
+          if (!elements.length) continue;
           ctx.drawImage(
             // Card paper opaque, as previews draw it (cardPaper).
             asImage(() =>
               renderer.getCanvasByBound(
-                from,
+                bound,
                 elements,
                 undefined,
                 false,
@@ -1243,27 +1239,43 @@ export function mountDrawingBoard(
             ),
             0,
             0,
-            output.width,
-            output.height
+            width,
+            height
           );
+          continue;
         }
-        continue;
+        for (const block of layer.elements) {
+          if (!(draws(block) && seen(block))) continue;
+          const { h, w, x, y } = Bound.deserialize(block.xywh);
+          const place = [
+            (x - bound.x) * scale,
+            (y - bound.y) * scale,
+            w * scale,
+            h * scale,
+          ] as const;
+          const image = await blockImage(block);
+          if (image) ctx.drawImage(image, ...place);
+          else if (use === 'download' && block instanceof ImageBlockModel)
+            missingImage(ctx, place, scale);
+        }
       }
-      for (const block of layer.elements) {
-        const { h, w, x, y } = Bound.deserialize(block.xywh);
-        const { dx, dy } = shiftOf.get(block.id) ?? { dx: 0, dy: 0 };
-        const place = [
-          (x - dx - bound.x) * scale,
-          (y - dy - bound.y) * scale,
-          w * scale,
-          h * scale,
-        ] as const;
-        const image = await blockImage(block);
-        if (image) ctx.drawImage(image, ...place);
-        else if (missing && block instanceof ImageBlockModel)
-          missingImage(ctx, place, scale);
-      }
-    }
+    };
+    const { canvas: output, ctx } = sheet();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, width, height);
+    const part = (item: GfxModel) => !own(item);
+    if (
+      use === 'marking' &&
+      gfx.gfxElements.some((item) => part(item) && seen(item))
+    ) {
+      // The question's parts faded together, then the student's work over them.
+      const parts = sheet();
+      await drawLayers(parts.ctx, part);
+      ctx.globalAlpha = QUESTION_FADE;
+      ctx.drawImage(parts.canvas, 0, 0);
+      ctx.globalAlpha = 1;
+      await drawLayers(ctx, own);
+    } else await drawLayers(ctx, () => true);
     const png = await new Promise<Blob | null>((resolve) =>
       output.toBlob(resolve, 'image/png')
     );
@@ -1272,15 +1284,11 @@ export function mountDrawingBoard(
   };
 
   /** Drawn in the light palette, whatever the app's theme. */
-  const lightImage = async (
-    side: number,
-    nearer: boolean,
-    missing: boolean
-  ) => {
+  const lightImage = async (use: 'download' | 'marking') => {
     root.dataset.boardLight = '';
     theme$.value = ColorScheme.Light;
     try {
-      return await drawImage(side, nearer, missing);
+      return await drawImage(use);
     } finally {
       delete root.dataset.boardLight;
       followTheme();
@@ -1295,15 +1303,12 @@ export function mountDrawingBoard(
       .replace(/[\\/:*?"<>|]/g, '')
       .trim() || (options.board === 'workspace' ? 'canvas' : 'drawing');
 
-  /** The menu's Download as image: the whole board as a PNG, read-only too. A
-   * board that cannot be drawn says so. */
+  /** The menu's Download as image: the board as a PNG, framed as the marking
+   * image is, read-only too. A board that cannot be drawn says so. */
   const downloadImage = async () => {
     if (!readOnly) finishPlot();
     try {
-      downloadBlob(
-        await lightImage(DOWNLOAD_SIDE_MAX, false, true),
-        `${imageName()}.png`
-      );
+      downloadBlob(await lightImage('download'), `${imageName()}.png`);
     } catch (error) {
       console.error(error);
       userToast({ title: m.drawing_board_download_failed(), variant: 'error' });
@@ -1327,8 +1332,9 @@ export function mountDrawingBoard(
     },
     /** Whether the board holds `id`, a card or anything else drawn. */
     has: (id: string) => !!gfx.getElementById(id),
-    /** The whole board as a PNG, as Download as image draws it. */
-    image: () => lightImage(DOWNLOAD_SIDE_MAX, false, true),
+    /** The board as a PNG, as Download as image draws it: a question board's
+     * answer area. */
+    image: () => lightImage('download'),
     /** The same with every file the board can get, asking for the ones it
      * doesn't hold yet (a stored drawing's, not shown so far): what Done sends.
      * An image whose file is nowhere is left out, and stays an empty frame. */
@@ -1358,6 +1364,14 @@ export function mountDrawingBoard(
       // A plane's editor (the page's, `.capy-graph-editor`) or a chart's.
       return !!board.querySelector('.capy-graph-editor, .capy-plane-editor');
     },
+    /** Whether anything on a question board but the question's own parts lies
+     * wholly or partly outside its answer area, which is all its pictures draw:
+     * Done asks first (Keep drawing, Done anyway). */
+    outside: () =>
+      anyOutside(storedArea(store), [
+        ...gfx.layer.canvasElements.filter(own),
+        ...gfx.layer.blocks.filter(own),
+      ]),
     /** What a canvas's presence reads of the board (boardPresenceView.ts): its
      * viewport, selection and text caret, and where others' marks go. */
     presence: boardPresenceView(std, gfx, board, uploads),
@@ -1448,27 +1462,27 @@ export function mountDrawingBoard(
       saveNoteSizes(store);
       return toBase64(Y.encodeStateAsUpdate(store.spaceDoc));
     },
-    stats: () => {
-      const { bound } = framing();
-      return {
-        blocks: gfx.layer.blocks.map((block) => block.flavour),
-        bytes: Y.encodeStateAsUpdate(store.spaceDoc).byteLength,
-        canvas: gfx.layer.canvasElements.map((element) => element.type),
-        marks: planeMarks(gfx),
-        /** The image's longest side in board units, for the wide-board warning on Done. */
-        span: Math.max(bound.w, bound.h),
-      };
-    },
+    /** What is on the board, the question's parts left out (`blocks`, `canvas`:
+     * none is an empty answer), and the whole document's size. */
+    stats: () => ({
+      blocks: gfx.layer.blocks.filter(own).map((block) => block.flavour),
+      bytes: Y.encodeStateAsUpdate(store.spaceDoc).byteLength,
+      canvas: gfx.layer.canvasElements
+        .filter(own)
+        .map((element) => element.type),
+      marks: planeMarks(gfx),
+    }),
     /** Just left of the ☰ in the board's chrome, for the page's save status:
      * taking no room while empty. */
     statusSlot,
     /** The canvas as it stands, for marking, through the shared image compressor:
-     * every card with the view it was left at, and what's drawn over and around them.
-     * Something dragged far away is drawn nearer (FAR_GAP). */
+     * every card with the view it was left at, and what's drawn over and around
+     * them, inside a question board's answer area. A question's parts in an
+     * answer are faded under the student's work. */
     toImage: async () => {
       if (!readOnly) finishPlot();
       // Marked on white in the light palette, whatever the app's theme.
-      const png = await lightImage(IMAGE_SIDE_MAX, true, false);
+      const png = await lightImage('marking');
       // The encode runs in the compressor's worker; drawing needs the page.
       // Line art keeps its ink at 0.75: 10-20% smaller than the shared 0.85
       // (Epo 2026-11-06: minimise drawing storage).
@@ -1506,6 +1520,8 @@ export function mountDrawingBoard(
       copying?.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols?.unmount();
+      area?.dispose();
+      unguardQuestion?.();
       unwatchLinks();
       unwatchCards();
       themeWatch.disconnect();

@@ -103,8 +103,9 @@ async def test_read_then_grade(monkeypatch, pdf):
         "Question parts:\n1 (choice)"
     )
     assert read_kwargs["reasoning"] is False and read_kwargs["max_tokens"] == 6000
+    # Pages have no faded layer: the first line as benched for them.
     assert grade_messages[0]["content"] == (
-        grading.SYSTEM_PROMPT + grading.DRAWN_SECTION + paper.P1 + paper.B
+        grading.SYSTEM_PROMPT + grading.PAGE_DRAWN_SECTION + paper.P1 + paper.B
     )
     grade_content = grade_messages[1]["content"]
     assert '<part id="3">' in grade_content[0]["text"]
@@ -222,15 +223,59 @@ async def test_a_batch_failed_for_credits_says_so(monkeypatch, pdf):
     assert out["parts"] == [{"id": "1", "pages": [1], "error": "credits"}]
 
 
-def test_a_batch_holds_at_most_32_images():
-    """Up to four parts a call, packed in order under Cloudflare's 32 images."""
+def test_a_batch_holds_at_most_24_images():
+    """Up to four parts a call, packed in order under 24 images (Epo
+    2026-11-23); a part that would pass 24 starts the next call."""
     pages = [paper.Page(n, "f1") for n in range(1, 16)]
-    parts = [part(str(n), "open", ITEMS) for n in range(1, 6)]
-    for p in parts:
-        p.figures = ["data:image/jpeg;base64,AA=="] * 5
-    pages_of = {"1": list(range(1, 16)), "2": [1], "3": [2], "4": [3], "5": [4]}
+    parts = [part(str(n), "drawing", ITEMS) for n in range(1, 4)]
+    figures = [f"data:image/jpeg;base64,{n:04d}" for n in range(10)]
+    parts[0].figures, parts[0].sample = figures[:5], figures[5]
+    parts[1].figures = figures[6:8]
+    parts[2].figures = figures[8:10]
+    pages_of = {"1": list(range(1, 16)), "2": [1], "3": [2]}
     batches = paper.pack(parts, pages_of, pages)
-    # The first three share the 15 pages with 15 figures (30); a fourth would
-    # make 35, so it starts the next call.
-    assert [[p.id for p in b] for b in batches] == [["1", "2", "3"], ["4", "5"]]
-    assert all(paper._images(b, pages_of, pages) <= 32 for b in batches)
+    # 15 pages, 5 figures and a sample (21), then 2 figures (23); the third's
+    # page is shown already, but its 2 figures would make 25.
+    assert [[p.id for p in b] for b in batches] == [["1", "2"], ["3"]]
+
+
+def test_a_paper_call_sends_each_image_once():
+    """Epo's count (2026-11-23): one question of two canvas parts, a stem
+    canvas, a canvas each and one drawn sample, on two pages. The stem's
+    canvas goes once, with the first part; the call holds 4 question images
+    and 2 pages."""
+    stem, own_a, own_b, sample = (
+        f"data:image/jpeg;base64,{name}"
+        for name in ("U1RFTQ==", "QQ==", "Qg==", "Uw==")
+    )
+    a, b = part("1a", "drawing", ITEMS), part("1b", "drawing", ITEMS)
+    a.figures, a.sample = [stem, own_a], sample
+    b.figures = [stem, own_b]
+    pages = [paper.Page(n, "f1") for n in (1, 2)]
+    pages_of = {"1a": [1], "1b": [2]}
+    assert paper._images([a, b], pages_of, pages) == 6
+    shown = [
+        c.get("text") or c["image_url"]["url"] for c in paper._batch_message([a, b])
+    ]
+    assert sum(text.startswith("data:") for text in shown) == 4
+    i = shown.index(f'<part id="1b">\n{grading._question_and_items("Q1b", ITEMS)}')
+    assert shown[i + 1 : i + 4] == [
+        "Figure 1: the same image as Figure 1 in part 1a.",
+        "Figure 2:",
+        own_b,
+    ]
+
+
+def test_a_canvas_parts_sample_follows_its_figures():
+    """A canvas part's drawn sample answer goes inside its <part>, after the
+    question's images (Epo 2026-11-23)."""
+    canvas = part("1", "drawing", ITEMS)
+    canvas.figures, canvas.sample = (
+        ["data:image/png;base64,Rg=="],
+        "data:image/png;base64,Uw==",
+    )
+    content = paper._batch_message([canvas, part("2", "open", ITEMS)])
+    shown = [c.get("text") or c["image_url"]["url"] for c in content]
+    i = shown.index("Sample answer:")
+    assert shown[i - 1].endswith("Rg==") and shown[i + 1].endswith("Uw==")
+    assert shown[i + 2] == "</part>"

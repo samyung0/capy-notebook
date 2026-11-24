@@ -483,6 +483,38 @@ html.dark:not([data-board-light]) .capy-board {
   display: none;
 }
 
+/* The teacher's answer area (boardArea.ts): its label and edge pick it up under
+   Select, in the accent while hovered or dragged. */
+.capy-board[data-area-handle],
+.capy-board[data-area-handle] * {
+  cursor: move !important;
+}
+
+.capy-answer-box[data-hot] rect {
+  stroke: var(--action-accent-bg);
+}
+
+/* What a press or hover on part of the question says (questionLock.ts), just
+   above the pointer, in the answer area label's colours. */
+.capy-question-tip {
+  position: absolute;
+  top: -10px;
+  left: 0;
+  z-index: 3;
+  height: 22px;
+  padding: 0 8px;
+  font: 500 12px / 22px var(--affine-font-family);
+  color: #fff;
+  white-space: nowrap;
+  pointer-events: none;
+  background: #222;
+  border-radius: 4px;
+}
+
+.capy-question-tip[hidden] {
+  display: none;
+}
+
 /* The formula card, in the middle of the board. */
 .capy-formula {
   position: absolute;

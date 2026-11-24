@@ -24,7 +24,8 @@ import type {
   QuestionPart,
 } from '@/features/questions/types';
 import { modelMarked, questionMarks } from '@/features/questions/types';
-import { ReviewedDrawing } from '@/features/quizzes/drawing/DrawingAnswer';
+import { ReviewedDrawing } from '@/features/quizzes/drawing/CanvasAnswer';
+import { partAnswer } from '@/features/quizzes/drawing/canvasParts';
 import { type Answer, formatPoints } from '@/features/quizzes/grade';
 import { GapText, QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
@@ -116,7 +117,7 @@ function HiddenResults({
   const questions = attempt.questions as AssignmentGradedQuestion[];
   const answered = (q: AssignmentGradedQuestion) =>
     q.parts.some((part) => {
-      const value = attempt.answers[part.id];
+      const value = partAnswer(q, attempt.answers, part);
       return value !== undefined && value !== null && value !== '';
     });
   return (
@@ -634,7 +635,8 @@ export function ResultBody({
   const partView = (part: AssignmentGradedPart) =>
     modelMarked(part.answer.type) ? (
       <OpenPart
-        answer={attempt.answers[part.id]}
+        // A part answered in the canvas above shows its drawing.
+        answer={partAnswer(question, attempt.answers, part)}
         editing={staff}
         items={items[part.id] ?? []}
         key={part.id}
@@ -828,10 +830,9 @@ function CommentLine({ question }: { question: AssignmentGradedQuestion }) {
 
 /** A written answer: the answer, the marking points with their marks, and the
  * worked solution folded away. Grading shows its answers the same way (Epo
- * 2026-11-19), with the AI's marks in a column of their own (`aiColumn`) and
- * a paper's pages in place of a typed answer (`paper`). */
+ * 2026-11-19), its Awarded marks starting as the AI's (Epo 2026-11-23: no AI
+ * column), and a paper's pages in place of a typed answer (`paper`). */
 export function OpenPart({
-  aiColumn = false,
   answer,
   editing,
   items,
@@ -840,7 +841,6 @@ export function OpenPart({
   part,
   showKeys,
 }: {
-  aiColumn?: boolean;
   answer: unknown;
   editing: boolean;
   items: (number | null)[];
@@ -858,7 +858,7 @@ export function OpenPart({
         <p className={label}>{m.assignment_your_answer()}</p>
         {paper ? (
           <div className="mt-1.5">{paper}</div>
-        ) : part.answer.type === 'drawing' ? (
+        ) : part.answer.type === 'canvas' ? (
           // Drawn from its board, with no frame (R2).
           <div className="mt-1.5">
             {answer ? (
@@ -918,24 +918,12 @@ export function OpenPart({
         // across both columns with no gap (Epo 2026-11-18); the Awarded
         // column pads itself.
         // By its own width, as Grading's pane is narrower than the screen:
-        // under 448px the chips go and the AI's marks take only their width.
+        // under 448px the chips go and the mark takes only its width.
         <div className="@container">
-          <div
-            className={cn(
-              'grid items-center',
-              aiColumn
-                ? '@md:grid-cols-[minmax(0,1fr)_72px_210px] grid-cols-[minmax(0,1fr)_auto_auto]'
-                : '@md:grid-cols-[minmax(0,1fr)_210px] grid-cols-[minmax(0,1fr)_auto]'
-            )}
-          >
+          <div className="grid @md:grid-cols-[minmax(0,1fr)_210px] grid-cols-[minmax(0,1fr)_auto] items-center">
             <p className={cn(label, 'border-divider border-b pb-1.5')}>
               {m.assignment_marking_points()}
             </p>
-            {aiColumn && (
-              <p className={cn(label, 'border-divider border-b pb-1.5 pl-3')}>
-                {m.assignment_col_ai()}
-              </p>
-            )}
             <p className={cn(label, 'border-divider border-b pb-1.5 pl-3')}>
               {m.assignment_awarded()}
             </p>
@@ -946,13 +934,6 @@ export function OpenPart({
                   <div className="flex items-center self-stretch border-divider border-b py-2.5">
                     <TextView marks text={item.text} />
                   </div>
-                  {aiColumn && (
-                    <div className="t-meta flex items-center self-stretch whitespace-nowrap border-divider border-b pl-3 text-fg-muted">
-                      {part.aiAwards
-                        ? markText(part.aiAwards[i] ?? 0, item.marks)
-                        : '–'}
-                    </div>
-                  )}
                   <div className="flex min-h-11 items-center gap-2 self-stretch border-divider border-b py-2 pl-3">
                     {editing ? (
                       <MarkField

@@ -66,27 +66,34 @@ func paperBody(paper store.Paper, again map[string][]int) map[string]any {
 	return map[string]any{"files": files, "parts": parts, "pages": pages}
 }
 
-// paperFigures adds each graded part's question images to body's parts, read
-// as the assignment's frozen copy's (questionFigures).
+// paperFigures adds each graded part's question images and drawn sample answer
+// image to body's parts, read as the assignment's frozen copy's
+// (questionFigures, sampleImage).
 func (a *api) paperFigures(ctx context.Context, assignmentID string, paper store.Paper, body map[string]any) error {
-	figures := map[string][]map[string]any{}
+	byLabel := map[string]store.PaperPart{}
 	for _, p := range paper.Parts {
-		if len(p.Figures) > 0 {
-			figures[p.Label] = p.Figures
-		}
+		byLabel[p.Label] = p
 	}
 	cache := newFigureCache()
 	parts, _ := body["parts"].([]map[string]any)
 	for _, part := range parts {
 		label, _ := part["id"].(string)
-		if len(figures[label]) == 0 {
-			continue
+		p := byLabel[label]
+		owner := sampleOwner{assetID: p.SampleImage, assignmentID: assignmentID}
+		if len(p.Figures) > 0 {
+			urls, err := a.questionFigures(ctx, owner, p.Figures, cache)
+			if err != nil {
+				return err
+			}
+			part["figures"] = urls
 		}
-		urls, err := a.questionFigures(ctx, sampleOwner{assignmentID: assignmentID}, figures[label], cache)
-		if err != nil {
-			return err
+		if p.SampleImage != "" {
+			sample, err := a.sampleImage(ctx, owner)
+			if err != nil {
+				return err
+			}
+			part["sample"] = sample
 		}
-		part["figures"] = urls
 	}
 	return nil
 }

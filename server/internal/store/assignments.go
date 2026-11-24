@@ -340,7 +340,7 @@ var assignmentCols = `a.id, a.workspace_id, a.kind, a.title, a.posted_at, COALES
 	a.source_quiz_id, COALESCE(m.title,''), m.topic_id,
 	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, a.allow_uploads, a.upload_only,
 	EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(a.questions, '[]')) q, jsonb_array_elements(q->'parts') p
-		WHERE p->'answer'->>'type' = 'drawing'),
+		WHERE p->'answer'->>'type' = 'canvas'),
 	COALESCE(NOT a.draft AND m.updated_at > a.posted_at, false), m.updated_at, a.points, a.paper_file,
 	` + questionTopicsSQL
 
@@ -1691,7 +1691,9 @@ func (s *Store) RepublishAssignment(ctx context.Context, actorID, id string, qs 
 }
 
 // dropStaleAnswersTx takes out of its running attempts the saved answers that no
-// longer mean what the member chose in the new copy. Every writer of an attempt
+// longer mean what the member chose in the new copy, and moves each drawing to
+// the part its canvas's drawing is stored under now, or drops it when no part
+// answers in that canvas any more (moveDrawingsTx). Every writer of an attempt
 // takes the workspace first, which the caller holds.
 func dropStaleAnswersTx(ctx context.Context, tx pgx.Tx, id string, before, after []map[string]any) error {
 	rows, err := tx.Query(ctx, `SELECT id, answers FROM attempts WHERE assignment_id=$1 AND submitted_at IS NULL FOR UPDATE`, id)
@@ -1713,6 +1715,7 @@ func dropStaleAnswersTx(ctx context.Context, tx pgx.Tx, id string, before, after
 		return err
 	}
 	was, now := partAnswers(before), partAnswers(after)
+	targets := drawingTargets(before, after)
 	for attempt, raw := range saved {
 		var answers map[string]any
 		if err := json.Unmarshal(raw, &answers); err != nil {
@@ -1720,11 +1723,21 @@ func dropStaleAnswersTx(ctx context.Context, tx pgx.Tx, id string, before, after
 		}
 		kept := make(map[string]any, len(answers))
 		for part, value := range answers {
+			// A canvas answer is the drawing stored for it, which follows its
+			// canvas (Epo 2026-11-24): named again below.
+			if isDrawingAnswer(value) || was[part]["type"] == "canvas" {
+				continue
+			}
 			if a, b := was[part], now[part]; a != nil && b != nil && stillAnswers(a, b, value) {
 				kept[part] = value
 			}
 		}
-		if len(kept) == len(answers) {
+		held, err := moveDrawingsTx(ctx, tx, attempt, targets)
+		if err != nil {
+			return err
+		}
+		kept = withDrawingAnswers(kept, held)
+		if reflect.DeepEqual(kept, answers) {
 			continue
 		}
 		next, err := json.Marshal(kept)
@@ -2547,18 +2560,23 @@ func gradeAttempt(frozen []map[string]any, answers map[string]any) ([]map[string
 			} else if isText && a["type"] == "open" && strings.TrimSpace(text) == "" {
 				continue
 			}
-			// A drawing part's answer is its stored drawing (withDrawingAnswers).
-			if a["type"] == "drawing" && !isDrawingAnswer(value) {
+			// A canvas part's answer is its stored drawing (withDrawingAnswers).
+			if a["type"] == "canvas" && !isDrawingAnswer(value) {
 				continue
 			}
 			given[id] = value
 		}
 		out, _, _ := questions.Graded(q, given, nil)
+		// A part answered in the canvas above waits on its drawing part's drawing.
+		owners := questions.DrawingParts(q)
 		list, _ := out["parts"].([]any)
 		for _, raw := range list {
 			p, _ := raw.(map[string]any)
 			a, _ := p["answer"].(map[string]any)
 			id, _ := p["id"].(string)
+			if owner, ok := owners[id]; ok {
+				id = owner
+			}
 			if questions.ModelMarked(a["type"]) && given[id] != nil {
 				p["pending"] = true
 				delete(p, "itemAwards")
@@ -2997,12 +3015,13 @@ func (s *Store) MarkAssignmentAnswer(ctx context.Context, actorID, attemptID str
 		if err != nil {
 			return err
 		}
-		// A drawing marked by hand has had its marking: its image goes.
+		// A drawing marked by hand has had its marking: its image goes, once
+		// no part it answers still waits.
 		marked := make([]string, 0, len(mark.Parts))
 		for _, part := range mark.Parts {
 			marked = append(marked, part.PartID)
 		}
-		if err := dropDrawingImagesTx(ctx, tx, attemptID, marked); err != nil {
+		if err := dropDrawingImagesTx(ctx, tx, attemptID, doneDrawings(graded, marked)); err != nil {
 			return err
 		}
 		if mark.ClearWarning {
@@ -3661,7 +3680,7 @@ func partReport(p map[string]any, attempts []reportAttempt) AssignmentPartReport
 		if len(out.WrongAnswers) > wrongAnswersShown {
 			out.WrongAnswers = out.WrongAnswers[:wrongAnswersShown]
 		}
-	case "open", "drawing":
+	case "open", "canvas":
 		texts, marks := questions.MarkItems(p)
 		out.Items = make([]AssignmentItemReport, len(texts))
 		for i := range texts {

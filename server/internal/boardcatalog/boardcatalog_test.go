@@ -26,7 +26,8 @@ func TestGeneratedFileIsCurrent(t *testing.T) {
 	}
 }
 
-// Every kind names boards the catalog lists, and every parent is a listed block.
+// Every kind names boards the catalog lists, and every parent and every prop's
+// flavour is a listed block.
 func TestCatalogIsConsistent(t *testing.T) {
 	c := boardcatalog.Get()
 	flavours := map[string]bool{}
@@ -52,6 +53,13 @@ func TestCatalogIsConsistent(t *testing.T) {
 			if !flavours[parent] {
 				t.Errorf("%s sits under unlisted %s", b.Flavour, parent)
 			}
+		}
+	}
+	// A prop sits on a listed block.
+	for _, p := range c.Props {
+		boards(p.Flavour+"."+p.Name, p.Boards)
+		if !flavours[p.Flavour] {
+			t.Errorf("prop %s is on unlisted %s", p.Name, p.Flavour)
 		}
 	}
 	// Each emoji is written as its code points, lowercase hex joined by "_" (the

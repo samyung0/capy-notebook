@@ -4,11 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"slices"
 	"testing"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
-const drawingQuestion = `{"id":"q4","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p4","blocks":[{"type":"text","text":"Draw it"}],"answer":{"type":"drawing"},"marks":2,"markscheme":[{"text":"Shape","marks":1},{"text":"Labels","marks":1}],"solution":[]}]}`
+const drawingQuestion = `{"id":"q4","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p4","blocks":[{"type":"text","text":"Draw it"},{"type":"canvas"}],"answer":{"type":"canvas"},"marks":2,"markscheme":[{"text":"Shape","marks":1},{"text":"Labels","marks":1}],"solution":[]}]}`
 
 func drawingFrozen(t *testing.T) []map[string]any {
 	t.Helper()
@@ -41,6 +44,24 @@ func TestDrawingAnswersAreTheStoredDrawings(t *testing.T) {
 	}
 }
 
+// storageUsed is user's storage meter, checked against the recount.
+func storageUsed(t *testing.T, f assignmentFixture, user string) int64 {
+	t.Helper()
+	ctx := context.Background()
+	usage, err := f.s.unlockedStorageUsage(ctx, f.s.pool, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var recount, reserved int64
+	if err := f.s.pool.QueryRow(ctx, storageRecountSQL, user).Scan(&recount, &reserved); err != nil {
+		t.Fatal(err)
+	}
+	if usage.UsedBytes != recount {
+		t.Fatalf("the meter reads %d, the recount %d", usage.UsedBytes, recount)
+	}
+	return usage.UsedBytes
+}
+
 // TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment: Done
 // stores the board and image for a drawing part of the running attempt, charged
 // to the member (Epo 2026-11-06); a part that takes no drawing is refused; the
@@ -50,21 +71,7 @@ func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testin
 	f := newAssignmentFixture(t, "assignment-drawing")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	used := func(user string) int64 {
-		t.Helper()
-		usage, err := f.s.unlockedStorageUsage(ctx, f.s.pool, user)
-		if err != nil {
-			t.Fatal(err)
-		}
-		var recount, reserved int64
-		if err := f.s.pool.QueryRow(ctx, storageRecountSQL, user).Scan(&recount, &reserved); err != nil {
-			t.Fatal(err)
-		}
-		if usage.UsedBytes != recount {
-			t.Fatalf("the meter reads %d, the recount %d", usage.UsedBytes, recount)
-		}
-		return usage.UsedBytes
-	}
+	used := func(user string) int64 { return storageUsed(t, f, user) }
 	form := f.form(t, now.Add(time.Hour))
 	form.Questions = drawingFrozen(t)
 	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
@@ -237,6 +244,231 @@ func TestAnEmptiedDrawingIsForgotten(t *testing.T) {
 	}
 }
 
+// sharedDrawingQuestion's two parts answer in its stem's canvas (shared).
+const sharedDrawingQuestion = `{"id":"q5","stem":[{"type":"text","text":"A Punnett square."},{"type":"canvas"}],"layout":"paper","labels":"letters","parts":[
+	{"id":"s1","blocks":[{"type":"text","text":"Fill in the boxes."}],"answer":{"type":"canvas","shared":true},"marks":2,"markscheme":[{"text":"Boxes","marks":2}],"solution":[]},
+	{"id":"s2","blocks":[{"type":"text","text":"Write the ratio."}],"answer":{"type":"canvas","shared":true},"marks":1,"markscheme":[{"text":"Ratio","marks":1}],"solution":[]}]}`
+
+// TestASharedCanvasIsOneDrawingForItsParts (Epo 2026-11-23): parts answering in
+// one canvas share one drawing, stored under the first of them alone; each
+// waits and goes to the AI on it, the drawing keeps its marking image until
+// both are marked, and Files › Canvas lists it only then.
+func TestASharedCanvasIsOneDrawingForItsParts(t *testing.T) {
+	f := newAssignmentFixture(t, "shared-drawing")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	var q map[string]any
+	if err := json.Unmarshal([]byte(sharedDrawingQuestion), &q); err != nil {
+		t.Fatal(err)
+	}
+	form := f.form(t, now.Add(time.Hour))
+	form.Questions, form.Marking = append(frozenFixture(t), q), MarkingAI
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	board := DrawingObject{Key: "drawings/" + run.ID + "/board.ydoc.gz", Bytes: 1000, Type: "application/gzip"}
+	image := &DrawingObject{Key: "drawings/" + run.ID + "/image.webp", Bytes: 500, Type: "image/webp"}
+	if _, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "s2", board, image, nil, now); !errors.Is(err, ErrNotDrawingPart) {
+		t.Fatalf("the second sharing part took a drawing: %v", err)
+	}
+	if _, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "s1", board, image, nil, now); err != nil {
+		t.Fatal(err)
+	}
+	done, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{}, now.Add(time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, named := done.Answers["s2"]; named || done.Answers["s1"] == nil {
+		t.Fatalf("submitted answers = %v", done.Answers)
+	}
+	_, answers, err := f.s.AnswersToMark(ctx, created.ID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(answers) != 2 || answers[0].DrawingPart != "s1" || answers[1].DrawingPart != "s1" {
+		t.Fatalf("to mark = %+v, want s1 and s2 on s1's drawing", answers)
+	}
+	held := func() Drawing {
+		t.Helper()
+		drawings, err := f.s.AttemptDrawings(ctx, run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return drawings["s1"]
+	}
+	mark := func(part string, items ...float64) {
+		t.Helper()
+		if _, err := f.s.SaveAIMarks(ctx, run.ID, []AIMark{{QuestionID: "q5", PartID: part, Items: items}}, now.Add(2*time.Minute)); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.s.DropDrawingImages(ctx, run.ID, []string{part}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mark("s1", 2)
+	if held().ImageKey == "" {
+		t.Fatal("the drawing lost its image while s2 waits on it")
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if page, err := f.s.ListMarkedDrawings(ctx, f.viewer, "", 50); err != nil || page.Count != 0 {
+		t.Fatalf("listed while s2 waits: %+v, err %v", page, err)
+	}
+	mark("s2", 1)
+	if held().ImageKey != "" {
+		t.Fatal("the drawing kept its image once both parts were marked")
+	}
+	if page, err := f.s.ListMarkedDrawings(ctx, f.viewer, "", 50); err != nil || page.Count != 1 || page.TotalBytes != 1000 {
+		t.Fatalf("listed once marked: %+v, err %v", page, err)
+	}
+}
+
+// TestRepublishMovesADrawingWithItsCanvas (Epo 2026-11-24): a republish that
+// makes another part the first answering in a canvas moves the stored drawing
+// to it, charged once still; a part's own canvas no part answers in any more,
+// and then the stem's, drop theirs, the first before another moves onto its
+// part.
+func TestRepublishMovesADrawingWithItsCanvas(t *testing.T) {
+	f := newAssignmentFixture(t, "republish-drawing")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	// shared answers both parts in the stem's canvas; own(s1) gives s1 a
+	// canvas of its own, own(s1, s2) both.
+	shared := func() map[string]any {
+		var q map[string]any
+		if err := json.Unmarshal([]byte(sharedDrawingQuestion), &q); err != nil {
+			t.Fatal(err)
+		}
+		return q
+	}
+	own := func(ids ...string) []map[string]any {
+		q := shared()
+		for _, raw := range q["parts"].([]any) {
+			p := raw.(map[string]any)
+			if slices.Contains(ids, p["id"].(string)) {
+				p["answer"] = map[string]any{"type": "canvas"}
+				p["blocks"] = append(p["blocks"].([]any), map[string]any{"type": "canvas"})
+			}
+		}
+		return append(frozenFixture(t), q)
+	}
+	form := f.form(t, now.Add(time.Hour))
+	form.Questions, form.Marking = append(frozenFixture(t), shared()), MarkingAI
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.SaveAssignmentAnswers(ctx, f.viewer, run.ID, map[string]any{"p2": "osmosis"}, now); err != nil {
+		t.Fatal(err)
+	}
+	before := storageUsed(t, f, f.viewer)
+	draw := func(part, name string) Drawing {
+		t.Helper()
+		board := DrawingObject{Key: "drawings/" + run.ID + "/" + name + ".ydoc.gz", Bytes: 1000, Type: "application/gzip"}
+		image := &DrawingObject{Key: "drawings/" + run.ID + "/" + name + ".webp", Bytes: 500, Type: "image/webp"}
+		saved, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, part, board, image, nil, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return saved
+	}
+	// held reads the attempt's drawings and its answers' drawing ids by part.
+	held := func(want map[string]string) {
+		t.Helper()
+		drawings, err := f.s.AttemptDrawings(ctx, run.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		view, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, part := range []string{"s1", "s2"} {
+			answer, _ := view.Answers[part].(map[string]any)
+			if named, _ := answer["drawing"].(string); drawings[part].ID != want[part] || named != want[part] {
+				t.Fatalf("%s holds %q, answers %v; want %q", part, drawings[part].ID, view.Answers[part], want[part])
+			}
+		}
+		if view.Answers["p2"] != "osmosis" {
+			t.Fatalf("the short answer went: %v", view.Answers)
+		}
+	}
+	republish := func(qs []map[string]any) {
+		t.Helper()
+		if _, err := f.s.RepublishAssignment(ctx, f.user, created.ID, qs, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	stem := draw("s1", "stem")
+	// s1 switched to New: the stem's drawing moves to s2, its first part now.
+	republish(own("s1"))
+	held(map[string]string{"s2": stem.ID})
+	if got := storageUsed(t, f, f.viewer); got != before+1500 {
+		t.Fatalf("after the move, the meter = %d, want %d", got, before+1500)
+	}
+	mine := draw("s1", "own")
+	// Two drawings may swap parts in one move.
+	swap := func() {
+		t.Helper()
+		if err := f.s.inTx(ctx, func(tx pgx.Tx) error {
+			_, err := moveDrawingsTx(ctx, tx, run.ID, map[string]string{"s1": "s2", "s2": "s1"})
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	swap()
+	if drawings, err := f.s.AttemptDrawings(ctx, run.ID); err != nil || drawings["s1"].ID != stem.ID || drawings["s2"].ID != mine.ID {
+		t.Fatalf("after a swap: %+v, err %v", drawings, err)
+	}
+	swap()
+	// s1 shares again: its own canvas has no part answering in it, so its
+	// drawing goes, and the stem's moves back onto s1.
+	republish(append(frozenFixture(t), shared()))
+	held(map[string]string{"s1": stem.ID})
+	if got := storageUsed(t, f, f.viewer); got != before+1500 {
+		t.Fatalf("after dropping s1's own, the meter = %d, want %d", got, before+1500)
+	}
+	// Neither answers in the stem's canvas: its drawing goes.
+	republish(own("s1", "s2"))
+	held(map[string]string{})
+	if got := storageUsed(t, f, f.viewer); got != before {
+		t.Fatalf("after dropping the stem's, the meter = %d, want %d", got, before)
+	}
+}
+
+// TestDrawingTargetsFollowAnUngroupedCanvas (Epo 2026-11-24): Ungroup hands
+// the group's canvas to its first sub-part, which answers in it as its own, so
+// the group canvas's drawing stays with it rather than being dropped.
+func TestDrawingTargetsFollowAnUngroupedCanvas(t *testing.T) {
+	decode := func(raw string) []map[string]any {
+		var q map[string]any
+		if err := json.Unmarshal([]byte(raw), &q); err != nil {
+			t.Fatal(err)
+		}
+		return []map[string]any{q}
+	}
+	before := decode(`{"id":"q6","stem":[],"layout":"paper","labels":"letters","groups":[{"id":"g1","blocks":[{"type":"text","text":"A triangle."},{"type":"canvas"}]}],"parts":[
+		{"id":"u1","group":"g1","blocks":[{"type":"text","text":"Mark its right angle."}],"answer":{"type":"canvas","shared":true},"marks":1,"markscheme":[{"text":"Marked","marks":1}],"solution":[]},
+		{"id":"u2","group":"g1","blocks":[{"type":"text","text":"Name it."}],"answer":{"type":"short","accepted":["ABC"]},"marks":1,"solution":[]}]}`)
+	after := decode(`{"id":"q6","stem":[],"layout":"paper","labels":"letters","parts":[
+		{"id":"u1","blocks":[{"type":"text","text":"A triangle."},{"type":"canvas"},{"type":"text","text":"Mark its right angle."}],"answer":{"type":"canvas"},"marks":1,"markscheme":[{"text":"Marked","marks":1}],"solution":[]},
+		{"id":"u2","blocks":[{"type":"text","text":"Name it."}],"answer":{"type":"short","accepted":["ABC"]},"marks":1,"solution":[]}]}`)
+	if got := drawingTargets(before, after); got["u1"] != "u1" {
+		t.Fatalf("targets = %v, want u1's drawing kept", got)
+	}
+}
+
 // drawingRun starts a member's attempt at a drawing assignment marked as marking
 // says, and saves a board (and an image) for its drawing part p4.
 func drawingRun(t *testing.T, f assignmentFixture, member, marking string, now time.Time) (Assignment, AssignmentAttempt) {
@@ -336,7 +568,7 @@ func TestADrawingWithoutAnImageNeedsHandMarking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(answers) != 1 || answers[0].AttemptID != withImage.ID || !answers[0].Drawing {
+	if len(answers) != 1 || answers[0].AttemptID != withImage.ID || answers[0].DrawingPart != answers[0].PartID {
 		t.Fatalf("to mark = %+v, want the drawing with its image alone", answers)
 	}
 	report, err := f.s.GetAssignmentReport(ctx, f.user, created.ID, now.Add(2*time.Minute))

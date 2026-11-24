@@ -33,6 +33,11 @@ import {
   type Question,
   type QuestionPart,
 } from '@/features/questions/types';
+import {
+  answerId,
+  drawingParts,
+  partAnswer,
+} from '@/features/quizzes/drawing/canvasParts';
 import type { Answers } from '@/features/quizzes/grade';
 import { scorePart } from '@/features/quizzes/grade';
 import { learnerView } from './answerKeys';
@@ -417,7 +422,11 @@ const part = (
   parts: [
     {
       answer,
-      blocks: textBlock(text),
+      // A canvas part is answered on its canvas, blank here.
+      blocks: [
+        ...textBlock(text),
+        ...(answer.type === 'canvas' ? [{ type: 'canvas' as const }] : []),
+      ],
       id: `${id}:a`,
       marks,
       ...(markscheme && {
@@ -577,7 +586,7 @@ const pastPaper = (): Question[] => [
   part(
     'q17',
     'Draw a plant cell and label the cell wall, the vacuole and the nucleus.',
-    { sample: { board: SAMPLE_BOARD, image: SAMPLE_BOARD }, type: 'drawing' },
+    { sample: { board: SAMPLE_BOARD, image: SAMPLE_BOARD }, type: 'canvas' },
     3,
     'A box-shaped cell: the wall around the outside, a large central vacuole and the nucleus pushed to one side.',
     [
@@ -752,11 +761,12 @@ const richQuestions = (): Question[] => [
       {
         answer: {
           sample: { board: SAMPLE_BOARD, image: SAMPLE_BOARD },
-          type: 'drawing',
+          type: 'canvas',
         },
-        blocks: textBlock(
-          'Draw the cell as seen at ×1000 and add a scale bar.'
-        ),
+        blocks: [
+          ...textBlock('Draw the cell as seen at ×1000 and add a scale bar.'),
+          { type: 'canvas' },
+        ],
         id: 'q19:c',
         marks: 3,
         markscheme: [
@@ -1020,9 +1030,14 @@ function gradePaper(
   return questions.map((question) => ({
     ...question,
     parts: question.parts.map((part) => {
-      // A drawing Done stored waits for the AI, as an open answer does.
-      if (part.answer.type === 'drawing')
-        return (answers[part.id] as { drawing?: string } | undefined)?.drawing
+      // A canvas Done stored waits for the AI, as an open answer does; a
+      // part answered in the canvas above waits on that drawing.
+      if (part.answer.type === 'canvas')
+        return (
+          partAnswer(question, answers, part) as
+            | { drawing?: string }
+            | undefined
+        )?.drawing
           ? { ...part, awarded: 0, pending: true }
           : {
               ...part,
@@ -1095,7 +1110,11 @@ function seedAttempt(
         answers[part.id] = part.answer.accepted.map((list, i) =>
           right >= 3 || i > 0 ? list[0] : 'diffusion'
         );
-      else if (part.answer.type === 'drawing')
+      // One drawing answers the parts sharing a canvas, under the first.
+      else if (
+        part.answer.type === 'canvas' &&
+        answerId(question, part) === part.id
+      )
         answers[part.id] = { drawing: 'dr_marked_1' };
     }
   const graded = gradePaper(questions, answers);
@@ -1806,7 +1825,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     closedAt: closedAtOf(row),
     draft: row.draft,
     drawingParts: (row.questions ?? []).some((q) =>
-      q.parts.some((p) => p.answer.type === 'drawing')
+      q.parts.some((p) => p.answer.type === 'canvas')
     ),
     dueAt: row.dueAt,
     files: row.files.flatMap((f): Assignment['files'] => {
@@ -2950,11 +2969,25 @@ export const assignmentHandlers = (viewer: Viewer) => {
             'attempt_finished',
             'This attempt has been submitted.'
           );
+        // As the server: only a part its drawing is stored under takes one,
+        // never a later part sharing that canvas.
+        const partId = String(params.partId);
+        const question = found.row.questions?.find((q) =>
+          q.parts.some((part) => part.id === partId)
+        );
+        const part = question?.parts.find((item) => item.id === partId);
+        if (
+          !(question && part && drawingParts(question).get(partId) === partId)
+        )
+          return HttpResponse.json(
+            { detail: 'that part takes no drawing', status: 422 },
+            { status: 422 }
+          );
         const body = (await request.json()) as {
           board: string;
           pictures?: { data: string; sourceId: string }[];
         };
-        const id = `dr_${String(params.partId)}_${Date.now()}`;
+        const id = `dr_${partId}_${Date.now()}`;
         mockDrawings.set(id, body.board);
         mockDrawingPictures.set(id, body.pictures ?? []);
         return HttpResponse.json({ id });

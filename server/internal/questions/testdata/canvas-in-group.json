@@ -1,0 +1,72 @@
+{
+  "name": "canvas-in-group",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "layout": "paper",
+    "labels": "letters",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Canvas answers."
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it."
+          },
+          {
+            "type": "canvas"
+          }
+        ],
+        "answer": {
+          "type": "canvas"
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          }
+        ],
+        "solution": [],
+        "group": "g1"
+      },
+      {
+        "id": "p2",
+        "group": "g1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Is the shape a square?"
+          }
+        ],
+        "answer": {
+          "type": "boolean",
+          "correct": true
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "groups": [
+      {
+        "id": "g1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Both parts."
+          },
+          {
+            "type": "canvas"
+          }
+        ]
+      }
+    ]
+  }
+}

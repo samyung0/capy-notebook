@@ -58,6 +58,7 @@ import {
   exampleAnswers,
   exampleQuestion,
 } from '@/features/questions/questionFixtures';
+import { partAnswer } from '@/features/quizzes/drawing/canvasParts';
 import { isDrawingValue } from '@/features/quizzes/drawing/drawingValue';
 import { type Answers, runScore } from '@/features/quizzes/grade';
 import {
@@ -784,12 +785,12 @@ function gradeOne(
     return HttpResponse.json({ message: 'not found' }, { status: 404 });
   const graded = gradeQuestions([question], answers);
   const parts = graded.questions[0].parts.map((part) => {
-    const answer = answers[part.id];
+    const answer = partAnswer(question, answers, part);
     const answered =
       (part.answer.type === 'open' &&
         typeof answer === 'string' &&
         answer.trim() !== '') ||
-      (part.answer.type === 'drawing' && isDrawingValue(answer ?? null));
+      (part.answer.type === 'canvas' && isDrawingValue(answer ?? null));
     return answered
       ? { ...part, awarded: 0, itemAwards: undefined, pending: true }
       : part;

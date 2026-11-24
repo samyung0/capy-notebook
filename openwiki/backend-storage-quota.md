@@ -317,15 +317,28 @@ objects for the reaper.
   `storage_quota_exceeded`, no credits spent. Objects written before a refusal
   that raced past the check are left to the report-only sweep, which covers
   `drawings/`.
-- **The marking image.** Kept only until its part is marked: the AI's marking
+- **One drawing per shared canvas.** The parts answering in one stem's or
+  group's canvas share one drawing (Epo 2026-11-23), one row stored under the
+  first of them (`questions.DrawingParts`), so its board, image and pictures
+  are counted and charged once; a drawing sent under another of them is
+  refused before anything is written. A republish that gives its canvas
+  another first part only renames the row's `part_id` (`moveDrawingsTx`, Epo
+  2026-11-24), which no storage or blob trigger watches, so the charge is
+  unchanged; a drawing whose canvas no part answers in any more is deleted,
+  which ends its charge and queues its objects for the reaper.
+- **The marking image.** Kept only until its part is marked (a shared
+  drawing's, until every part it answers is: `doneDrawings`): the AI's marking
   landing (practice Check again, Mark with AI), a part marked by hand, or the
   assignment switched to manual grading drops it. Under manual grading none is
   made or written; a drawing saved so has no image, and Mark with AI leaves it
   to staff (it reads as Mark by hand in Approve, Q695).
-- **Caps.** A board is at most `DrawingBoardBytes` (250 KiB) before gzip, an
-  image at most `DrawingImageBytes` (300 KiB) and 1,568 px on its longer side.
-  A drawn sample answer's board is a quiz `board` editor asset under the same
-  board cap (`editor_assets_size_check`, migration 0158).
+- **Caps.** A board is at most `DrawingBoardBytes` (400 KiB, Epo 2026-11-23;
+  250 KiB before) before gzip, an image at most `DrawingImageBytes` (300 KiB)
+  and 1,568 px on its longer side. A student's canvas answer is a copy of the
+  part's canvas, so the teacher's canvas counts in the same 400 KiB; the image
+  is the same size either way. A canvas block's board and a drawn sample
+  answer's board are quiz `board` editor assets under the same board cap
+  (`editor_assets_size_check`, migrations 0158 and 0192).
 - **Pictures on the board (Epo 2026-11-09, migration 0166).** A picture pasted
   on an answer board goes up with the board at Done or Check, at most
   `BoardPictures` (10) of `BoardPictureBytes` (1 MiB) each, WebP, JPEG, PNG or
@@ -427,8 +440,9 @@ workspace or not (who holds it:
   ([authorization](authorization-permissions-lifecycles.md#workspace-canvases)).
 - **Board assets.** A canvas takes none (`checkEditorAsset` answers 400).
   Migration 0181 put `editor_assets_size_check` back to 256,000 bytes for a
-  `board` asset, which is a quiz's drawn sample answer alone again
-  (`fieldlimits.DrawingBoardBytes`, 250 KiB).
+  `board` asset, a quiz's drawn sample answer alone again; 0192 raised it to
+  409,600 (`fieldlimits.DrawingBoardBytes`, 400 KiB), a quiz canvas block's
+  board being one too.
 - The canvas goes with the membership (`dropLeaverCanvasTx`; provisional for
   a shared canvas, see authorization) and with the workspace (cascade), its
   assets and Yjs rows with it.

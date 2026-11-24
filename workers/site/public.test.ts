@@ -230,6 +230,35 @@ describe('anonymous material routes', () => {
     }
   );
 
+  // A shared quiz's canvases load their boards here (Epo 2026-11-23): a
+  // quiz's or an embedding note's gzipped board passes, a set's never.
+  it.each([
+    ['quizzes', 200],
+    ['notes', 200],
+    ['flashcards', 503],
+  ])('serves a canvas board on %s as %i', async (kind, status) => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({
+          contentType: 'application/gzip',
+          url: 'https://b2.example.test/board',
+        })
+      )
+      .mockResolvedValueOnce(new Response(new Uint8Array([31, 139, 8])));
+    const board = await handleSiteRequest(
+      request(`/p/${kind}/${TOKEN}/assets/asset_board`),
+      env,
+      fetcher
+    );
+    expect(board.status).toBe(status);
+    if (status !== 200) return;
+    expect(board.headers.get('Content-Type')).toBe('application/gzip');
+    expect(new Uint8Array(await board.arrayBuffer())).toEqual(
+      new Uint8Array([31, 139, 8])
+    );
+  });
+
   it('redirects a shared note audio to its link, uncached; images still proxy', async () => {
     const assetPath = `/p/notes/${TOKEN}/assets/asset_abc`;
     const link = 'https://b2.example.test/tide.mp3?X-Amz-Signature=s';

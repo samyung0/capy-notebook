@@ -1,13 +1,13 @@
 {
-  "name": "drawing-background-rejected",
-  "valid": false,
+  "name": "canvas-drawn",
+  "valid": true,
   "policy": {},
   "question": {
     "id": "q1",
     "stem": [
       {
         "type": "text",
-        "text": "Drawn answers."
+        "text": "Canvas answers."
       }
     ],
     "parts": [
@@ -17,13 +17,15 @@
           {
             "type": "text",
             "text": "Draw it."
+          },
+          {
+            "type": "canvas",
+            "board": "asset_board_2",
+            "image": "asset_image_2"
           }
         ],
         "answer": {
-          "type": "drawing",
-          "background": {
-            "kind": "grid"
-          }
+          "type": "canvas"
         },
         "marks": 2,
         "markscheme": [

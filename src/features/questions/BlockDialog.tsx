@@ -10,6 +10,7 @@ import { GraphEditor } from './GraphEditor';
 import type { QuestionBlock } from './types';
 
 export const blockLabels: Record<QuestionBlock['type'], () => string> = {
+  canvas: m.question_ui_canvas,
   chart: m.question_ui_chart,
   graph: m.question_ui_graph,
   image: m.question_ui_image,

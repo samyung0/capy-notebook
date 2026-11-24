@@ -39,6 +39,11 @@ const assets: Record<string, { name: string; url: string }> = {
   },
 };
 
+/** A seeded picture, an SVG, served under `id`: e.g. a drawn canvas's. */
+export const mockSvgAsset = (id: string, name: string, svg: string) => {
+  assets[id] = { name, url: svgUrl(svg) };
+};
+
 // Uploads keep their bytes as an object URL so resolve serves them back.
 const uploads = new Map<
   string,
@@ -97,8 +102,14 @@ export const embeds: EditorAssetItem[] = [
 ];
 
 export const editorAssetHandlers = [
-  // Signed-out share pages load images through the site Worker's route.
+  // Signed-out share pages load images, and a quiz's canvas boards, through
+  // the site Worker's route.
   http.get('/p/:kind/:token/assets/:assetId', async ({ params }) => {
+    const board = mockBoardAssets.get(String(params.assetId));
+    if (board !== undefined)
+      return new HttpResponse(
+        await (await fetch(await boardUrl(board))).blob()
+      );
     const asset = assets[String(params.assetId)];
     if (!asset) return new HttpResponse(null, { status: 404 });
     return new HttpResponse(await (await fetch(asset.url)).blob());

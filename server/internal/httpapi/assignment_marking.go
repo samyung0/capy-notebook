@@ -341,8 +341,8 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 			continue
 		}
 		typed = append(typed, answer)
-		if answer.Drawing {
-			drawn = append(drawn, answer.PartID)
+		if answer.DrawingPart != "" {
+			drawn = append(drawn, answer.DrawingPart)
 		}
 	}
 	answers = typed
@@ -354,33 +354,25 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 	if len(answers) == 0 {
 		return nil
 	}
-	// Only the drawings being marked are read; one unreadable stays Not marked.
+	// Only the drawings being marked are read, each once however many parts
+	// it answers; one unreadable stays Not marked.
 	images, err := a.keptDrawingImages(marking, attemptID, drawn)
 	if err != nil {
 		return err
 	}
-	// A batch takes each question's first parts before any second, so its
-	// parts come from different questions where the attempt allows, as tested.
-	rank := map[string]int{}
-	ranks := map[string]int{}
-	order := make([]string, 0, len(answers))
-	for _, answer := range answers {
-		ranks[answer.PartID] = rank[answer.QuestionID]
-		rank[answer.QuestionID]++
-		order = append(order, answer.PartID)
-	}
-	slices.SortStableFunc(order, func(x, y string) int { return ranks[x] - ranks[y] })
+	order := markingOrder(answers)
 	for _, answer := range answers {
 		part := openPart{
 			question: answer.Question, markscheme: answer.Items, itemMarks: answer.ItemMarks, answer: answer.Answer,
 			figures: answer.Figures, sample: sampleOwner{assetID: answer.SampleImage, assignmentID: assignmentID},
 		}
-		if answer.Drawing {
-			image, kept := images[answer.PartID]
+		// Every part answered on a drawing is marked on its image.
+		if answer.DrawingPart != "" {
+			image, kept := images[answer.DrawingPart]
 			if !kept {
 				continue
 			}
-			part.image, part.imageType = image.data, image.contentType
+			part.image, part.imageType, part.drawing = image.data, image.contentType, answer.DrawingPart
 		}
 		parts[answer.PartID] = part
 		byPart[answer.PartID] = answer
@@ -414,14 +406,49 @@ func (a *api) markAttemptAnswers(ctx context.Context, assignmentID, attemptID st
 	if member, err := a.s.AttemptUserID(saving, attemptID); err == nil {
 		a.publishTodo(saving, append(a.todoAudience(saving, assignmentID, true), member)...)
 	}
-	// The AI marking landed: its images go, whether or not staff approve it yet.
+	// The AI marking landed: its images go, whether or not staff approve it
+	// yet, once no part a drawing answers still waits on it.
 	var marked []string
 	for id := range grades {
-		if byPart[id].Drawing {
+		if byPart[id].DrawingPart != "" {
 			marked = append(marked, id)
 		}
 	}
 	return a.s.DropDrawingImages(saving, attemptID, marked)
+}
+
+// markingOrder is the order a run's parts go to their calls (packBatches):
+// each question's first parts before any second, so a call's parts come from
+// different questions where the attempt allows, as tested. The parts
+// answering in one canvas (one DrawingPart) count as one, next to each other
+// at the first one's place (Epo 2026-11-24), so a call keeps them together.
+func markingOrder(answers []store.AnswerToMark) []string {
+	type unit struct {
+		rank int
+		ids  []string
+	}
+	var units []*unit
+	rank := map[string]int{}
+	canvases := map[string]*unit{}
+	for _, answer := range answers {
+		canvas := answer.QuestionID + "\x00" + answer.DrawingPart
+		if u := canvases[canvas]; answer.DrawingPart != "" && u != nil {
+			u.ids = append(u.ids, answer.PartID)
+			continue
+		}
+		u := &unit{rank: rank[answer.QuestionID], ids: []string{answer.PartID}}
+		rank[answer.QuestionID]++
+		units = append(units, u)
+		if answer.DrawingPart != "" {
+			canvases[canvas] = u
+		}
+	}
+	slices.SortStableFunc(units, func(x, y *unit) int { return x.rank - y.rank })
+	order := make([]string, 0, len(answers))
+	for _, u := range units {
+		order = append(order, u.ids...)
+	}
+	return order
 }
 
 // withMarking flags the attempt and each part a marking run holds (Q729).

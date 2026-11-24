@@ -6,8 +6,9 @@ import {
 } from './shareRead';
 
 /**
- * Images of shared standalone quizzes, flashcard sets and notes, and a shared
- * note's audio, for signed-out visitors (the pages themselves render in
+ * Images of shared standalone quizzes, flashcard sets and notes, a shared
+ * note's audio, and a quiz's canvas boards (a shared quiz's, or one a shared
+ * note embeds), for signed-out visitors (the pages themselves render in
  * handler.ts). Every route verifies the share token first, so forged links
  * never reach the API. Images are cached by Workers Cache for five minutes,
  * like the pages; Go verifies the token again and reads privacy live. Audio
@@ -17,6 +18,7 @@ import {
  * visitor's IP, which the rate limit keys on.
  *
  *   GET /p/{quizzes|flashcards|notes}/{token}/assets/{assetId} → image bytes
+ *   GET /p/{quizzes|notes}/{token}/assets/{assetId} → a board's gzip bytes
  *   GET /p/notes/{token}/assets/{assetId} → 302 to the audio's link
  */
 
@@ -36,6 +38,10 @@ const IMAGE_TYPES = new Set([
   'image/gif',
   'image/webp',
 ]);
+// A drawn canvas's or sample answer's board, a quiz's gzipped `board` asset
+// (server/internal/httpapi/editor_assets.go): bytes the page inflates
+// (boardAsset.ts), with nosniff never rendered.
+const BOARD_TYPE = 'application/gzip';
 // The audio types a note's asset may have (server/internal/httpapi/editor_assets.go).
 const AUDIO_TYPES = new Set([
   'audio/mpeg',
@@ -154,7 +160,8 @@ export async function handlePublicRequest(
     return error(503);
   if (kind === 'notes' && AUDIO_TYPES.has(asset.contentType))
     return respond(null, 302, { Location: asset.url });
-  if (!IMAGE_TYPES.has(asset.contentType)) return error(503);
+  const board = kind !== 'flashcards' && asset.contentType === BOARD_TYPE;
+  if (!(IMAGE_TYPES.has(asset.contentType) || board)) return error(503);
   const image = await fetcher(asset.url, {
     signal: AbortSignal.timeout(20_000),
   });

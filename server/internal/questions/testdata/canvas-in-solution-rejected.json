@@ -1,15 +1,13 @@
 {
-  "name": "drawing-sample-bank-rejected",
+  "name": "canvas-in-solution-rejected",
   "valid": false,
-  "policy": {
-    "bank": true
-  },
+  "policy": {},
   "question": {
     "id": "q1",
     "stem": [
       {
         "type": "text",
-        "text": "Drawn answers."
+        "text": "Canvas answers."
       }
     ],
     "parts": [
@@ -19,14 +17,13 @@
           {
             "type": "text",
             "text": "Draw it."
+          },
+          {
+            "type": "canvas"
           }
         ],
         "answer": {
-          "type": "drawing",
-          "sample": {
-            "board": "asset_board_1",
-            "image": "asset_image_1"
-          }
+          "type": "canvas"
         },
         "marks": 2,
         "markscheme": [
@@ -39,7 +36,11 @@
             "marks": 1
           }
         ],
-        "solution": []
+        "solution": [
+          {
+            "type": "canvas"
+          }
+        ]
       }
     ],
     "layout": "paper",

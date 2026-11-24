@@ -91,6 +91,33 @@ it("needs no MathLive for a dollar amount in a quiz's question", () => {
   expect(codeOf([quizRef('quiz')], () => [question])).toEqual(new Set());
 });
 
+// A drawn canvas opens on the board, even where a part only shows it (Open
+// canvas, Epo 2026-11-23); an empty one needs nothing.
+it("needs the board for a drawn canvas a quiz's part shows", () => {
+  const question: LearnerQuestion = {
+    id: 'q',
+    labels: 'letters',
+    layout: 'paper',
+    parts: [
+      {
+        answer: { type: 'boolean' },
+        blocks: [
+          { text: 'Is it right-angled?', type: 'text' },
+          { board: 'board_1', image: 'image_1', type: 'canvas' },
+        ],
+        id: 'q:a',
+        marks: 1,
+      },
+    ],
+    stem: [],
+  };
+  expect(codeOf([quizRef('quiz')], () => [question])).toEqual(
+    new Set([boardCode])
+  );
+  question.parts[0].blocks[1] = { type: 'canvas' };
+  expect(codeOf([quizRef('quiz')], () => [{ ...question }])).toEqual(new Set());
+});
+
 it("needs what an embedded quiz's questions hold, as the editor read them", () => {
   const question: LearnerQuestion = {
     id: 'q',
@@ -98,7 +125,7 @@ it("needs what an embedded quiz's questions hold, as the editor read them", () =
     layout: 'paper',
     parts: [
       {
-        answer: { type: 'drawing' },
+        answer: { type: 'canvas' },
         blocks: [{ text: 'Sketch $y=x^2$.', type: 'text' }],
         id: 'q:a',
         marks: 2,

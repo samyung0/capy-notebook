@@ -55,17 +55,20 @@ type openPart struct {
 	markscheme []string
 	itemMarks  []float64
 	answer     string
-	// A drawing part: its marking image and type, in place of answer, and
-	// its drawn sample answer's image, sent before it when it has one.
+	// A canvas part: its marking image and type, in place of answer, the part
+	// its drawing is stored under (questions.DrawingParts), which names the
+	// image in a call, and its drawn sample answer's image, sent before it
+	// when it has one.
 	image     []byte
 	imageType string
+	drawing   string
 	sample    sampleOwner
 	// figures are the question's images in the order question numbers them
 	// (questions.GradingTextAndFigures), read as sample's owner's.
 	figures []map[string]any
 }
 
-// sampleOwner is a drawing part's drawn sample answer image (assetID) and what
+// sampleOwner is a canvas part's drawn sample answer image (assetID) and what
 // it and the question's images must belong to: the quiz checked (materialID)
 // or the assignment's frozen copy (assignmentID). A bank question names
 // neither: its figures are bank links, and it takes no drawn sample.
@@ -74,7 +77,7 @@ type sampleOwner struct {
 }
 
 // gradePlan is a grading request checked against the stored questions; open
-// holds the answered open and drawing parts, the ones a model may grade, and
+// holds the answered open and canvas parts, the ones a model may grade, and
 // drawings the boards (and images) a check sent, which a signed-in check keeps.
 type gradePlan struct {
 	questions []map[string]any
@@ -93,6 +96,9 @@ func planGrading(qs []map[string]any, answers map[string]any, owner sampleOwner)
 	plan := gradePlan{questions: qs, answers: answers, open: map[string]openPart{}, drawings: map[string]drawingUpload{}, pictureTypes: map[string][]string{}}
 	known := map[string]bool{}
 	for _, q := range qs {
+		// Parts answering in one canvas are answered by one drawing, sent
+		// under the first of them (questions.DrawingParts).
+		owners := questions.DrawingParts(q)
 		parts, _ := q["parts"].([]any)
 		for i, raw := range parts {
 			p, _ := raw.(map[string]any)
@@ -102,7 +108,24 @@ func planGrading(qs []map[string]any, answers map[string]any, owner sampleOwner)
 			if a["type"] == "ordering" && answers[id] == nil {
 				return gradePlan{}, errGradeRequest
 			}
-			if a["type"] == "drawing" && answers[id] != nil {
+			if lead := owners[id]; a["type"] == "canvas" && lead != id {
+				// It takes none of its own (nor does a part missing its canvas,
+				// which Validate refuses): it is marked on that drawing's image.
+				if answers[id] != nil {
+					return gradePlan{}, errGradeRequest
+				}
+				if drawn, ok := plan.open[lead]; ok && len(drawn.image) > 0 {
+					items, marks := questions.MarkItems(p)
+					text, figures := questions.GradingTextAndFigures(q, i)
+					plan.open[id] = openPart{
+						question: text, markscheme: items, itemMarks: marks, figures: figures,
+						image: drawn.image, imageType: drawn.imageType, drawing: lead,
+						sample: sampleOwner{assetID: questions.DrawnSampleImage(p), materialID: owner.materialID, assignmentID: owner.assignmentID},
+					}
+				}
+				continue
+			}
+			if a["type"] == "canvas" && answers[id] != nil {
 				drawing, imageType, pictureTypes, err := sentDrawing(answers[id])
 				if err != nil {
 					return gradePlan{}, err
@@ -116,7 +139,7 @@ func planGrading(qs []map[string]any, answers map[string]any, owner sampleOwner)
 					text, figures := questions.GradingTextAndFigures(q, i)
 					plan.open[id] = openPart{
 						question: text, markscheme: items, itemMarks: marks, figures: figures,
-						image: drawing.Image, imageType: imageType,
+						image: drawing.Image, imageType: imageType, drawing: id,
 						sample: sampleOwner{assetID: questions.DrawnSampleImage(p), materialID: owner.materialID, assignmentID: owner.assignmentID},
 					}
 				}
@@ -146,7 +169,7 @@ func planGrading(qs []map[string]any, answers map[string]any, owner sampleOwner)
 	return plan, nil
 }
 
-// sentDrawing reads a drawing part's answer as a check sends it, {board,
+// sentDrawing reads a canvas part's answer as a check sends it, {board,
 // image, pictures} in base64, and checks all of it before anything is stored
 // or marked.
 func sentDrawing(value any) (drawingUpload, string, []string, error) {
@@ -299,10 +322,84 @@ func (a *api) gradeWithModel(ctx context.Context, payerID, workspaceID string, p
 }
 
 // gradingBatch is how many parts an assignment's marking grades in one call
-// (Epo 2026-11-23, bench/grading/reports/2026-11-23-online-batching-and-figures.md).
-// Four parts hold at most 28 images, 5 question images and a drawing with its
-// sample each, inside the 32 a call takes.
-const gradingBatch = 4
+// (Epo 2026-11-23, bench/grading/reports/2026-11-23-online-batching-and-figures.md),
+// and gradingImages the images one call carries at most (Epo 2026-11-23,
+// "around like 24", under the 32 a call takes), each image its parts share
+// counted once, as the pipeline sends it once (Epo 2026-11-23): a part that
+// would pass it starts the next call. One part holds at most 8: its
+// question's 4 images and 4 canvases, its drawing in place of the canvas it
+// answers on and its drawn sample one of the 4.
+const (
+	gradingBatch  = 4
+	gradingImages = 24
+)
+
+// partImages names the images a part adds to a call: its question's images,
+// and a drawing's own with its sample's. Parts naming one image share it.
+func partImages(part openPart) []string {
+	names := make([]string, 0, len(part.figures)+2)
+	for _, figure := range part.figures {
+		names = append(names, "figure:"+figureKey(figure))
+	}
+	if len(part.image) > 0 {
+		names = append(names, "drawing:"+part.drawing)
+		if part.sample.assetID != "" {
+			names = append(names, "sample:"+part.sample.assetID)
+		}
+	}
+	return names
+}
+
+// packBatches fills calls in order, up to gradingBatch parts and
+// gradingImages distinct images each. The parts answering in one canvas (one
+// drawing, next to each other in ids: markingOrder) stay in one call (Epo
+// 2026-11-24): one that would not fit the call being filled starts the next,
+// and only one too big for any call splits.
+func packBatches(ids []string, parts map[string]openPart) [][]string {
+	var batches [][]string
+	var sent map[string]bool
+	// fresh counts the images of ids that sent doesn't hold yet.
+	fresh := func(ids []string, sent map[string]bool) int {
+		names := map[string]bool{}
+		for _, id := range ids {
+			for _, name := range partImages(parts[id]) {
+				if !sent[name] {
+					names[name] = true
+				}
+			}
+		}
+		return len(names)
+	}
+	fits := func(ids []string) bool {
+		last := len(batches) - 1
+		return last >= 0 && len(batches[last])+len(ids) <= gradingBatch && len(sent)+fresh(ids, sent) <= gradingImages
+	}
+	for start := 0; start < len(ids); {
+		end := start + 1
+		if drawing := parts[ids[start]].drawing; drawing != "" {
+			for end < len(ids) && parts[ids[end]].drawing == drawing {
+				end++
+			}
+		}
+		if group := ids[start:end]; len(group) > 1 && !fits(group) && len(group) <= gradingBatch && fresh(group, nil) <= gradingImages {
+			batches = append(batches, nil)
+			sent = map[string]bool{}
+		}
+		for _, id := range ids[start:end] {
+			if fits([]string{id}) {
+				batches[len(batches)-1] = append(batches[len(batches)-1], id)
+			} else {
+				batches = append(batches, []string{id})
+				sent = map[string]bool{}
+			}
+			for _, name := range partImages(parts[id]) {
+				sent[name] = true
+			}
+		}
+		start = end
+	}
+	return batches
+}
 
 // working is the pipeline's has_working: a part marked on its working, which
 // the model thinks on. Batches keep those apart from plain parts, as tested;
@@ -313,9 +410,30 @@ func hasWorking(part openPart) bool {
 	return working.MatchString(part.question) || slices.ContainsFunc(part.markscheme, working.MatchString)
 }
 
-// gradeInBatches grades an assignment attempt's typed and drawn parts four to
-// a call (/grade-batch) in the order given, parts with working apart from
-// plain ones. Quiz checks grade a part a call (gradeWithModel): a check is one
+// splitWorking splits order's parts into those with working and plain ones,
+// each in order. The parts answering in one canvas go together, with working
+// when any of them has it, so they stay in one call (Epo 2026-11-24); the
+// pipeline thinks on a call when any of its parts has working.
+func splitWorking(order []string, parts map[string]openPart) (thinking, plain []string) {
+	worked := map[string]bool{}
+	for _, part := range parts {
+		if part.drawing != "" && hasWorking(part) {
+			worked[part.drawing] = true
+		}
+	}
+	for _, id := range order {
+		if part, ok := parts[id]; ok && (hasWorking(part) || worked[part.drawing]) {
+			thinking = append(thinking, id)
+		} else if ok {
+			plain = append(plain, id)
+		}
+	}
+	return thinking, plain
+}
+
+// gradeInBatches grades an assignment attempt's typed and drawn parts up to
+// four and 24 images to a call (/grade-batch) in the order given, parts with
+// working apart from plain ones (splitWorking). Quiz checks grade a part a call (gradeWithModel): a check is one
 // question. A failed call leaves its parts Not marked; a part whose images
 // can't be read, or that the reply breaks, fails alone.
 func (a *api) gradeInBatches(ctx context.Context, payerID, workspaceID string, order []string, parts map[string]openPart) (grades map[string]partGrade, failed map[string]string) {
@@ -332,15 +450,8 @@ func (a *api) gradeInBatches(ctx context.Context, payerID, workspaceID string, o
 		return out, failed
 	}
 	defer charge.settle(ctx)
-	var thinking, plain []string
-	for _, id := range order {
-		if part, ok := parts[id]; ok && hasWorking(part) {
-			thinking = append(thinking, id)
-		} else if ok {
-			plain = append(plain, id)
-		}
-	}
-	batches := append(slices.Collect(slices.Chunk(thinking, gradingBatch)), slices.Collect(slices.Chunk(plain, gradingBatch))...)
+	thinking, plain := splitWorking(order, parts)
+	batches := append(packBatches(thinking, parts), packBatches(plain, parts)...)
 	figures := newFigureCache()
 	var mu sync.Mutex
 	var group errgroup.Group

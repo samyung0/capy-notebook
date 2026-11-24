@@ -839,11 +839,22 @@ fn group_fixtures_validate_as_go_and_the_browser() {
     assert!(seen >= 16, "{seen} group fixtures");
 }
 
-/// At most five images outside the explanations (Epo 2026-11-23).
+/// At most four images outside the explanations (Epo 2026-11-23), a drawn
+/// canvas none of them.
 #[test]
 fn image_fixtures_validate_as_go_and_the_browser() {
     let seen = shared_fixtures("images-");
-    assert!(seen >= 2, "{seen} image fixtures");
+    assert!(seen >= 3, "{seen} image fixtures");
+}
+
+/// Canvas parts and canvas blocks (Epo 2026-11-23): one canvas in the stem, a
+/// group and a part each, none in an explanation or the bank, its board and
+/// picture together; a canvas part on its own or, shared, the one above; at
+/// most four a question, drawn sample answers included.
+#[test]
+fn canvas_fixtures_validate_as_go_and_the_browser() {
+    let seen = shared_fixtures("canvas");
+    assert!(seen >= 28, "{seen} canvas fixtures");
 }
 
 /// Graphs, the canvas plane's free marks and styles included (Epo

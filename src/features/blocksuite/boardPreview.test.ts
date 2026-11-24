@@ -4,7 +4,13 @@ import * as Y from 'yjs';
 import { type Keyed, keyedElements } from '@/features/graph/keyed';
 import { m } from '@/i18n';
 import { fromBase64, toBase64 } from './base64';
-import { keyedMap, SAVED, withCanvasBlock, withElements } from './boardFixture';
+import {
+  keyedMap,
+  SAVED,
+  withCanvasBlock,
+  withElements,
+  withPageProps,
+} from './boardFixture';
 import { BoardLoadError } from './boardLoad';
 import { drawBoardPreview, POLYGON_CORNERS } from './boardPreview';
 
@@ -17,7 +23,10 @@ const INLINE_NOTE_TEXT = /<tspan x="0" [^>]*>Osmosis/;
 const TURNED_NOTE = /transform="rotate\(30 100 20\)"/;
 const PLANE_CARD = /<svg x="0" y="600" width="300" height="200" viewBox="/;
 const INK_STROKE = /<path d="M[^"]*" fill="none" stroke="#000"/;
-const DRAWN_NEARER = /<g transform="translate\(-1780 0\)">/;
+const AREA_CLIP =
+  /<clipPath id="area"><rect x="1000" y="500" width="1920" height="1200"\/><\/clipPath>/;
+const FAR_LABEL = />Far</;
+const AREA_HEAD = /^<svg [^>]*width="180" height="113"/;
 const CARD_NOTE_BOX =
   /<rect [^>]*rx="16" fill="#fff" fill-opacity="0.5" stroke="#e6e6e6"/;
 const RED_SLICE = /<path d="M[^"]*A[^"]*Z" fill="#e03131"\/>/;
@@ -295,19 +304,37 @@ it('draws a turned note turned about its middle', () => {
   expect(svg).toMatch(TURNED_NOTE);
 });
 
-// Epo 2026-11-18: only a quiz's drawing draws a far group nearer; a workspace
-// canvas keeps everything where it is.
-it("draws a quiz drawing's far label nearer and a canvas's where it is", () => {
-  const saved = toBase64(
-    withElements({
+// Epo 2026-11-23: a question board's pictures are its answer area exactly,
+// where the board keeps it; a workspace canvas shows everything.
+it('frames a question board to its answer area, and a canvas to everything', () => {
+  const board = withElements(
+    {
+      color: '#e03131',
+      lineWidth: 4,
+      points: [
+        [0, 0],
+        [50, 25],
+      ],
+      type: 'brush',
+      xywh: '[1100,600,50,25]',
+    },
+    {
       fontSize: 24,
       id: 'far',
       index: 'z9',
       text: new Y.Text('Far'),
       type: 'text',
       xywh: '[3000,0,80,30]',
-    })
+    }
   );
-  expect(drawBoardPreview(saved, SIZE, 'question')).toMatch(DRAWN_NEARER);
-  expect(drawBoardPreview(saved, SIZE, 'workspace')).not.toMatch(DRAWN_NEARER);
+  const saved = toBase64(withPageProps(board, { area: [1000, 500] }));
+  const question = drawBoardPreview(saved, SIZE, 'question', true);
+  // The area fills the picture: 180 wide at the area's 1,920 × 1,200.
+  expect(question).toMatch(AREA_HEAD);
+  expect(question).toMatch(AREA_CLIP);
+  expect(question).toMatch(RED_STROKE);
+  expect(question).not.toMatch(FAR_LABEL);
+  expect(drawBoardPreview(toBase64(board), SIZE, 'workspace')).toMatch(
+    FAR_LABEL
+  );
 });

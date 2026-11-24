@@ -432,8 +432,11 @@ pane's boundary. A block or part whose code could not load for a load someone as
 "This block cannot be shown" in its place (`CannotShow`), decided from how the load
 settled (`useCodeFailed` in `blockCode.ts`), not from a thrown error: a graph whose engine
 failed, wherever a graph shows (KaTeX failing leaves the graph without its formulas); a
-drawing part's Draw, Edit drawing or Open drawing, and a drawn sample's button, wherever
-the board's code failed; an HTML embed's View source, in Preview and in the editor. The
+canvas part's Answer in Canvas or Open canvas, a quiz editor's Edit canvas and a drawn
+sample's button, wherever the board's code failed (a canvas only looked at drops its Open
+canvas), and the same places, a looked-at canvas's corner included, when the board itself
+could not be fetched (`useBoardAsset`); an HTML embed's View source, in Preview and in the
+editor. The
 mutation error toast (`showErrorToast`) shows too, once a chunk, a stale or missing
 chunk's with Reload: the browser keeps the failed import, so only a reload brings it. A
 load that failed offline waits for the window's `online` event, then shows "Some blocks

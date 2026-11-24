@@ -39,11 +39,21 @@ type Block struct {
 	Boards  []string `json:"boards"`
 }
 
+// Prop is a block prop only the boards listed hold, beside the ones every board's
+// block of its flavour holds. The browser's board rules (boardRules.ts) check its
+// value.
+type Prop struct {
+	Flavour string   `json:"flavour"`
+	Name    string   `json:"name"`
+	Boards  []string `json:"boards"`
+}
+
 // Catalog is the whole list.
 type Catalog struct {
 	Boards   []string         `json:"boards"`
 	Elements []Element        `json:"elements"`
 	Blocks   []Block          `json:"blocks"`
+	Props    []Prop           `json:"props"`
 	Limits   map[string]int64 `json:"limits"`
 	// The emoji a picture may show, by code points: Noto Animated Emoji (Google, CC
 	// BY 4.0, credited on the Credits page), resized in public/emoji/noto.
@@ -81,6 +91,12 @@ func Get() Catalog {
 			// A link card (a YouTube video shows its poster) and a workspace quiz or set.
 			{Flavour: "affine:embed-capy-link", Parents: []string{"affine:surface"}, Boards: []string{Workspace}},
 			{Flavour: "affine:embed-capy-material", Parents: []string{"affine:surface"}, Boards: []string{Workspace}},
+		},
+		Props: []Prop{
+			// A question's answer area (Canvas parts, Epo 2026-11-23): its top left in
+			// board units as [x, y], its size fixed at 1,920 × 1,200. A board without
+			// one has it at (0, 0).
+			{Flavour: "affine:page", Name: "area", Boards: []string{Question}},
 		},
 		Limits: map[string]int64{
 			// A chart's label characters (bar and pie labels). A plane holds a graph,

@@ -362,7 +362,7 @@ export function StringList({
 
 export const answerLabels: Record<QuestionType, () => string> = {
   boolean: m.question_ui_true_false,
-  drawing: m.question_ui_drawing,
+  canvas: m.question_ui_canvas,
   gaps: m.question_ui_fill_in_the_gaps,
   matching: m.question_ui_matching,
   mcq: m.question_ui_multiple_choice,
@@ -393,7 +393,7 @@ export function emptyAnswer(type: QuestionType): QuestionAnswer {
       };
     case 'gaps':
       return { accepted: [[m.question_default_answer()]], type };
-    case 'drawing':
+    case 'canvas':
       return { type };
   }
 }
@@ -416,7 +416,7 @@ const kindLabels: Record<AnswerKind, () => string> = {
 
 export const kindIcons: Record<AnswerKind, IconName> = {
   boolean: 'toggle',
-  drawing: 'pencil',
+  canvas: 'pencil',
   gaps: 'blanks',
   matching: 'grid',
   mcq: 'radio',
@@ -430,7 +430,7 @@ export const kindIcons: Record<AnswerKind, IconName> = {
 const KIND_GROUPS: AnswerKind[][] = [
   ['mcq', 'multiple', 'boolean'],
   ['short', 'open', 'gaps'],
-  ['matching', 'ordering', 'drawing'],
+  ['matching', 'ordering', 'canvas'],
 ];
 
 /** `answer` turned into `kind`: Multiple choice and Multiple answer keep the
@@ -459,12 +459,17 @@ export function answerOfKind(
   return emptyAnswer(kind);
 }
 
-/** The card's answer type menu (board Types1): icons, three groups. */
+/** The card's answer type menu (board Types1): icons, three groups. Canvas
+ * is offered disabled, saying why (`canvasOff`), in a bank question, as the
+ * bank holds no canvas yet (Epo 2026-11-23), and at the question's canvas
+ * cap with no canvas above to answer in (Epo 2026-11-24). */
 export function AnswerTypeSelect({
+  canvasOff,
   className,
   onChange,
   value,
 }: {
+  canvasOff?: string;
   className?: string;
   onChange: (kind: AnswerKind) => void;
   value: AnswerKind;
@@ -480,20 +485,26 @@ export function AnswerTypeSelect({
       >
         <SelectValue />
       </SelectTrigger>
-      <SelectContent align="end">
+      {/* Inside the phone's 16px gutters, so why Canvas is off wraps. */}
+      <SelectContent align="end" className="max-w-[calc(100vw-2rem)]">
         {KIND_GROUPS.map((group, i) => (
           <SelectGroup key={group[0]}>
             {i > 0 && <SelectSeparator className="my-1" />}
-            {group.map((kind) => (
-              <SelectItem
-                iconAndValue={{
-                  icon: kindIcons[kind],
-                  label: kindLabels[kind](),
-                }}
-                key={kind}
-                value={kind}
-              />
-            ))}
+            {group.map((kind) => {
+              const off = kind === 'canvas' ? canvasOff : undefined;
+              return (
+                <SelectItem
+                  disabled={!!off}
+                  hint={off}
+                  iconAndValue={{
+                    icon: kindIcons[kind],
+                    label: kindLabels[kind](),
+                  }}
+                  key={kind}
+                  value={kind}
+                />
+              );
+            })}
           </SelectGroup>
         ))}
       </SelectContent>
@@ -1264,7 +1275,7 @@ function GapAnswers({
   );
 }
 
-/** A long answer's or drawing's marking points (board Types2): each with
+/** A long answer's or canvas part's marking points (board Types2): each with
  * its marks, adding up to the part's. */
 export function MarkSchemeRows({
   field,
@@ -1348,7 +1359,7 @@ export function MarkSchemeRows({
 
 /** A closed answer's key inside the open card, by type: choices, True /
  * False, accepted answers, matching's grid, ordering's rows and the blanks'
- * answers. Long answers and drawings mark against `MarkSchemeRows`. */
+ * answers. Long answers and canvas parts mark against `MarkSchemeRows`. */
 export function AnswerEditor({
   answer,
   onChange,
@@ -1370,7 +1381,7 @@ export function AnswerEditor({
     case 'gaps':
       return <GapAnswers answer={answer} onChange={onChange} />;
     case 'open':
-    case 'drawing':
+    case 'canvas':
       return null;
   }
 }

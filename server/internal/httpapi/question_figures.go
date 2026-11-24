@@ -36,6 +36,15 @@ type figureCache struct {
 
 func newFigureCache() *figureCache { return &figureCache{urls: map[string]string{}} }
 
+// figureKey names a question image: its editor asset id, else its bank link.
+func figureKey(image map[string]any) string {
+	if assetID, _ := image["assetId"].(string); assetID != "" {
+		return assetID
+	}
+	link, _ := image["url"].(string)
+	return link
+}
+
 // questionFigures reads a part's question images, in the order its grading
 // text numbers them (questions.GradingTextAndFigures), as JPEG data URLs
 // (Epo 2026-11-23). An editor image must be a ready, untrashed image of the
@@ -48,10 +57,7 @@ func (a *api) questionFigures(ctx context.Context, owner sampleOwner, figures []
 	for _, image := range figures {
 		assetID, _ := image["assetId"].(string)
 		link, _ := image["url"].(string)
-		key := assetID
-		if key == "" {
-			key = link
-		}
+		key := figureKey(image)
 		if cache != nil {
 			cache.mu.Lock()
 			hit, ok := cache.urls[key]

@@ -28,6 +28,7 @@ from ..config import cfg
 from ..generated.limits import (
     CHAT_CHARACTER_LIMIT,
     GENERATE_INSTRUCTIONS_MAX,
+    QUESTION_CANVASES_MAX,
     QUESTION_IMAGES_MAX,
 )
 from ..prompts import generate as generate_prompts
@@ -706,6 +707,9 @@ class GradeItem(BaseModel):
 # A question image as Go sends it: a JPEG at most 1,568 px on its long side
 # (questionfigures.go), well under this.
 _FIGURE_MAX = 1_500_000
+# A part's figures at most: its question's images and canvases (Go
+# questions.GradingTextAndFigures), a paper part's own canvas among them.
+_PART_FIGURES_MAX = QUESTION_IMAGES_MAX + QUESTION_CANVASES_MAX
 # Images one call may carry: Cloudflare, on the grading route, refuses more.
 _CALL_IMAGES_MAX = 32
 
@@ -721,7 +725,7 @@ class GradePartReq(BaseModel):
     sampleImage: str = Field(default="", max_length=600_000)
     # The question's images in the order its text numbers them (Epo 2026-11-23).
     figures: list[Annotated[str, Field(max_length=_FIGURE_MAX)]] = Field(
-        default_factory=list, max_length=QUESTION_IMAGES_MAX
+        default_factory=list, max_length=_PART_FIGURES_MAX
     )
 
     @model_validator(mode="after")
@@ -737,8 +741,9 @@ class GradePartReq(BaseModel):
             raise ValueError("a sample image goes only with a drawing")
         return self
 
-    def images(self) -> int:
-        return len(self.figures) + bool(self.image) + bool(self.sampleImage)
+    def images(self) -> set[str]:
+        """The images the part shows, each once."""
+        return {*self.figures, self.image, self.sampleImage} - {""}
 
     def grading(self) -> dict[str, Any]:
         return {
@@ -760,7 +765,8 @@ class GradeBatchPart(GradePartReq):
 
 
 class GradeBatchReq(LLMPin):
-    # One attempt's parts, at most four and 32 images (Epo 2026-11-23).
+    # One attempt's parts, at most four and 32 images, an image its parts
+    # share sent and counted once (Epo 2026-11-23).
     parts: list[GradeBatchPart] = Field(min_length=1, max_length=4)
     spendSessionId: str = Field(min_length=1)
 
@@ -768,7 +774,7 @@ class GradeBatchReq(LLMPin):
     def _fits_a_call(self) -> GradeBatchReq:
         if len({part.id for part in self.parts}) != len(self.parts):
             raise ValueError("part ids must be distinct")
-        if sum(part.images() for part in self.parts) > _CALL_IMAGES_MAX:
+        if len(set().union(*(part.images() for part in self.parts))) > _CALL_IMAGES_MAX:
             raise ValueError(f"a batch carries at most {_CALL_IMAGES_MAX} images")
         return self
 
@@ -855,14 +861,18 @@ class PaperPart(BaseModel):
     # Grading text and marking items, for open and drawing parts.
     question: str = ""
     items: list[GradeItem] = Field(default_factory=list)
-    # The question's images in the order its text numbers them (Epo 2026-11-23).
+    # The question's images in the order its text numbers them, every canvas
+    # among them as set (Epo 2026-11-23).
     figures: list[Annotated[str, Field(max_length=_FIGURE_MAX)]] = Field(
-        default_factory=list, max_length=QUESTION_IMAGES_MAX
+        default_factory=list, max_length=_PART_FIGURES_MAX
     )
+    # A canvas part's drawn sample answer image, as /grade's sampleImage.
+    sample: str = Field(default="", max_length=600_000)
 
     @model_validator(mode="after")
     def _figures(self) -> PaperPart:
-        if any(not _DRAWING_IMAGE.match(url) for url in self.figures):
+        shown = [*self.figures, *([self.sample] if self.sample else [])]
+        if any(not _DRAWING_IMAGE.match(url) for url in shown):
             raise ValueError("figures must be WebP, JPEG or PNG data URLs")
         return self
 
@@ -901,6 +911,7 @@ async def mark_paper(req: PaperReq) -> dict[str, Any]:
                     p.question,
                     [item.model_dump() for item in p.items],
                     p.figures,
+                    p.sample,
                 )
                 for p in req.parts
             ],

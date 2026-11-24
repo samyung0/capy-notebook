@@ -32,7 +32,8 @@ var editorAssetRules = map[string]map[string][]string{
 		".png": {"image/png"}, ".jpg": {"image/jpeg"}, ".jpeg": {"image/jpeg"},
 		".gif": {"image/gif"}, ".webp": {"image/webp"},
 	},
-	// A drawn sample answer's board, gzipped (Q3): the quiz's own asset.
+	// A quiz's drawn board, gzipped: a drawn sample answer's (Q3) or a canvas
+	// block's (Epo 2026-11-23), the quiz's own asset.
 	"board": {".gz": {"application/gzip"}},
 	"audio": {
 		".mp3": {"audio/mpeg"}, ".wav": {"audio/wav", "audio/x-wav"},
@@ -170,8 +171,8 @@ func (a *api) checkEditorAsset(in reserveEditorAssetRequest, scope editorAssetSc
 	if err != nil {
 		return "", "", "", err
 	}
-	// A canvas's board lives in its room (Epo 2026-11-18); the one board asset
-	// is a quiz's drawn sample answer.
+	// A canvas's board lives in its room (Epo 2026-11-18); a board asset is a
+	// quiz's: a drawn canvas block's or a drawn sample answer's.
 	if in.Purpose == "board" && scope.kind == store.MaterialCanvas {
 		return "", "", "", huma.Error400BadRequest("a canvas takes no board asset")
 	}
@@ -286,10 +287,23 @@ func editorAssetObjectKey(assetID, ext string) string {
 
 func (a *api) resolveEditorAsset(w http.ResponseWriter, r *http.Request) {
 	asset, err := a.s.GetEditorAsset(r.Context(), chi.URLParam(r, "assetId"))
-	// A trashed asset stays hidden until its material's save restores it.
-	if err != nil || asset.Status != "ready" || asset.Trashed {
+	if err != nil || asset.Status != "ready" {
 		a.fail(w, store.ErrNotFound)
 		return
+	}
+	// A trashed asset stays hidden until its material's save restores it, but
+	// for the editors of the quiz it belongs to, until it is purged (Epo
+	// 2026-11-24): a canvas their tab kept comes back after a reload.
+	if asset.Trashed {
+		editor, err := a.s.EditsAssetQuiz(r.Context(), uid(r), asset)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		if !editor {
+			a.fail(w, store.ErrNotFound)
+			return
+		}
 	}
 	readable, err := a.s.EditorAssetReadable(r.Context(), uid(r), asset)
 	// A material opened from the Trash shows its images and audio.

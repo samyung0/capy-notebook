@@ -2,7 +2,7 @@ import { expect, type Locator, type Page, test } from '@playwright/test';
 import { m } from '../i18n';
 
 /**
- * A drawing answer from the board to its marks: practice draws, Done and Check,
+ * A canvas answer from the board to its marks: practice draws, Done and Check,
  * marked by the mock's stand-in for the vision model (a drawing earns every
  * point but the last); an assignment's member draws, Done stores the drawing,
  * and Submit hands it in; its owner runs Grade with AI on it and approves. On a
@@ -13,8 +13,10 @@ const SCREENS = [
   { screen: 'a phone', width: 360 },
   { screen: 'desktop', width: 1280 },
 ];
-/** qz_2's drawing part: two marking points of one mark each. */
+/** qz_2's canvas part (its canvas empty): two marking points of one mark each. */
 const DRAWN = 'q_draw';
+/** qz_2's canvas part whose canvas holds a drawn Punnett square: ten elements. */
+const DRAWN_QUESTION = 'q_canvas';
 
 /** Out of sight, the board is inert (its opacity is 0, which Playwright counts as
  * visible). */
@@ -67,7 +69,10 @@ const pressDone = (page: Page) =>
 async function drawAndDone(page: Page, question: Locator) {
   await showBoard(
     page,
-    question.getByRole('button', { name: m.drawing_answer_draw() })
+    question.getByRole('button', {
+      exact: true,
+      name: m.question_canvas_answer(),
+    })
   );
   await stroke(page);
   await pressDone(page);
@@ -83,15 +88,13 @@ const hideMockPanel = (page: Page) =>
 
 /** The part's question by its row in the list, or on an assignment's page by
  * its number (the grid, or a phone's strip above the question). */
-async function openQuestion(page: Page) {
+async function openQuestion(page: Page, id = DRAWN) {
   const pick = page
-    .locator(
-      `[data-question-row="${DRAWN}"], [data-question-number="${DRAWN}"]`
-    )
+    .locator(`[data-question-row="${id}"], [data-question-number="${id}"]`)
     .locator('visible=true')
     .first();
   await pick.click({ timeout: 60_000 });
-  return page.locator(`[data-question-id="${DRAWN}"]`).first();
+  return page.locator(`[data-question-id="${id}"]`).first();
 }
 
 /** Switches the page's mocks to another scenario, keeping their data, and
@@ -230,11 +233,11 @@ for (const { screen, width } of SCREENS) {
     await expect(
       page.getByRole('img', { name: m.drawing_answer_image() })
     ).toBeVisible({ timeout: 60_000 });
-    // The answer's pane reads the AI's grade over the grade to approve.
+    // The answer's pane reads the grade to approve alone (Epo 2026-11-23).
     await expect(
-      page.getByText(
-        `${m.assignment_ai_mark({ mark: '1 / 2' })} · ${m.assignment_mark_of({ marks: 2, total: 1 })}`
-      )
+      page.getByText(m.assignment_mark_of({ marks: 2, total: 1 }), {
+        exact: true,
+      })
     ).toBeVisible({ timeout: 15_000 });
     await page
       .getByRole('button', { exact: true, name: m.assignment_approve() })
@@ -256,9 +259,80 @@ for (const { screen, width } of SCREENS) {
   });
 }
 
+test('a drawn canvas opens on its locked copy, and Done asks about a stroke outside the answer area', async ({
+  page,
+}) => {
+  test.slow();
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/quizzes/qz_2/attempt');
+  await hideMockPanel(page);
+  const question = await openQuestion(page, DRAWN_QUESTION);
+  await expect(
+    question.getByText(m.question_canvas_hint_student())
+  ).toBeVisible();
+  await showBoard(
+    page,
+    question.getByRole('button', {
+      exact: true,
+      name: m.question_canvas_answer(),
+    })
+  );
+  // The question's elements are all there, each locked as part of it.
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          document.querySelector(
+            '.answer-board affine-edgeless-root'
+          ) as BoardRoot
+        ).gfx.layer.canvasElements.filter((element) => element.lockedBySelf)
+          .length
+    )
+  ).toBe(10);
+
+  // A stroke left of the answer area: Done asks, Keep drawing stays.
+  await page.locator('.answer-board edgeless-pen-tool-button').first().click();
+  await page.mouse.move(40, 300);
+  await page.mouse.down();
+  for (let step = 1; step <= 12; step++)
+    await page.mouse.move(40 + step * 6, 300 + step * 6);
+  await page.mouse.up();
+  await pressDone(page);
+  const outside = page.getByText(m.question_canvas_outside_title());
+  await expect(outside).toBeVisible();
+  await page
+    .getByRole('button', {
+      exact: true,
+      name: m.question_canvas_outside_keep(),
+    })
+    .click();
+  await expect(outside).toHaveCount(0);
+  await expect(page.locator('.answer-board')).not.toHaveAttribute('inert');
+  await pressDone(page);
+  await page
+    .getByRole('button', {
+      exact: true,
+      name: m.question_canvas_outside_done_anyway(),
+    })
+    .click();
+  await putAway(page);
+  await expect(
+    question.getByRole('img', { name: m.drawing_answer_image() })
+  ).toBeVisible();
+  await expect(
+    question.getByRole('button', {
+      exact: true,
+      name: m.question_canvas_answer(),
+    })
+  ).toBeVisible();
+});
+
 type BoardRoot = HTMLElement & {
   gfx: {
-    layer: { blocks: unknown[]; canvasElements: { type: string }[] };
+    layer: {
+      blocks: unknown[];
+      canvasElements: { lockedBySelf?: boolean; type: string }[];
+    };
     selection: { selectedElements: unknown[] };
   };
 };
@@ -273,12 +347,15 @@ test('a board put away after Done takes none of the page keys or pastes', async 
   const question = await openQuestion(page);
   await drawAndDone(page, question);
 
-  // Edit drawing, select the stroke without changing it, and Done: the board is put
+  // Answer, select the stroke without changing it, and Done: the board is put
   // away out of sight, with nothing kept selected (putAway) and reopened from what
   // Done saved.
   await showBoard(
     page,
-    question.getByRole('button', { name: m.drawing_answer_edit() })
+    question.getByRole('button', {
+      exact: true,
+      name: m.question_canvas_answer(),
+    })
   );
   await page.keyboard.press('v');
   await page.mouse.click(1280 * 0.51, 800 * 0.468);
@@ -436,13 +513,18 @@ test('a board put away shows none of its note card or image, and Draw shows them
   const question = await openQuestion(page);
   await showBoard(
     page,
-    question.getByRole('button', { name: m.drawing_answer_draw() })
+    question.getByRole('button', {
+      exact: true,
+      name: m.question_canvas_answer(),
+    })
   );
   await addCardAndImage(page);
   await pressDone(page);
   await expectCardsUnseen(page);
 
-  await question.getByRole('button', { name: m.drawing_answer_edit() }).click();
+  await question
+    .getByRole('button', { exact: true, name: m.question_canvas_answer() })
+    .click();
   await expect(page.locator('.answer-board')).not.toHaveAttribute('inert');
   await expect.poll(async () => (await boardSeen(page)).cardsShown).toBe(2);
 });
@@ -457,7 +539,10 @@ test("a picture on an answer board is kept with the device's draft through Done 
   let question = await openQuestion(page);
   await showBoard(
     page,
-    question.getByRole('button', { name: m.drawing_answer_draw() })
+    question.getByRole('button', {
+      exact: true,
+      name: m.question_canvas_answer(),
+    })
   );
   await addCardAndImage(page);
   await pressDone(page);
@@ -470,7 +555,10 @@ test("a picture on an answer board is kept with the device's draft through Done 
   question = await openQuestion(page);
   await showBoard(
     page,
-    question.getByRole('button', { name: m.drawing_answer_draw() })
+    question.getByRole('button', {
+      exact: true,
+      name: m.question_canvas_answer(),
+    })
   );
   await expect
     .poll(() =>
@@ -580,7 +668,10 @@ test('a board put away takes strokes when shown again, and the last stroke befor
   await page.goto('/quizzes/qz_2/attempt');
   await hideMockPanel(page);
   const question = await openQuestion(page);
-  const draw = question.getByRole('button', { name: m.drawing_answer_draw() });
+  const draw = question.getByRole('button', {
+    exact: true,
+    name: m.question_canvas_answer(),
+  });
   const root = page.locator('.answer-board affine-edgeless-root');
 
   // Done on an empty board puts the same board away, not mounted again.
@@ -600,7 +691,10 @@ test('a board put away takes strokes when shown again, and the last stroke befor
           const { localDrawingDraft } = await import(
             '/src/lib/localDb.ts' as string
           );
-          return Boolean(await localDrawingDraft('quiz:qz_2:q_draw:part'));
+          // Kept by canvas: the question, then the part's own.
+          return Boolean(
+            await localDrawingDraft('quiz:qz_2:q_draw:part:q_draw:part')
+          );
         }),
       { timeout: 10_000 }
     )
@@ -611,10 +705,13 @@ test('a board put away takes strokes when shown again, and the last stroke befor
   const drawing = question.getByRole('img', { name: m.drawing_answer_image() });
   await expect.poll(() => paths(drawing)).toBe(2);
 
-  // Edit drawing has both, and the next Done keeps them with a third.
+  // Answer has both, and the next Done keeps them with a third.
   await showBoard(
     page,
-    question.getByRole('button', { name: m.drawing_answer_edit() })
+    question.getByRole('button', {
+      exact: true,
+      name: m.question_canvas_answer(),
+    })
   );
   await expect.poll(() => brushes(page)).toBe(2);
   await stroke(page, 0.2);

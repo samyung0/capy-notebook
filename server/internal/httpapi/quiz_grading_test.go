@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -29,6 +30,22 @@ import (
 // those that carried their question's images.
 var gradedImages, gradedSamples, gradedFigures atomic.Int32
 
+// gradedPart is one part as /grade and /grade-batch take it.
+type gradedPart struct {
+	ID       string   `json:"id"`
+	Question string   `json:"question"`
+	Items    []any    `json:"items"`
+	Image    string   `json:"image"`
+	Sample   string   `json:"sampleImage"`
+	Figures  []string `json:"figures"`
+}
+
+// gradedBatches records each /grade-batch call's parts, as sent.
+var gradedBatches struct {
+	sync.Mutex
+	calls [][]gradedPart
+}
+
 // openGradingAPI serves the API with a stub grading model that gives every item
 // the same choice ("zero", "partial" or "full"), counting every model call.
 func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *atomic.Int32) {
@@ -45,23 +62,19 @@ func openGradingAPIWithBlob(t *testing.T, choice string) (http.Handler, *store.S
 	// part (/grade) or up to four (/grade-batch).
 	pipe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		type part struct {
-			ID       string   `json:"id"`
-			Question string   `json:"question"`
-			Items    []any    `json:"items"`
-			Image    string   `json:"image"`
-			Sample   string   `json:"sampleImage"`
-			Figures  []string `json:"figures"`
-		}
 		var body struct {
-			part
-			Parts []part `json:"parts"`
+			gradedPart
+			Parts []gradedPart `json:"parts"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		batch := r.URL.Path == "/grade-batch"
 		parts := body.Parts
-		if !batch {
-			parts = []part{body.part}
+		if batch {
+			gradedBatches.Lock()
+			gradedBatches.calls = append(gradedBatches.calls, parts)
+			gradedBatches.Unlock()
+		} else {
+			parts = []gradedPart{body.gradedPart}
 		}
 		// Counted before a failure, so a call that fails still shows what it sent.
 		for _, p := range parts {
@@ -583,8 +596,8 @@ func TestQuizCheckAgainMarksADrawingFromItsKeptImage(t *testing.T) {
 		"name": "Drawn", "privacy": "private",
 		"questions": []any{map[string]any{
 			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
-			"parts": []any{map[string]any{"id": "draw-a", "blocks": []any{map[string]any{"type": "text", "text": "Draw it."}},
-				"answer": map[string]any{"type": "drawing"}, "marks": 2,
+			"parts": []any{map[string]any{"id": "draw-a", "blocks": []any{map[string]any{"type": "text", "text": "Draw it."}, map[string]any{"type": "canvas"}},
+				"answer": map[string]any{"type": "canvas"}, "marks": 2,
 				"markscheme": []any{map[string]any{"text": "Shape", "marks": 2}}, "solution": []any{}}},
 		}},
 	})

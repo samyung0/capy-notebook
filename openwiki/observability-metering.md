@@ -757,7 +757,12 @@ same way with their marking image, so the slot requires `vision` (M4, Epo
 parts: the grading text numbers them `[Figure N: description]`
 (`questions.GradingTextAndFigures`) and each follows the marking items as a JPEG
 at most 1,568 px on its long side, labelled `Figure N:` (Epo 2026-11-23, bench
-`bench/grading/reports/2026-11-23-online-batching-and-figures.md`). They are read
+`bench/grading/reports/2026-11-23-online-batching-and-figures.md`). Drawn
+canvases are figures by their pictures as set, but the canvas a canvas part
+answers in, its own or the stem's or group's it shares (Epo 2026-11-23,
+[question-bank.md](question-bank.md#canvas-parts)), so a part carries at most its
+question's 4 images and 4 canvases (`_PART_FIGURES_MAX` in `service.py`, from the
+generated `QUESTION_IMAGES_MAX` and `QUESTION_CANVASES_MAX`). They are read
 from the quiz's or the assignment copy's own ready editor images, or from under the
 bank's asset base for a copied bank question (`questionFigures`); one that can't be
 read leaves its part Not marked (`error`). Graphs store no picture and stay text.
@@ -765,7 +770,21 @@ A check grades one call per answered open or drawn part. An assignment's marking
 (a submission, Grade with AI, Regrade with AI) sends up to four parts a call through
 `POST /grade-batch` under `SYSTEM_PROMPT` + `BATCH_SECTION` (Epo 2026-11-23, after
 the same bench): parts with working apart from plain ones, each question's first
-parts before any second, at most 28 images a call. Ten calls run at a time per
+parts before any second, at most four parts and 24 images a call (`packBatches`,
+Epo 2026-11-23: a part that would pass 24 starts the next call; Cloudflare's
+route takes 32). An image a call's parts share, a question's figures or the
+drawing of parts answering in one canvas, goes to the model once (Epo
+2026-11-23, "sending the root canvas once per call"; bench
+`bench/grading/reports/2026-11-23-canvas-levels.md`: same marks, about 920
+prompt tokens less an image left out): Go still sends every part its images,
+the same data URL each time, counts each once (`partImages` names a figure by
+its asset or link, a drawing by the part it is stored under), and the pipeline
+sends it with the first part that shows it (`grading.SentOnce`); a later part
+keeps its own label and points at it, "Figure 1: the same image as Figure 2 in
+part p1.", "Student's drawing: the same image as the student's drawing in part
+p1." or "Sample answer: the same image as the sample answer in part p1." (a
+drawing with no sample otherwise goes unlabelled, as before). `/grade-batch`
+refuses more than 32 distinct images. Ten calls run at a time per
 attempt, waiting in the model's line. Each is
 **charged** to whoever started the job (Epo 2026-11-03): the learner for a check
 of their own practice, for an assignment's submission the member attempting
@@ -786,10 +805,18 @@ most `PAPER_MAX_PAGES` (15, Epo's figure held; more is a 422 `too_many_pages`).
 One read call (prompt R, reasoning off, every page at 1,024 px) gives each part's
 pages and each closed part's answer; an answer on no pages is dropped. Open and
 drawing parts with pages are then graded four to a call, concurrently, on the
-union of their pages at 1,568 px under `SYSTEM_PROMPT` + `DRAWN_SECTION` + P1 + B,
-thinking when a part has working, each with its question's images. A batch takes
-at most 32 images, figures and pages together (`CALL_IMAGES`, Cloudflare's cap on
-the grading route), so it closes early when the next part would pass it; one
+union of their pages at 1,568 px under `SYSTEM_PROMPT` + `PAGE_DRAWN_SECTION` + P1
++ B (the drawn-answers first line as benched for pages, with no faded-marks rule:
+pages have no faded layer), thinking when a part has working, each with its
+question's images. Every canvas is one of them as set, the one the part
+answers in too (`questions.PaperTextAndFigures`), and a canvas part's drawn
+sample answer follows them inside its `<part>` after "Sample answer:" (Epo
+2026-11-23). An image two of a batch's parts share goes once, a later part
+pointing at it as online ("Figure 1: the same image as Figure 1 in part 1a."). A
+batch takes at most 24 images, figures, samples and pages together, each counted
+once (`CALL_IMAGES`, Epo 2026-11-23, under Cloudflare's 32 on the grading
+route), so it closes early when the next part would pass it; one part alone
+holds at most 23 (8 question images and canvases, 15 pages); one
 unreadable figure leaves every part of the paper waiting with `error`. A failed read fails the request; a failed batch
 leaves only its parts with `error` `credits` (the session's credits ran out) or
 `error`. Given `pages`, there is no read and only those parts are graded. R, P1

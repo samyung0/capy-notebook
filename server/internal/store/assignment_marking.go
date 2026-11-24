@@ -29,9 +29,11 @@ type AnswerToMark struct {
 	Items     []string
 	ItemMarks []float64
 	Answer    string
-	// A drawing part: its marking image is the attempt's stored one for PartID;
+	// A canvas part: DrawingPart is the part its drawing is stored under, its
+	// marking image the attempt's stored one for it (PartID itself, or, answered
+	// in the canvas above, questions.DrawingParts' first part there), else "";
 	// SampleImage is its drawn sample answer's image asset, or "".
-	Drawing     bool
+	DrawingPart string
 	SampleImage string
 	// Pages: a paper's open or drawn part, graded on these pages of its paper.
 	Pages []int
@@ -75,7 +77,7 @@ func (s *Store) AnswersToMark(ctx context.Context, assignmentID, attemptID strin
 			return "", nil, err
 		}
 		for _, answer := range found {
-			if answer.Drawing {
+			if answer.DrawingPart != "" {
 				drawnIn = append(drawnIn, id)
 				break
 			}
@@ -93,7 +95,7 @@ func (s *Store) AnswersToMark(ctx context.Context, assignmentID, attemptID strin
 		return "", nil, err
 	}
 	for _, answer := range listed {
-		if !answer.Drawing || kept[answer.AttemptID+"/"+answer.PartID] {
+		if answer.DrawingPart == "" || kept[answer.AttemptID+"/"+answer.DrawingPart] {
 			answers = append(answers, answer)
 		}
 	}
@@ -126,13 +128,13 @@ func keptDrawingImageParts(ctx context.Context, q rowsQueryer, attemptIDs []stri
 // needsHandMarking: a waiting drawing the AI has not marked and has no marking
 // image for (saved under manual grading), which only staff can mark (Q695).
 func needsHandMarking(q, answers map[string]any, attemptID string, kept map[string]bool) bool {
+	owners := questions.DrawingParts(q)
 	parts, _ := q["parts"].([]any)
 	for _, raw := range parts {
 		p, _ := raw.(map[string]any)
-		pending, _ := p["pending"].(bool)
-		_, aiMarked := p["aiAwards"]
 		id, _ := p["id"].(string)
-		if pending && !aiMarked && isDrawingAnswer(answers[id]) && !kept[attemptID+"/"+id] {
+		owner, drawn := owners[id]
+		if drawn && waitsOnAI(p) && isDrawingAnswer(answers[owner]) && !kept[attemptID+"/"+owner] {
 			return true
 		}
 	}
@@ -151,15 +153,20 @@ func attemptAnswersToMark(attemptID string, rawAnswers, rawGraded []byte) ([]Ans
 	var out []AnswerToMark
 	for _, q := range graded {
 		questionID, _ := q["id"].(string)
+		// Read by drawing: the parts answering in one canvas are each marked
+		// on the one drawing stored under the first of them.
+		owners := questions.DrawingParts(q)
 		parts, _ := q["parts"].([]any)
 		for i, raw := range parts {
 			p, _ := raw.(map[string]any)
 			partID, _ := p["id"].(string)
 			text, _ := given[partID].(string)
-			drawn := isDrawingAnswer(given[partID])
+			drawing := ""
+			if owner, ok := owners[partID]; ok && isDrawingAnswer(given[owner]) {
+				drawing = owner
+			}
 			pages := paperPages(given[partID])
-			pending, _ := p["pending"].(bool)
-			if _, marked := p["aiAwards"]; !pending || marked || (strings.TrimSpace(text) == "" && !drawn && len(pages) == 0) {
+			if !waitsOnAI(p) || (strings.TrimSpace(text) == "" && drawing == "" && len(pages) == 0) {
 				continue
 			}
 			items, marks := questions.MarkItems(p)
@@ -167,7 +174,7 @@ func attemptAnswersToMark(attemptID string, rawAnswers, rawGraded []byte) ([]Ans
 			out = append(out, AnswerToMark{
 				AttemptID: attemptID, QuestionID: questionID, PartID: partID,
 				Question: question, Figures: figures, Items: items, ItemMarks: marks, Answer: text,
-				Drawing: drawn, SampleImage: questions.DrawnSampleImage(p), Pages: pages,
+				DrawingPart: drawing, SampleImage: questions.DrawnSampleImage(p), Pages: pages,
 			})
 		}
 	}
@@ -523,6 +530,7 @@ func (s *Store) RegradeQuestion(ctx context.Context, actorID, attemptID, questio
 			oldParts[id] = p
 		}
 		question, _, _ := questions.Graded(source, given, nil)
+		owners := questions.DrawingParts(source)
 		parts, _ := question["parts"].([]any)
 		for i, raw := range parts {
 			p, _ := raw.(map[string]any)
@@ -531,13 +539,18 @@ func (s *Store) RegradeQuestion(ctx context.Context, actorID, attemptID, questio
 			if !questions.ModelMarked(a["type"]) {
 				continue
 			}
-			value := given[id]
+			// A part answered in the canvas above is read by its drawing.
+			drawing, drawn := owners[id]
+			if !drawn {
+				drawing = id
+			}
+			value := given[drawing]
 			text, typed := value.(string)
-			pages := paperPages(value)
+			pages := paperPages(given[id])
 			switch {
 			case len(pages) > 0:
 				p["pages"] = pages
-			case isDrawingAnswer(value) && !imaged[id]:
+			case isDrawingAnswer(value) && !imaged[drawing]:
 				// Nothing to read: its mark as it was, or hand marking.
 				if kept, ok := oldParts[id]; ok {
 					parts[i] = kept

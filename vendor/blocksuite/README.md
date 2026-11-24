@@ -916,6 +916,14 @@ Outside this directory, for BlockSuite:
     once typing pauses", "a note's waiting size is stored when editing ends or
     the board is saved").
 
+76. The reference popup's input rules are scoped to `reference-popup`
+    (`affine/inlines/reference` `reference-popup.ts`, marked `Capy (local change
+    76)`): it is a ShadowlessElement, whose styles go to the document, and its
+    bare `input { display: flex; padding: 0; border: none; background:
+    transparent }` restyled every input on the page once a board loaded and
+    showed the app's hidden file inputs (Tailwind's `hidden` is layered, the
+    injected rule is not).
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

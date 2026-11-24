@@ -172,7 +172,7 @@ function closedCorrect(part: QuestionPart, value: Answer | undefined): boolean {
     case 'gaps':
       return itemResults(part, value).every(Boolean);
     case 'open':
-    case 'drawing':
+    case 'canvas':
       return false;
   }
 }
@@ -225,7 +225,7 @@ export function emptyAnswer(part: QuestionPart | LearnerPart): Answer {
       return [];
     case 'boolean':
     case 'ordering':
-    case 'drawing':
+    case 'canvas':
       return null;
     case 'short':
     case 'open':

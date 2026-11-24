@@ -63,6 +63,14 @@ import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
 import { gradeQuestions, learnerView } from './answerKeys';
 import { biologyQuizQuestions } from './biologyQuiz';
 import {
+  GROWTH_CANVAS,
+  P_GROWTH_CANVAS,
+  P_WEEKS_CANVAS,
+  P_WEEKS_SAMPLE,
+  PUNNETT_CANVAS,
+  WEEK_AXES_CANVAS,
+} from './canvasBoards';
+import {
   type ChatFixture,
   chatFixtures,
   fixtureCitations,
@@ -1366,19 +1374,20 @@ const seedQuizzes: EditableQuiz[] = [
         ],
         stem: [],
       },
-      // A drawing part (Epo 2026-11-03), answered on the drawing board.
+      // A canvas part (Epo 2026-11-23), answered on its canvas.
       {
         id: 'q_draw',
         labels: 'letters',
         layout: 'paper',
         parts: [
           {
-            answer: { type: 'drawing' },
+            answer: { type: 'canvas' },
             blocks: [
               {
                 text: 'Draw a Punnett square for Aa × Aa and label each offspring genotype.',
                 type: 'text',
               },
+              { type: 'canvas' },
             ],
             id: 'q_draw:part',
             marks: 2,
@@ -1393,6 +1402,144 @@ const seedQuizzes: EditableQuiz[] = [
           },
         ],
         stem: [],
+      },
+      // A canvas part whose canvas holds the question, answered inside it.
+      {
+        id: 'q_canvas',
+        labels: 'letters',
+        layout: 'paper',
+        parts: [
+          {
+            answer: { type: 'canvas' },
+            blocks: [
+              {
+                text: 'Complete the Punnett square for Aa × Aa.',
+                type: 'text',
+              },
+              PUNNETT_CANVAS,
+            ],
+            id: 'q_canvas:part',
+            marks: 2,
+            markscheme: [
+              { marks: 1, text: 'AA, Aa, Aa and aa in the four boxes.' },
+              { marks: 1, text: 'The ratio 1 : 2 : 1.' },
+            ],
+            solution: [],
+          },
+        ],
+        stem: [],
+      },
+      // A multiple choice part with a canvas to look at.
+      {
+        id: 'q_canvas_mc',
+        labels: 'letters',
+        layout: 'paper',
+        parts: [
+          {
+            answer: {
+              correct: [0],
+              options: ['P', 'Q', 'R', 'They all grow at the same rate'],
+              type: 'mcq',
+            },
+            blocks: [
+              {
+                text: 'The canvas shows three plants growing over four weeks. Which grows fastest?',
+                type: 'text',
+              },
+              GROWTH_CANVAS,
+            ],
+            id: 'q_canvas_mc:part',
+            marks: 1,
+            solution: [],
+          },
+        ],
+        stem: [],
+      },
+      // S1 (Epo 2026-11-23): two parts answered in the stem's canvas, one
+      // drawing kept under (a).
+      {
+        id: 'q_canvas_shared',
+        labels: 'letters',
+        layout: 'paper',
+        parts: [
+          {
+            answer: { shared: true, type: 'canvas' },
+            blocks: [{ text: 'Fill in the four boxes.', type: 'text' }],
+            id: 'q_canvas_shared:a',
+            marks: 2,
+            markscheme: [
+              { marks: 1, text: 'AA in one box and aa in another.' },
+              { marks: 1, text: 'Aa in the other two boxes.' },
+            ],
+            solution: [],
+          },
+          {
+            answer: { shared: true, type: 'canvas' },
+            blocks: [
+              { text: 'Write the ratio of the genotypes.', type: 'text' },
+            ],
+            id: 'q_canvas_shared:b',
+            marks: 1,
+            markscheme: [{ marks: 1, text: 'The ratio 1 : 2 : 1.' }],
+            solution: [],
+          },
+        ],
+        stem: [
+          {
+            text: 'A cross between two heterozygous pea plants, Aa × Aa.',
+            type: 'text',
+          },
+          PUNNETT_CANVAS,
+        ],
+      },
+      // S2 (Epo 2026-11-23): the stem's canvas only looked at, above two
+      // parts each answered on its own canvas, (b) with a drawn sample.
+      {
+        id: 'q_canvas_own',
+        labels: 'letters',
+        layout: 'paper',
+        parts: [
+          {
+            answer: { type: 'canvas' },
+            blocks: [
+              {
+                text: 'Sketch the curve you expect for plant Q, which gets half the light.',
+                type: 'text',
+              },
+              WEEK_AXES_CANVAS,
+            ],
+            id: 'q_canvas_own:a',
+            marks: 2,
+            markscheme: [
+              { marks: 1, text: 'A curve below P all the way.' },
+              { marks: 1, text: 'Rising more slowly than P.' },
+            ],
+            solution: [],
+          },
+          {
+            answer: { sample: P_WEEKS_SAMPLE, type: 'canvas' },
+            blocks: [
+              { text: 'Mark the week where P grows fastest.', type: 'text' },
+              P_WEEKS_CANVAS,
+            ],
+            id: 'q_canvas_own:b',
+            marks: 1,
+            markscheme: [
+              {
+                marks: 1,
+                text: 'A mark on the steepest stretch, week 2 to 3.',
+              },
+            ],
+            solution: [],
+          },
+        ],
+        stem: [
+          {
+            text: 'The graph shows how plant P grew over four weeks.',
+            type: 'text',
+          },
+          P_GROWTH_CANVAS,
+        ],
       },
     ],
     revision: 1,

@@ -555,6 +555,29 @@ func (s *Store) EditorAssetReadable(ctx context.Context, actorID string, asset E
 	return s.editorAssetReadable(ctx, s.pool, actorID, asset)
 }
 
+// EditsAssetQuiz says whether actorID may edit the live quiz the asset belongs
+// to: its editors still resolve its trashed assets until they are purged (Epo
+// 2026-11-24), so a canvas their tab kept comes back after a reload.
+func (s *Store) EditsAssetQuiz(ctx context.Context, actorID string, asset EditorAsset) (bool, error) {
+	if asset.MaterialID == "" {
+		return false, nil
+	}
+	var quiz bool
+	err := s.pool.QueryRow(ctx, `SELECT kind=$2 FROM materials WHERE id=$1 AND trashed_at IS NULL`,
+		asset.MaterialID, MaterialQuiz).Scan(&quiz)
+	if isNoRows(err) {
+		return false, nil
+	}
+	if err != nil || !quiz {
+		return false, err
+	}
+	err = s.AssertMaterialEditor(ctx, actorID, asset.MaterialID)
+	if errors.Is(err, ErrForbidden) || errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // editorAssetReadable admits the readers of what the asset belongs to: its
 // material, so a hidden item's and an assigned quiz's rules hold for its images;
 // a frozen copy's assignment; an item bank question's bank; or for a row with

@@ -1463,7 +1463,11 @@ the person attempting (see [study-progress.md](study-progress.md) and
   writes nothing to the bucket until `CheckAssignmentDrawing` passes: the
   caller's own running attempt, in a class they still belong to, the attempt's
   time not run out, a drawing part of its frozen copy, and the caller's storage
-  for what the part adds (Q693). Another member's attempt, an unknown one or a
+  for what the part adds (Q693). A part answering in the canvas above takes
+  none unless it is the first part answering there, whose drawing answers
+  them all (`drawingPartIn`, `questions.DrawingParts`; Epo 2026-11-23); a
+  practice check sending one under another is refused the same way
+  (`planGrading`, 422). Another member's attempt, an unknown one or a
   malformed id (the id names the bucket folder: at most 64 of `[A-Za-z0-9_-]`)
   is refused first; the save checks it all again in its transaction. Marked by
   hand, no marking image is made in the browser (`drawingImages` on the
@@ -1485,7 +1489,10 @@ the person attempting (see [study-progress.md](study-progress.md) and
   (`DELETE /api/drawings/{id}`, `DELETE /api/drawings`); one still waiting on
   marking is not listed and not found, and an assignment's waits until the
   assignment has closed and, under Show grades Manual, its grades are released,
-  so staff can still revise marks (Epo 2026-11-08). Drawings go with their assignment, with
+  so staff can still revise marks (Epo 2026-11-08). A drawing answering
+  several parts in one canvas counts as marked only once every shared canvas
+  part of its question is (`sharedUnmarkedSQL`), for this list and for a
+  leaver. Drawings go with their assignment, with
   a practice attempt's quiz when it is permanently deleted, and a leaver's
   marked ones go as they leave.
 
@@ -1559,7 +1566,8 @@ room per canvas whether it is shared or not;
   editor from a viewer. `PATCH /api/canvases/{id}` with `{shared}` shares or
   takes back. `PUT /api/canvases/{id}` (the saved board) is gone, and a
   `board` editor asset for a canvas is refused with 400
-  (`checkEditorAsset`): a board asset is a quiz's drawn sample answer alone.
+  (`checkEditorAsset`): a board asset is a quiz's alone, a drawn sample
+  answer's or a canvas block's board.
   `UpdateMaterial` refuses a content patch for a canvas (its document is
   written by its room's projection alone).
 - **Who shares, renames and deletes (PROVISIONAL, open question 3 of the
@@ -2428,7 +2436,11 @@ completed more than 60 seconds ago (`editor_assets.trashed_at`, migration
 0065): still charged and holding its object, hidden from resolve, share and
 clone reads, restored by a save that references it again, and deleted by the
 trash sweep a day later (`PurgeTrashedEditorAssets`), which releases the charge
-and sends the object to the blob outbox. The minute lets a just-uploaded
+and sends the object to the blob outbox. A quiz's editors still resolve its
+trashed assets until they are purged (Epo 2026-11-24, `EditsAssetQuiz` in
+`resolveEditorAsset`), so a canvas their tab kept (an "Answer in" switch, a
+type switch) comes back after a reload; learners, viewers, share pages and
+everyone else still get 404, and a note's trashed images stay hidden from all. The minute lets a just-uploaded
 image's id reach a shared note before a collaborator's save. The children pass
 above handles images too: the note's own image comes out of the trash at once
 (undo, cut and paste, chat Undo of an AI edit within the day), another note's

@@ -59,7 +59,10 @@ export class ReferencePopup extends SignalWatcher(
       }
     }
 
-    input {
+    /* Capy (local change 76): scoped to the popup; a ShadowlessElement's
+       styles reach the whole document, and a bare input rule restyled every
+       input on the page and showed hidden file inputs. */
+    reference-popup input {
       display: flex;
       flex: 1;
       padding: 0;
@@ -67,11 +70,11 @@ export class ReferencePopup extends SignalWatcher(
       background: transparent;
       color: var(--affine-text-primary-color);
     }
-    ${fontXSStyle('input')}
-    input::placeholder {
+    ${fontXSStyle('reference-popup input')}
+    reference-popup input::placeholder {
       color: var(--affine-placeholder-color);
     }
-    input:focus {
+    reference-popup input:focus {
       outline: none;
     }
 
