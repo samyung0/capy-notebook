@@ -651,9 +651,9 @@ pub(crate) async fn live_state(app: &Shared, room: &str) -> Result<Option<Vec<u8
 /// a copy or none. A source room holds a document, never a board: a board's
 /// refusal here is reported and answers none.
 pub(crate) async fn live_source(app: &Shared, room: &str) -> Option<Vec<u8>> {
-    live_state(app, room).await.unwrap_or_else(|error| {
+    live_state(app, room).await.unwrap_or_else(|_| {
         observe::capture(
-            error.message(),
+            "a source room holds a board, so its live copy was refused",
             None,
             &[("room", room), ("stage", "live_source")],
         );
