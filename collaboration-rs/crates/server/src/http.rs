@@ -300,7 +300,7 @@ async fn resolve_source_change(
         .sources
         .resolve(&input, move |room| {
             let app = rooms.clone();
-            Box::pin(async move { crate::edits::live_state(&app, &room).await })
+            Box::pin(async move { crate::edits::live_source(&app, &room).await })
         })
         .await
         .map(|asset| serde_json::to_value(asset).unwrap_or(Value::Null));
@@ -336,7 +336,7 @@ async fn source_changes(State(app): State<Shared>, headers: HeaderMap, body: Byt
             &input.file_ids,
             move |room| {
                 let app = rooms.clone();
-                Box::pin(async move { crate::edits::live_state(&app, &room).await })
+                Box::pin(async move { crate::edits::live_source(&app, &room).await })
             },
             sources::pending::OFFICE_CHANGES_BUDGET,
         )

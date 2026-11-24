@@ -542,10 +542,10 @@ async fn material_blocks(
     // when it loads, so only a stored one can have a room; with none loaded,
     // this reads nothing more.
     if stored {
-        rows.extend(live_state(app, &room).await);
+        rows.extend(live_state(app, &room).await?);
         if let Some((_, key_rows)) = &mut keys {
             let keys_room = format!("keys:{material_id}:schema:{schema}");
-            key_rows.extend(live_state(app, &keys_room).await);
+            key_rows.extend(live_state(app, &keys_room).await?);
         }
     }
     tokio::task::spawn_blocking(move || -> Result<_, DocumentError> {
@@ -626,12 +626,39 @@ pub async fn live_note(app: &Shared, room: &str) -> Result<Value, DocumentError>
     Ok(json!({ "content": { "schemaVersion": 1, "value": value } }))
 }
 
-/// This instance's live copy of `room`, when it has the room loaded.
-pub(crate) async fn live_state(app: &Shared, room: &str) -> Option<Vec<u8>> {
-    let handle = app.rooms.get(room)?;
+/// This instance's live copy of `room`, when it has the room loaded (none
+/// for a room it does not hold or that does not answer in time, whose
+/// callers read the stored state). A canvas's board room has none to give
+/// and is refused ([CANVAS_REFUSED]), never taken for a room not loaded.
+pub(crate) async fn live_state(app: &Shared, room: &str) -> Result<Option<Vec<u8>>, DocumentError> {
+    let Some(handle) = app.rooms.get(room) else {
+        return Ok(None);
+    };
     let (reply, answer) = oneshot::channel();
-    handle.tx.send(RoomCmd::Snapshot(reply)).await.ok()?;
-    tokio::time::timeout(SNAPSHOT_WAIT, answer).await.ok()?.ok()
+    if handle.tx.send(RoomCmd::Snapshot(reply)).await.is_err() {
+        return Ok(None);
+    }
+    match tokio::time::timeout(SNAPSHOT_WAIT, answer).await {
+        Ok(Ok(Ok(state))) => Ok(Some(state)),
+        Ok(Ok(Err(crate::room::IsBoard))) => {
+            Err(DocumentError::edit("unsupported_operation", CANVAS_REFUSED))
+        }
+        _ => Ok(None),
+    }
+}
+
+/// [live_state] of a source room, for the source crate's reads, which take
+/// a copy or none. A source room holds a document, never a board: a board's
+/// refusal here is reported and answers none.
+pub(crate) async fn live_source(app: &Shared, room: &str) -> Option<Vec<u8>> {
+    live_state(app, room).await.unwrap_or_else(|error| {
+        observe::capture(
+            error.message(),
+            None,
+            &[("room", room), ("stage", "live_source")],
+        );
+        None
+    })
 }
 
 /// The client ids bound to a loaded room's live channels (r2 N7): a
@@ -1309,7 +1336,7 @@ async fn material_stored(
     issued_at: i64,
 ) -> Result<Option<Value>, DocumentError> {
     let undo = request.undo.as_ref();
-    let live = live_state(app, room).await;
+    let live = live_state(app, room).await?;
     #[cfg(debug_assertions)]
     it_hold(app, room).await;
     let actor = request.actor_user_id.clone();
@@ -1432,7 +1459,7 @@ async fn material_stored(
     let quiz = if kind == "quiz" {
         Some(QuizInput {
             keys: quiz_keys(&tx, material_id, largest).await?,
-            live_keys: live_state(app, keys_room).await,
+            live_keys: live_state(app, keys_room).await?,
         })
     } else {
         None
@@ -1974,11 +2001,11 @@ async fn edit_in_room(
             }
         }
     }
-    let Some(live) = live_state(app, room).await else {
+    let Some(live) = live_state(app, room).await? else {
         return still_loaded(app, room);
     };
     let keys = if quiz {
-        let Some(keys) = live_state(app, keys_room).await else {
+        let Some(keys) = live_state(app, keys_room).await? else {
             return still_loaded(app, keys_room);
         };
         Some(QuizInput {
@@ -2184,7 +2211,7 @@ async fn source_in_room(
         tx.commit().await?;
         (step, name)
     };
-    let Some(live) = live_state(app, room).await else {
+    let Some(live) = live_state(app, room).await? else {
         return still_loaded(app, room);
     };
     // Debug builds only: the integration test's slow compute, which must
@@ -2318,7 +2345,9 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     {
         return Err(CANVAS_REFUSED.into());
     }
-    let live = live_state(app, &command.room).await;
+    let live = live_state(app, &command.room)
+        .await
+        .map_err(|error| error.message().to_owned())?;
     let mut pooled = Pooled::new(app.db.get().await.map_err(|error| error.to_string())?);
     let (client, largest) = pooled.parts();
     let tx = client
@@ -2400,7 +2429,9 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
             keys: quiz_keys(&tx, &material_id, largest)
                 .await
                 .map_err(|error| error.message().to_owned())?,
-            live_keys: live_state(app, &keys_room).await,
+            live_keys: live_state(app, &keys_room)
+                .await
+                .map_err(|error| error.message().to_owned())?,
         })
     } else {
         None
@@ -2615,7 +2646,7 @@ pub async fn source_request(
                 &request.target.id,
                 &request.actor_user_id,
                 request.office.clone(),
-                move |room| Box::pin(async move { live_state(&rooms, &room).await }),
+                move |room| Box::pin(async move { live_source(&rooms, &room).await }),
             )
             .await?;
         return Ok(serde_json::to_value(inspection).unwrap_or(Value::Null));
@@ -2726,7 +2757,7 @@ async fn source_stored(
                 let app = rooms.clone();
                 let room = room.to_owned();
                 Box::pin(async move {
-                    let live = live_state(&app, &room).await;
+                    let live = live_source(&app, &room).await;
                     #[cfg(debug_assertions)]
                     it_hold(&app, &room).await;
                     live

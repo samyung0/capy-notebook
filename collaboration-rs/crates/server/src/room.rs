@@ -99,7 +99,8 @@ const ROW_RETRIES: [Duration; 4] = [
 
 pub type MemberKey = (u64, u64);
 
-/// A canvas's board room's answer to [RoomCmd::LiveNote].
+/// A canvas's board room's answer to [RoomCmd::LiveNote] and
+/// [RoomCmd::Snapshot].
 pub struct IsBoard;
 
 /// Messages to a room task.
@@ -178,8 +179,9 @@ pub enum RoomCmd {
     Unload(oneshot::Sender<()>),
     /// The Office maintenance pause flushed this room (true) or ended.
     SetPaused(bool),
-    /// The room's whole state (a server edit merges the live room).
-    Snapshot(oneshot::Sender<Vec<u8>>),
+    /// The room's whole state (a server edit merges the live room). A
+    /// board has none to give and says so.
+    Snapshot(oneshot::Sender<Result<Vec<u8>, IsBoard>>),
     /// A note's whole state when it holds edits its projected content lacks
     /// (unsaved, being stored, or stored and not projected yet), else none:
     /// a detailed read's live note content (Q417).
@@ -2072,9 +2074,7 @@ impl Room {
                     });
                     return;
                 }
-                if let Some(state) = self.snapshot().await {
-                    let _ = reply.send(state);
-                }
+                let _ = reply.send(self.snapshot().await);
             }
             RoomCmd::LiveNote(reply) => {
                 let unprojected = matches!(&self.kind,
@@ -4090,19 +4090,12 @@ impl Room {
 
     /// The room's whole state for a server read of the live room (an agent
     /// edit's snapshot). A board has none: every server read and edit
-    /// refuses a canvas before it asks (`edits.rs`), so the ask is reported
-    /// and answers nothing.
-    async fn snapshot(&self) -> Option<Vec<u8>> {
+    /// refuses a canvas before it asks (`edits.rs`), and one that asked
+    /// anyway is refused ([IsBoard]).
+    async fn snapshot(&self) -> Result<Vec<u8>, IsBoard> {
         match &self.state {
-            State::Doc(doc) => Some(encoded(doc.clone(), StateVector::default()).await),
-            State::Board(_) => {
-                observe::capture(
-                    "a board room was asked for a server snapshot",
-                    None,
-                    &[("room", &self.name), ("stage", "board_snapshot")],
-                );
-                None
-            }
+            State::Doc(doc) => Ok(encoded(doc.clone(), StateVector::default()).await),
+            State::Board(_) => Err(IsBoard),
         }
     }
 
