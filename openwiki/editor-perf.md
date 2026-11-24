@@ -449,17 +449,28 @@ What it measures:
   build, with the five largest chunks.
 
 Gated: the blank and typical cold opens, the typical board's four input
-p90s, the cold hidden mount's longest frame and Draw's first frame. The
-dense board's five figures (`denseOpenMs`, `denseLabelP90Ms`,
-`denseNoteP90Ms`, `denseFormulaP90Ms`, `densePlaneDragP90Ms`) are in
-`timings` but have no median yet, so the report lists them under
-`uncalibrated` and nothing gates them. To gate them, dispatch the Performance
-workflow with only `canvas` three times on one commit, put each figure's
-median of the three runs' `timings` in `MEDIANS` with the run ids, and check
-the three runs against each other first (one runner has come out 40-60%
-slower; leave such a run out and take another). A Mac run with the fixes
-(2026-11-23) measured the dense open at 1,532 ms and the label, note, formula
-and plane drag p90s at 11, 11, 41 and 6 ms. Reported only: warm opens
+p90s, the cold hidden mount's longest frame, Draw's first frame and the dense
+board's five figures (`denseOpenMs`, `denseLabelP90Ms`, `denseNoteP90Ms`,
+`denseFormulaP90Ms`, `densePlaneDragP90Ms`).
+
+The dense board's figures come from three `canvas`-only Performance runs on
+0ec9f8134 (2026-11-24), 45296309908, 45296327983 and 45296345446, dispatched
+by the Windows Editor (Epo, "Windows Editor runs them"):
+- **Inputs:** their medians. Label 21/23/23, note 20/23/24, formula 47/50/50
+  and plane drag 9/12/12 ms, so the budgets are 30, 30, 65 and 30 ms.
+- **Open:** the third run's 3,610 ms, so the budget is 4,700 ms. That run was
+  40-60% slower on every open than the other two (dense open 2,228 and
+  2,205 ms, blank open 564-567 against 782). It is the slower runner the opens
+  below were calibrated on (blank open 807 ms there). A budget from the faster
+  runs (2,900 ms) would fail whenever a run lands on it. It rests on one run
+  of that runner so far; take the median once three are in.
+
+The CI pool mixes CPU models (the same runs' Plate jobs were on two Intel Xeon
+6975P-C and one AMD EPYC 7763), so each result now names its runner
+(`runner`, as Office's do). Calibrate an open on runs of the slower runner,
+and an input on all three. A Mac run with the fixes (2026-11-23) measured the
+dense open at 1,532 ms and the label, note, formula and plane drag p90s at 11,
+11, 41 and 6 ms. Reported only: warm opens
 and mounts, the large board and the bytes. It fails on a
 page error, an input with no painted frame, typing that doesn't reach the
 card, a stroke that draws no brush, a plane point that doesn't move, or a

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { cpus } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
@@ -29,7 +30,7 @@ import { CPU_RATE, percentile, reportMetrics, throttleCpu } from './metrics';
  * card and a formula card, and dragging a plane card's point in the plane's
  * editor (2026-11-23). Gated: the blank and typical cold opens, the typical
  * board's inputs, the hidden mount's longest frame, Draw's first frame and the
- * dense board's figures once they have medians (`MEDIANS`). Reported only: warm
+ * dense board's figures (`MEDIANS`). Reported only: warm
  * opens and mounts, the large board and the bytes each open downloads.
  *
  * The boards are made in the page through BlockSuite's own API and saved, so they
@@ -101,16 +102,25 @@ const INPUTS = new Set<keyof Timings>([
  * 42375517156, 42375520111 and 42375523741 on 3249ce018 (2026-11-07): 539/728/738
  * and 43/62/61 ms, so their budgets are 950 and 80 ms.
  *
- * The dense board's five figures have no medians yet, so they are reported and
- * not gated (`uncalibrated` in the report). To gate them: dispatch the
- * Performance workflow with only `canvas` three times on one commit, take each
- * figure's median of the three runs' `timings` (canvas-perf-results), add it
- * here with the run ids, and check the runs against each other first: one
- * runner has come out 40–60% slower, so a slow outlier is left out and another
- * run taken.
+ * The dense board's figures come from three runs on 0ec9f8134 (2026-11-24):
+ * 45296309908, 45296327983 and 45296345446. Its four inputs are their medians:
+ * label 21/23/23, note 20/23/24, formula 47/50/50 and plane drag 9/12/12 ms.
+ * Its open is the third run's 3,610 ms, not the median (2,228 and 2,205 ms in
+ * the other two). The CI pool mixes CPU models, and that run came out 40-60%
+ * slower on every open. It is the slower runner the opens above were
+ * calibrated on (blank open 782 ms there, 807 here; 564-567 on the faster runs),
+ * and a budget from the faster runs (2,900 ms) would fail on it. Inputs differ
+ * little between runners. So an open is calibrated on runs of the slower
+ * runner (the dense open on one so far: take the median once three are in),
+ * an input on all three; each result names its runner (`runner`).
  */
 const MEDIANS: Partial<Timings> = {
   blankOpenMs: 807,
+  denseFormulaP90Ms: 50,
+  denseLabelP90Ms: 23,
+  denseNoteP90Ms: 23,
+  denseOpenMs: 3610,
+  densePlaneDragP90Ms: 12,
   drawShownMs: 61,
   hiddenMountLongestMs: 728,
   openMs: 2921,
@@ -730,6 +740,8 @@ test('the drawing board opens and responds within its budgets', async ({
     },
     dense: { open: opened(denseOpen), ...onDenseBoard },
     large: { open: opened(largeOpen), ...onLarge },
+    // The CI pool mixes CPU models, and opens differ 40-60% between them.
+    runner: { cpuModel: cpus()[0]?.model ?? 'unknown', cpus: cpus().length },
     timings,
     typical: { draw, open: opened(typicalOpen), ...onTypical },
     uncalibrated: Object.keys(timings).filter((key) => !(key in budget)),
