@@ -816,8 +816,9 @@ the bench behind them is
   to start. Unloads during a trim or its spacing ask for
   exactly one more, run once the spacing passed, so a burst of unloads costs
   one trim per 5 s. The same request also follows each board's whole-board
-  work (`work.rs`: a load, a fold, a projection or a heavy update's
-  admission, whose 25 to 90 MiB peak otherwise stays resident on glibc),
+  work (`work.rs`: a load, a fold, a projection, an update's trial on the
+  board's replica or a joiner's answer behind its base, whose 25 to 90 MiB
+  peak otherwise stays resident on glibc),
   spaced with the
   unloads' trims. A trim that panics leaves later ones running. Each trim
   logs one Info line, `memory trimmed`, with `ms`, `released`,

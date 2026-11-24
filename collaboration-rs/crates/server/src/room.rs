@@ -3527,12 +3527,21 @@ impl Room {
         match answer {
             Answer::Diff(diff) => self.send(key, Kind::Sync, &sync::encode(sync::STEP2, diff)),
             // The browser applies each and holds the board synced at the
-            // step 2 (`roomProvider.ts`).
+            // step 2 (`roomProvider.ts`). One frame, as a document's whole
+            // answer is, so the outbox takes it whole however large (the
+            // recent updates still hold content deleted since the base).
             Answer::Board { updates, step2 } => {
+                let size = answer.size() + 16 * (updates.len() + 1);
+                let mut frame = BytesMut::with_capacity(size);
                 for update in updates {
-                    self.send(key, Kind::Sync, &sync::encode(sync::UPDATE, update));
+                    let message = sync::encode(sync::UPDATE, update);
+                    protocol::encode(&mut frame, key.1, Kind::Sync, &message);
                 }
-                self.send(key, Kind::Sync, &sync::encode(sync::STEP2, step2));
+                let message = sync::encode(sync::STEP2, step2);
+                protocol::encode(&mut frame, key.1, Kind::Sync, &message);
+                if let Some(member) = self.members.get(&key) {
+                    member.out.frame(frame.freeze());
+                }
             }
         }
         if let (Some(sessions), Kindly::Note(note)) = (&mut self.sessions, &self.kind) {
