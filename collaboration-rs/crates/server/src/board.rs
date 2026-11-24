@@ -811,10 +811,12 @@ impl Units {
 
 /// `set` with each client's runs in an array of their count, one more for a
 /// client of several. A merge's array reserves the runs of both sides, so a
-/// settled set kept 1.4 to 1.9 times its runs. yrs offers no way to size the
-/// array, but its merge of two clients' runs reserves exactly their sum: the
-/// client's first run, merged with all of them. Holding one run, a client
-/// keeps it inline.
+/// settled set kept 1.4 to 1.9 times its runs. yrs keeps the array's type
+/// (`IdRanges`, with its `with_capacity`) private, but its merge of two
+/// clients' runs reserves exactly their sum: the client's first run, merged
+/// with all of them. Holding one run, a client keeps it inline. A yrs update
+/// that stops this fails `a_compacted_set_holds_the_same_runs`, which counts
+/// the heap.
 fn compact(set: &IdSet) -> IdSet {
     let mut compact = IdSet::default();
     for client in set.client_ids() {
@@ -1939,6 +1941,8 @@ fn unheld(state: &StateVector, update: &Update) -> bool {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::cell::Cell;
     use std::collections::HashMap;
     use std::time::{Duration, Instant};
 
@@ -2617,15 +2621,86 @@ mod tests {
         assert!(at_length(&room.reload()));
     }
 
-    /// A settled set holds the same runs once compacted: a client's one run,
-    /// another's several.
+    /// A settled set holds the same runs once compacted, in arrays of their
+    /// count plus one at most (a run is 8 bytes; one run stays inline), on
+    /// top of the client map's own nodes: those of the same clients holding
+    /// one run each. Fails if yrs's merge stops reserving exactly both
+    /// sides' runs ([compact]).
     #[test]
     fn a_compacted_set_holds_the_same_runs() {
-        let mut set = IdSet::default();
-        for (client, start, len) in [(1, 4, 5), (2, 0, 2), (2, 5, 4), (2, 12, 1)] {
-            set.insert(ID::new(ClientID::new(client), start), len);
+        let (mut settled, mut more, mut nodes) =
+            (IdSet::default(), IdSet::default(), IdSet::default());
+        for client in (1..=60).map(ClientID::new) {
+            nodes.insert(ID::new(client, 0), 1);
+            // Clients past 50 hold one run, the others 600 once merged.
+            if client.get() > 50 {
+                settled.insert(ID::new(client, 0), 2);
+                continue;
+            }
+            for run in 0..300 {
+                settled.insert(ID::new(client, run * 10), 2);
+                more.insert(ID::new(client, run * 10 + 4), 2);
+            }
         }
-        assert_eq!(compact(&set), set);
+        settled.merge_with(more);
+        let counts: Vec<usize> = settled
+            .client_ids()
+            .map(|client| settled.get(&client).unwrap().len())
+            .collect();
+        let runs = counts.iter().sum::<usize>();
+        let several = counts.iter().filter(|&&count| count > 1).count();
+        let held = heap();
+        let compacted = compact(&settled);
+        let bytes = heap() - held;
+        assert_eq!(compacted, settled);
+        let held = heap();
+        drop(nodes);
+        let nodes = held - heap();
+        let most = nodes + ((runs + several) * 8) as isize;
+        assert!(bytes <= most, "{bytes} B for {runs} runs, at most {most}");
+    }
+
+    /// The test binary's allocator counts each thread's heap ([heap]), as
+    /// [a_compacted_set_holds_the_same_runs] weighs a set.
+    struct Counting;
+
+    #[global_allocator]
+    static COUNTING: Counting = Counting;
+
+    thread_local! {
+        static HEAP: Cell<isize> = const { Cell::new(0) };
+    }
+
+    /// What this thread's allocations hold.
+    fn heap() -> isize {
+        HEAP.with(Cell::get)
+    }
+
+    fn count(grew: usize, shrank: usize) {
+        let _ = HEAP.try_with(|heap| heap.set(heap.get() + grew as isize - shrank as isize));
+    }
+
+    // Test-only, each call passed to the system allocator (as `trim.rs`'s
+    // `malloc_trim`, an exception to the workspace's `unsafe_code`).
+    #[allow(unsafe_code)]
+    unsafe impl GlobalAlloc for Counting {
+        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+            count(layout.size(), 0);
+            // SAFETY: the caller's contract, passed on.
+            unsafe { System.alloc(layout) }
+        }
+
+        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+            count(0, layout.size());
+            // SAFETY: the caller's contract, passed on.
+            unsafe { System.dealloc(ptr, layout) }
+        }
+
+        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
+            count(size, layout.size());
+            // SAFETY: the caller's contract, passed on.
+            unsafe { System.realloc(ptr, layout, size) }
+        }
     }
 
     /// A reconnect's step 2, built against the room's state vector of a
