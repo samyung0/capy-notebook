@@ -26,6 +26,27 @@ export function topParagraph(area: HTMLElement) {
   return null;
 }
 
+/** After the box scrolled to the reader's place: once the pages in view are
+ * built (an editor builds the pages out of its first view after it, Q815 C),
+ * the paragraph that showed at the top goes back to where it showed (content
+ * above it may have changed). */
+export async function restoreTopParagraph(
+  area: HTMLElement,
+  top: NonNullable<ReturnType<typeof topParagraph>>,
+  pagesInView: () => Promise<void> | undefined
+): Promise<void> {
+  await pagesInView();
+  const line = top.line === null ? '' : `[data-from-line="${top.line}"]`;
+  const fragment = area.querySelector(
+    `${BODY_PARAGRAPH}[data-para-id="${CSS.escape(top.paraId)}"]${line}`
+  );
+  if (fragment)
+    area.scrollTop +=
+      fragment.getBoundingClientRect().top -
+      area.getBoundingClientRect().top -
+      top.offset;
+}
+
 /** A run of the text layer with document positions (a text box's have none). */
 const POSITIONED_RUN = '.layout-run-text[data-doc-start]';
 /** Where positions count in another story than the body's, or none. */
