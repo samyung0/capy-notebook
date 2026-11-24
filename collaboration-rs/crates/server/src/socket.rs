@@ -24,7 +24,8 @@ use std::time::{Duration, Instant};
 
 use axum::extract::ws::{CloseFrame, Message as WsMessage, WebSocket};
 use bytes::Bytes;
-use futures::FutureExt;
+use futures::stream::{SplitSink, SplitStream};
+use futures::{FutureExt, SinkExt, StreamExt};
 use serde_json::json;
 use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{mpsc, oneshot};
@@ -38,7 +39,7 @@ use crate::observe::{Level, log};
 use crate::protocol::{self, Kind, Message};
 use crate::rate::{TimedOut, Verdict};
 use crate::room::{self, RoomCmd};
-use crate::seats::{Closing, Membership, Seat, Sending, Sent};
+use crate::seats::{Closing, Membership, Seat, Sending, Step, Traffic};
 
 /// A writer's access is revalidated at most this often per channel.
 const RECHECK: Duration = Duration::from_secs(5);
@@ -66,8 +67,12 @@ pub const LATE_REASON: &str = "collaboration-late";
 const JOIN_DEADLINE: Duration = Duration::from_secs(10);
 /// Every socket is pinged this often (`COLLABORATION_PING_SECONDS`), and one
 /// that sends nothing for [SILENT_CLOSE] (`COLLABORATION_SILENT_SECONDS`;
-/// any frame counts, the browser's automatic pong too) closes, freeing its
-/// places (Epo 2026-10-20): a dead connection would hold its user's caps.
+/// any byte counts, the browser's automatic pong and its tab's heartbeat,
+/// [protocol::HEARTBEAT], too) closes, freeing its places (Epo 2026-10-20):
+/// a dead connection would hold its user's caps. The socket reads while it
+/// sends, and a long send to a slow downlink holds back the pings, so a live
+/// tab is heard by its heartbeats however the kernels and proxies between
+/// buffer the send.
 pub const PING_EVERY: Duration = Duration::from_secs(30);
 pub const SILENT_CLOSE: Duration = Duration::from_secs(60);
 /// What a timed-out user's channels hear (`update-timeout` in
@@ -493,12 +498,12 @@ struct Connection {
 }
 
 /// Serves one socket; `_address` is its place among its client address's
-/// sockets, given back when it closes, and `sent` says when its connection
-/// last moved bytes out.
-pub async fn serve(app: Shared, socket: WebSocket, _address: Seat, sent: Arc<Sent>) {
+/// sockets, given back when it closes, and `traffic` says when its
+/// connection last moved bytes either way.
+pub async fn serve(app: Shared, socket: WebSocket, _address: Seat, traffic: Arc<Traffic>) {
     let id = app.next_connection.fetch_add(1, Ordering::Relaxed);
     app.stats.connections.fetch_add(1, Ordering::Relaxed);
-    let (outbox, mut out_rx) = Outbox::new();
+    let (outbox, mut out_rx) = Outbox::new(traffic.clone());
     let overflow = outbox.overflow();
     let (auth_tx, mut auth_rx) = mpsc::unbounded_channel();
     let (join_tx, mut join_rx) = mpsc::unbounded_channel();
@@ -519,46 +524,56 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat, sent: Arc<Sen
         join_deadline: Some(Instant::now() + JOIN_DEADLINE),
         closing_tx,
     };
-    let mut socket = socket;
-    let (ping_every, silent) = (app.config.ping_every, app.config.silent_close);
+    let (sink, stream) = socket.split();
+    let silent = app.config.silent_close;
+    let mut socket = Socket {
+        sink,
+        stream,
+        traffic: traffic.clone(),
+        silent,
+    };
+    let ping_every = app.config.ping_every;
     let mut ping = tokio::time::interval_at((Instant::now() + ping_every).into(), ping_every);
     ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-    let mut heard = Instant::now();
     loop {
         let next_timer = connection.timers.keys().next().map(|(at, _)| *at);
         tokio::select! {
-            incoming = socket.recv() => {
-                heard = Instant::now();
+            incoming = socket.stream.next() => {
+                traffic.heard_whole();
                 if !connection.received(incoming).await {
                     break;
                 }
             }
             _ = ping.tick() => {
-                let message = WsMessage::Ping(Default::default());
-                if !send(&mut socket, message, &sent, silent, &connection.socket_id).await {
+                if !connection.write(&mut socket, WsMessage::Ping(Default::default())).await {
                     break;
                 }
             }
-            () = tokio::time::sleep_until((heard + silent).into()) => {
+            // Silent once no byte came for the window: a slow uplink's frame
+            // is heard as its bytes come, its pong waiting behind it (round
+            // 4, finding 9).
+            () = tokio::time::sleep_until(traffic.last_heard() + silent) => {
                 // A frame that arrived while this task was busy in another
-                // arm counts (rate-limit review r7 N-1).
-                if let Some(incoming) = socket.recv().now_or_never() {
-                    heard = Instant::now();
+                // arm counts (rate-limit review r7 N-1), and so do the bytes
+                // of one still arriving.
+                if let Some(incoming) = socket.stream.next().now_or_never() {
+                    traffic.heard_whole();
                     if !connection.received(incoming).await {
                         break;
                     }
                     continue;
                 }
+                if traffic.last_heard() + silent > tokio::time::Instant::now() {
+                    continue;
+                }
                 log(Level::Info, "silent socket closed", json!({ "socket_id": connection.socket_id }));
-                let close = WsMessage::Close(Some(CloseFrame { code: 1001, reason: "silent".into() }));
-                send(&mut socket, close, &sent, silent, &connection.socket_id).await;
+                socket.close(1001, "silent").await;
                 break;
             }
             Some(out) = out_rx.recv() => match out {
                 Out::Frame(frame) => {
                     let len = frame.len();
-                    let frame = WsMessage::Binary(frame);
-                    let delivered = send(&mut socket, frame, &sent, silent, &connection.socket_id).await;
+                    let delivered = connection.write(&mut socket, WsMessage::Binary(frame)).await;
                     connection.outbox.sent(len);
                     if !delivered {
                         break;
@@ -597,37 +612,83 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat, sent: Arc<Sen
                     continue;
                 }
                 log(Level::Warn, "socket closed before any join", json!({ "socket_id": connection.socket_id }));
-                let close = WsMessage::Close(Some(CloseFrame { code: 1008, reason: "no room joined".into() }));
-                send(&mut socket, close, &sent, silent, &connection.socket_id).await;
+                socket.close(1008, "no room joined").await;
                 break;
             }
         }
     }
     connection.close_all().await;
+    // One line a socket, no metric: a hidden tab's heartbeats checked on UAT
+    // by their longest wait (20 s on time, a minute or more if throttled).
+    log(
+        Level::Info,
+        "socket heartbeats",
+        json!({
+            "beats": traffic.beats(),
+            "longest_beat_gap_ms": traffic.longest_beat_gap_ms(),
+            "socket_id": connection.socket_id,
+        }),
+    );
     app.stats.connections.fetch_sub(1, Ordering::Relaxed);
 }
 
-/// Sends `message`: false when the socket must close, the send having failed
-/// or moved no bytes for the silent window (logged like the silent close;
-/// Epo 2026-10-20, rate-limit review r7).
-async fn send(
-    socket: &mut WebSocket,
-    message: WsMessage,
-    sent: &Sent,
+/// A socket's halves, so it reads while it sends ([Connection::write]), its
+/// connection's [Traffic] and its silent window.
+struct Socket {
+    sink: SplitSink<WebSocket, WsMessage>,
+    stream: SplitStream<WebSocket>,
+    traffic: Arc<Traffic>,
     silent: Duration,
-    socket_id: &str,
-) -> bool {
-    match crate::seats::watched(socket.send(message), sent, silent).await {
-        Sending::Sent => true,
-        Sending::Failed => false,
-        Sending::Stalled => {
-            log(
-                Level::Info,
-                "stalled socket closed",
-                json!({ "socket_id": socket_id }),
-            );
-            false
-        }
+}
+
+impl Socket {
+    /// Sends a close frame as the socket ends (a stalled send ends it too).
+    async fn close(&mut self, code: u16, reason: &str) {
+        let close = WsMessage::Close(Some(CloseFrame {
+            code,
+            reason: reason.into(),
+        }));
+        crate::seats::watched(self.sink.send(close), &self.traffic, self.silent).await;
+    }
+}
+
+impl Connection {
+    /// Sends `message`, taking what the client sends meanwhile
+    /// ([crate::seats::send_reading]): a send to a slow downlink may take
+    /// minutes, and the tab's heartbeats and pieces must not wait behind it.
+    /// The loop's other work (token timers, closings, auth and join results)
+    /// waits until the send ends; the writer recheck still enforces access.
+    /// False when the socket must close: the send failed or moved no bytes
+    /// for the silent window (`stalled socket closed`; Epo 2026-10-20,
+    /// rate-limit review r7), the client sent nothing for the window
+    /// (`silent socket closed`), or what it sent closes the socket.
+    async fn write(&mut self, socket: &mut Socket, message: WsMessage) -> bool {
+        let Socket {
+            sink,
+            stream,
+            traffic,
+            silent,
+        } = socket;
+        let sending = crate::seats::watched(sink.send(message), traffic, *silent);
+        tokio::pin!(sending);
+        let sent = loop {
+            match crate::seats::send_reading(sending.as_mut(), stream, traffic, *silent).await {
+                Step::Sent(sent) => break sent,
+                Step::Heard(incoming) => {
+                    if !self.received(incoming).await {
+                        return false;
+                    }
+                }
+            }
+        };
+        let closed = match sent {
+            Sending::Sent => return true,
+            Sending::Failed => return false,
+            Sending::Stalled => "stalled socket closed",
+            Sending::Silent => "silent socket closed",
+        };
+        log(Level::Info, closed, json!({ "socket_id": self.socket_id }));
+        false
     }
 }
 
@@ -685,6 +746,12 @@ impl Connection {
     async fn received(&mut self, incoming: Option<Result<WsMessage, axum::Error>>) -> bool {
         match incoming {
             Some(Ok(WsMessage::Binary(frame))) => self.on_frame(frame).await,
+            Some(Ok(WsMessage::Text(text))) => {
+                if text.as_str() == protocol::HEARTBEAT {
+                    self.outbox.traffic().beat();
+                }
+                true
+            }
             Some(Ok(WsMessage::Close(_))) | None | Some(Err(_)) => false,
             Some(Ok(_)) => true,
         }

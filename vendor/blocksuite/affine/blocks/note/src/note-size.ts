@@ -5,6 +5,7 @@ import {
   Bound,
   type SerializedXYWH,
 } from '@blocksuite/global/gfx';
+import { type GfxModel, isGfxGroupCompatibleModel } from '@blocksuite/std/gfx';
 import type { Store } from '@blocksuite/store';
 
 /* Capy (local change 75): a board note's size, as its text measures it (the
@@ -28,12 +29,32 @@ import type { Store } from '@blocksuite/store';
  *   it, untracked as the write is. A peer's or an Undo's write shows at once,
  *   the measured size over it. Connector labels move at the save, inside its
  *   transaction.
- * - Every other tab holds nothing: it writes what it measures only once that
- *   has differed from the stored size for 3 s (the typist's longest wait and
- *   1 s) with no new size arriving, so a note no one edits still gets its size.
- *   A drag, resize or turn starting writes it first.
- * - A read-only store writes nothing: a waiting size is dropped. Unlocked, the
- *   board measures its notes again; a size the lock dropped is this tab's own.
+ * - Every other tab shows what it measures at once too, as a size only it shows
+ *   (`xywh` stashed: hit tests, the selection box and connector paths follow
+ *   the text it shows, and a connector's label its path, unwritten), and
+ *   writes what it measures
+ *   only once that has differed from the stored size for 3 s (the typist's
+ *   longest wait and 1 s), so a note no one edits still gets its size. A size
+ *   someone else writes meanwhile ends the wait: the tab goes on showing its
+ *   own and writes nothing. Before a drag, resize or turn, and before a tracked
+ *   step of the store for the notes the step can act on (the selection, a
+ *   selected group's or frame's: an align), it stores the size it shows,
+ *   untracked, so the step starts from the bound shown, the note is stored as
+ *   it shows, and the step's Undo keeps the size. No other note: a step
+ *   elsewhere writing a note would stop another tab's Undo of it (Yjs never
+ *   undoes over a later write). A step that writes a note it did not store
+ *   writes the stored size where it kept the one shown; a plain write (the
+ *   arrow keys' nudge) is stored as written, the size shown with it. A peer's
+ *   or an Undo's write shows at once, what this tab measures over it.
+ * - A read-only store writes nothing: a waiting size is dropped, what this tab
+ *   measures still shown, and a local write of a note showing a size stays out
+ *   of the store. Unlocked, the board measures its notes again; a size
+ *   the lock dropped is this tab's own.
+ * - A locked note (`sizeIsFixed`: BlockSuite's lock, its own or a group's, as
+ *   a question's elements on a student's copy) keeps its stored size: no tab
+ *   holds, saves or writes one (each shows what it measures), and a lock
+ *   arriving while a size waits drops it. Unlocked, it is measured again as by
+ *   a tab not editing it (3 s).
  * - Closed, a board saves its waiting sizes, or drops them when the room lost,
  *   refused or replaced it, and writes nothing more.
  * - The width is written only while the note is inline. */
@@ -75,12 +96,23 @@ const latest = new WeakMap<NoteBlockModel, Size>();
 /** When this tab's person last changed the note or its text in a way that
  * can change its size. */
 const touched = new WeakMap<NoteBlockModel, number>();
-/** Notes whose held size a lock dropped. */
+/** Notes whose held size the board's lock dropped. */
 const dropped = new WeakSet<NoteBlockModel>();
+/** Each store's notes measured, or whose size was dropped, while locked: they
+ * are measured again once unlocked. */
+const fixed = new WeakMap<Store, Set<NoteBlockModel>>();
 /** Stores watched for their person's changes, and how to stop. */
 const opened = new WeakMap<Store, () => void>();
+/** Each store's selection, as its board reads it. */
+const selections = new WeakMap<Store, () => readonly GfxModel[]>();
 /** Stores whose board closed: nothing is measured or written there again. */
 const closed = new WeakSet<Store>();
+/** Notes this tab shows at what it measures without holding the size (a tab
+ * not editing the note, read-only, or the note locked), and the `xywh` shown:
+ * never written from here. */
+const shown = new Map<NoteBlockModel, SerializedXYWH>();
+/** Notes this tab measured, and how to stop watching their stored values. */
+const observed = new Map<NoteBlockModel, () => void>();
 /** A write of this module's own is under way: no person's change. */
 let writing = false;
 
@@ -93,6 +125,10 @@ const empty = (size: Size) => size.w === undefined && size.h === undefined;
 
 const detached = (note: NoteBlockModel) =>
   note.store.getBlock(note.id)?.model !== note;
+
+/** Whether the note keeps its stored size whatever its text measures:
+ * BlockSuite's lock, the note's own or a group's. */
+const sizeIsFixed = (note: NoteBlockModel) => note.isLocked();
 
 const storedSize = (xywh: SerializedXYWH) => {
   const [, , w, h] = Bound.deserialize(xywh).toXYWH();
@@ -197,15 +233,70 @@ function resizes(
   return false;
 }
 
+/** Keys whose change can lock or unlock a note: a block's lock, a frame's
+ * children, a surface element's lock or children (a group's). */
+const LOCK_KEYS = [
+  'prop:lockedBySelf',
+  'prop:childElementIds',
+  'lockedBySelf',
+  'children',
+];
+
+/** Whether the transaction can have locked or unlocked a note: one of those
+ * keys changed, a block (a frame) was added or went, a frame's or a group's
+ * children changed, or a surface element (a group) was added or went. A typed
+ * key, a shape's text or a move changes none, so it checks no lock. */
+function changesLocks(store: Store, blocks: object, transaction: Transaction) {
+  for (const [type, keys] of transaction.changed) {
+    if (type === blocks || LOCK_KEYS.some(key => keys.has(key))) return true;
+    const sub = type._item?.parentSub;
+    if (sub === 'prop:childElementIds') return true;
+    // A group's children, or the surface's elements (Boxed, under `value`).
+    if (sub !== 'children' && sub !== 'value') continue;
+    const place = placeOf(blocks, type);
+    if (place && store.getBlock(place.id)?.flavour === 'affine:surface')
+      return true;
+  }
+  return false;
+}
+
+/** Stores the size each note of `store` showing one shows, if a step can act
+ * on it: it is selected, or in a selected group or frame. Each shown note is
+ * checked against the selection, so a step with none (most of them) costs a
+ * look at the selection. */
+function storeActedOn(store: Store) {
+  const selected = selections.get(store)?.();
+  if (!selected?.length) return;
+  const ids = new Set(selected.map(model => model.id));
+  const groups = selected.some(isGfxGroupCompatibleModel);
+  for (const note of [...shown.keys()])
+    if (
+      note.store === store &&
+      (ids.has(note.id) ||
+        (groups && note.groups.some(group => ids.has(group.id))))
+    )
+      storeShown(note);
+}
+
+/** `store`'s board reads its selection with `selected`: before a step, the
+ * notes it can act on store the sizes they show. */
+export function selectNoteSizes(
+  store: Store,
+  selected: () => readonly GfxModel[]
+) {
+  selections.set(store, selected);
+}
+
 /** Watches `store` for its person's own changes to notes and their text that
- * can change their size, and saves its waiting sizes before each tracked
- * step. Opened by its board as it mounts (a first note's creation counts),
- * else by the first measure. */
+ * can change their size, and for locks made or lifted by anyone, and saves its
+ * waiting sizes before each tracked step. Opened by its board as it mounts (a
+ * first note's creation counts), else by the first measure. */
 export function openNoteSizes(store: Store) {
   if (opened.has(store) || closed.has(store)) return;
   const doc = store.spaceDoc;
   const blocks: object = store.doc.yBlocks;
   const touch = (transaction: Transaction) => {
+    if (changesLocks(store, blocks, transaction)) checkLocks(store);
     // A peer's update, applied, is not local.
     if (!transaction.local || writing) return;
     const now = Date.now();
@@ -234,12 +325,19 @@ export function openNoteSizes(store: Store) {
   const { transact } = store;
   store.transact = (fn, shouldTransact) => {
     // Stored before the step, on its own: undoing the step keeps the size.
-    if (shouldTransact !== false && !doc._transaction) saveNoteSizes(store);
+    // A note the step can act on (an align's) is stored at the size it shows;
+    // no other, never after the step (either would stop an Undo: Yjs never
+    // undoes over a later write).
+    if (shouldTransact !== false && !doc._transaction) {
+      saveNoteSizes(store);
+      storeActedOn(store);
+    }
     transact.call(store, fn, shouldTransact);
   };
   opened.set(store, () => {
     doc.off('afterTransaction', touch);
     Reflect.deleteProperty(store, 'transact');
+    selections.delete(store);
   });
 }
 
@@ -288,18 +386,159 @@ function forget(note: NoteBlockModel) {
   release(note);
   stopDiffering(note);
   moving.delete(note);
+  shown.delete(note);
+  observed.get(note)?.();
+  observed.delete(note);
 }
 
-/** Drops the note's waiting size: it shows the stored one again, and nothing
- * is written. */
+/** Drops the note's waiting size, writing nothing: what this tab measures
+ * shows as a size only it shows. */
 function drop(note: NoteBlockModel) {
   stopDiffering(note);
-  if (!held.has(note)) return;
-  release(note);
-  if (detached(note)) return;
+  if (held.has(note)) {
+    release(note);
+    if (detached(note)) return;
+    show(note, storedOf(note));
+    // Equal to the stored value: the pop writes nothing.
+    note.pop('xywh');
+  }
+  display(note);
+}
+
+/** The dimensions of `size` the note's stored size differs from (the width
+ * only while inline). */
+function differences(note: NoteBlockModel, size: Size | undefined) {
+  const stored = Bound.deserialize(storedOf(note));
+  const scale = scaleOf(note);
+  const differs: Size = {};
+  if (
+    size?.w !== undefined &&
+    isInlineNote(note.props) &&
+    !almostEqual(stored.w, size.w * scale)
+  )
+    differs.w = size.w;
+  if (size?.h !== undefined && !almostEqual(stored.h, size.h * scale))
+    differs.h = size.h;
+  return differs;
+}
+
+/** Shows what the note's text last measured over its stored values, as a size
+ * only this tab shows and never writes (`xywh` stashed), unless this tab holds
+ * the size, a gesture moves the note or it measures as stored. */
+function display(note: NoteBlockModel) {
+  if (
+    held.has(note) ||
+    moving.has(note) ||
+    closed.has(note.store) ||
+    detached(note)
+  )
+    return;
+  const size = differences(note, latest.get(note));
+  if (empty(size)) return hide(note);
+  if (!shown.has(note)) noteSizeWrites.local(note, () => note.stash('xywh'));
+  const xywh = sized(note, storedOf(note), size);
+  shown.set(note, xywh);
+  show(note, xywh);
+}
+
+/** Stops showing what the note measures: the stored size shows again, and
+ * nothing is written. */
+function hide(note: NoteBlockModel) {
+  if (!shown.delete(note) || detached(note)) return;
   show(note, storedOf(note));
   // Equal to the stored value: the pop writes nothing.
   note.pop('xywh');
+}
+
+/** Stores the size this tab shows, untracked, before a gesture or a step that
+ * acts on the note writes it, so the note is stored as it shows (a preview, a
+ * tab that has not drawn it) and undoing the step keeps the size; its
+ * connectors' labels are placed in the same write. Never in a read-only store
+ * or for a locked note. */
+function storeShown(note: NoteBlockModel) {
+  if (
+    !shown.has(note) ||
+    note.store.readonly ||
+    sizeIsFixed(note) ||
+    detached(note)
+  )
+    return;
+  stopDiffering(note);
+  const xywh = sized(note, storedOf(note), differences(note, latest.get(note)));
+  hide(note);
+  write(note.store, () => {
+    note.xywh = xywh;
+    noteSizeWrites.saved(note);
+  });
+}
+
+/** A write of the model while the note shows what this tab measures, which
+ * the stash keeps here. Read-only, it stays out of the store, and the size
+ * shows again. A plain write (the arrow keys' nudge, untracked itself) is
+ * stored as written, the size shown with it. Inside a step that began
+ * without storing the size (one that does not act on the note), it is written
+ * in that step with the stored size where it kept the one shown, so the
+ * step's Undo moves the note back alone. */
+function passOn(note: NoteBlockModel, before: SerializedXYWH) {
+  if (note.store.readonly) return display(note);
+  const written = Bound.deserialize(note.xywh);
+  if (note.store.spaceDoc._transaction) {
+    const was = Bound.deserialize(before);
+    const stored = Bound.deserialize(storedOf(note));
+    if (almostEqual(written.w, was.w)) written.w = stored.w;
+    if (almostEqual(written.h, was.h)) written.h = stored.h;
+  }
+  shown.delete(note);
+  show(note, written.serialize());
+  note.pop('xywh');
+  display(note);
+}
+
+/** Watches the stored values of a note this tab measures: a peer's or an
+ * Undo's write shows at once, what this tab measures over it; a write of the
+ * model while a size shows goes on to the store. */
+function observe(note: NoteBlockModel) {
+  if (observed.has(note)) return;
+  const changes = note.propsUpdated.subscribe(({ key }) => {
+    if (key !== 'xywh' && key !== 'background' && key !== 'edgeless') return;
+    if (noteSizeWrites.isLocal(note.store, note.id)) return;
+    const before = shown.get(note);
+    if (key === 'xywh' && before && note.xywh !== storedOf(note))
+      return passOn(note, before);
+    display(note);
+  });
+  const deleted = note.deleted.subscribe(() => forget(note));
+  observed.set(note, () => {
+    changes.unsubscribe();
+    deleted.unsubscribe();
+  });
+}
+
+/** The note is locked: a waiting size is dropped, and it is measured again
+ * once unlocked. */
+function fix(note: NoteBlockModel) {
+  drop(note);
+  let notes = fixed.get(note.store);
+  if (!notes) fixed.set(note.store, (notes = new Set()));
+  notes.add(note);
+}
+
+/** After a change of `store` that can lock or unlock notes, this tab's or a
+ * peer's: a note it locked (the note's own lock or a group's) drops its
+ * waiting size; one it unlocked is measured again, as by a tab not editing it,
+ * so the 3 s rule applies. */
+function checkLocks(store: Store) {
+  for (const note of [...held.keys(), ...differing.keys()])
+    if (note.store === store && sizeIsFixed(note)) fix(note);
+  const notes = fixed.get(store);
+  if (!notes) return;
+  for (const note of [...notes]) {
+    if (detached(note)) notes.delete(note);
+    else if (!sizeIsFixed(note)) {
+      notes.delete(note);
+      measureAgain(note, false);
+    }
+  }
 }
 
 function changed(note: NoteBlockModel, key: string) {
@@ -330,12 +569,11 @@ function changed(note: NoteBlockModel, key: string) {
   if (other.h !== undefined && almostEqual(stored.h, other.h * scale))
     delete other.h;
   if (empty(other)) return stopDiffering(note);
-  const size = storedSize(storedOf(note));
-  if (size === other.stored) return;
-  // A new size arrived: the wait starts again.
-  other.stored = size;
-  clearTimeout(other.timer);
-  other.timer = setTimeout(() => writeDiffering(note), NOTE_SIZE_VIEWER_MS);
+  // A size someone else wrote (a peer's, an Undo's) ends the wait: this tab
+  // shows what it measures over it and writes nothing, so no later write of
+  // its own takes that writer's step out of their Undo (Yjs never undoes over
+  // a later write).
+  if (storedSize(storedOf(note)) !== other.stored) stopDiffering(note);
 }
 
 function forgetWidth(note: NoteBlockModel) {
@@ -365,6 +603,8 @@ function hold(
     saveAllOnHide();
     entry = { first: now, unwatch: watch(note) };
     held.set(note, entry);
+    // A size shown here hands its stash over.
+    shown.delete(note);
     noteSizeWrites.local(note, () => note.stash('xywh'));
   }
   entry[dimension] = size;
@@ -402,14 +642,22 @@ function writeDiffering(note: NoteBlockModel) {
   const entry = differing.get(note);
   if (!entry) return;
   stopDiffering(note);
+  if (detached(note)) return;
+  if (sizeIsFixed(note)) return fix(note);
   // A gesture under way stores what it shows when it ends.
-  if (note.store.readonly || detached(note) || moving.has(note)) return;
+  if (note.store.readonly || moving.has(note)) return;
   const stored = storedOf(note);
   const xywh = sized(note, stored, entry);
-  if (xywh !== stored)
+  if (xywh !== stored) {
+    // The size shown here steps aside, so the write reaches the store; its
+    // connectors' labels are placed in the same write.
+    hide(note);
     write(note.store, () => {
       note.xywh = xywh;
+      noteSizeWrites.saved(note);
     });
+  }
+  display(note);
 }
 
 /** The note's last measure, again; `own`: as this tab's person's change. */
@@ -429,12 +677,28 @@ export function measureNoteSize(
 ) {
   if (closed.has(note.store)) return;
   openNoteSizes(note.store);
+  observe(note);
   let last = latest.get(note);
   if (!last) latest.set(note, (last = {}));
   last[dimension] = size;
+  settle(note, dimension, size, editing);
+  // What it measures shows at once in every tab, held or not.
+  display(note);
+}
+
+function settle(
+  note: NoteBlockModel,
+  dimension: 'w' | 'h',
+  size: number,
+  editing: boolean
+) {
+  if (sizeIsFixed(note)) return fix(note);
   if (note.store.readonly) return drop(note);
   if (dimension === 'w' && !isInlineNote(note.props)) return forgetWidth(note);
-  const bound = Bound.deserialize(note.xywh);
+  // Against the size this tab holds or a gesture moves, else the stored one:
+  // a size only shown here waits as any other.
+  const holding = held.has(note) || moving.has(note);
+  const bound = Bound.deserialize(holding ? note.xywh : storedOf(note));
   const same = almostEqual(bound[dimension], size * scaleOf(note));
   if (moving.has(note)) {
     // The gesture's stash takes it, and its end stores it with the gesture.
@@ -443,7 +707,7 @@ export function measureNoteSize(
     return;
   }
   if (editing || held.has(note) || ownChange(note)) {
-    if (!same) hold(note, dimension, size, bound);
+    if (!same) hold(note, dimension, size, Bound.deserialize(note.xywh));
     return;
   }
   differ(note, dimension, size);
@@ -454,6 +718,7 @@ export function saveNoteSize(note: NoteBlockModel) {
   const entry = held.get(note);
   if (!entry) return;
   if (detached(note)) return forget(note);
+  if (sizeIsFixed(note)) return fix(note);
   if (note.store.readonly) return drop(note);
   release(note);
   const xywh = sized(note, storedOf(note), entry);
@@ -462,6 +727,8 @@ export function saveNoteSize(note: NoteBlockModel) {
     note.pop('xywh');
     noteSizeWrites.saved(note);
   });
+  // A width it did not hold, measured unlike the stored one.
+  display(note);
 }
 
 /** Saves every size waiting in `store` (a drawing answer saved or closed). */
@@ -494,22 +761,30 @@ export function measureNoteSizesAgain(store: Store) {
  * nothing is measured or written there again. */
 export function closeNoteSizes(store: Store, sizes: 'save' | 'drop') {
   if (sizes === 'save') saveNoteSizes(store);
+  closed.add(store);
   for (const note of [...held.keys(), ...differing.keys(), ...moving]) {
     if (note.store !== store) continue;
     drop(note);
     moving.delete(note);
   }
+  for (const note of [...shown.keys()]) if (note.store === store) hide(note);
+  for (const [note, stop] of [...observed])
+    if (note.store === store) {
+      stop();
+      observed.delete(note);
+    }
   opened.get(store)?.();
   opened.delete(store);
-  closed.add(store);
+  fixed.delete(store);
 }
 
-/** A drag, resize or turn of the note starts: a waiting size is written first,
- * the held one or a viewer's, so the gesture's stash and its tracked pop start
- * from it; what is measured until it ends goes with the gesture. */
+/** A drag, resize or turn of the note starts. The size this tab's person
+ * waits on, or the one it shows, is stored first, untracked: the gesture
+ * starts from the bound shown, its step holds only what it changes, and its
+ * Undo keeps the size. What is measured until it ends goes with the gesture. */
 export function noteGestureStarts(note: NoteBlockModel) {
   saveNoteSize(note);
-  writeDiffering(note);
+  storeShown(note);
   moving.add(note);
 }
 
@@ -518,4 +793,5 @@ export function noteGestureStarts(note: NoteBlockModel) {
 export function noteGestureEnds(note: NoteBlockModel) {
   moving.delete(note);
   measureAgain(note, true);
+  display(note);
 }

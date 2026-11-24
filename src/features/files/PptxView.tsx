@@ -75,17 +75,22 @@ export default function PptxView({
                 ]),
         ]}
         banner={runtime.banner}
+        discarding={runtime.discarding}
         error={runtime.error}
-        onReload={() => {
+        onDiscard={() => {
           void runtime.discardDraft();
         }}
+        onDownload={() => {
+          void runtime.downloadDraft().catch(() => {});
+        }}
+        onRetry={runtime.retryHeld}
         paused={runtime.paused}
         pausedAtOpen={runtime.pausedAtOpen}
         readOnly={runtime.readOnly}
-        reloading={runtime.discarding}
         // A newer version swaps the view (OfficeFileView); only the
         // maintenance pause keeps its banner.
         replaced={runtime.replaced && runtime.paused}
+        retrying={runtime.retryingHeld}
         storageFull={runtime.storageFull}
       />
       <OfficeHeader

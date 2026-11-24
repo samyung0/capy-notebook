@@ -34,6 +34,7 @@ import { seedCards } from '../../../src/features/flashcards/liveSet';
 import type { FlashcardContent } from '../../../src/features/materials/blocks';
 import { uid } from '../../../src/lib/id';
 import { buildBiologyLoadTestValue } from '../../../src/mocks/noteContent/loadTest';
+import { nodeHeartbeat } from '../../collaboration/scripts/nodeHeartbeat';
 import { compareStyles } from './styles';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
@@ -117,7 +118,7 @@ async function seedSet(page: Page, setId: string, cards: FlashcardContent[]) {
     onSynced: ({ state }) => {
       if (state) synced();
     },
-    socket: CollabSocket.create(first.url),
+    socket: CollabSocket.create(first.url, nodeHeartbeat),
     token: async () => first.token,
     url: first.url,
   });

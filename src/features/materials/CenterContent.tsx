@@ -937,7 +937,7 @@ function MaterialContentBody({
     drawnNote &&
     deletedDocs && (
       <SaveBanner
-        onReload={() => discardDeleted(deletedDocs)}
+        onDiscard={() => discardDeleted(deletedDocs)}
         state="deleted"
       />
     )

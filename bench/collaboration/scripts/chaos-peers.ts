@@ -21,6 +21,7 @@ import * as Y from 'yjs';
 import { RoomProvider } from '../../../src/features/collaboration/roomProvider';
 import { CollabSocket } from '../../../src/features/collaboration/socket';
 import { sendCaret } from '../../../src/features/notes/notePresence';
+import { nodeHeartbeat } from './nodeHeartbeat';
 
 interface RangeMs {
   max: number;
@@ -241,7 +242,7 @@ class ChaosPeer {
         if (state) synced();
       },
       // Each peer is a browser tab of its own: its own socket.
-      socket: CollabSocket.create(this.options.url),
+      socket: CollabSocket.create(this.options.url, nodeHeartbeat),
       token: async () => mintToken(this.options, this.name),
       url: this.options.url,
     });

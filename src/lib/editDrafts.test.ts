@@ -14,6 +14,10 @@ import { resetAllowance } from '@/features/collaboration/allowance';
 import { CLIENT_PROTOCOL } from '@/features/collaboration/protocol';
 import type { DraftMessage, DraftReply } from './draftStore';
 
+// A draft group's id, and its first piece's place (`X-Capy-Group`).
+const GROUP_ID = /^[\w-]{1,64}$/;
+const FIRST_PIECE = /,0,\d+$/;
+
 // The drafts worker, run in this process: messages are copied as
 // postMessage copies them, and each worker loads its own store module (a
 // fresh one after vi.resetModules, like a new page).
@@ -59,6 +63,16 @@ vi.mock('./sourceCache', () => ({
   },
 }));
 
+// Draft pieces go by fetch here, so the `/drafts` stub below answers them
+// (`postDraft` sends by XHR, which Node lacks).
+vi.mock('./draftUpload', () => ({
+  postDraft: (
+    url: URL,
+    body: Uint8Array<ArrayBuffer>,
+    headers: Record<string, string>
+  ) => fetch(url, { body, headers, method: 'POST' }),
+}));
+
 // The sweep reports what it drops (edit_incidents) through the API client.
 const post = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock('@/api/client', async (load) => ({
@@ -68,6 +82,7 @@ vi.mock('@/api/client', async (load) => ({
 
 import {
   applyDrafts,
+  BUSY_RETRY_MS,
   DRAFT_EXPIRY_MS,
   deleteAccountDrafts,
   deleteDocumentDrafts,
@@ -78,7 +93,6 @@ import {
   draftBytes,
   draftGroups,
   draftSender,
-  draftSendTimeout,
   dropExpiredGroup,
   dropLostDrafts,
   type EditDraft,
@@ -1897,16 +1911,18 @@ class Locks {
 
 /** The collaboration service's `/drafts`: each request waits for `answer`. */
 const requests: { body: Uint8Array; headers: Headers; url: URL }[] = [];
-const fetchDrafts = vi.fn(
-  async (input: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
-    requests.push({
-      body: new Uint8Array(init?.body as ArrayBuffer),
-      headers: new Headers(init?.headers),
-      url: new URL(String(input)),
-    });
-    return Response.json({ type: 'checkpoint-persisted' });
-  }
-);
+async function persisted(
+  input: URL | RequestInfo,
+  init?: RequestInit
+): Promise<Response> {
+  requests.push({
+    body: new Uint8Array(init?.body as ArrayBuffer),
+    headers: new Headers(init?.headers),
+    url: new URL(String(input)),
+  });
+  return Response.json({ type: 'checkpoint-persisted' });
+}
+const fetchDrafts = vi.fn(persisted);
 vi.stubGlobal('fetch', fetchDrafts);
 
 function answer(status: number, refusal?: string) {
@@ -2129,6 +2145,69 @@ describe('the draft sweep sending', () => {
     expect(await readDrafts(key)).toEqual([]);
   });
 
+  /** Holds back the timers set for BUSY_RETRY_MS, which the test runs
+   * itself (`held`); other timers run as usual. A real one would fire into a
+   * later test. */
+  function heldBusyRetries() {
+    const held: (() => void)[] = [];
+    const later = globalThis.setTimeout;
+    const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+      handler: () => void,
+      ms?: number,
+      ...rest: unknown[]
+    ) => {
+      if (ms !== BUSY_RETRY_MS) return later(handler, ms, ...rest);
+      held.push(handler);
+      return later(() => undefined, 0);
+    }) as typeof setTimeout);
+    return { held, restore: () => spy.mockRestore() };
+  }
+
+  // Epo 2026-11-23: a group answered busy (another group of the user's is
+  // unfinished) keeps its rows and goes again 10 s later, silently.
+  it('sends a group answered busy again 10 s later', async () => {
+    const key = 'u_busy:material:mat_1';
+    await leftRows(key);
+    requests.length = 0;
+    const { held, restore } = heldBusyRetries();
+    try {
+      answer(409, 'busy');
+      await sweepDrafts('u_busy', tokens(ROOM));
+      expect(requests).toHaveLength(1);
+      expect(await readDrafts(key)).toHaveLength(2);
+      expect(held).toHaveLength(1);
+      held[0]();
+      await vi.waitFor(async () => expect(await readDrafts(key)).toEqual([]));
+      expect(requests).toHaveLength(2);
+    } finally {
+      restore();
+    }
+  });
+
+  // Round 6, finding 1: a group answered busy ends the sweep's sends, as
+  // every later group of the user's would be busy too; the busy retry sends
+  // them all. Fails with the document's second group sent behind the busy
+  // one (each first piece uploaded again every 10 s for nothing).
+  it('sends no group after one answered busy', async () => {
+    const key = 'u_busy_two:material:mat_1';
+    await leftRows(key);
+    await leftRows(key, `${ROOM}@b`);
+    requests.length = 0;
+    const { held, restore } = heldBusyRetries();
+    try {
+      answer(409, 'busy');
+      await sweepDrafts('u_busy_two', tokens(ROOM));
+      expect(requests).toHaveLength(1);
+      expect(await readDrafts(key)).toHaveLength(4);
+      expect(held).toHaveLength(1);
+      held[0]();
+      await vi.waitFor(async () => expect(await readDrafts(key)).toEqual([]));
+      expect(requests).toHaveLength(3);
+    } finally {
+      restore();
+    }
+  });
+
   it('marks a refused group refused when it draws on its own, leaves one that does not for the editor, and sends neither again', async () => {
     const key = 'u_refused:material:mat_1';
     await leftRows(key);
@@ -2252,7 +2331,9 @@ describe('the draft sweep sending', () => {
     expect(await sendLateDrafts(key, room, ids, () => true)).toBe(true);
   });
 
-  it('sends a group larger than a piece as pieces of at most 2 MiB, in order, and its rows go once the last is stored', async () => {
+  // Review of 43fae032a, finding 2: each piece names its group, place and
+  // count, so the room admits the whole or none of it.
+  it('sends a group larger than a piece as pieces of at most 2 MiB, in order, naming their group, and its rows go once the last is stored', async () => {
     const big = 'u_pieces:material:mat_big';
     const doc = new Y.Doc();
     let update: Uint8Array = new Uint8Array();
@@ -2268,6 +2349,14 @@ describe('the draft sweep sending', () => {
     await sweepDrafts('u_pieces', tokens(ROOM));
     expect(requests.length).toBeGreaterThan(2);
     const room = new Y.Doc();
+    const places = requests.map(({ headers }) =>
+      headers.get('x-capy-group')?.split(',')
+    );
+    const id = places[0]?.[0];
+    expect(id).toMatch(GROUP_ID);
+    expect(places).toEqual(
+      requests.map((_, index) => [id, String(index), String(requests.length)])
+    );
     for (const { body } of requests) {
       expect(body.byteLength).toBeLessThanOrEqual(2 * 1024 * 1024);
       Y.applyUpdate(room, body);
@@ -2277,7 +2366,7 @@ describe('the draft sweep sending', () => {
     expect(await readDrafts(big)).toEqual([]);
   });
 
-  /** A group of one 5 MiB row (three pieces): its key, text and update. */
+  /** A group of one 5 MiB row (four pieces): its key, text and update. */
   async function bigGroup(key: string) {
     const doc = new Y.Doc();
     let update: Uint8Array = new Uint8Array();
@@ -2293,10 +2382,9 @@ describe('the draft sweep sending', () => {
     return text;
   }
 
-  /** The first request's body and the rows left, applied in order. */
-  async function heldText(key: string) {
+  /** The rows left, applied in order. */
+  async function rowsText(key: string) {
     const room = new Y.Doc();
-    Y.applyUpdate(room, requests[0].body);
     for (const row of await readDrafts(key)) Y.applyUpdate(room, row.data);
     return room.getText('content').toString();
   }
@@ -2312,26 +2400,129 @@ describe('the draft sweep sending', () => {
     });
   }
 
-  it('retries a group whose later piece is refused as too fast at the next trigger, with only its unsent pieces', async () => {
+  /**
+   * The room's draft groups (`draft_piece`, collaboration-rs room.rs) as a
+   * send meets them: pieces taken in order and held until the last, a piece
+   * the group holds already taken as held, and any other refused
+   * `unavailable`, the group dropped. `script` names what happens at a
+   * request (by its number): `too_fast` refuses it and drops the group, as
+   * an allowance refusal does; `lost` takes the piece and loses its answer.
+   * Returns the restore of the default answer.
+   */
+  function draftRoom(script: Record<number, 'lost' | 'too_fast'>) {
+    const groups = new Map<string, number>();
+    let number = 0;
+    fetchDrafts.mockImplementation(async (input, init) => {
+      requests.push({
+        body: new Uint8Array(init?.body as ArrayBuffer),
+        headers: new Headers(init?.headers),
+        url: new URL(String(input)),
+      });
+      const step = script[number++];
+      const place = new Headers(init?.headers).get('x-capy-group') ?? '';
+      const [id, at, count] = place.split(',');
+      const [index, total] = [Number(at), Number(count)];
+      if (step === 'too_fast') {
+        groups.delete(id);
+        return Response.json({ class: 'too_fast' }, { status: 429 });
+      }
+      const next = groups.get(id);
+      if (next !== undefined && index < next)
+        return Response.json({ type: 'piece-held' });
+      if (index !== (next ?? 0) && index !== 0) {
+        groups.delete(id);
+        return Response.json({ class: 'unavailable' }, { status: 503 });
+      }
+      groups.set(id, index + 1);
+      const last = index + 1 === total;
+      if (last) groups.delete(id);
+      if (step === 'lost') throw new TypeError('Failed to fetch');
+      return Response.json({
+        type: last ? 'checkpoint-persisted' : 'piece-held',
+      });
+    });
+    return () => fetchDrafts.mockImplementation(persisted);
+  }
+
+  // Finding 2: the room took none of a group it did not finish, so every
+  // row stays. Round 2, findings 1 and 4: the group keeps its name, and the
+  // next try goes on from the piece with no answer, as the room holds the
+  // ones before. Round 3, finding 3: a refusal drops the group in the room,
+  // so the resumed piece is `unavailable`, and the send starts over from
+  // the first piece at once. Fails if a resumed send waits for the next
+  // page load once its group is gone.
+  it('starts a resumed group over at once when the room dropped it, under the same name', async () => {
     const big = 'u_fast:material:mat_big';
     const text = await bigGroup(big);
-    storeNext();
-    answer(429, 'too_fast');
-    await sweepDrafts('u_fast', tokens(ROOM));
-    // The send stops at the refused piece; one row of the pieces not sent
-    // stays, unmarked.
-    expect(requests).toHaveLength(2);
-    const left = await readDrafts(big);
-    expect(left.map((row) => row.held ?? false)).toEqual([false]);
-    expect(left[0].data.byteLength).toBeLessThan(4 * 1024 * 1024);
-    expect(await heldText(big)).toBe(text);
-    // The next trigger of the same page load sends the rest.
-    await sweepDrafts('u_fast', tokens(ROOM), { cleanup: false });
-    expect(requests.length).toBeGreaterThan(2);
-    expect(await readDrafts(big)).toEqual([]);
-  });
+    const rows = await readDrafts(big);
+    const restore = draftRoom({ 1: 'too_fast' });
+    try {
+      await sweepDrafts('u_fast', tokens(ROOM));
+      // The send stops at the refused piece; the rows stay as they were.
+      expect(requests).toHaveLength(2);
+      expect(await readDrafts(big)).toEqual(rows);
+      expect(await rowsText(big)).toBe(text);
+      const [id, , count] =
+        requests[0].headers.get('x-capy-group')?.split(',') ?? [];
+      requests.length = 0;
+      await sweepDrafts('u_fast', tokens(ROOM), { cleanup: false });
+      const all = Array.from(
+        { length: Number(count) },
+        (_, index) => `${id},${index},${count}`
+      );
+      expect(
+        requests.map(({ headers }) => headers.get('x-capy-group'))
+      ).toEqual([`${id},1,${count}`, ...all]);
+      expect(await readDrafts(big)).toEqual([]);
+    } finally {
+      restore();
+    }
+  }, 30_000);
 
-  it('keeps only the unsent pieces of a group whose later piece is refused', async () => {
+  // Round 2, finding 4: a piece the room took whose answer was lost goes
+  // again at the next try, held, and the send goes on from there.
+  it('goes on from the piece whose answer was lost at the next trigger', async () => {
+    const big = 'u_lost:material:mat_big';
+    await bigGroup(big);
+    const restore = draftRoom({ 1: 'lost' });
+    try {
+      await sweepDrafts('u_lost', tokens(ROOM));
+      expect(requests).toHaveLength(2);
+      const [id, , count] =
+        requests[0].headers.get('x-capy-group')?.split(',') ?? [];
+      requests.length = 0;
+      await sweepDrafts('u_lost', tokens(ROOM), { cleanup: false });
+      expect(
+        requests.map(({ headers }) => headers.get('x-capy-group'))
+      ).toEqual(
+        Array.from(
+          { length: Number(count) - 1 },
+          (_, index) => `${id},${index + 1},${count}`
+        )
+      );
+      expect(await readDrafts(big)).toEqual([]);
+    } finally {
+      restore();
+    }
+  }, 30_000);
+
+  // Round 2, finding 1: two sends of the same rows (a sweep, then an
+  // opening editor or another tab) name one group, so the room holds one
+  // copy, not two.
+  it('names a group by its rows, the same at every send', async () => {
+    const big = 'u_name:material:mat_big';
+    await bigGroup(big);
+    answer(503, 'unavailable');
+    await sweepDrafts('u_name', tokens(ROOM));
+    const first = requests[0].headers.get('x-capy-group');
+    expect(first).toMatch(FIRST_PIECE);
+    requests.length = 0;
+    const { sweepDrafts: again } = await nextPageLoad();
+    await again('u_name', tokens(ROOM));
+    expect(requests[0].headers.get('x-capy-group')).toBe(first);
+  }, 30_000);
+
+  it('marks every row of a group whose later piece is refused, as the room took none of it', async () => {
     const big = 'u_partial:material:mat_big';
     const text = await bigGroup(big);
     storeNext();
@@ -2339,9 +2530,8 @@ describe('the draft sweep sending', () => {
     await sweepDrafts('u_partial', tokens(ROOM));
     expect(requests).toHaveLength(2);
     const left = await readDrafts(big);
-    // The rest needs the stored piece, so it waits for the editor.
-    expect(left.map((row) => row.held ?? false)).toEqual([true]);
-    expect(await heldText(big)).toBe(text);
+    expect(left.map((row) => row.refused ?? false)).toEqual([true]);
+    expect(await rowsText(big)).toBe(text);
   });
 
   // Rate-limit review r3 S8: a piece over the service's cap (a struct that
@@ -2605,6 +2795,31 @@ describe('the draft sweep sending', () => {
     url: 'wss://collab.test',
   });
 
+  // Epo 2026-11-23: an opening editor's send answered busy goes again 10 s
+  // later, not after the 30 s backoff.
+  it("sends an opening editor's group answered busy again 10 s later", async () => {
+    const key = 'u_busy_send:material:mat_1';
+    await putDrafts(
+      (await leftRows(key)).map((row) => ({ ...row, grants: [grant(9)] }))
+    );
+    requests.length = 0;
+    const { held, restore } = heldBusyRetries();
+    answer(409, 'busy');
+    const sender = draftSender(key, roomToken);
+    try {
+      await vi.waitFor(() => expect(held).toHaveLength(1));
+      expect(sender.done).toBe(false);
+      storeNext();
+      held[0]();
+      await sender.settled;
+      expect(requests).toHaveLength(2);
+      expect(await readDrafts(key)).toEqual([]);
+    } finally {
+      restore();
+      sender.stop();
+    }
+  });
+
   // Q420 (review r4 M2): a recording session holds its own lock, so another
   // tab's late merge leaves its rows alone; the lock goes as recording stops.
   it("holds a recording session's lock until it stops recording", async () => {
@@ -2713,46 +2928,6 @@ describe('the draft sweep sending', () => {
     sender.now();
     await sender.settled;
     expect(requests).toHaveLength(1);
-  });
-
-  it('fails a send that takes past its time limit as a try (Q360)', async () => {
-    const key = 'u_slow:material:mat_1';
-    await putDrafts(
-      (await leftRows(key)).map((row) => ({ ...row, grants: [grant(9)] }))
-    );
-    requests.length = 0;
-    const calls = fetchDrafts.mock.calls.length;
-    const limit = new AbortController();
-    const timeout = vi
-      .spyOn(AbortSignal, 'timeout')
-      .mockReturnValue(limit.signal);
-    fetchDrafts.mockImplementationOnce(
-      (_input, init) =>
-        new Promise((_, reject) =>
-          init?.signal?.addEventListener('abort', () =>
-            reject(new DOMException('timed out', 'TimeoutError'))
-          )
-        )
-    );
-    const sender = draftSender(key, roomToken);
-    await vi.waitFor(() =>
-      expect(fetchDrafts).toHaveBeenCalledTimes(calls + 1)
-    );
-    const body = fetchDrafts.mock.calls.at(-1)?.[1]?.body as Uint8Array;
-    expect(timeout).toHaveBeenCalledWith(draftSendTimeout(body.byteLength));
-    storeNext();
-    limit.abort();
-    sender.now();
-    await sender.settled;
-    timeout.mockRestore();
-    expect(requests).toHaveLength(1);
-  });
-
-  it('gives a send 30 s plus its upload at 100 KB/s, at most 3 minutes (Q365)', () => {
-    expect(draftSendTimeout(0)).toBe(30_000);
-    // A 2 MiB piece: 30 s and 21 s for its bytes.
-    expect(draftSendTimeout(2 * 1024 * 1024)).toBe(50_972);
-    expect(draftSendTimeout(100 * 1024 * 1024)).toBe(180_000);
   });
 
   it("presents the group's stored room tokens, newest first, one per client id (Q288, Q322)", async () => {

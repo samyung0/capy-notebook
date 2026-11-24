@@ -31,6 +31,10 @@ type Shown = {
   peer?: Peer;
   /** `holdUploads`: how many uploads wait, and what lets them go. */
   uploads?: { held: number; release(): void };
+  /** `watchReads`: how many of the canvas's reads were sent, and failed. */
+  reads?: { failed: number; sent: number };
+  /** `watchErrorScreen`: the canvas pane's error screen showed. */
+  errorShown?: boolean;
 };
 
 /** A workspace's first canvas, as the mocks name it. */
@@ -482,6 +486,65 @@ const holdUploads = (page: Page) =>
     };
   });
 
+/** Counts this page's reads of the canvas `id` from now (its board's
+ * `GET /api/canvases/<id>`), sent and failed; `hold` keeps a failure that
+ * comes offline back until the `online` event after it, as an offline read's
+ * error that lands once the connection is back. */
+const watchReads = (page: Page, id: string, hold = false) =>
+  page.evaluate(
+    ({ hold, id }) => {
+      const send = window.fetch;
+      const reads = { failed: 0, sent: 0 };
+      Object.assign(window, { reads });
+      window.fetch = async (...sent) => {
+        const [to, init] = sent;
+        const url = to instanceof Request ? to.url : String(to);
+        const method = to instanceof Request ? to.method : init?.method;
+        if (
+          (method ?? 'GET') !== 'GET' ||
+          new URL(url, location.href).pathname !== `/api/canvases/${id}`
+        )
+          return send(...sent);
+        reads.sent += 1;
+        try {
+          return await send(...sent);
+        } catch (error) {
+          reads.failed += 1;
+          if (hold && !navigator.onLine)
+            await new Promise((back) =>
+              window.addEventListener('online', () => setTimeout(back, 50), {
+                once: true,
+              })
+            );
+          throw error;
+        }
+      };
+    },
+    { hold, id }
+  );
+
+/** Waits until every watched read of the canvas sent so far failed (the
+ * board sends two in development: React's StrictMode runs its effect twice). */
+const readsFailed = (page: Page) =>
+  page.waitForFunction(() => {
+    const reads = (window as Shown).reads;
+    return !!reads && reads.sent > 0 && reads.failed === reads.sent;
+  });
+
+/** Notes from now whether the canvas pane's error screen shows, however
+ * briefly (`errorShown`). */
+const watchErrorScreen = (page: Page) =>
+  page.evaluate(() => {
+    new MutationObserver(() => {
+      if (
+        document.querySelector(
+          '[data-workspace-canvas] [role="alert"][data-error-surface]'
+        )
+      )
+        Object.assign(window, { errorShown: true });
+    }).observe(document, { childList: true, subtree: true });
+  });
+
 /** Waits until an image's upload is at the hold: its file is being stored. */
 const uploadHeld = (page: Page) =>
   page.waitForFunction(() => ((window as Shown).uploads?.held ?? 0) > 0);
@@ -911,8 +974,11 @@ test('a canvas shows the pane loader while it opens; one with no copy on this de
   await page.getByRole('button', { name: 'Dashboard' }).click();
   await expect(page.locator('.capy-board')).toHaveCount(0);
 
+  await watchReads(page, CANVAS);
   await context.setOffline(true);
   await page.getByRole('button', { name: 'Canvas' }).click();
+  // The board's own reads failed: its wait, not the canvas picker's loader.
+  await readsFailed(page);
   await expect(panel.getByText('Waiting for connection')).toBeVisible();
   await expect(page.locator('.capy-board')).toHaveCount(0);
 
@@ -920,6 +986,42 @@ test('a canvas shows the pane loader while it opens; one with no copy on this de
   await boardShown(page);
   await expect.poll(() => drawn(page)).toEqual(['brush']);
   await expect(panel.getByText('Waiting for connection')).toHaveCount(0);
+});
+
+// The board's read, sent offline, fails only once the connection is back, its
+// `online` event gone before (the test above's CI flake): the board opens by
+// itself, its error screen never showing.
+test('a canvas read sent offline whose failure lands once the connection is back opens the board by itself', async ({
+  page,
+  context,
+}) => {
+  test.slow();
+  await openCanvas(page);
+  await drawStroke(page);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  await page.getByRole('button', { name: 'Dashboard' }).click();
+  await expect(page.locator('.capy-board')).toHaveCount(0);
+
+  await watchReads(page, CANVAS, true);
+  await watchErrorScreen(page);
+  await context.setOffline(true);
+  await page.getByRole('button', { name: 'Canvas' }).click();
+  await readsFailed(page);
+  await context.setOffline(false);
+  // The board, or the error screen it must never show.
+  await page.waitForFunction(
+    () => (window as Shown).__board || (window as Shown).errorShown,
+    undefined,
+    { timeout: 15_000 }
+  );
+  expect(await page.evaluate(() => (window as Shown).errorShown ?? false)).toBe(
+    false
+  );
+  await page.waitForFunction(() => (window as Shown).__board);
+  await expect.poll(() => drawn(page)).toEqual(['brush']);
+  expect(await page.evaluate(() => (window as Shown).errorShown ?? false)).toBe(
+    false
+  );
 });
 
 test('an editor demoted while offline drops to view under the read-only strip, keeping what was saved before', async ({
@@ -1053,7 +1155,7 @@ test('a deleted canvas opens read-only from the Trash, and Restore opens it live
   await expect.poll(() => drawn(page)).toEqual(['brush']);
 });
 
-test('a canvas whose room is at its cap keeps the stroke it refused for copying, and Reload asks before it opens what the room holds', async ({
+test('a canvas whose room is at its cap keeps the stroke it refused for copying, and Discard asks before it opens what the room holds', async ({
   page,
 }) => {
   test.slow();
@@ -1068,26 +1170,31 @@ test('a canvas whose room is at its cap keeps the stroke it refused for copying,
   // The stroke the room refuses is kept on this device, shown read-only on a
   // board of its own under the recovery strip (Developer 2026-09-30).
   await drawStroke(page, 0.6);
-  await expect(strip(page)).toContainText('Copy anything you need');
+  await expect(strip(page)).toContainText('Download a copy or discard them');
   await page.waitForFunction(
     () => (window as Shown).__board && !(window as Shown).__board?.kept
   );
   await expect.poll(() => drawn(page)).toHaveLength(2);
   await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
 
-  // Reload asks first; Cancel keeps the edits.
+  // Discard, then Download (round 4, item 10). Discard asks first; Cancel
+  // keeps the edits.
+  await expect(strip(page).getByRole('button')).toHaveText([
+    'Discard',
+    'Download',
+  ]);
   const ask = page.getByRole('dialog', {
     name: 'Discard these edits and reload?',
   });
-  await strip(page).getByRole('button', { name: 'Reload' }).click();
+  await strip(page).getByRole('button', { name: 'Discard' }).click();
   await expect(ask).toBeVisible();
   await ask.getByRole('button', { name: 'Cancel' }).click();
   await expect(ask).toHaveCount(0);
-  await expect(strip(page)).toContainText('Copy anything you need');
+  await expect(strip(page)).toContainText('Download a copy or discard them');
   await expect.poll(() => drawn(page)).toHaveLength(2);
   // Confirmed, the room opens afresh on what it holds, with the tools.
-  await strip(page).getByRole('button', { name: 'Reload' }).click();
-  await ask.getByRole('button', { name: 'Reload' }).click();
+  await strip(page).getByRole('button', { name: 'Discard' }).click();
+  await ask.getByRole('button', { name: 'Discard' }).click();
   await expect(strip(page)).toHaveCount(0);
   await expect(page.locator('edgeless-pen-tool-button').first()).toBeVisible();
   await expect.poll(() => drawn(page)).toEqual(['brush']);
@@ -1298,7 +1405,7 @@ test('a canvas opened online from the copy with no early edit joins on it: the s
 // Epo 2026-11-19 (Q33): an offline move of a shape another person deleted
 // meanwhile would not show once joined, so it alone stays on this device
 // for copying ("Reject nothing", 2026-11-18), while the move beside it lands
-// and the board takes edits once Reload (which asks first) leaves the copy.
+// and the board takes edits once Discard (which asks first) leaves the copy.
 test('a move made offline of a shape another person deleted meanwhile stays for copying, and the move beside it lands', async ({
   page,
   context,
@@ -1320,7 +1427,7 @@ test('a move made offline of a shape another person deleted meanwhile stays for 
   await page.evaluate(() => (window as Shown).peer?.remove('from'));
 
   await context.setOffline(false);
-  await expect(strip(page)).toContainText('Copy anything you need');
+  await expect(strip(page)).toContainText('Download a copy or discard them');
   // The deleted square alone, to copy; the other one's move is in the room.
   await expect.poll(() => drawn(page)).toEqual(['shape']);
   await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
@@ -1328,10 +1435,10 @@ test('a move made offline of a shape another person deleted meanwhile stays for 
   expect(
     await page.evaluate(() => (window as Shown).peer?.elements().to.xywh)
   ).not.toBe('[400,0,100,100]');
-  await strip(page).getByRole('button', { name: 'Reload' }).click();
+  await strip(page).getByRole('button', { name: 'Discard' }).click();
   await page
     .getByRole('dialog', { name: 'Discard these edits and reload?' })
-    .getByRole('button', { name: 'Reload' })
+    .getByRole('button', { name: 'Discard' })
     .click();
   await expect(strip(page)).toHaveCount(0);
   await expect.poll(() => drawn(page)).toEqual(['shape']);
@@ -1469,7 +1576,7 @@ test('a canvas refused at the join keeps the strokes drawn on its copy for copyi
   await expect.poll(() => drawn(page)).toHaveLength(2);
   await room(page, 'mockRevokeBoard', theirs);
   await context.setOffline(false);
-  await expect(strip(page)).toContainText('Copy anything you need');
+  await expect(strip(page)).toContainText('Download a copy or discard them');
   await expect.poll(() => drawn(page)).toHaveLength(2);
   await expect(page.locator('edgeless-pen-tool-button')).toHaveCount(0);
 });

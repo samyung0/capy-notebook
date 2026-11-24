@@ -74,7 +74,11 @@ import {
   type PresenceConnection,
   type PresenceStore,
 } from '@/features/collaboration/presence';
-import { RoomProvider } from '@/features/collaboration/roomProvider';
+import {
+  type HeldEdits,
+  type HeldStrip,
+  RoomProvider,
+} from '@/features/collaboration/roomProvider';
 import { markItemWorking } from '@/features/collaboration/roomRefusals';
 import { limitUndo } from '@/features/collaboration/undo';
 import type {
@@ -233,6 +237,16 @@ function roomProvider(editor: PlateEditor) {
 function capyRoom(editor: PlateEditor) {
   const provider = roomProvider(editor)?.provider;
   return provider instanceof RoomProvider ? provider : undefined;
+}
+
+/** The changes the room channel has not acknowledged: the capy room
+ * provider's, or under MSW the mock channel's, which counts held edits as
+ * one. */
+function roomUnsynced(editor: PlateEditor) {
+  const room = roomProvider(editor)?.provider as
+    | { unsyncedChanges: number }
+    | undefined;
+  return room?.unsyncedChanges ?? 0;
 }
 
 /** The room a late merge marks (`mergeBase`): the capy room provider, or
@@ -646,6 +660,7 @@ export function NoteEditorCore({
   onJoinFailed,
   onPresenceChange,
   onDocumentRejected,
+  onHeld,
   onLate,
   onLateUnloaded,
   onMergeStore,
@@ -718,7 +733,8 @@ export function NoteEditorCore({
       | 'invalid_document'
       | 'unassigned'
       | 'revoked'
-      | 'late',
+      | 'late'
+      | 'discarded',
     edits: 'none' | 'kept' | 'lost'
   ) => void;
   /** The room answered this editor's JOIN late (its session is older than
@@ -727,6 +743,11 @@ export function NoteEditorCore({
    * one's document as `late` (null when its edits are past the 7-day
    * expiry: the next one shows them as pieces, Q413). */
   onLate?: (late: Handed | null) => void;
+  /** The room dropped a group of this editor's pieces as late: its Retry
+   * and Discard while the strip shows, null once a join carried the edits
+   * (`RoomProviderConfig.onHeld`, Epo 2026-11-23). Discard drops them and
+   * reports `discarded` (`onDocumentRejected`) for the remount. */
+  onHeld?: (held: HeldStrip | null) => void;
   /** The late merge's code did not load: its Retry while the strip shows,
    * null once it loads or this editor goes (Q398). */
   onLateUnloaded?: (retry: (() => void) | null) => void;
@@ -828,6 +849,9 @@ export function NoteEditorCore({
   // The merge's code did not load: Retry, or the browser's reconnect, tries
   // again (Q295, Q398).
   const [lateUnloaded, setLateUnloaded] = useState(false);
+  // That load was asked for offline: tried again at once if the connection is
+  // back before the reconnect is listened for.
+  const lateUnloadedOffline = useRef(false);
   // Until then the note shows the tab's own copy, read-only (Q295).
   const lateCopy = useMemo<MaterialDocument | null>(() => {
     if (!lateDocument) return null;
@@ -1072,6 +1096,7 @@ export function NoteEditorCore({
   const reportOutdated = useRef(onOutdated);
   const reportLate = useRef(onLate);
   const reportLateUnloaded = useRef(onLateUnloaded);
+  const reportHeld = useRef(onHeld);
   const showOffline = useCallback(() => {
     if (!offlineMode.current) return;
     reportOffline.current?.(
@@ -1136,6 +1161,24 @@ export function NoteEditorCore({
     saveDelay.retain([]);
     setStatus('error');
     reportRejection.current?.('late', storageOk.current ? 'kept' : 'lost');
+  };
+  // The unsynced strip's Discard (Epo 2026-11-23): this session's held edits
+  // go from the device with its copy, then the remount opens on the last
+  // saved version.
+  const discardHeld = useRef(() => {});
+  discardHeld.current = () => {
+    if (rejected.current || stale.current) return;
+    rejected.current = true;
+    stale.current = true;
+    roomProvider(editorRef.current)?.disconnect();
+    pendingCheckpoints.current.clear();
+    saveDelay.retain([]);
+    const gone = recorder.current?.discard();
+    discardCopy.current();
+    void dropDeviceCopies(material.id);
+    void Promise.resolve(gone).finally(() =>
+      reportRejection.current?.('discarded', 'none')
+    );
   };
   // This session is late (its JOIN, or a draft group of the note, answered
   // late): its document is kept as one late row, and the next editor merges
@@ -1215,6 +1258,7 @@ export function NoteEditorCore({
     if (!lateDocument || mergeStarted.current) return;
     mergeStarted.current = true;
     setLateUnloaded(false);
+    const askedOffline = !navigator.onLine;
     const signal = mergeStop.current?.signal;
     // The version the session held as the merge took the current document,
     // which its mark (`mergeBase`, required) holds it to.
@@ -1288,6 +1332,7 @@ export function NoteEditorCore({
         }
         console.warn('The late merge did not load:', error);
         mergeStarted.current = false;
+        lateUnloadedOffline.current = askedOffline;
         if (!(rejected.current || stale.current)) setLateUnloaded(true);
       });
   };
@@ -1344,10 +1389,16 @@ export function NoteEditorCore({
     shown?.(() => mergeNow.current());
     return () => shown?.(null);
   }, [lateMerging, lateUnloaded]);
-  // A reconnecting browser tries the code again (Q398).
+  // A reconnecting browser tries the code again (Q398), at once when it came
+  // back before this listened; a load that failed online waits for Retry or
+  // the next reconnect.
   useEffect(() => {
     if (!lateUnloaded) return;
     const again = () => mergeNow.current();
+    if (lateUnloadedOffline.current && navigator.onLine) {
+      again();
+      return;
+    }
     window.addEventListener('online', again);
     return () => window.removeEventListener('online', again);
   }, [lateUnloaded]);
@@ -1764,6 +1815,13 @@ export function NoteEditorCore({
                     name: collaborationToken.room,
                     onAuthenticationFailed,
                     onClose: roomClosed,
+                    onHeld: (held: HeldEdits | null) =>
+                      reportHeld.current?.(
+                        held && {
+                          ...held,
+                          discard: () => discardHeld.current(),
+                        }
+                      ),
                     onPresence: reportPresence,
                     onSlowed: (slowed: boolean) =>
                       slowed ? slowedNow.current() : markSlowed(false),
@@ -1782,6 +1840,13 @@ export function NoteEditorCore({
                     name: collaborationToken.room,
                     onAuthenticationFailed,
                     onClose: roomClosed,
+                    onHeld: (held: HeldEdits | null) =>
+                      reportHeld.current?.(
+                        held && {
+                          ...held,
+                          discard: () => discardHeld.current(),
+                        }
+                      ),
                     onPresence: reportPresence,
                     onSlowed: (slowed: boolean) =>
                       slowed ? slowedNow.current() : markSlowed(false),
@@ -1878,7 +1943,7 @@ export function NoteEditorCore({
         !lateNow.current &&
         !hasUnsavedWork() &&
         !recorder.current?.unsaved &&
-        !capyRoom(editorRef.current)?.unsyncedChanges,
+        !roomUnsynced(editorRef.current),
       owner: currentUserId,
       row: () => ({
         ...copyLabel(material, currentUserId),
@@ -2474,6 +2539,7 @@ export function NoteEditorCore({
     reportOutdated.current = paused ? undefined : onOutdated;
     reportLate.current = paused ? undefined : onLate;
     reportLateUnloaded.current = paused ? undefined : onLateUnloaded;
+    reportHeld.current = paused ? undefined : onHeld;
     let reported = paused;
     readOnlyNow.current = (refusedConnect = false, code?: ReadOnlyCode) => {
       if (reported) return;
@@ -2496,6 +2562,7 @@ export function NoteEditorCore({
   }, [
     lateDocument,
     onDocumentRejected,
+    onHeld,
     onLate,
     onLateUnloaded,
     onOffline,

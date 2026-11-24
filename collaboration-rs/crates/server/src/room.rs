@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 use yrs::{Doc, ReadTxn, StateVector, Transact};
 
-use crate::app::{Outbox, RoomHandle, RoomView, Shared, ViewState};
+use crate::app::{GroupClaim, Outbox, RoomHandle, RoomView, Shared, ViewState, draft_slot};
 use crate::auth::{Access, Context, RoomName};
 use crate::client_ids::{self, ClientIds};
 use crate::drafts::{Class, Refused};
@@ -36,9 +36,10 @@ const MAX_PENDING_CHECKPOINTS: usize = 64;
 const MAX_CHECKPOINT_ID: usize = 128;
 /// Consecutive unplaceable step 2 replies before a channel closes.
 pub const MAX_UNPLACED_STEPS: u32 = 2;
-/// The largest sync message a note room takes: twice the 2 MiB of unsaved
-/// edits an offline editor may hold, so its reconnect always fits (Epo,
-/// 2026-10-08). Source rooms take whole states up to the frame cap.
+/// The largest sync message a note room takes, and the most one group of
+/// pieces gathers there: twice the 2 MiB of unsaved edits an offline editor
+/// may hold, so its reconnect always fits (Epo, 2026-10-08). Source rooms
+/// take whole states up to the frame cap, and groups up to their state cap.
 pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
 /// The largest awareness state a room keeps and relays (Epo 2026-10-28): a
 /// note's caret is ~24 B, its largest state with the app's ids (100 uploads,
@@ -186,11 +187,8 @@ pub enum RoomCmd {
     /// A quiz's keys room to its content room: the matching and ordering
     /// entries the readers' lists follow (D3 as revised 2026-10-10).
     Items(Vec<items::quiz::ItemsPart>),
-    /// A quiz room loaded: the other one sends its entries and metrics again.
+    /// A quiz room loaded: the other one sends its entries again.
     PeerLoaded,
-    /// The other document's metrics: a quiz's two documents count together
-    /// against the material's limits (REVIEW1 S3).
-    PeerMetrics(notes::limits::Metrics),
     /// A server edit changed the other document while its room was not
     /// loaded: read it from the store.
     PeerReload,
@@ -198,6 +196,13 @@ pub enum RoomCmd {
     PeerStored(notes::limits::Metrics, Vec<items::quiz::ItemsPart>),
     /// Stored drafts from a browser with no editor open (`drafts.rs`).
     Draft(Box<Draft>),
+    /// A draft piece's body is still arriving (`drafts.rs`): the group `id`
+    /// of `user` lives on for the slack from now, so a slow but live uplink
+    /// lands it (round 4, finding 9).
+    DraftArriving {
+        user: String,
+        id: String,
+    },
     /// An agent edit, Undo or Redo admitted like a person's edit (Q402).
     AgentEdit(Box<AgentEdit>),
     /// A quiz's keys update its content room admits with its own (Q403):
@@ -232,6 +237,9 @@ pub struct Draft {
     /// The stored version the drafts were made at, their oldest's
     /// (`X-Capy-Version`, `sessions.rs`): 1 or later.
     pub version: u64,
+    /// A piece of a group the page cut a large update in (`X-Capy-Group`):
+    /// held until the group's last ([Room::draft_piece]).
+    pub group: Option<DraftPiece>,
     pub reply: oneshot::Sender<Result<Durable, Refused>>,
 }
 
@@ -469,16 +477,148 @@ struct Member {
     clients: HashSet<u64>,
     /// Consecutive unplaceable step 2 replies.
     unplaced: u32,
-    /// Update and step 2 messages handled since the last ACK.
+    /// Update and step 2 messages handled since the last ACK, pieces each.
     acks: u64,
+    /// The pieces of a step 2 or update it sent so far (`on_piece`).
+    group: Option<Group>,
     /// Its step 1 and awareness query waiting for its user's open budget.
     opening: Option<Opening>,
     /// The room answered its step 1: it holds the room's state, so it hears
     /// each store's version (`sessions.rs`).
     synced: bool,
+    /// The room's admissions when it joined or its step 1 was last answered:
+    /// it holds those groups, so their paced pieces skip it.
+    seen: u64,
     /// The stored version it last named (its JOIN's, then each `ack`): a
     /// session made at its first write starts there (review r1 L1).
     version: i64,
+}
+
+/// A step 2 or update its client cut in pieces (`sync::PIECE`), gathered
+/// until the last: nothing of it is applied, stored or broadcast before, and
+/// nothing at all when a piece is refused or the channel ends first.
+struct Group {
+    step2: bool,
+    count: u64,
+    /// The place the next piece must have.
+    next: u64,
+    /// The pieces so far; none once the group was dropped (or found its
+    /// user busy), whose later pieces are acknowledged and let go until its
+    /// last.
+    pieces: Option<Vec<Vec<u8>>>,
+    /// The bytes of its pieces so far.
+    bytes: usize,
+    /// Its pieces acknowledged before it ends: its first, once held, so its
+    /// client sends the rest (round 4, finding 5).
+    acked: u64,
+    /// Its user's one group slot ([GroupClaim]), given back when it is
+    /// dropped.
+    claim: Option<GroupClaim>,
+    started: Instant,
+    /// When it is dropped unless its next piece came ([Room::group_carry]),
+    /// a message is still arriving on its socket or, while its first piece
+    /// waits for its acknowledgement, its tab's heartbeat came.
+    deadline: Instant,
+    /// The latest its deadline may be, however much its socket hears
+    /// ([Room::group_limit]).
+    limit: Instant,
+    /// The bytes and heartbeats its socket had read at its latest piece or
+    /// renewal ([Room::drop_late_groups]).
+    heard: u64,
+    beats: u64,
+}
+
+/// A draft send's group (`X-Capy-Group`): its pieces kept by the room until
+/// the last, which admits them as one update, as a channel's group.
+#[derive(Clone, Debug)]
+pub struct DraftPiece {
+    /// The page's name for the group: the same for every send of the same
+    /// rows, so a resend (or another tab's send of them) adds to the group
+    /// the room holds instead of beside it.
+    pub id: String,
+    pub index: u64,
+    pub count: u64,
+}
+
+/// A finished group: its pieces merged into one update, and the pieces it
+/// came in (none when the room held all of them in full).
+type Gathered = (Vec<u8>, Vec<Vec<u8>>);
+
+/// A draft group the room holds, by its user and id ([Room::draft_piece]).
+struct DraftGroup {
+    count: u64,
+    next: u64,
+    /// Its pieces that change anything (one the room holds in full is
+    /// neither charged nor kept, Q321), and their bytes.
+    pieces: Vec<Vec<u8>>,
+    bytes: usize,
+    /// Its user's one group slot.
+    _claim: GroupClaim,
+    started: Instant,
+    deadline: Instant,
+    /// The latest its deadline may be, however often its pieces come again
+    /// or its body keeps arriving ([Room::group_limit]).
+    limit: Instant,
+}
+
+/// The least a group's pieces carry on average, with margin: the browser
+/// packs each piece up to 2 MiB by its own estimate (`splitUpdate`), which
+/// counts a delete range as 16 bytes against the 2 to 7 it encodes in, so a
+/// delete-heavy piece may hold an eighth of that. Bytes are the bound (the
+/// room's group cap); the count is only a sanity bound ([max_pieces]),
+/// review of 43fae032a round 2, finding 6, and round 3, finding 9.
+const PIECE_FLOOR: usize = 256 << 10;
+
+/// The most pieces a group within `cap` bytes may have.
+fn max_pieces(cap: usize) -> u64 {
+    (cap / PIECE_FLOOR) as u64 + 2
+}
+
+/// Why a group of `count` pieces is refused: no client cuts one within the
+/// room's group cap so, whatever its `bytes` so far (round 3, finding 9).
+fn too_many_pieces(count: u64, bytes: usize, cap: usize) -> String {
+    format!(
+        "a group of {count} pieces ({bytes} bytes so far) has more than the {} one within the room's group cap may have",
+        max_pieces(cap)
+    )
+}
+
+/// The group slot a channel's groups claim ([GroupClaim::channel]): its
+/// room and JOIN session id, so a busy tab keeps its place in line on its
+/// next connection (round 4, finding 2); a channel naming no session, its
+/// connection's.
+fn channel_slot(room: &str, key: MemberKey, session: Option<u128>) -> String {
+    match session {
+        Some(session) => format!("{room}\nsession:{session:032x}"),
+        None => format!("{room}\n{}:{}", key.0, key.1),
+    }
+}
+
+/// A channel's word that the room dropped its unfinished group as late (a
+/// piece did not come by the group's deadline): it acknowledged the pieces,
+/// and the client sends the edit again only after its next join, so an
+/// uplink too slow for one piece within the slack does not loop on resends
+/// (review of 43fae032a round 2, finding 5).
+pub const GROUP_DROPPED_TYPE: &str = "group-dropped";
+
+/// A channel's word that its group's first piece found another group of its
+/// user's unfinished (one at a time, Epo 2026-11-23): the room acknowledges
+/// the group's pieces and lets them go, and the client joins again 10 s
+/// later, its step 2 carrying the edit. Not abuse, so no timeout.
+pub const GROUP_BUSY_TYPE: &str = "group-busy";
+
+/// An update going out at a flush: who sent it (none: everyone gets it),
+/// and whether it is a piece of an admitted source group, which goes as a
+/// message of its own, never merged with others, at the update allowance's
+/// pace ([Room::outgoing]).
+struct Outgoing {
+    sender: Option<MemberKey>,
+    update: Vec<u8>,
+    piece: bool,
+    /// A piece's group's place among the room's admissions: a member that
+    /// joined or was answered after it ([Member::seen]) holds the group
+    /// already and skips the piece (round 3, finding 7).
+    admitted: u64,
 }
 
 /// A member's latest step 1 and awareness query while they wait on its
@@ -526,8 +666,9 @@ struct Note {
     /// A quiz content room: the lists readers get, pushed over every channel
     /// as `quiz-items` (none: not read yet).
     reader: Option<items::quiz::ReaderLists>,
-    /// A quiz room: the metrics last sent to the other document's room.
-    metrics_sent: Option<notes::limits::Metrics>,
+    /// A quiz room's `peer` is the other document's bound as last read (the
+    /// store's, or its room's before it unloaded), which a loaded room's in
+    /// `App::quiz_bounds` stands in for.
     validator: crate::model::RoomValidator,
     /// The stored document is one the store would refuse, or a quiz either
     /// of whose documents holds a block kind its rooms do not admit
@@ -661,9 +802,18 @@ struct Store {
     waiters: Vec<oneshot::Sender<Result<(), String>>>,
 }
 
+/// Why a source update or save was refused for the room's size, on its
+/// `source-checkpoint-failed` (Q827 A) and its incident.
+const SIZE_REASON: &str = "source_state_bytes";
+
 /// See `sync_message`: not a valid update, so a release build refuses it.
 #[cfg(debug_assertions)]
 const IT_PANIC_UPDATE: &[u8] = b"capy-it-panic";
+
+/// See `admit_update`: a group of pieces whose update holds this text panics
+/// before its checks, in debug builds only.
+#[cfg(debug_assertions)]
+const IT_PANIC_GROUP: &[u8] = b"capy-it-panic-group";
 
 /// See `load`: the first load of a note whose id holds this panics, in debug
 /// builds only.
@@ -675,8 +825,9 @@ const IT_PANIC_LOAD: &str = "capy-it-panic-load";
 #[cfg(debug_assertions)]
 pub const IT_FAIL_SERVICE_EDIT: &str = "capy-it-fail-service-edit";
 
-/// See `start_store`: a store of a material whose id holds this commits a
-/// second late, in debug builds only.
+/// See `start_store` and `start_source_store`: a store of a material or
+/// source file whose id holds this commits a second late, in debug builds
+/// only.
 #[cfg(debug_assertions)]
 pub const IT_SLOW_STORE: &str = "capy-it-slow-store";
 
@@ -691,6 +842,24 @@ pub const IT_SLOW_COMPUTE: &str = "capy-it-slow-compute";
 /// builds only.
 #[cfg(debug_assertions)]
 pub const IT_SLOW_RECHECK: &str = "capy-it-slow-recheck";
+
+/// See `edits::it_hold`: a no-room agent edit of a source file or material
+/// whose id holds this waits after its snapshot of the live room, before it
+/// computes, until the test releases it, in debug builds only (Q826 A: a
+/// room opens meanwhile).
+#[cfg(debug_assertions)]
+pub const IT_HOLD_NO_ROOM: &str = "capy-it-hold-no-room";
+
+/// See `edits::opened`: a source file whose id holds this looks loaded to a
+/// no-room agent edit's last look and is never loaded for its Q402 path, as
+/// if its rooms kept opening and unloading, in debug builds only (Q829 A).
+#[cfg(debug_assertions)]
+pub const IT_ROOM_FLAPS: &str = "capy-it-room-flaps";
+
+/// See `RoomCmd::Snapshot`: a room whose name holds this answers no snapshot
+/// within its 10 s, in debug builds only (Q829 A).
+#[cfg(debug_assertions)]
+const IT_SLOW_SNAPSHOT: &str = "capy-it-slow-snapshot";
 
 /// See `RoomCmd::AgentKeys`: the keys room of a quiz whose id holds this
 /// refuses an agent edit's part, in debug builds only.
@@ -735,9 +904,20 @@ pub struct Room {
     /// it: never their user id, which a reader may not learn (Epo 2026-10-12).
     people: HashMap<String, u64>,
     next_person: u64,
-    /// This window's updates and who sent each (none: everyone gets it).
-    window: Vec<(Option<MemberKey>, Vec<u8>)>,
+    /// This window's updates.
+    window: Vec<Outgoing>,
     flush_at: Option<Instant>,
+    /// Admitted source groups' pieces, going out at the update allowance's
+    /// pace ([Room::outgoing]); the pace's bytes in hand and when they were
+    /// counted; when the next piece may go.
+    paced: VecDeque<Outgoing>,
+    pace: (f64, Instant),
+    paced_at: Option<Instant>,
+    /// Source groups admitted so far, the stamp of each one's pieces
+    /// ([Outgoing::admitted]).
+    admissions: u64,
+    /// Draft groups held until their last piece, by user and group id.
+    draft_groups: HashMap<(String, String), DraftGroup>,
     markers: Markers,
     receipts: Vec<String>,
     /// The agent steps this room admitted (Q402).
@@ -968,7 +1148,6 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 doc: doc_kind,
                 items_sent: None,
                 reader,
-                metrics_sent: None,
                 durable_metrics: Some(metrics),
                 stored_version,
                 projected_version,
@@ -1173,6 +1352,7 @@ async fn run(
         fields["stages"] = json!(times);
     }
     log(Level::Info, "room_load", fields);
+    let pace = (app.config.update_limits.burst_bytes as f64, Instant::now());
     let mut room = Room {
         markers: Markers::new(&app.instance_id),
         app,
@@ -1190,6 +1370,11 @@ async fn run(
         next_person: 0,
         window: Vec::new(),
         flush_at: None,
+        paced: VecDeque::new(),
+        pace,
+        paced_at: None,
+        admissions: 0,
+        draft_groups: HashMap::new(),
         receipts: Vec::new(),
         agent: AgentSteps::default(),
         durable,
@@ -1228,7 +1413,13 @@ async fn run(
         .stats
         .log_bytes
         .fetch_add(log_bytes.max(0) as u64, Ordering::Relaxed);
-    if matches!(&room.kind, Kindly::Note(note) if note.model.quiz()) {
+    if let Kindly::Note(note) = &room.kind
+        && note.model.quiz()
+    {
+        // Measured exactly by the load: the other room reads it from now.
+        if let Some(bound) = note.validator.bound() {
+            room.app.quiz_bounds.set(&room.name, bound);
+        }
         room.send_peer(RoomCmd::PeerLoaded);
         room.schedule_flush();
     }
@@ -1263,6 +1454,15 @@ impl Room {
                 let id = self.id;
                 let removed = self.app.rooms.remove_if(&self.name, id, || rx.is_empty());
                 if removed {
+                    // Stored in full, its bound holds for the other room while
+                    // that one is loaded (review of 43fae032a, finding 4); a
+                    // next life of the room sets its own at its load.
+                    if let Some(peer) = self.peer_name()
+                        && matches!(&self.kind, Kindly::Note(note) if note.model.quiz())
+                    {
+                        let loaded = self.app.rooms.get(&peer).is_some();
+                        self.app.quiz_bounds.unloaded(&self.name, &peer, loaded);
+                    }
                     rx.close();
                     // Joins that slipped in after the lookup fail and look up again.
                     while let Ok(command) = rx.try_recv() {
@@ -1285,10 +1485,75 @@ impl Room {
             self.idle_at,
             self.open_at,
             presence,
+            self.paced_at,
+            self.groups_due(),
         ]
         .into_iter()
         .flatten()
         .min()
+    }
+
+    /// When the soonest unfinished group is dropped, a channel's or a
+    /// draft send's.
+    fn groups_due(&self) -> Option<Instant> {
+        let channels = self
+            .members
+            .values()
+            .filter_map(|member| member.group.as_ref())
+            .filter(|group| group.pieces.is_some())
+            .map(|group| group.deadline);
+        let drafts = self.draft_groups.values().map(|group| group.deadline);
+        channels.chain(drafts).min()
+    }
+
+    /// Unfinished groups past their deadline are dropped: a channel's is
+    /// acknowledged and its channel told ([GROUP_DROPPED_TYPE]), a draft
+    /// group's next piece finds nothing to join (`unavailable`). A channel's
+    /// group lives on for the slack when its socket heard bytes since its
+    /// mark, after the socket's last whole message: a message is still
+    /// arriving (a slow uplink's piece, or another message its pieces wait
+    /// behind); pongs alone never renew it, as they come whole (round 4,
+    /// finding 9). While its first piece is held and nothing more came, it
+    /// lives on too when its tab's heartbeat came since
+    /// ([crate::protocol::HEARTBEAT]): a long send to the client holds back
+    /// the acknowledgement its rest waits for, and its tab's code runs,
+    /// which a frozen tab's never does; a group stalled after its second
+    /// piece gets no renewal from beats. Neither renews it past its limit
+    /// ([Room::group_limit]). A draft group waits for one whole
+    /// piece at the slowest uplink ([Room::draft_wait]), and lives on while
+    /// its piece's body arrives ([RoomCmd::DraftArriving]), up to the same
+    /// limit.
+    fn drop_late_groups(&mut self, now: Instant) {
+        self.draft_groups.retain(|_, group| group.deadline > now);
+        let slack = self.app.config.group_slack;
+        let mut late = Vec::new();
+        for (key, member) in &mut self.members {
+            let Some(group) = member
+                .group
+                .as_mut()
+                .filter(|group| group.pieces.is_some() && group.deadline <= now)
+            else {
+                continue;
+            };
+            let traffic = member.out.traffic();
+            let (heard, beats) = (traffic.heard(), traffic.beats());
+            // Only its held first piece's acknowledgement can wait behind a
+            // long send; a group stalled later holds its user's one slot no
+            // longer for its tab's beats.
+            let waiting = group.next == 1;
+            if (heard > group.heard && traffic.arriving()) || (waiting && beats > group.beats) {
+                (group.heard, group.beats) = (heard, beats);
+                group.deadline = now + slack;
+            }
+            // Never past its limit (round 6, finding 4).
+            group.deadline = group.deadline.min(group.limit);
+            if group.deadline <= now {
+                late.push(*key);
+            }
+        }
+        for key in late {
+            self.drop_noticed(key, GROUP_DROPPED_TYPE);
+        }
     }
 
     fn store_due(&self) -> Option<Instant> {
@@ -1313,7 +1578,10 @@ impl Room {
 
     async fn on_timers(&mut self) {
         let now = Instant::now();
-        if self.flush_at.is_some_and(|at| at <= now) {
+        if self.groups_due().is_some_and(|at| at <= now) {
+            self.drop_late_groups(now);
+        }
+        if self.flush_at.is_some_and(|at| at <= now) || self.paced_at.is_some_and(|at| at <= now) {
             self.flush();
         }
         if self.store_due().is_some_and(|at| at <= now) {
@@ -1366,6 +1634,8 @@ impl Room {
             return empty && !self.store.running;
         }
         empty
+            // A draft group's last piece finds the room it began in.
+            && self.draft_groups.is_empty()
             && self.child_passes.is_empty()
             && !self.child_running
             && !self.store.dirty
@@ -1583,6 +1853,16 @@ impl Room {
                 }
             }
             RoomCmd::Snapshot(reply) => {
+                // Debug builds only: the integration test's room whose
+                // snapshot answers past its wait.
+                #[cfg(debug_assertions)]
+                if self.name.contains(IT_SLOW_SNAPSHOT) {
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_secs(11)).await;
+                        drop(reply);
+                    });
+                    return;
+                }
                 let state = self.encoded(StateVector::default()).await;
                 let _ = reply.send(state);
             }
@@ -1605,18 +1885,17 @@ impl Room {
             RoomCmd::PeerLoaded => {
                 if let Kindly::Note(note) = &mut self.kind {
                     note.items_sent = None;
-                    note.metrics_sent = None;
                 }
                 self.schedule_flush();
-            }
-            RoomCmd::PeerMetrics(metrics) => {
-                if let Kindly::Note(note) = &mut self.kind {
-                    note.validator.set_peer(metrics);
-                }
             }
             RoomCmd::PeerReload => self.reload_peer(),
             RoomCmd::PeerStored(metrics, parts) => {
                 if self.peer().is_none() {
+                    // The other document as stored now: the bound its room
+                    // left at its unload no longer holds.
+                    if let Some(peer) = self.peer_name() {
+                        self.app.quiz_bounds.set(&peer, metrics);
+                    }
                     if let Kindly::Note(note) = &mut self.kind {
                         note.validator.set_peer(metrics);
                     }
@@ -1629,6 +1908,12 @@ impl Room {
             }
             RoomCmd::ChildAnswer { pass, plan, answer } => self.child_answer(*pass, plan, answer),
             RoomCmd::Draft(draft) => self.draft(*draft).await,
+            RoomCmd::DraftArriving { user, id } => {
+                let renewed = Instant::now() + self.app.config.group_slack;
+                if let Some(group) = self.draft_groups.get_mut(&(user, id)) {
+                    group.deadline = group.deadline.max(renewed).min(group.limit);
+                }
+            }
             RoomCmd::AgentEdit(edit) => self.agent_edit(*edit).await,
             RoomCmd::AgentKeys {
                 actor,
@@ -1652,7 +1937,8 @@ impl Room {
                 }
                 let context = agent_context(&actor);
                 let granted = self.server_ids(&update);
-                let outcome = self.admit_update(None, &context, false, &update, None, &granted);
+                let outcome =
+                    self.admit_update(None, &context, false, &update, None, &granted, None);
                 let admitted = matches!(outcome, Outcome::Admitted);
                 let _ = reply.send(match outcome {
                     Outcome::Admitted => Ok(()),
@@ -1691,6 +1977,7 @@ impl Room {
             base,
             granted,
             version,
+            group,
             reply,
         } = draft;
         let (history, live) = (self.in_history(), self.live_ids(&[]));
@@ -1717,7 +2004,31 @@ impl Room {
                 return;
             }
         }
-        let answer = match self.admit_draft(&context, &update, &granted, version) {
+        // A group's piece is held until its last, which brings the whole.
+        let (update, charged, pieces) = match group {
+            None => (update.to_vec(), false, None),
+            Some(piece) => match self.draft_piece(&context, piece, &update) {
+                Ok(Some((whole, pieces))) => {
+                    // Peers of a source room hear the pieces, each on its
+                    // own, as a channel's group (finding 6; round 2,
+                    // finding 2).
+                    let source = matches!(self.kind, Kindly::Source(_)) && !pieces.is_empty();
+                    (whole, true, source.then_some(pieces))
+                }
+                Ok(None) => {
+                    let (held, answer) = oneshot::channel();
+                    let _ = held.send(Ok(()));
+                    let _ = reply.send(Ok(answer));
+                    return;
+                }
+                Err(refusal) => {
+                    let _ = reply.send(Err(refusal));
+                    return;
+                }
+            },
+        };
+        let admitted = self.admit_draft(&context, &update, &granted, version, charged, pieces);
+        let answer = match admitted {
             // Held in full, or admitted: the receipt waits for the store.
             Ok(None | Some(Outcome::Admitted)) => Ok(self.durable().await),
             Ok(Some(Outcome::Unheld)) => Err(Refused::new(
@@ -1736,13 +2047,17 @@ impl Room {
     /// no-op, with no allowance charge and no new store (Epo 2026-10-24,
     /// Q321), whose answer still waits for the store that holds the group
     /// (Q360), since the browser deletes its rows on it. The room handles
-    /// writes in order, so back-to-back duplicates count once.
+    /// writes in order, so back-to-back duplicates count once. `charged`: a
+    /// group's whole, whose pieces were charged to the allowance as they came;
+    /// `pieces`: a source group's, for peers ([Room::tell]).
     fn admit_draft(
         &mut self,
         context: &Context,
         update: &[u8],
         granted: &[u64],
         version: u64,
+        charged: bool,
+        pieces: Option<Vec<Vec<u8>>>,
     ) -> Result<Option<Outcome>, Refused> {
         let decoded = ydoc::decode(update).ok();
         // A group older than the window, or under a lost session's id, is
@@ -1755,7 +2070,9 @@ impl Room {
         {
             return Ok(None);
         }
-        self.take_draft_allowance(context, update.len())?;
+        if !charged {
+            self.take_draft_allowance(context, update.len())?;
+        }
         self.app.stats.updates.fetch_add(1, Ordering::Relaxed);
         let read_only = context.access != Access::Write;
         let checked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -1764,7 +2081,7 @@ impl Room {
             if update == IT_PANIC_UPDATE {
                 panic!("integration test panic");
             }
-            self.admit_update(None, context, read_only, update, decoded, granted)
+            self.admit_update(None, context, read_only, update, decoded, granted, pieces)
         }));
         let outcome = checked.unwrap_or_else(|_| {
             self.update_panicked(None, update.len());
@@ -1779,6 +2096,148 @@ impl Room {
             sessions.draft_admitted(version.min(note.stored_version));
         }
         Ok(Some(outcome))
+    }
+
+    /// A piece of a draft group (`X-Capy-Group`, review of 43fae032a,
+    /// finding 2): the page still sends at most 2 MiB a request (Epo
+    /// 2026-10-18), and the room holds the pieces by user and group id until
+    /// the last, whose whole (with the pieces it came in, for peers) it hands
+    /// back to admit; none while more are to come. The same bounds as a
+    /// channel's group: the room's group cap, the room's unfinished groups,
+    /// its user's one group at a time, its deadline, and a sanity bound on
+    /// its count. A piece the room holds in full is neither charged nor kept
+    /// (Q321); the others are charged as they come. Round 2:
+    /// - the id is the same for every send of the same rows, so a piece the
+    ///   group already holds (a resend after a lost answer, another tab's
+    ///   send of the same rows) is taken as held, not charged or kept again
+    ///   (findings 1 and 4), and the group goes on where it was: a first
+    ///   piece sent again is held too;
+    /// - a first piece while another group of its user's is unfinished, a
+    ///   channel's or a draft send's, is `busy` (Epo 2026-11-23), with no
+    ///   timeout;
+    /// - past the room's bound on unfinished groups this group alone is
+    ///   dropped as `busy` (round 3, finding 6), neither charged nor timed
+    ///   out, and the page sends it again 10 s later;
+    /// - a count no group within the cap could have is `malformed`, with
+    ///   the bytes that came (round 3, finding 9).
+    ///
+    /// A piece the group does not expect (its earlier pieces dropped or
+    /// refused, the room reloaded) is refused `unavailable`, and the group
+    /// the room holds stays as it is.
+    fn draft_piece(
+        &mut self,
+        context: &Context,
+        piece: DraftPiece,
+        update: &[u8],
+    ) -> Result<Option<Gathered>, Refused> {
+        let cap = self.group_cap();
+        let key = (context.user_id.clone(), piece.id);
+        if piece.count > max_pieces(cap) {
+            let held = self
+                .draft_groups
+                .remove(&key)
+                .map_or(0, |group| group.bytes);
+            let reason = too_many_pieces(piece.count, held + update.len(), cap);
+            return Err(Refused::new(Class::Malformed, reason));
+        }
+        let now = Instant::now();
+        let (carry, wait, limit) = (
+            self.group_carry(cap),
+            self.draft_wait(),
+            self.group_limit(cap),
+        );
+        // Never past its limit, as a channel's group (round 6 review).
+        let renewed =
+            |group: &DraftGroup| ((group.started + carry).max(now) + wait).min(group.limit);
+        let held = self
+            .draft_groups
+            .get(&key)
+            .map(|group| (group.count, group.next));
+        match held {
+            // Already held: renewed, nothing more.
+            Some((count, next)) if count == piece.count && piece.index < next => {
+                if let Some(group) = self.draft_groups.get_mut(&key) {
+                    group.deadline = renewed(group);
+                }
+                return Ok(None);
+            }
+            Some((count, next)) if count == piece.count && piece.index == next => {}
+            _ if piece.index == 0 => {
+                let slot = draft_slot(&self.name, &key.1);
+                let Some(claim) = GroupClaim::draft(&self.app, &context.user_id, &slot) else {
+                    return Err(Refused::new(
+                        Class::Busy,
+                        "another group of the user's is unfinished",
+                    ));
+                };
+                self.draft_groups.insert(
+                    key.clone(),
+                    DraftGroup {
+                        count: piece.count,
+                        next: 0,
+                        pieces: Vec::new(),
+                        bytes: 0,
+                        _claim: claim,
+                        started: now,
+                        deadline: (now + carry + wait).min(now + limit),
+                        limit: now + limit,
+                    },
+                );
+            }
+            // Never removed here: another tab may be sending the same rows
+            // under the same name (round 4, finding 6).
+            _ => {
+                return Err(Refused::new(
+                    Class::Unavailable,
+                    "the draft group's earlier pieces are not held",
+                ));
+            }
+        }
+        let changes = ydoc::decode(update)
+            .map(|decoded| ydoc::contains_changes(&self.doc.transact(), &decoded))
+            .unwrap_or(true);
+        if changes {
+            let room_bytes = self.group_bytes();
+            let held = self.draft_groups.get(&key).map_or(0, |group| group.bytes);
+            if held + update.len() > cap {
+                self.draft_groups.remove(&key);
+                return Err(Refused::new(Class::Limit, "past the room's group cap"));
+            }
+            if room_bytes + update.len() > 2 * cap {
+                self.draft_groups.remove(&key);
+                return Err(Refused::new(
+                    Class::Busy,
+                    "the room holds too many unfinished groups",
+                ));
+            }
+            if let Err(refusal) = self.take_draft_allowance(context, update.len()) {
+                self.draft_groups.remove(&key);
+                return Err(refusal);
+            }
+        }
+        let Some(group) = self.draft_groups.get_mut(&key) else {
+            return Err(Refused::new(Class::Unavailable, "the draft group is gone"));
+        };
+        if changes {
+            group.bytes += update.len();
+            group.pieces.push(update.to_vec());
+        }
+        group.next += 1;
+        group.deadline = renewed(group);
+        if group.next < group.count {
+            return Ok(None);
+        }
+        let Some(group) = self.draft_groups.remove(&key) else {
+            return Err(Refused::new(Class::Unavailable, "the draft group is gone"));
+        };
+        // Every piece held in full: the last stands for the whole, a no-op.
+        if group.pieces.is_empty() {
+            return Ok(Some((update.to_vec(), Vec::new())));
+        }
+        let pieces = group.pieces;
+        tokio::task::block_in_place(|| yrs::merge_updates_v1(&pieces))
+            .map(|whole| Some((whole, pieces)))
+            .map_err(|_| Refused::new(Class::Malformed, "the draft group is not an update"))
     }
 
     /// Charges a draft piece to the user's update allowance; a user in a
@@ -1889,7 +2348,7 @@ impl Room {
             // holds (Q403).
             if let Some(update) = &update {
                 let granted = self.server_ids(update);
-                match self.check_update(None, &context, false, update, None, &granted) {
+                match self.check_update(None, &context, false, update, None, &granted, &mut None) {
                     Ok(_) | Err(Outcome::Admitted) => {}
                     Err(outcome) => return Err(agent_refusal(outcome, undoing)),
                 }
@@ -1935,7 +2394,7 @@ impl Room {
             // dropped a unit it names, answered late at admission (Q419,
             // Q432, Q443).
             let granted = self.server_ids(&update);
-            let outcome = self.admit_update(None, &context, false, &update, None, &granted);
+            let outcome = self.admit_update(None, &context, false, &update, None, &granted, None);
             if !matches!(outcome, Outcome::Admitted) {
                 // The check above passed on this same state; logged if the
                 // keys landed alone all the same.
@@ -2120,16 +2579,63 @@ impl Room {
     /// The other document's room of a quiz (`keys:` for `material:`, and
     /// back), when it is loaded here.
     fn peer(&self) -> Option<crate::app::RoomHandle> {
+        self.app.rooms.get(&self.peer_name()?)
+    }
+
+    /// The other document's room name of a note room (one only a quiz has).
+    fn peer_name(&self) -> Option<String> {
         let Kindly::Note(note) = &self.kind else {
             return None;
         };
-        let name = match note.doc {
+        Some(match note.doc {
             note_store::Doc::Content => format!("keys:{}:schema:{}", note.material_id, note.schema),
             note_store::Doc::Keys => {
                 format!("material:{}:schema:{}", note.material_id, note.schema)
             }
+        })
+    }
+
+    /// A quiz room's other document's bound as it stands: its loaded room's
+    /// (`App::quiz_bounds`), else as last read.
+    fn peer_bound(&self) -> Option<notes::limits::Metrics> {
+        let Kindly::Note(note) = &self.kind else {
+            return None;
         };
-        self.app.rooms.get(&name)
+        if !note.model.quiz() {
+            return None;
+        }
+        let loaded = self
+            .peer_name()
+            .and_then(|peer| self.app.quiz_bounds.get(&peer));
+        loaded.or(note.validator.peer())
+    }
+
+    /// A quiz room's admitted update: its document's new bound is taken
+    /// against the other document's as it stands now (`QuizBounds::take`).
+    /// When the other's moved since admission read it (`read`), growth past
+    /// a limit the two share is refused, though admission let it in, and the
+    /// validator, which counted it, measures afresh; otherwise the update is
+    /// taken as admitted, a shrink included.
+    fn take_quiz_bound(
+        &mut self,
+        read: Option<notes::limits::Metrics>,
+        before: Option<notes::limits::Metrics>,
+    ) -> Result<(), (notes::limits::LimitCode, notes::limits::Metrics)> {
+        let Some(peer) = self.peer_name() else {
+            return Ok(());
+        };
+        let Kindly::Note(note) = &mut self.kind else {
+            return Ok(());
+        };
+        let Some(own) = note.validator.bound().filter(|_| note.model.quiz()) else {
+            return Ok(());
+        };
+        let unloaded = note.validator.peer();
+        let taken = (self.app.quiz_bounds).take(&self.name, &peer, own, read, before, unloaded);
+        if taken.is_err() {
+            note.validator.invalidate();
+        }
+        taken
     }
 
     fn send_peer(&self, cmd: RoomCmd) {
@@ -2140,42 +2646,26 @@ impl Room {
         }
     }
 
-    /// Once per flush window at most: a quiz room sends the other room its
-    /// metrics when they changed, and a keys room its matching and ordering
-    /// entries.
+    /// Once per flush window at most: a quiz's keys room sends the content
+    /// room its matching and ordering entries when they changed (the two
+    /// documents' bounds meet in `App::quiz_bounds`).
     fn send_to_peer(&mut self) {
-        if !matches!(&self.kind, Kindly::Note(note) if note.model.quiz()) {
+        if !matches!(&self.kind, Kindly::Note(note)
+            if note.model.quiz() && note.doc == note_store::Doc::Keys)
+        {
             return;
         }
         let Some(peer) = self.peer() else {
             return;
         };
-        let parts = match &self.kind {
-            Kindly::Note(note) if note.doc == note_store::Doc::Keys => {
-                Some(items::quiz::item_parts(&self.doc.transact()))
-            }
-            _ => None,
-        };
+        let parts = items::quiz::item_parts(&self.doc.transact());
         let Kindly::Note(note) = &mut self.kind else {
             return;
         };
-        let mut commands = Vec::new();
-        let metrics = note.validator.bound();
-        if metrics.is_some() && metrics != note.metrics_sent {
-            note.metrics_sent = metrics;
-            commands.extend(metrics.map(RoomCmd::PeerMetrics));
-        }
-        if let Some(parts) = parts
-            && note.items_sent.as_ref() != Some(&parts)
-        {
+        if note.items_sent.as_ref() != Some(&parts) {
             note.items_sent = Some(parts.clone());
-            commands.push(RoomCmd::Items(parts));
-        }
-        if !commands.is_empty() {
             tokio::spawn(async move {
-                for command in commands {
-                    let _ = peer.tx.send(command).await;
-                }
+                let _ = peer.tx.send(RoomCmd::Items(parts)).await;
             });
         }
     }
@@ -2677,6 +3167,7 @@ impl Room {
             return 0;
         };
         member.synced = true;
+        member.seen = self.admissions;
         let client = member.client;
         self.send(key, Kind::Sync, &sync::encode(sync::STEP2, diff));
         if let (Some(sessions), Kindly::Note(note)) = (&mut self.sessions, &self.kind) {
@@ -2864,8 +3355,10 @@ impl Room {
                 clients: HashSet::new(),
                 unplaced: 0,
                 acks: 0,
+                group: None,
                 opening: None,
                 synced: false,
+                seen: self.admissions,
                 version: 0,
             },
         );
@@ -2928,6 +3421,17 @@ impl Room {
         let Some(member) = self.members.remove(&key) else {
             return;
         };
+        // A busy channel gone waits no more, unless its session is still here
+        // on another connection (round 4, finding 2).
+        let user = &member.context.user_id;
+        let here = member.session_id.is_some()
+            && self.members.values().any(|other| {
+                other.session_id == member.session_id && &other.context.user_id == user
+            });
+        if !here {
+            let slot = channel_slot(&self.name, key, member.session_id);
+            self.app.group_slots.leave(user, &slot);
+        }
         if let Some(sessions) = &mut self.sessions {
             let user = &member.context.user_id;
             let recorded = self.client_ids.owned_by(member.client, user);
@@ -2983,31 +3487,25 @@ impl Room {
     fn flush(&mut self) {
         self.flush_at = None;
         self.send_to_peer();
-        let window = std::mem::take(&mut self.window);
-        let senders: HashSet<MemberKey> = window.iter().filter_map(|(sender, _)| *sender).collect();
-        let everyone = merge(window.iter().map(|(_, update)| update.as_slice()));
+        let window = self.outgoing(Instant::now());
+        let senders: HashSet<MemberKey> = window.iter().filter_map(|out| out.sender).collect();
+        let everyone = messages(window.iter());
         let changed: Vec<u64> = std::mem::take(&mut self.changed_awareness)
             .into_iter()
             .collect();
         let keys: Vec<MemberKey> = self.members.keys().copied().collect();
         for key in keys {
             let mut frame = BytesMut::new();
-            let update = if senders.contains(&key) {
-                merge(
-                    window
-                        .iter()
-                        .filter(|(sender, _)| *sender != Some(key))
-                        .map(|(_, update)| update.as_slice()),
-                )
-            } else {
-                everyone.clone()
-            };
-            if let Some(update) = update {
+            let seen = self.members.get(&key).map_or(0, |member| member.seen);
+            let own = (senders.contains(&key) || held_pieces(&window, seen))
+                .then(|| member_messages(&window, key, seen));
+            let updates = own.as_ref().unwrap_or(&everyone);
+            for update in updates {
                 protocol::encode(
                     &mut frame,
                     key.1,
                     Kind::Sync,
-                    &sync::encode(sync::UPDATE, &update),
+                    &sync::encode(sync::UPDATE, update),
                 );
             }
             let Some(member) = self.members.get_mut(&key) else {
@@ -3043,8 +3541,57 @@ impl Room {
         if update.is_empty() {
             return;
         }
-        self.window.push((sender, update));
+        self.window.push(Outgoing {
+            sender,
+            update,
+            piece: false,
+            admitted: 0,
+        });
         self.schedule_flush();
+    }
+
+    /// What a writer's admitted update tells peers: an admitted source
+    /// group's `pieces`, in yrs's encoding, each a message of its own at the
+    /// update allowance's pace, as they reached the room before groups (a
+    /// whole group at once could close readers as too slow, review of
+    /// 43fae032a, finding 6); else `update`. They were admitted together, so
+    /// peers end in the room's state either way. The pieces come with the
+    /// update, never kept beside it, so a panic in its admission leaves none
+    /// for the next (round 3, finding 5).
+    fn tell(&mut self, writer: Option<MemberKey>, update: Vec<u8>, pieces: Option<Vec<Vec<u8>>>) {
+        let Some(pieces) = pieces else {
+            self.broadcast_update(writer, update);
+            return;
+        };
+        self.admissions += 1;
+        for piece in pieces {
+            if let Ok(piece) = yrs::merge_updates_v1([piece.as_slice()]) {
+                self.window.push(Outgoing {
+                    sender: writer,
+                    update: piece,
+                    piece: true,
+                    admitted: self.admissions,
+                });
+            }
+        }
+        self.schedule_flush();
+    }
+
+    /// What goes out at this flush ([outgoing]): the window's plain updates
+    /// at once, groups' pieces at the allowance's pace.
+    fn outgoing(&mut self, now: Instant) -> Vec<Outgoing> {
+        let window = std::mem::take(&mut self.window);
+        let limits = self.app.config.update_limits;
+        let (out, next) = outgoing(window, &mut self.paced, &mut self.pace, limits, now);
+        self.paced_at = next;
+        out
+    }
+
+    /// The bytes of group pieces admitted and not sent yet: they count
+    /// against the room's bound on unfinished groups, so writers cannot
+    /// queue more than the room lets them hold (round 2, finding 3).
+    fn paced_bytes(&self) -> usize {
+        waiting_pieces(&self.window, &self.paced)
     }
 
     fn broadcast_stateless(&self, payload: &str) {
@@ -3159,20 +3706,407 @@ impl Room {
         if body == IT_PANIC_UPDATE {
             panic!("integration test panic");
         }
-        self.on_update(key, body, kind == sync::STEP2);
+        if kind == sync::PIECE {
+            self.on_piece(key, body);
+            return;
+        }
+        self.on_update(key, body, kind == sync::STEP2, 1, None);
     }
 
-    fn on_update(&mut self, key: MemberKey, bytes: &[u8], step2: bool) {
+    /// A piece of a step 2 or update its client cut in pieces: kept on its
+    /// channel until the group's last, which admits them as one update, so
+    /// peers and the store get all of it or nothing. Every piece is
+    /// acknowledged with its group, or its channel closes or joins again
+    /// (review of 43fae032a, findings 1, 3 and 7, and round 2):
+    /// - a read-only channel's piece is checked on its own (a piece decodes
+    ///   alone) and never kept: one that changes anything is refused;
+    /// - a group past the room's group cap ([Room::group_cap]) is refused as
+    ///   an update past it, with the bytes that came; one of more pieces
+    ///   than any group within it could have ([max_pieces]) is refused as
+    ///   malformed ([Room::too_many_pieces]);
+    /// - a piece out of its group's order, or a new group over an
+    ///   unfinished one, drops the group: its pieces are acknowledged and
+    ///   the channel hears step 1, as for an update the room cannot place,
+    ///   and its later pieces are acknowledged and let go;
+    /// - a group not finished by its deadline ([Room::group_carry]) is
+    ///   dropped as late ([GROUP_DROPPED_TYPE], [Room::drop_noticed]):
+    ///   acknowledged, and its client sends it again only after its next
+    ///   join;
+    /// - a first piece while another group of its user's is unfinished, in
+    ///   any room, a channel's or a draft send's, is busy (one at a time, Epo
+    ///   2026-11-23, [Room::claim_channel_group]), and so is a piece taking the
+    ///   room's unfinished groups (and the pieces it is still sending out)
+    ///   past twice its group cap (round 3, finding 6): the channel hears
+    ///   [GROUP_BUSY_TYPE] and the group's pieces are acknowledged and let
+    ///   go; no one is timed out for it.
+    fn on_piece(&mut self, key: MemberKey, body: &[u8]) {
+        let Some(piece) = sync::piece(body) else {
+            self.refuse(key, &[], "malformed sync message");
+            return;
+        };
+        let step2 = piece.kind == sync::STEP2;
+        let Some(member) = self.members.get(&key) else {
+            return;
+        };
+        if member.read_only {
+            self.on_update(key, piece.update, step2, 1, None);
+            return;
+        }
+        let user = member.context.user_id.clone();
+        let cap = self.group_cap();
+        // No group in progress can have so many pieces (its first was
+        // refused), so the bytes that came are this piece's.
+        if piece.count > max_pieces(cap) {
+            self.too_many_pieces(key, piece.count, piece.update.len());
+            return;
+        }
+        let now = Instant::now();
+        let (carry, limit) = (self.group_carry(cap), self.group_limit(cap));
+        let slack = self.app.config.group_slack;
+        if piece.index == 0 {
+            self.drop_group(key, 0);
+            let claim = self.claim_channel_group(key, &user);
+            let Some(member) = self.members.get_mut(&key) else {
+                return;
+            };
+            let busy = claim.is_none();
+            member.group = Some(Group {
+                step2,
+                count: piece.count,
+                next: 0,
+                pieces: (!busy).then(Vec::new),
+                bytes: 0,
+                acked: 0,
+                claim,
+                started: now,
+                deadline: now + carry + slack,
+                limit: now + limit,
+                heard: member.out.traffic().heard(),
+                beats: member.out.traffic().beats(),
+            });
+            if busy {
+                // Before the acknowledgement, which admits none of it.
+                let notice = serde_json::json!({ "room": self.name, "type": GROUP_BUSY_TYPE });
+                self.send(key, Kind::Stateless, &protocol::text(&notice.to_string()));
+            }
+        }
+        let room_bytes = self.group_bytes();
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        let in_order = member.group.as_ref().is_some_and(|group| {
+            group.step2 == step2 && group.count == piece.count && group.next == piece.index
+        });
+        if !in_order {
+            self.drop_group(key, 1);
+            // The rest of the stray piece's group is let go as it comes.
+            if let Some(member) = self.members.get_mut(&key) {
+                let traffic = member.out.traffic();
+                let (heard, beats) = (traffic.heard(), traffic.beats());
+                member.group = (piece.index + 1 < piece.count).then(|| Group {
+                    step2,
+                    count: piece.count,
+                    next: piece.index + 1,
+                    pieces: None,
+                    bytes: 0,
+                    acked: 0,
+                    claim: None,
+                    started: now,
+                    deadline: now,
+                    limit: now,
+                    heard,
+                    beats,
+                });
+            }
+            return;
+        }
+        let Some(group) = member.group.as_mut() else {
+            return;
+        };
+        group.next += 1;
+        let last = group.next == group.count;
+        if group.pieces.is_none() {
+            // A dropped group's piece: acknowledged and let go.
+            if last {
+                member.group = None;
+            }
+            self.acked(key);
+            return;
+        }
+        let bytes = piece.update.len();
+        if group.bytes + bytes > cap {
+            let held = group.bytes;
+            member.group = None;
+            self.group_too_large(key, held + bytes);
+            return;
+        }
+        if room_bytes + bytes > 2 * cap {
+            // Busy, not step 1, whose resend would cross the bound again at
+            // once (round 3, finding 6); this piece included, as the group
+            // already counts it.
+            self.drop_noticed(key, GROUP_BUSY_TYPE);
+            return;
+        }
+        group.bytes += bytes;
+        if let Some(pieces) = group.pieces.as_mut() {
+            pieces.push(piece.update.to_vec());
+        }
+        group.deadline = ((group.started + carry).max(now) + slack).min(group.limit);
+        group.heard = member.out.traffic().heard();
+        group.beats = member.out.traffic().beats();
+        if !last {
+            // The first piece held: its acknowledgement tells the client to
+            // send the rest, so a busy answer costs it one piece, not its
+            // burst (round 4, finding 5).
+            if group.next == 1 {
+                group.acked = 1;
+                self.acked(key);
+            }
+            return;
+        }
+        let Some(Group {
+            step2,
+            count,
+            pieces: Some(pieces),
+            acked,
+            ..
+        }) = member.group.take()
+        else {
+            return;
+        };
+        let merged = tokio::task::block_in_place(|| yrs::merge_updates_v1(&pieces));
+        let Ok(update) = merged else {
+            self.refuse(key, &[], "malformed update");
+            return;
+        };
+        // Peers of a source room hear the pieces, each on its own, at the
+        // allowance's pace (finding 6).
+        let pieces = matches!(self.kind, Kindly::Source(_)).then_some(pieces);
+        self.on_update(key, &update, step2, count - acked, pieces);
+    }
+
+    /// The most one group of pieces may gather: what one sync message may
+    /// carry in a note room, a source room's state cap (a source room takes
+    /// whole states).
+    fn group_cap(&self) -> usize {
+        match &self.kind {
+            Kindly::Note(_) => NOTE_MAX_SYNC_BYTES,
+            Kindly::Source(source) => usize::try_from(source.state_cap).unwrap_or(usize::MAX),
+        }
+    }
+
+    /// How long the update allowance takes to carry a group of `cap` bytes.
+    /// A group is dropped once it has been gathering that long and its last
+    /// piece came the configured slack ago (`group_slack`): an abandoned
+    /// group lets go of its bytes, and a slow uplink still finishes one.
+    fn group_carry(&self, cap: usize) -> Duration {
+        let rate = self.app.config.update_limits.bytes_per_second;
+        Duration::from_secs_f64(cap as f64 / rate as f64)
+    }
+
+    /// The longest a group of `cap` bytes may gather, a channel's or a
+    /// draft send's: its whole cap at the slowest uplink a group must land
+    /// on (or its carry, if longer) and the slack. A client that reads
+    /// slowly, trickles bytes or sends a held piece again holds its user's
+    /// slot and its room's group bound no longer (round 6, finding 4, and
+    /// its review: draft groups too).
+    fn group_limit(&self, cap: usize) -> Duration {
+        let config = &self.app.config;
+        let slowest = Duration::from_secs_f64(cap as f64 / config.slowest_uplink as f64);
+        self.group_carry(cap).max(slowest) + config.group_slack
+    }
+
+    /// How long a draft group waits for its next piece past its carry: the
+    /// slack and one whole piece at the slowest uplink a group must land on
+    /// ([crate::config::SLOWEST_UPLINK]). An edge or tunnel may take a
+    /// request's whole body before the room hears any of it, so its
+    /// [RoomCmd::DraftArriving] never comes (round 5, finding 2).
+    fn draft_wait(&self) -> Duration {
+        self.app.config.group_slack + self.app.config.slowest_piece()
+    }
+
+    /// The bytes the room's unfinished groups hold, its channels' and its
+    /// draft sends', and the admitted groups' pieces not sent out yet.
+    fn group_bytes(&self) -> usize {
+        let channels: usize = self
+            .members
+            .values()
+            .filter_map(|member| member.group.as_ref())
+            .map(|group| group.bytes)
+            .sum();
+        let drafts: usize = self.draft_groups.values().map(|group| group.bytes).sum();
+        channels + drafts + self.paced_bytes()
+    }
+
+    /// Drops `key`'s unfinished group: its pieces so far and `extra` more
+    /// are acknowledged, and the channel hears step 1, whose answer carries
+    /// what the room lacks, as for an update it cannot place. The group
+    /// stays as dropped, so its later pieces are acknowledged as they come.
+    /// None, or one dropped before: `extra` alone is acknowledged.
+    fn drop_group(&mut self, key: MemberKey, extra: u64) {
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        let mut handled = extra;
+        if let Some(group) = member.group.as_mut()
+            && group.pieces.take().is_some()
+        {
+            handled += group.next - group.acked;
+            group.bytes = 0;
+            group.claim = None;
+        }
+        if handled == 0 {
+            return;
+        }
+        self.send_step1(key);
+        self.acked_more(key, handled);
+    }
+
+    /// Drops `key`'s group with `notice` ([GROUP_DROPPED_TYPE] when late,
+    /// [GROUP_BUSY_TYPE] at the room's bound or taken over): its pieces so
+    /// far are acknowledged, its later ones as they come, and the channel
+    /// hears the notice before the acknowledgement, never step 1, whose
+    /// resend would be late or past the bound again at once (round 2,
+    /// finding 5; round 3, finding 6). Its client keeps the edit unsent
+    /// until its next join.
+    fn drop_noticed(&mut self, key: MemberKey, notice: &str) {
+        let Some(member) = self.members.get_mut(&key) else {
+            return;
+        };
+        let Some(group) = member.group.as_mut() else {
+            return;
+        };
+        if group.pieces.take().is_none() {
+            return;
+        }
+        let handled = group.next - group.acked;
+        group.bytes = 0;
+        group.claim = None;
+        let notice = serde_json::json!({ "room": self.name, "type": notice });
+        self.send(key, Kind::Stateless, &protocol::text(&notice.to_string()));
+        self.acked_more(key, handled);
+    }
+
+    /// The channel `key`'s group slot for its user ([GroupClaim::channel]),
+    /// under its JOIN session ([channel_slot]). Taken, a group of the same
+    /// session on another connection, a reconnecting tab's whose old
+    /// connection the room has not seen close, is let go
+    /// ([GROUP_BUSY_TYPE]); no other is, however quiet its connection: a
+    /// live tab on a slow uplink sends a 2 MiB piece for longer than the
+    /// pings (round 4, finding 1).
+    fn claim_channel_group(&mut self, key: MemberKey, user: &str) -> Option<GroupClaim> {
+        let session = self.members.get(&key)?.session_id;
+        let claim = GroupClaim::channel(&self.app, user, &channel_slot(&self.name, key, session))?;
+        let stale: Vec<MemberKey> = self
+            .members
+            .iter()
+            .filter(|(other, member)| {
+                **other != key
+                    && session.is_some()
+                    && member.session_id == session
+                    && member.context.user_id == user
+                    && member
+                        .group
+                        .as_ref()
+                        .is_some_and(|group| group.claim.is_some())
+            })
+            .map(|(other, _)| *other)
+            .collect();
+        for other in stale {
+            self.drop_noticed(other, GROUP_BUSY_TYPE);
+        }
+        Some(claim)
+    }
+
+    /// A group naming more pieces than one within [Room::group_cap] may
+    /// have ([max_pieces]), refused as malformed with its own reason and
+    /// the bytes that came, never as a document past its size (round 3,
+    /// finding 9): a note room's editor hears `invalid_document`, a source
+    /// room's sender that it is unrecoverable.
+    fn too_many_pieces(&mut self, key: MemberKey, count: u64, bytes: usize) {
+        let Some(context) = self.members.get(&key).map(|member| member.context.clone()) else {
+            return;
+        };
+        let reason = too_many_pieces(count, bytes, self.group_cap());
+        let payloads = match &self.kind {
+            Kindly::Note(_) => vec![
+                json!({
+                    "code": "invalid_document",
+                    "materialId": self.material_id(),
+                    "room": self.name,
+                    "type": "document-rejected",
+                })
+                .to_string(),
+            ],
+            Kindly::Source(_) => {
+                let refusal = sources::Refusal::Malformed(reason.clone());
+                match self.source_update_refused(Some(key), &context, &refusal, bytes) {
+                    Outcome::Refused { payloads, .. } => payloads,
+                    _ => Vec::new(),
+                }
+            }
+        };
+        self.refuse(key, &payloads, &reason);
+    }
+
+    /// A group past [Room::group_cap], refused as an update past the room's
+    /// cap: a note room's with its size limit, as admission refuses a
+    /// document past it, so its editor shows the size refusal instead of
+    /// joining again to resend it (finding 3); a source room's as one past
+    /// its state cap.
+    fn group_too_large(&mut self, key: MemberKey, bytes: usize) {
+        let Some(context) = self.members.get(&key).map(|member| member.context.clone()) else {
+            return;
+        };
+        let outcome = match &self.kind {
+            Kindly::Note(_) => {
+                let metrics = notes::limits::Metrics {
+                    content_bytes: bytes as u64,
+                    max_depth: 0,
+                    node_count: 0,
+                };
+                let code = notes::limits::LimitCode::DocumentSizeExceeded;
+                self.limit_refused(&context, code, metrics, bytes)
+            }
+            Kindly::Source(_) => {
+                let refusal = sources::Refusal::StateBytes;
+                self.source_update_refused(Some(key), &context, &refusal, bytes)
+            }
+        };
+        if let Outcome::Refused {
+            payloads, reason, ..
+        } = outcome
+        {
+            self.refuse(key, &payloads, &reason);
+        }
+    }
+
+    /// `messages`: the messages it came in (a group's, or 1), each of which
+    /// the client counts until acknowledged; `pieces`: a source group's, for
+    /// peers ([Room::tell]).
+    fn on_update(
+        &mut self,
+        key: MemberKey,
+        bytes: &[u8],
+        step2: bool,
+        messages: u64,
+        pieces: Option<Vec<Vec<u8>>>,
+    ) {
         let Some(member) = self.members.get(&key) else {
             return;
         };
         let (context, read_only) = (member.context.clone(), member.read_only);
         self.in_step2 = step2;
-        let outcome = self.admit_update(Some(key), &context, read_only, bytes, None, &[]);
+        let outcome = self.admit_update(Some(key), &context, read_only, bytes, None, &[], pieces);
         self.in_step2 = false;
+        // Admission acknowledged one message; a group's others go with it.
+        let rest = messages.saturating_sub(1);
         match outcome {
-            Outcome::Admitted => {}
-            Outcome::Unheld => self.resync(key, step2, &context),
+            Outcome::Admitted => self.acked_more(key, rest),
+            Outcome::Unheld => {
+                self.resync(key, step2, &context);
+                self.acked_more(key, rest);
+            }
             // Q443: the tab goes late, as for a late JOIN, and merges its
             // unsent edits into a new session.
             Outcome::Refused {
@@ -3197,7 +4131,9 @@ impl Room {
     /// A writer's update through every check that reads the room, then the
     /// apply and the broadcast. `writer` is its channel, or none for a draft
     /// send or an agent edit (Q402): nothing to acknowledge or tell of a
-    /// children refusal, and every editor receives the update.
+    /// children refusal, and every editor receives the update. `pieces`: an
+    /// admitted source group's, which peers hear instead ([Room::tell]).
+    #[allow(clippy::too_many_arguments)]
     fn admit_update(
         &mut self,
         writer: Option<MemberKey>,
@@ -3206,15 +4142,37 @@ impl Room {
         bytes: &[u8],
         decoded: Option<yrs::Update>,
         granted: &[u64],
+        mut pieces: Option<Vec<Vec<u8>>>,
     ) -> Outcome {
-        match self.check_update(writer, context, read_only, bytes, decoded, granted) {
-            Ok(checked) => self.apply_update(writer, context, bytes, checked),
+        // Debug builds only: the integration tests' group whose admission
+        // panics, its pieces in hand.
+        #[cfg(debug_assertions)]
+        if pieces.is_some()
+            && bytes
+                .windows(IT_PANIC_GROUP.len())
+                .any(|window| window == IT_PANIC_GROUP)
+        {
+            panic!("integration test panic");
+        }
+        let checked = self.check_update(
+            writer,
+            context,
+            read_only,
+            bytes,
+            decoded,
+            granted,
+            &mut pieces,
+        );
+        match checked {
+            Ok(checked) => self.apply_update(writer, context, bytes, checked, pieces),
             Err(outcome) => outcome,
         }
     }
 
     /// [Room::admit_update]'s checks: the update to apply, or the outcome
-    /// (an update with nothing new is admitted without an apply).
+    /// (an update with nothing new is admitted without an apply, and told
+    /// with `pieces` when it deletes).
+    #[allow(clippy::too_many_arguments)]
     fn check_update(
         &mut self,
         writer: Option<MemberKey>,
@@ -3223,6 +4181,7 @@ impl Room {
         bytes: &[u8],
         decoded: Option<yrs::Update>,
         granted: &[u64],
+        pieces: &mut Option<Vec<Vec<u8>>>,
     ) -> Result<Checked, Outcome> {
         if self.app.evictions.blocks(&self.name, false) {
             return Err(Outcome::refused(
@@ -3373,6 +4332,18 @@ impl Room {
                     > sources::admission_cap(source.state_cap)
             }
         };
+        // A quiz document counts with the other one's bound as it stands, and
+        // its growth is taken against it again once admitted.
+        let peer = self.peer_bound();
+        let before = match &mut self.kind {
+            Kindly::Note(note) => {
+                if let Some(peer) = peer {
+                    note.validator.set_peer(peer);
+                }
+                note.validator.bound()
+            }
+            Kindly::Source(_) => None,
+        };
         let mut admit = || match &mut self.kind {
             Kindly::Note(note) => {
                 match note
@@ -3401,10 +4372,16 @@ impl Room {
                 }
             }
         };
-        let verdict = if heavy {
+        let verdict = match if heavy {
             tokio::task::block_in_place(admit)
         } else {
             admit()
+        } {
+            Verdict::Accept => match self.take_quiz_bound(peer, before) {
+                Ok(()) => Verdict::Accept,
+                Err((code, metrics)) => Verdict::Limit(code, metrics),
+            },
+            verdict => verdict,
         };
         match verdict {
             Verdict::Unheld => return Err(Outcome::Unheld),
@@ -3423,24 +4400,7 @@ impl Room {
                 return Err(self.source_update_refused(writer, context, &refusal, bytes.len()));
             }
             Verdict::Limit(code, metrics) => {
-                let payload = self.rejection_payload(code, metrics, None);
-                // An agent edit refused here loses no one's work (Q432).
-                if context.token_id != AGENT_TOKEN {
-                    incidents::record(
-                        &self.app,
-                        vec![Incident {
-                            cause: Cause::new(IncidentKind::OverLimit, code.as_str()),
-                            room: self.name.clone(),
-                            size_bytes: Some(bytes.len() as u64),
-                            user_id: Some(context.user_id.clone()),
-                        }],
-                    );
-                }
-                return Err(Outcome::Refused {
-                    payloads: vec![payload],
-                    reason: "invalid material document".into(),
-                    class: Class::Limit,
-                });
+                return Err(self.limit_refused(context, code, metrics, bytes.len()));
             }
             // Refused on entry (Epo 2026-10-18): the room keeps its state, the
             // writer's editor reloads it on a fresh document and channel on
@@ -3470,7 +4430,7 @@ impl Room {
                 && !update.delete_set().is_empty()
                 && let Ok(told) = yrs::merge_updates_v1([bytes])
             {
-                self.broadcast_update(writer, told);
+                self.tell(writer, told, pieces.take());
             }
             self.ack(writer);
             return Err(Outcome::Admitted);
@@ -3489,6 +4449,7 @@ impl Room {
         context: &Context,
         bytes: &[u8],
         checked: Checked,
+        pieces: Option<Vec<Vec<u8>>>,
     ) -> Outcome {
         let Checked {
             update,
@@ -3591,7 +4552,7 @@ impl Room {
             let told = (lost.landed || (lost.deletions && !self.in_step2))
                 .then(|| yrs::merge_updates_v1([bytes]).ok())
                 .flatten();
-            self.broadcast_update(writer, told.unwrap_or(content));
+            self.tell(writer, told.unwrap_or(content), pieces);
             self.repair_on_entry(bytes, heavy);
             // A paste, undo or replayed draft that wrote child ids gets a
             // children pass; typing writes none and costs a decode.
@@ -3721,17 +4682,21 @@ impl Room {
         let Kindly::Source(source) = &self.kind else {
             return Outcome::refused(Class::Malformed, refusal.message());
         };
-        let payload = json!({
+        let mut payload = json!({
             "checkpointIds": [],
             "epoch": source.room.epoch,
             "fileId": source.room.file_id,
             "recoverable": false,
             "type": "source-checkpoint-failed",
-        })
-        .to_string();
+        });
+        // The tab's recovery names the size limit (Q827 A).
+        if matches!(refusal, sources::Refusal::StateBytes) {
+            payload["reason"] = json!(SIZE_REASON);
+        }
+        let payload = payload.to_string();
         let (cause, class) = match refusal {
             sources::Refusal::StateBytes => (
-                Cause::new(IncidentKind::OverLimit, "source_state_bytes"),
+                Cause::new(IncidentKind::OverLimit, SIZE_REASON),
                 Class::Limit,
             ),
             _ => (
@@ -3757,6 +4722,35 @@ impl Room {
         }
     }
 
+    /// A material room's limit: the writer hears `document-rejected` with
+    /// its code, and every editor shows its size refusal.
+    fn limit_refused(
+        &self,
+        context: &Context,
+        code: notes::limits::LimitCode,
+        metrics: notes::limits::Metrics,
+        bytes: usize,
+    ) -> Outcome {
+        let payload = self.rejection_payload(code, metrics, None);
+        // An agent edit refused here loses no one's work (Q432).
+        if context.token_id != AGENT_TOKEN {
+            incidents::record(
+                &self.app,
+                vec![Incident {
+                    cause: Cause::new(IncidentKind::OverLimit, code.as_str()),
+                    room: self.name.clone(),
+                    size_bytes: Some(bytes as u64),
+                    user_id: Some(context.user_id.clone()),
+                }],
+            );
+        }
+        Outcome::Refused {
+            payloads: vec![payload],
+            reason: "invalid material document".into(),
+            class: Class::Limit,
+        }
+    }
+
     /// A channel's handled update or step 2, acknowledged in the next flush.
     fn ack(&mut self, writer: Option<MemberKey>) {
         if let Some(key) = writer {
@@ -3765,8 +4759,14 @@ impl Room {
     }
 
     fn acked(&mut self, key: MemberKey) {
-        if let Some(member) = self.members.get_mut(&key) {
-            member.acks += 1;
+        self.acked_more(key, 1);
+    }
+
+    fn acked_more(&mut self, key: MemberKey, count: u64) {
+        if count > 0
+            && let Some(member) = self.members.get_mut(&key)
+        {
+            member.acks += count;
             self.schedule_flush();
         }
     }
@@ -3821,11 +4821,16 @@ impl Room {
             self.refuse(key, &[], "sync step 2 cannot be placed in the room");
             return;
         }
+        self.send_step1(key);
+        // Handled (dropped for the resync): its ACK follows the step 1.
+        self.acked(key);
+    }
+
+    /// The room's step 1 to one channel: its answer brings what it lacks.
+    fn send_step1(&mut self, key: MemberKey) {
         use yrs::updates::encoder::Encode;
         let sv = self.doc.transact().state_vector().encode_v1();
         self.send(key, Kind::Sync, &sync::encode(sync::STEP1, &sv));
-        // Handled (dropped for the resync): its ACK follows the step 1.
-        self.acked(key);
     }
 
     fn rejection_payload(
@@ -4338,7 +5343,7 @@ impl Room {
         let doc = self.doc.clone();
         let (kind, model) = (note.kind.clone(), note.model);
         let previous = note.durable_metrics;
-        let peer = note.validator.peer();
+        let peer = self.peer_bound();
         tokio::task::spawn_blocking(move || validate(&doc, model, &kind, previous, peer))
             .await
             .unwrap_or_else(|error| Err(StoreError::Other(error.to_string())))
@@ -4731,6 +5736,12 @@ impl Room {
         self.view_dirty = true;
         let app = self.app.clone();
         tokio::spawn(async move {
+            // Debug builds only: the integration tests' store that commits
+            // a second late, so a request comes while it runs.
+            #[cfg(debug_assertions)]
+            if room.file_id.contains(IT_SLOW_STORE) {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
             let result = app
                 .sources
                 .store(&room, save)
@@ -4841,7 +5852,15 @@ impl Room {
                     source.log_bytes += row_bytes as i64;
                     source.log_rows += 1;
                 }
-                self.source_receipt(&claimed, version as u64);
+                // Claimed receipts, and every waiting one when no writer's
+                // update reached the room after the snapshot, as a note's: a
+                // flush that came while this store ran waits for no other.
+                let answered = if !self.store.dirty && !markers::pending(&self.doc) {
+                    self.receipts.clone()
+                } else {
+                    claimed
+                };
+                self.source_receipt(&answered, version as u64);
             }
         }
         if let (Some(through), Some(written)) = (sessions, &mut self.sessions) {
@@ -5000,6 +6019,11 @@ impl Room {
             });
             if let Some(lost) = error.lost_access_field() {
                 payload["lostAccess"] = json!(lost);
+            }
+            // A state over its cap: the tab's recovery names the size limit
+            // (Q827 A).
+            if error.status() == Some(413) {
+                payload["reason"] = json!(SIZE_REASON);
             }
             payload
         };
@@ -5522,6 +6546,92 @@ fn merge<'a>(updates: impl Iterator<Item = &'a [u8]>) -> Option<Vec<u8>> {
     }
 }
 
+/// The bytes of the pieces in `window` and `paced`, waiting to go out.
+fn waiting_pieces(window: &[Outgoing], paced: &VecDeque<Outgoing>) -> usize {
+    window
+        .iter()
+        .filter(|out| out.piece)
+        .chain(paced.iter())
+        .map(|out| out.update.len())
+        .sum()
+}
+
+/// What a flush sends of `window` and the pieces waiting in `paced`, and
+/// when the next piece may go. Plain updates go at once: one that builds on
+/// pieces not sent yet waits on its peer, pending in Yjs, until they come
+/// (round 2, finding 3: a queue of pieces held every typist back). Pieces
+/// go in order once the pace (`pace`: bytes in hand, when they were
+/// counted) holds their bytes: the update allowance's burst, then its bytes
+/// per second, so readers get a group's pieces as fast as its writer could
+/// have sent them.
+fn outgoing(
+    window: Vec<Outgoing>,
+    paced: &mut VecDeque<Outgoing>,
+    pace: &mut (f64, Instant),
+    limits: crate::rate::Limits,
+    now: Instant,
+) -> (Vec<Outgoing>, Option<Instant>) {
+    let (pieces, plain): (Vec<Outgoing>, Vec<Outgoing>) =
+        window.into_iter().partition(|out| out.piece);
+    paced.extend(pieces);
+    if paced.is_empty() {
+        return (plain, None);
+    }
+    let (tokens, at) = pace;
+    let rate = limits.bytes_per_second as f64;
+    let burst = limits.burst_bytes as f64;
+    *tokens = (*tokens + now.saturating_duration_since(*at).as_secs_f64() * rate).min(burst);
+    *at = now;
+    // No piece is larger than the burst: a full pace takes any.
+    let cost = |out: &Outgoing| (out.update.len() as f64).min(burst);
+    let mut out = Vec::new();
+    while let Some(next) = paced.front() {
+        if *tokens < cost(next) {
+            break;
+        }
+        *tokens -= cost(next);
+        out.extend(paced.pop_front());
+    }
+    let next = paced
+        .front()
+        .map(|next| now + Duration::from_secs_f64((cost(next) - *tokens).max(0.0) / rate));
+    out.extend(plain);
+    (out, next)
+}
+
+/// Whether `window` holds pieces of a group admitted by a member's `seen`:
+/// its step 2 held the group (round 3, finding 7).
+fn held_pieces(window: &[Outgoing], seen: u64) -> bool {
+    window.iter().any(|out| out.piece && out.admitted <= seen)
+}
+
+/// The update messages of `window` the member `key` gets: none it sent, and
+/// no piece of a group admitted by its `seen`.
+fn member_messages(window: &[Outgoing], key: MemberKey, seen: u64) -> Vec<Vec<u8>> {
+    messages(
+        window
+            .iter()
+            .filter(|out| out.sender != Some(key) && !(out.piece && out.admitted <= seen)),
+    )
+}
+
+/// A flush's update messages, in order: each run of plain updates merged
+/// into one, each source group's piece a message of its own.
+fn messages<'a>(outgoing: impl Iterator<Item = &'a Outgoing>) -> Vec<Vec<u8>> {
+    let mut messages = Vec::new();
+    let mut run: Vec<&[u8]> = Vec::new();
+    for out in outgoing {
+        if out.piece {
+            messages.extend(merge(run.drain(..)));
+            messages.push(out.update.clone());
+        } else {
+            run.push(&out.update);
+        }
+    }
+    messages.extend(merge(run.into_iter()));
+    messages
+}
+
 /// The store's check of the whole document (DESIGN.md 3.2): the Plate value
 /// is canonical for the material's kind, and over a bound only if it shrank.
 /// A quiz document counts with its other document's metrics (`peer`).
@@ -5598,6 +6708,116 @@ fn presence_entry(member: &Member, person: u64) -> Value {
         "avatar": identity.avatar_url,
         "clients": clients,
     })
+}
+
+#[cfg(test)]
+mod pace_tests {
+    use super::*;
+
+    const MIB: usize = 1024 * 1024;
+
+    fn out(bytes: usize, piece: bool) -> Outgoing {
+        Outgoing {
+            sender: None,
+            update: vec![0; bytes],
+            piece,
+            admitted: 0,
+        }
+    }
+
+    const LIMITS: crate::rate::Limits = crate::rate::Limits {
+        burst_updates: 10_000,
+        burst_bytes: 8 << 20,
+        updates_per_second: 200,
+        bytes_per_second: 2 << 20,
+        open_bytes: crate::rate::OPEN_BYTES,
+        open_refill_seconds: 300,
+    };
+
+    /// Review of 43fae032a, finding 6: an admitted source group's pieces go
+    /// out as fast as their writer could have sent them, the allowance's
+    /// burst at once, then its bytes per second. Fails if a group goes out
+    /// at once.
+    #[test]
+    fn a_groups_pieces_go_out_at_the_allowances_pace() {
+        let start = Instant::now();
+        let mut pace = (LIMITS.burst_bytes as f64, start);
+        let mut paced = VecDeque::new();
+        let window = (0..6).map(|_| out(2 * MIB, true)).collect();
+        let (now, next) = outgoing(window, &mut paced, &mut pace, LIMITS, start);
+        assert_eq!(now.len(), 4, "the burst");
+        assert_eq!(next, Some(start + Duration::from_secs(1)));
+        let later = start + Duration::from_secs(1);
+        let (now, next) = outgoing(Vec::new(), &mut paced, &mut pace, LIMITS, later);
+        assert_eq!(now.len(), 1);
+        assert_eq!(next, Some(later + Duration::from_secs(1)));
+        let (now, next) = outgoing(
+            Vec::new(),
+            &mut paced,
+            &mut pace,
+            LIMITS,
+            later + Duration::from_secs(1),
+        );
+        assert_eq!(now.len(), 1);
+        assert_eq!(next, None);
+    }
+
+    /// Round 2, finding 3: while a group's pieces wait for the pace, plain
+    /// updates (others' typing, its writer's next edit) go out at once, the
+    /// pieces due first. Fails if they wait behind the pieces.
+    #[test]
+    fn plain_updates_go_out_at_once_while_pieces_wait() {
+        let start = Instant::now();
+        let mut pace = (LIMITS.burst_bytes as f64, start);
+        let mut paced = VecDeque::new();
+        let mut window: Vec<Outgoing> = (0..6).map(|_| out(2 * MIB, true)).collect();
+        window.push(out(10, false));
+        let (now, _) = outgoing(window, &mut paced, &mut pace, LIMITS, start);
+        assert_eq!(
+            now.iter().map(|out| out.piece).collect::<Vec<_>>(),
+            [true, true, true, true, false]
+        );
+        assert_eq!(paced.len(), 2);
+        let (now, _) = outgoing(vec![out(10, false)], &mut paced, &mut pace, LIMITS, start);
+        assert_eq!(
+            now.iter().map(|out| out.piece).collect::<Vec<_>>(),
+            [false],
+            "typing waited behind the pieces"
+        );
+        assert_eq!(paced.len(), 2);
+    }
+
+    /// Round 3, finding 7: a member that joined or was answered after a
+    /// group's admission (its `seen`) skips that group's pieces, and gets a
+    /// later group's and every plain update. Fails if a joiner hears pieces
+    /// its step 2 held.
+    #[test]
+    fn a_member_skips_the_pieces_of_groups_admitted_before_it_joined() {
+        let piece = |byte: u8, admitted: u64| Outgoing {
+            sender: None,
+            update: vec![byte],
+            piece: true,
+            admitted,
+        };
+        let window = vec![piece(1, 1), out(1, false), piece(2, 2)];
+        assert!(held_pieces(&window, 1));
+        assert!(!held_pieces(&window, 0));
+        let joiner = member_messages(&window, (1, 1), 1);
+        assert_eq!(joiner.len(), 2);
+        assert_eq!(joiner[1], vec![2]);
+        assert_eq!(member_messages(&window, (1, 1), 0).len(), 3);
+    }
+
+    /// Round 2, finding 3: the pieces waiting to go out, admitted or still
+    /// in the window, count against the room's bound on unfinished groups
+    /// (`group_bytes`), plain updates not. Fails if a queue of pieces could
+    /// grow past what the room lets writers hold.
+    #[test]
+    fn pieces_waiting_to_go_count_against_the_rooms_bound() {
+        let paced: VecDeque<Outgoing> = (0..2).map(|_| out(2 * MIB, true)).collect();
+        let window = vec![out(MIB, true), out(10, false)];
+        assert_eq!(waiting_pieces(&window, &paced), 5 * MIB);
+    }
 }
 
 #[cfg(test)]

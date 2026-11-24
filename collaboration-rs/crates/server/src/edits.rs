@@ -15,8 +15,11 @@
 //!
 //! With no room loaded the edit runs on the stored document under the
 //! material lock and commits its row with the receipt in one transaction,
-//! and no room is opened for it (the no-room line); a room that loads
-//! meanwhile takes the committed row as a service edit (DESIGN.md 3.2).
+//! and no room is opened for it (the no-room line). Right before it commits
+//! it looks again: a room that opened meanwhile admits it instead, as above
+//! (Q826 A), and a room loading from then on waits for the commit (a
+//! material's on its lock, a source's on [sources::Sources::load]) and loads
+//! the row, which it also hears as a service edit (DESIGN.md 3.2).
 //! Every edit returns its Undo payload (`ydoc::undo`, Epo 2026-10-21 and
 //! 2026-10-22), which the chat keeps for 24 h and sends back: the Undo (and
 //! Redo) is written exactly as an edit is.
@@ -65,9 +68,10 @@ pub enum DocumentError {
     Quota(String),
     /// A source refusal: its status, its code by status.
     Source { status: u16, message: String },
-    /// 503 `unavailable_target`: the room is being reset. The edit was
-    /// refused before anything applied, so the outcome is known and the
-    /// caller may retry; logged, not reported.
+    /// 503 `unavailable_target`: the room is being reset, or a loaded room
+    /// did not take the edit in time (Q826 A). The edit was refused before
+    /// anything applied, so the outcome is known and the caller may retry;
+    /// logged, not reported.
     Unavailable(&'static str),
     /// 503 `outcome_unknown` (reported).
     Unknown(String),
@@ -1237,9 +1241,25 @@ pub async fn edit_material(
     let keys_room = format!("keys:{material_id}:schema:{schema}");
     // A loaded room (a quiz's either room) admits it like a person's edit
     // (Q402); one process holds every room (Q403), so a room not loaded
-    // here is loaded nowhere.
-    if (app.rooms.get(&room).is_some() || app.rooms.get(&keys_room).is_some())
-        && let Some(answer) = edit_in_room(
+    // here is loaded nowhere. So does one that opened before a no-room edit
+    // committed (Q826 A).
+    for _ in 0..HANDOVERS {
+        if (app.rooms.get(&room).is_some() || app.rooms.get(&keys_room).is_some())
+            && let Some(answer) = edit_in_room(
+                app,
+                request,
+                &operation,
+                (&room, &keys_room),
+                &material_id,
+                schema,
+                change.clone(),
+                issued_at,
+            )
+            .await?
+        {
+            return Ok(answer);
+        }
+        if let Some(answer) = material_stored(
             app,
             request,
             &operation,
@@ -1250,13 +1270,33 @@ pub async fn edit_material(
             issued_at,
         )
         .await?
-    {
-        return Ok(answer);
+        {
+            return Ok(answer);
+        }
     }
-    // No room: the stored document is written directly with the receipt
-    // (the no-room line). A room that loads meanwhile gets the committed
-    // row as a service edit.
-    let live = live_state(app, &room).await;
+    Err(DocumentError::Unavailable(ROOM_RESET))
+}
+
+#[allow(clippy::too_many_arguments)]
+/// A material edit with no room loaded: the stored document is written
+/// directly with the receipt (the no-room line), under the material's lock,
+/// which a room's load takes too, so a room loading meanwhile loads the
+/// committed rows. None when a room was loaded before the commit, which
+/// then admits it (Q826 A): nothing was written.
+async fn material_stored(
+    app: &Shared,
+    request: &DocumentRequest,
+    operation: &Operation,
+    (room, keys_room): (&str, &str),
+    material_id: &str,
+    schema: i64,
+    change: Change,
+    issued_at: i64,
+) -> Result<Option<Value>, DocumentError> {
+    let undo = request.undo.as_ref();
+    let live = live_state(app, room).await;
+    #[cfg(debug_assertions)]
+    it_hold(app, room).await;
     let actor = request.actor_user_id.clone();
     let mut client = app
         .db
@@ -1284,9 +1324,9 @@ pub async fn edit_material(
         }
         let receipt = receipt_from_row(row);
         tx.commit().await?;
-        return Ok(receipt);
+        return Ok(Some(receipt));
     }
-    access::lock_material(&tx, &material_id).await?;
+    access::lock_material(&tx, material_id).await?;
     // An Undo or Redo reverses a stored step of its own actor, as the room
     // checks one it holds (Q432): a missing step is gone, another user's is
     // refused, before any receipt answers it (Q451).
@@ -1324,16 +1364,16 @@ pub async fn edit_material(
     {
         let receipt = receipt_from_row(&row);
         tx.commit().await?;
-        return Ok(receipt);
+        return Ok(Some(receipt));
     }
-    access::lock_boundary(&tx, &material_id, std::slice::from_ref(&actor), &[]).await?;
-    access::assert_access(&tx, &material_id, &actor, crate::auth::Access::Write).await?;
+    access::lock_boundary(&tx, material_id, std::slice::from_ref(&actor), &[]).await?;
+    access::assert_access(&tx, material_id, &actor, crate::auth::Access::Write).await?;
     let select = "SELECT d.state, d.room_schema, d.stored_version, m.kind
                   FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
                   WHERE d.material_id=$1 FOR UPDATE OF d";
     let mut found = tx.query(select, &[&material_id]).await?;
     if found.is_empty() {
-        note_store::bootstrap(&tx, &material_id, schema).await?;
+        note_store::bootstrap(&tx, material_id, schema).await?;
         found = tx.query(select, &[&material_id]).await?;
     }
     let Some(current) = found.first() else {
@@ -1355,7 +1395,7 @@ pub async fn edit_material(
         return Err(DocumentError::Edit {
             code: "stale_target".into(),
             message: "the material was rebuilt since it was inspected".into(),
-            details: material_blocks(app, &material_id, rebuilt)
+            details: material_blocks(app, material_id, rebuilt)
                 .await
                 .ok()
                 .map(|blocks| notes::edit::listing(&blocks)),
@@ -1364,22 +1404,22 @@ pub async fn edit_material(
     let base: Vec<u8> = current.get("state");
     let kind: String = current.get("kind");
     let stored = current.get::<_, i64>("stored_version");
-    let rows: Vec<Vec<u8>> = note_store::rows(&tx, &material_id, None)
+    let rows: Vec<Vec<u8>> = note_store::rows(&tx, material_id, None)
         .await?
         .into_iter()
         .map(|(_, row)| row)
         .collect();
     let quiz = if kind == "quiz" {
         Some(QuizInput {
-            keys: quiz_keys(&tx, &material_id).await?,
-            live_keys: live_state(app, &keys_room).await,
+            keys: quiz_keys(&tx, material_id).await?,
+            live_keys: live_state(app, keys_room).await,
         })
     } else {
         None
     };
-    let mut assigned = assigned_ids(&tx, &material_id).await?;
-    assigned.extend(live_ids(app, &room).await);
-    assigned.extend(live_ids(app, &keys_room).await);
+    let mut assigned = assigned_ids(&tx, material_id).await?;
+    assigned.extend(live_ids(app, room).await);
+    assigned.extend(live_ids(app, keys_room).await);
     let computed = tokio::task::spawn_blocking(move || {
         compute(base, rows, live, kind, change, quiz, &assigned, false)
     })
@@ -1403,11 +1443,17 @@ pub async fn edit_material(
         }
         return Err(DocumentError::Quota(UPDATE_TOO_LARGE.into()));
     }
+    // A room loaded before the material's lock was taken (it opened since
+    // the first look) admits it instead (Q826 A); one loading from here
+    // waits on the lock and loads the rows.
+    if opened(app, room) || opened(app, keys_room) {
+        return Ok(None);
+    }
     let mut version = stored;
     let mut versions = Vec::new();
     for write in &computed.writes {
         version += 1;
-        note_store::append_row(&tx, write.doc, &material_id, version, &write.row).await?;
+        note_store::append_row(&tx, write.doc, material_id, version, &write.row).await?;
         versions.push(version);
     }
     let payload = computed
@@ -1416,8 +1462,8 @@ pub async fn edit_material(
     let mut receipt = material_receipt(
         &tx,
         request,
-        &operation,
-        &material_id,
+        operation,
+        material_id,
         &computed.outcome,
         payload.is_some().then_some(issued_at),
         step_operation.as_deref(),
@@ -1430,7 +1476,7 @@ pub async fn edit_material(
     // Its own write: a receipt that cannot be written refuses it (unlike a
     // room's store, which passes the receipt over). One already stored is
     // unreachable here, under the operation's lock and the `undo_of` check.
-    note_store::write_receipt(&tx, &material_id, &receipt).await?;
+    note_store::write_receipt(&tx, material_id, &receipt).await?;
     let mut receipt = receipt.answer();
     tx.commit().await?;
     drop(client);
@@ -1448,12 +1494,12 @@ pub async fn edit_material(
         .map(|write| write.row.clone());
     // The committed changes go to the live rooms, whose durable covers take
     // them.
-    send_writes(app, &room, &keys_room, computed.writes, &versions).await;
+    send_writes(app, room, keys_room, computed.writes, &versions).await;
     if let Some(row) = child_row {
-        crate::children::queue(app, &room, &actor, row);
+        crate::children::queue(app, room, &actor, row);
     }
     let content = json!({ "schemaVersion": 1, "value": computed.value });
-    match projection::project(app, &material_id, version, &content, computed.asset_ids).await {
+    match projection::project(app, material_id, version, &content, computed.asset_ids).await {
         Ok(()) => {
             if let Ok(client) = app.db.get().await {
                 let _ = client
@@ -1465,7 +1511,7 @@ pub async fn edit_material(
                     .await;
             }
             receipt["effect"]["projectionPending"] = json!(false);
-            if let Some(handle) = app.rooms.get(&room) {
+            if let Some(handle) = app.rooms.get(room) {
                 let _ = handle.tx.send(RoomCmd::Projected(version, Ok(()))).await;
             }
         }
@@ -1479,7 +1525,7 @@ pub async fn edit_material(
             json!({ "error": error, "room": room }),
         ),
     }
-    Ok(receipt)
+    Ok(Some(receipt))
 }
 
 /// An agent step's receipt for a material: `edited`, its block moves, and
@@ -1730,6 +1776,54 @@ async fn step_of_actor<C: deadpool_postgres::GenericClient>(
     }
 }
 
+/// Whether `room` is loaded, as a no-room edit's last look before its commit
+/// sees it (Q826 A). Debug builds only: one whose name holds
+/// [crate::room::IT_ROOM_FLAPS] always is, as if rooms kept opening and
+/// unloading.
+fn opened(app: &Shared, room: &str) -> bool {
+    #[cfg(debug_assertions)]
+    if room.contains(crate::room::IT_ROOM_FLAPS) {
+        return true;
+    }
+    app.rooms.get(room).is_some()
+}
+
+/// Debug builds only: a no-room edit of a room whose name holds
+/// [crate::room::IT_HOLD_NO_ROOM], held after its snapshot while the test
+/// opens the room (Q826 A). It sets `<marker>:<room>:held` in Redis and waits,
+/// at most a minute, for `<marker>:<room>:release`.
+#[cfg(debug_assertions)]
+async fn it_hold(app: &Shared, room: &str) {
+    if !room.contains(crate::room::IT_HOLD_NO_ROOM) {
+        return;
+    }
+    let key = format!("{}:{room}", crate::room::IT_HOLD_NO_ROOM);
+    let mut redis = app.redis.clone();
+    let _: Result<(), _> =
+        redis::AsyncCommands::set_ex(&mut redis, format!("{key}:held"), 1, 600).await;
+    for _ in 0..600 {
+        let released: Option<String> =
+            redis::AsyncCommands::get(&mut redis, format!("{key}:release"))
+                .await
+                .unwrap_or(None);
+        if released.is_some() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+/// A room-path edit whose room did not hand over its snapshot: None (the
+/// stored write follows) when the room unloaded, else refused before
+/// anything applied, as the edit may not write past a loaded room's
+/// admission (Q826 A) and the agent may try again.
+fn still_loaded(app: &Shared, room: &str) -> Result<Option<Value>, DocumentError> {
+    match app.rooms.get(room) {
+        Some(_) => Err(DocumentError::Unavailable(ROOM_RESET)),
+        None => Ok(None),
+    }
+}
+
 /// Hands an agent edit to its loaded room and waits for the answer (Q402).
 /// None when the room unloaded before it took the edit (nothing admitted):
 /// the caller writes it directly.
@@ -1852,11 +1946,11 @@ async fn edit_in_room(
         }
     }
     let Some(live) = live_state(app, room).await else {
-        return Ok(None);
+        return still_loaded(app, room);
     };
     let keys = if quiz {
         let Some(keys) = live_state(app, keys_room).await else {
-            return Ok(None);
+            return still_loaded(app, keys_room);
         };
         Some(QuizInput {
             keys: (keys, Vec::new()),
@@ -2018,7 +2112,9 @@ async fn stored_names_collected(
 /// Q402 for a source: an agent edit, Undo or Redo of a file whose room is
 /// loaded, computed on the room's snapshot ([sources::Sources::edit_live])
 /// and admitted by the room like a person's edit; its receipt goes with the
-/// room's checkpoint. None when the room unloaded before it took the edit.
+/// room's checkpoint. None when the room unloaded before it took the edit;
+/// refused while a room that is still loaded does not hand over its state
+/// ([still_loaded]).
 async fn source_in_room(
     app: &Shared,
     request: &DocumentRequest,
@@ -2057,7 +2153,7 @@ async fn source_in_room(
         (step, name)
     };
     let Some(live) = live_state(app, room).await else {
-        return Ok(None);
+        return still_loaded(app, room);
     };
     // Debug builds only: the integration test's slow compute, which must
     // come after the actor check.
@@ -2457,9 +2553,10 @@ fn replace_on(
     }))
 }
 
-/// Inspect or edit of a source file (the sources crate), with the committed
-/// change fanned into the live room. With `undo`, an Undo (or Redo) payload
-/// sent back, written as an edit is; its answer is the Redo payload.
+/// Inspect or edit of a source file (the sources crate): admitted by its
+/// loaded room, else written with no room (Q826 A: unless a room opened
+/// before the commit). With `undo`, an Undo (or Redo) payload sent back,
+/// written as an edit is; its answer is the Redo payload.
 pub async fn source_request(
     app: &Shared,
     request: &DocumentRequest,
@@ -2514,21 +2611,44 @@ pub async fn source_request(
         undo,
     };
     // A loaded room admits it like a person's edit (Q402; one process holds
-    // every room, Q403). The session comes first: the operation's lock is
+    // every room, Q403), and so does one that opened before a no-room edit
+    // committed (Q826 A). The session comes first: the operation's lock is
     // taken after it, and Go's checkpoint takes the file's locks before the
     // operation's.
-    let session = app
-        .sources
-        .gateway()
-        .session(&input.file_id, &input.actor_user_id)
-        .await?;
-    if app.rooms.get(&session.room).is_some()
-        && let Some(answer) =
-            source_in_room(app, request, &operation, &input, &session, issued_at).await?
-    {
-        return Ok(answer);
+    for _ in 0..HANDOVERS {
+        let session = app
+            .sources
+            .gateway()
+            .session(&input.file_id, &input.actor_user_id)
+            .await?;
+        if app.rooms.get(&session.room).is_some()
+            && let Some(answer) =
+                source_in_room(app, request, &operation, &input, &session, issued_at).await?
+        {
+            return Ok(answer);
+        }
+        if let Some(answer) = source_stored(app, request, &operation, &input, issued_at).await? {
+            return Ok(answer);
+        }
     }
-    // No room: written through the checkpoint with its receipt, as before.
+    Err(DocumentError::Unavailable(ROOM_RESET))
+}
+
+/// How often an agent edit goes between the no-room write and a room that
+/// opened before its commit and unloaded before it admitted the edit (Q826
+/// A): past it the edit is refused before anything applied.
+const HANDOVERS: usize = 3;
+
+/// A source edit with no room loaded: written through the checkpoint with
+/// its receipt, as before. None when a room opened before the commit, which
+/// then admits it (Q826 A): nothing was written.
+async fn source_stored(
+    app: &Shared,
+    request: &DocumentRequest,
+    operation: &Operation,
+    input: &sources::edit::EditInput,
+    issued_at: i64,
+) -> Result<Option<Value>, DocumentError> {
     // A retry after that checkpoint gets its stored receipt here (the
     // checkpoint's own lock cannot be held from here); one racing it gets
     // Go's replay, answered without a payload of its own (review r2 M1).
@@ -2541,10 +2661,10 @@ pub async fn source_request(
         if let Some(step) = &request.undo_of {
             step_of_actor(&client, step, &request.actor_user_id).await?;
         }
-        stored_receipt(&client, &operation).await?
+        stored_receipt(&client, operation).await?
     };
     if let Some(receipt) = stored {
-        return Ok(receipt);
+        return Ok(Some(receipt));
     }
     // Debug builds only: the integration test's retry, held after its check
     // while its first request lands.
@@ -2555,14 +2675,25 @@ pub async fn source_request(
     let rooms = app.clone();
     let applied = app
         .sources
-        .apply_edit(input, move |room| {
-            let app = rooms.clone();
-            let room = room.to_owned();
-            Box::pin(async move { live_state(&app, &room).await })
-        })
+        .apply_edit(
+            input,
+            move |room| {
+                let app = rooms.clone();
+                let room = room.to_owned();
+                Box::pin(async move {
+                    let live = live_state(&app, &room).await;
+                    #[cfg(debug_assertions)]
+                    it_hold(&app, &room).await;
+                    live
+                })
+            },
+            |room| opened(app, room),
+        )
         .await;
     let result = match applied {
-        Ok(result) => result,
+        Ok(Some(result)) => result,
+        // A room opened while it computed: that room admits it (Q826 A).
+        Ok(None) => return Ok(None),
         Err(error) => {
             // A retry that raced the edit's first checkpoint is refused on
             // the text that edit left: the edit's stored receipt answers it
@@ -2576,13 +2707,15 @@ pub async fn source_request(
                     .get()
                     .await
                     .map_err(|error| DocumentError::Unknown(error.to_string()))?;
-                if let Some(receipt) = stored_receipt(&client, &operation).await? {
-                    return Ok(receipt);
+                if let Some(receipt) = stored_receipt(&client, operation).await? {
+                    return Ok(Some(receipt));
                 }
             }
             return Err(refusal);
         }
     };
+    // A room that loaded since waited for the commit and holds the row
+    // already ([sources::Sources::load]); this only repeats it.
     if let (Some(handle), Some(update)) = (app.rooms.get(&result.room), result.update) {
         let edit = ServiceEdit {
             update,
@@ -2613,7 +2746,7 @@ pub async fn source_request(
     if let Some(notice) = result.notice {
         receipt["notice"] = json!(notice);
     }
-    Ok(receipt)
+    Ok(Some(receipt))
 }
 
 /// The refusal of an Undo whose payload can no longer apply.

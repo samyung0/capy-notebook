@@ -319,6 +319,351 @@ test('a note takes typing, leaves $$ as text and turns from inline to a card and
   expect(errors).toEqual([]);
 });
 
+test("a change draws again only what it reaches, on the canvas under a note and the one over it, as a whole board's redraw draws it", async ({
+  page,
+}) => {
+  test.slow();
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await openBoard(page);
+  type Renderer = {
+    _render(): void;
+    canvas: HTMLCanvasElement;
+    getDebugMetrics(): {
+      lastRenderMetrics: { renderedElementCount: number };
+    };
+    refresh(): void;
+    stackingCanvas: HTMLCanvasElement[];
+  };
+  type Root = HTMLElement & {
+    gfx: {
+      doc: {
+        addBlock(flavour: string, props: object, parent?: string): string;
+        root: { id: string };
+      };
+      getElementById(id: string): { h: number } | null;
+      layer: { generateIndex(): string };
+      surface: { addElement(props: object): string };
+      surfaceComponent: { renderer: Renderer };
+      updateElement(id: string, props: object): void;
+      viewport: {
+        left: number;
+        top: number;
+        toViewCoord(x: number, y: number): [number, number];
+      };
+    };
+  };
+  /** What each of the renderer's passes drew, in order, since last emptied. */
+  type Board = { __passes: number[] };
+  const ids = await page.evaluate(() => {
+    const { gfx } = document.querySelector('affine-edgeless-root') as Root;
+    const shape = (xywh: string, strokeWidth = 2) =>
+      gfx.surface.addElement({
+        filled: true,
+        strokeWidth,
+        type: 'shape',
+        xywh,
+      });
+    const join = (source: string, target: string, strokeWidth = 4) =>
+      gfx.surface.addElement({
+        source: { id: source },
+        stroke: '#1f2937',
+        strokeWidth,
+        target: { id: target },
+        type: 'connector',
+      });
+    const line = (points: number[][]) =>
+      gfx.surface.addElement({
+        color: '#1f2937',
+        lineWidth: 4,
+        points,
+        type: 'brush',
+      });
+    // Under the note, on a canvas of their own with the plane card: a grid
+    // of shapes with strokes of every width, pen strokes, and two shapes
+    // joined apart from them.
+    for (let i = 0; i < 40; i++)
+      gfx.surface.addElement({
+        filled: true,
+        shapeType: i % 2 ? 'ellipse' : 'rect',
+        strokeWidth: 2 + (i % 3) * 2,
+        type: 'shape',
+        xywh: `[${(i % 8) * 160},${600 + Math.floor(i / 8) * 120},90,60]`,
+      });
+    for (let i = 0; i < 20; i++)
+      line(
+        Array.from({ length: 20 }, (_, p) => [
+          40 * i + p * 5,
+          1250 + Math.sin(p / 3) * 30,
+        ])
+      );
+    const top = shape('[1400,600,90,60]');
+    const bottom = shape('[1400,780,90,60]');
+    join(top, bottom);
+    const note = gfx.doc.addBlock(
+      'affine:note',
+      { index: gfx.layer.generateIndex(), xywh: '[1400,1000,220,80]' },
+      gfx.doc.root.id
+    );
+    gfx.doc.addBlock('affine:paragraph', {}, note);
+    // Over it, on the board's main canvas: a shape on a pen stroke, a label
+    // on a shape, a connector to label, and a shape to type into.
+    line(Array.from({ length: 41 }, (_, p) => [p * 40, 1450]));
+    const moved = shape('[1200,1420,90,60]');
+    shape('[270,1545,140,60]');
+    gfx.surface.addElement({
+      text: 'Label',
+      type: 'text',
+      xywh: '[300,1560,80,30]',
+    });
+    // A straight connector, its middle at (245, 1730), to label.
+    join(shape('[0,1700,90,60]'), shape('[400,1700,90,60]'), 2);
+    const typed = shape('[700,1680,120,60]');
+    return { bottom, moved, note, top, typed };
+  });
+  // [top, right, bottom, left]: the connector clear of the toolbar.
+  await page.evaluate('window.__board.fit([40, 40, 130, 40])');
+  // The note's measured size stored (vendor/blocksuite local change 75): it
+  // shows what is stored, which is no longer the 80 it was added with, so no
+  // step below stores it first, a block's change that draws everything.
+  await expect
+    .poll(() =>
+      page.evaluate((id) => {
+        const note = [...document.querySelectorAll('affine-edgeless-note')]
+          .map(
+            (element) =>
+              (
+                element as unknown as {
+                  model: {
+                    id: string;
+                    xywh: string;
+                    yBlock: { get(key: string): unknown };
+                  };
+                }
+              ).model
+          )
+          .find((model) => model.id === id);
+        if (!note) return 'absent';
+        const stored = String(note.yBlock.get('prop:xywh'));
+        if (note.xywh !== stored) return 'shown unstored';
+        return (JSON.parse(stored) as number[])[3] === 80
+          ? 'unmeasured'
+          : 'stored';
+      }, ids.note)
+    )
+    .toBe('stored');
+  // Every pass's drawn elements, from here on.
+  await page.evaluate(() => {
+    const { renderer } = (
+      document.querySelector('affine-edgeless-root') as Root
+    ).gfx.surfaceComponent;
+    const passes: number[] = [];
+    Object.assign(window, { __passes: passes });
+    const render = renderer._render.bind(renderer);
+    renderer._render = () => {
+      render();
+      passes.push(
+        renderer.getDebugMetrics().lastRenderMetrics.renderedElementCount
+      );
+    };
+  });
+  const begin = () =>
+    page.evaluate(() => {
+      (window as unknown as Board).__passes.length = 0;
+    });
+  const update = (id: string, xywh: string) =>
+    page.evaluate(
+      ([id, xywh]) => {
+        (window as unknown as Board).__passes.length = 0;
+        (
+          document.querySelector('affine-edgeless-root') as Root
+        ).gfx.updateElement(id, { xywh });
+      },
+      [id, xywh]
+    );
+  /** Once the frames after a change are drawn: what each pass since `begin`
+   * drew, what a whole redraw then draws, and how many pixels of the board's
+   * canvases it changes by more than 96 levels: a region's edge across a
+   * stroke, drawn without the GPU, is off by under about 64, a stale or
+   * missing dark stroke by 200 or more. Copied out first: reading a board
+   * canvas itself can move it off the GPU, which draws every edge a little
+   * differently. */
+  const compare = () =>
+    page.evaluate(async () => {
+      const frames = async () => {
+        for (let i = 0; i < 3; i++)
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+      };
+      const { renderer } = (
+        document.querySelector('affine-edgeless-root') as Root
+      ).gfx.surfaceComponent;
+      const { __passes } = window as unknown as Board;
+      const copy = () =>
+        [renderer.canvas, ...renderer.stackingCanvas].map((canvas) => {
+          const copied = document.createElement('canvas');
+          copied.width = canvas.width;
+          copied.height = canvas.height;
+          const ctx = copied.getContext('2d', {
+            willReadFrequently: true,
+          }) as CanvasRenderingContext2D;
+          if (canvas.width && canvas.height) ctx.drawImage(canvas, 0, 0);
+          return ctx.getImageData(0, 0, copied.width || 1, copied.height || 1)
+            .data;
+        });
+      await frames();
+      const passes = __passes.splice(0);
+      const drawn = copy();
+      renderer.refresh();
+      await frames();
+      const whole = Math.max(0, ...__passes.splice(0));
+      let off = 0;
+      copy().forEach((data, i) => {
+        const before = drawn[i];
+        if (data.length !== before?.length) {
+          off += 1e9;
+          return;
+        }
+        for (let p = 0; p < data.length; p += 4)
+          for (let c = p; c < p + 4; c++)
+            if (Math.abs(data[c] - before[c]) > 96) {
+              off++;
+              break;
+            }
+      });
+      return { off, passes, whole };
+    });
+  /** The change, `step`, drew a few elements in each pass, the ones it
+   * reaches, and what a whole redraw draws there. */
+  const drewItsRegion = async (step: string) => {
+    const { off, passes, whole } = await compare();
+    console.log(`${step}: ${JSON.stringify({ off, passes, whole })}`);
+    expect(Math.max(...passes)).toBeLessThan(10);
+    expect(passes.reduce((sum, drawn) => sum + drawn, 0)).toBeGreaterThan(0);
+    expect(whole).toBeGreaterThan(50);
+    // Even a short piece of a stale stroke or an arrowhead is more.
+    expect(off).toBeLessThan(20);
+  };
+  const onScreen = (x: number, y: number) =>
+    page.evaluate(
+      ([x, y]) => {
+        const { viewport } = (
+          document.querySelector('affine-edgeless-root') as Root
+        ).gfx;
+        const [vx, vy] = viewport.toViewCoord(x, y);
+        return [vx + viewport.left, vy + viewport.top] as const;
+      },
+      [x, y]
+    );
+  const height = (id: string) =>
+    page.evaluate(
+      (id) =>
+        (
+          document.querySelector('affine-edgeless-root') as Root
+        ).gfx.getElementById(id)?.h ?? 0,
+      id
+    );
+
+  // The note puts what is under it on a canvas of its own.
+  expect(
+    await page.evaluate(
+      () =>
+        (
+          document.querySelector('affine-edgeless-root') as Root
+        ).gfx.surfaceComponent.renderer.stackingCanvas.filter(
+          (canvas) => canvas.width > 0
+        ).length
+    )
+  ).toBeGreaterThan(0);
+
+  // Off the board and back: its old place is drawn again without it.
+  await update(ids.moved, '[6000,1420,90,60]');
+  await drewItsRegion('moved off');
+  await update(ids.moved, '[1200,1420,90,60]');
+  await drewItsRegion('moved back');
+
+  // Under the note: a joined shape shrinks, and its connector follows.
+  await update(ids.bottom, '[1400,780,50,30]');
+  await drewItsRegion('joined shape shrunk');
+
+  // A text label, on a shape, typed into.
+  await page.mouse.dblclick(...(await onScreen(340, 1575)));
+  await page.waitForFunction(
+    () => !!document.activeElement?.closest('edgeless-text-editor')
+  );
+  await page.keyboard.press('End');
+  await begin();
+  await page.keyboard.type('abc');
+  await drewItsRegion('text label typed');
+  await expect(page.locator('edgeless-text-editor')).toContainText('Labelabc');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+
+  // A shape's label that wraps grows the shape; Backspace takes its last line
+  // off. The shape keeps its height while its editor is open: the editor's
+  // least height is the shape's (`minHeight` in the shape's text editor), so
+  // a label only grows a shape as it is typed.
+  const before = await height(ids.typed);
+  await page.mouse.dblclick(...(await onScreen(760, 1710)));
+  await page.waitForFunction(
+    () => !!document.activeElement?.closest('edgeless-shape-text-editor')
+  );
+  await begin();
+  await page.keyboard.type('wrap wrap wrap wrap wrap wrap');
+  await drewItsRegion('shape label wrapped');
+  const grown = await height(ids.typed);
+  expect(grown).toBeGreaterThan(before + 20);
+  await begin();
+  // " wrap wrap", the last line of two words.
+  for (let i = 0; i < 10; i++) await page.keyboard.press('Backspace');
+  await drewItsRegion('shape label shortened');
+  await expect(page.locator('edgeless-shape-text-editor')).toHaveText(
+    'wrap wrap wrap wrap'
+  );
+  expect(await height(ids.typed)).toBe(grown);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+
+  // A connector's label: its first key adds the label and its hit area, a local
+  // shape that follows the label from then on.
+  await page.mouse.dblclick(...(await onScreen(245, 1730)));
+  await page.waitForFunction(
+    () => !!document.activeElement?.closest('edgeless-connector-label-editor')
+  );
+  await page.keyboard.press('x');
+  await compare();
+  await begin();
+  await page.keyboard.type('yzw');
+  await drewItsRegion('connector label typed');
+  await expect(page.locator('edgeless-connector-label-editor')).toContainText(
+    'xyzw'
+  );
+
+  // A pause after a key: the board is drawn whole once, so any region's edge
+  // is as a whole pass draws it.
+  await begin();
+  await page.keyboard.press('v');
+  const settled = await page.evaluate(async () => {
+    const { __passes } = window as unknown as Board;
+    const until = performance.now() + 3000;
+    while (performance.now() < until && !__passes.some((n) => n > 50))
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    return __passes.splice(0);
+  });
+  expect(settled[0]).toBeLessThan(10);
+  expect(Math.max(...settled)).toBeGreaterThan(50);
+
+  // Under the note, a shape moved below everything there grows its canvas,
+  // which is then drawn whole.
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await update(ids.top, '[1400,1400,90,60]');
+  const spread = await compare();
+  console.log(`canvas grown: ${JSON.stringify(spread)}`);
+  expect(Math.max(...spread.passes)).toBeGreaterThan(50);
+  expect(spread.off).toBeLessThan(20);
+  expect(errors).toEqual([]);
+});
+
 test('the shapes panel draws an outline, a hexagon shape and a preset that reopens', async ({
   page,
 }) => {

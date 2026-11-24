@@ -9,6 +9,7 @@ import { mockCanvasToken, mockMemberCanvas } from './canvas';
 import {
   mockBoardPeer,
   mockBoardSocket,
+  mockBoardStored,
   mockFillBoard,
   mockRevokeBoard,
   registerMockCollaborationProvider,
@@ -143,6 +144,53 @@ it("sends a tab's stroke to its peer and answers a checkpoint request with its r
   );
   peer.leave();
   provider.destroy();
+});
+
+// As the service's note room: a request answers at once only when nothing waits
+// to be stored, so typing asks for one store per pause, not one per key.
+it('answers a checkpoint request once the room stored what it holds', async () => {
+  const id = canvas('editor');
+  const { document, heard, provider } = await tab(id);
+  const receipts = () =>
+    heard.stateless.filter(({ type }) => type === 'checkpoint-persisted');
+  provider.sendStateless(
+    JSON.stringify({ id: 'idle', type: 'checkpoint-request' })
+  );
+  await vi.waitFor(() => expect(receipts()).toHaveLength(1));
+  drawn(document).set('own-stroke', new Y.Map());
+  provider.sendStateless(
+    JSON.stringify({ id: 'typed', type: 'checkpoint-request' })
+  );
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  expect(mockBoardStored(id)).toBe(false);
+  expect(receipts()).toHaveLength(1);
+  await vi.waitFor(() =>
+    expect(receipts().at(-1)).toMatchObject({ checkpointIds: ['typed'] })
+  );
+  expect(mockBoardStored(id)).toBe(true);
+  provider.destroy();
+});
+
+// As the service: changes with no pause between them are stored 10 s after the
+// first.
+it('stores a room that keeps changing 10 s after its first change', async () => {
+  const id = canvas('editor');
+  const { document, provider } = await tab(id);
+  vi.useFakeTimers({ toFake: ['Date', 'clearTimeout', 'setTimeout'] });
+  try {
+    const start = Date.now();
+    let storedAt: number | null = null;
+    // A change every 200 ms, under the room's pause.
+    for (let i = 0; i < 60 && storedAt === null; i++) {
+      drawn(document).set(`stroke-${i}`, new Y.Map());
+      vi.advanceTimersByTime(200);
+      if (mockBoardStored(id)) storedAt = Date.now() - start;
+    }
+    expect(storedAt).toBe(10_000);
+  } finally {
+    vi.useRealTimers();
+    provider.destroy();
+  }
 });
 
 it('opens a stored board again as it was left', async () => {

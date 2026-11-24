@@ -49,6 +49,14 @@ export class Allowance {
     );
   }
 
+  /** Gives back what a message of `size` bytes reserved: it was never sent
+   * (`CollabSocket.dropQueued`). */
+  refund(size: number) {
+    this.refill();
+    this.messages = Math.min(BURST.messages, this.messages + 1);
+    this.bytes = Math.min(BURST.bytes, this.bytes + size);
+  }
+
   /** Full again: a timeout ended, and pacing starts from the defaults. */
   reset() {
     this.messages = BURST.messages;

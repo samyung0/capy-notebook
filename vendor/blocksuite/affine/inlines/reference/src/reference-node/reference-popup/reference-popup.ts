@@ -59,7 +59,7 @@ export class ReferencePopup extends SignalWatcher(
       }
     }
 
-    /* Capy (local change 76): scoped to the popup; a ShadowlessElement's
+    /* Capy (local change 77): scoped to the popup; a ShadowlessElement's
        styles reach the whole document, and a bare input rule restyled every
        input on the page and showed hidden file inputs. */
     reference-popup input {

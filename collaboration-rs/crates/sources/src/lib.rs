@@ -65,10 +65,11 @@ pub fn state_cap(format: SourceFormat, seed_bytes: u64, base_bytes: u64, export_
 
 /// What admission keeps free under a room's cap (Epo 2026-10-17): the
 /// contributor marker the room writes after an update always fits, so the
-/// save's check against the cap itself stays exact. A writer's update an
-/// agent edit did not see fits only while it is under the reserve too; a
-/// larger one racing an agent edit near the cap can still take the save past
-/// it. Go's growth budget subtracts it (KEEP IN SYNC WITH
+/// save's check against the cap itself stays exact. An agent edit goes
+/// through the same admission as a writer's update: on the open room's
+/// snapshot (Q402), or, computed with no room open, through the room that
+/// opened meanwhile (Q826 A), so no writer's update it did not see takes the
+/// save past the cap. Go's growth budget subtracts it (KEEP IN SYNC WITH
 /// sourceWriteReserveBytes in server/internal/store/source_documents.go).
 pub const STATE_WRITE_RESERVE_BYTES: u64 = 64 * 1024;
 

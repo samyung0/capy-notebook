@@ -66,6 +66,7 @@ const { createSourceProvider, recorder, sending, takeSourceOpen } = vi.hoisted(
       discard: vi.fn(async () => {}),
       disconnected: vi.fn(),
       dispose: vi.fn(async () => {}),
+      refuse: vi.fn(),
       sequence: 0,
       snapshot: vi.fn(async () => {}),
     },
@@ -198,6 +199,9 @@ beforeEach(() => {
   tokenPost.mockReset();
   tokenPost.mockRejectedValue(new ApiError(404, 'Not Found'));
   recorder.discard.mockClear();
+  recorder.refuse.mockClear();
+  recorder.snapshot.mockClear();
+  recorder.sequence = 0;
   vi.mocked(dropLostDrafts).mockClear();
   sending.done = false;
   sending.kept = false;
@@ -405,6 +409,81 @@ describe('an Office edit session opening while its base downloads', () => {
     base.reject(new Error('HTTP 500'));
     await vi.waitFor(() => expect(render().status).toBe('error'));
     expect(render().bytes).toBeUndefined();
+  });
+});
+
+// Q827 A: a tab with unsaved edits goes to recovery when its room refuses a
+// save or an update for good or is reset, and says so when the file reached
+// its size limit.
+describe('an edit session with unsaved edits whose room gives them up', () => {
+  const opened = async () => {
+    const { options } = await open({ ...SESSION, access: 'write' });
+    options.onSynced?.({ state: true });
+    recorder.sequence = 1;
+    return (event: object) =>
+      options.onStateless?.({ payload: JSON.stringify(event) });
+  };
+
+  it('names the size limit when a save is refused for it', async () => {
+    const send = await opened();
+    send({
+      checkpointIds: [],
+      epoch: SESSION.epoch,
+      fileId: SESSION.fileId,
+      reason: 'source_state_bytes',
+      recoverable: false,
+      type: 'source-checkpoint-failed',
+    });
+    expect(render()).toMatchObject({
+      banner: 'refused-size',
+      status: 'recovery',
+    });
+    expect(recorder.refuse).toHaveBeenCalled();
+  });
+
+  it('goes to recovery when the room naming it is reset', async () => {
+    const send = await opened();
+    send({
+      evictionId: 'e',
+      room: SESSION.room,
+      type: 'authorization-revoked',
+    });
+    expect(render()).toMatchObject({ banner: 'refused', status: 'recovery' });
+    expect(recorder.refuse).toHaveBeenCalled();
+  });
+
+  // Q831 A: the reset after a save lost for a trashed file is that save's,
+  // so the lost-access handling decides and the edits stay under the deleted
+  // strip as before, never collapsed into a refused row.
+  it('leaves the reset after a save lost for a trashed file to its own handling', async () => {
+    const token = deferred<never>();
+    tokenPost.mockReturnValue(token.promise);
+    const send = await opened();
+    send({
+      checkpointIds: [],
+      epoch: SESSION.epoch,
+      fileId: SESSION.fileId,
+      lostAccess: 'not_found',
+      recoverable: false,
+      type: 'source-checkpoint-failed',
+    });
+    send({
+      evictionId: 'e',
+      room: SESSION.room,
+      type: 'authorization-revoked',
+    });
+    token.reject(
+      new ApiError(410, 'Gone', undefined, {
+        code: 'item_deleted',
+        kind: 'doc',
+        name: 'Plan.docx',
+      })
+    );
+    await vi.waitFor(() =>
+      expect(render()).toMatchObject({ banner: 'deleted', outdated: true })
+    );
+    expect(recorder.snapshot).toHaveBeenCalled();
+    expect(recorder.refuse).not.toHaveBeenCalled();
   });
 });
 

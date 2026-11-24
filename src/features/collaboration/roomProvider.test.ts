@@ -7,6 +7,7 @@ import { createSourceProvider } from '@/features/files/sourceProvider';
 import type { DraftMessage, DraftReply } from '@/lib/draftStore';
 import { draftsVersion, readDrafts, recordDrafts } from '@/lib/editDrafts';
 import { resetAllowance, tabAllowance } from './allowance';
+import { onHeartbeat } from './heartbeat';
 import { isHeld } from './held';
 import { NoteSeat } from './noteSeat';
 import { PIECE_BYTES } from './pieces';
@@ -14,6 +15,8 @@ import {
   CLIENT_PROTOCOL,
   closedPayload,
   decodeFrame,
+  HEARTBEAT,
+  HEARTBEAT_MS,
   type Message,
   MessageKind,
   message,
@@ -27,6 +30,8 @@ import {
 import { onRenamed } from './renameClient';
 import {
   EMBED_CLOSED_REASON,
+  GROUP_BUSY_RETRY_MS,
+  type HeldEdits,
   OLDEST_CLOSED_REASON,
   RoomProvider,
   UPDATE_TOO_LARGE_REASON,
@@ -35,6 +40,18 @@ import { CollabSocket } from './socket';
 
 vi.mock('@/api/auth', () => ({ USE_MSW: false }));
 
+// The tab's heartbeat clock (`heartbeat.ts`, a worker), ticked by the test.
+const heartbeat = vi.hoisted(() => new Set<() => void>());
+vi.mock('./heartbeat', () => ({
+  onHeartbeat: (onBeat: () => void) => {
+    heartbeat.add(onBeat);
+    return () => heartbeat.delete(onBeat);
+  },
+}));
+const tickHeartbeat = () => {
+  for (const onBeat of [...heartbeat]) onBeat();
+};
+
 /** An in-page WebSocket the test plays the server through. */
 class FakeSocket {
   static instances: FakeSocket[] = [];
@@ -42,6 +59,8 @@ class FakeSocket {
   readyState = 0;
   binaryType = 'blob';
   sent: Message[] = [];
+  /** Text frames sent: the heartbeats. */
+  texts: string[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: ArrayBuffer }) => void) | null = null;
   onclose: ((event: { code: number }) => void) | null = null;
@@ -50,8 +69,9 @@ class FakeSocket {
     this.url = url;
     FakeSocket.instances.push(this);
   }
-  send(bytes: Uint8Array) {
-    this.sent.push(...decodeFrame(bytes));
+  send(data: Uint8Array | string) {
+    if (typeof data === 'string') this.texts.push(data);
+    else this.sent.push(...decodeFrame(data));
   }
   close(code = 1005) {
     this.readyState = 3;
@@ -110,6 +130,7 @@ const clientIdOf = (name: string) =>
   1;
 
 const PADDING = /[=]+$/;
+const RUST_HEARTBEAT_MS = /pub const HEARTBEAT_MS: u64 = ([\d_]+);/;
 
 /** A token as the API mints one, as far as the client reads it: its claims
  * offer a client id (Q213) and, for a DOCX session, its layout worker's
@@ -1138,49 +1159,477 @@ async function syncedRoom(
   return { ...room, server };
 }
 
-/** The SYNC frames `sent` applied to `server` in order: their kinds, the
- * largest piece, and after how many something was pending. */
+/** The SYNC frames `sent` applied to `server` in order: whether they are the
+ * pieces of one group in order, the kinds they were cut from, the largest
+ * piece, and after how many something was pending. */
 function applyPieces(server: Y.Doc, sent: Message[]) {
   const kinds = new Set<number>();
+  let grouped = true;
   let largest = 0;
   let pending = 0;
-  for (const { payload } of sent) {
+  for (const [at, { payload }] of sent.entries()) {
     const sync = readSync(payload);
-    kinds.add(sync.kind);
-    largest = Math.max(largest, sync.body.byteLength);
-    Y.applyUpdate(server, sync.body);
+    const reader = new Reader(sync.body);
+    const [kind, index, count] = [
+      reader.varUint(),
+      reader.varUint(),
+      reader.varUint(),
+    ];
+    const piece = sync.body.subarray(reader.at);
+    grouped &&=
+      sync.kind === SyncKind.Piece && index === at && count === sent.length;
+    kinds.add(kind);
+    largest = Math.max(largest, piece.byteLength);
+    Y.applyUpdate(server, piece);
     if (server.store.pendingStructs) pending += 1;
   }
-  return { kinds: [...kinds], pending, small: largest <= PIECE_BYTES };
+  return {
+    grouped,
+    kinds: [...kinds],
+    pending,
+    small: largest <= PIECE_BYTES,
+  };
 }
 
-it('sends an update over 2 MiB in ordered pieces and holds the tab back until the last is acknowledged', async () => {
+/** A group's pieces as the room takes them: its first alone, then the rest
+ * once the room holds the first (its ACK, round 4, finding 5). Everything
+ * sent before the group must be acknowledged already. */
+function heldGroup(socket: FakeSocket, channel: number) {
+  const first = socket.take(MessageKind.Sync);
+  socket.deliver(ack(channel, 1));
+  return [...first, ...socket.take(MessageKind.Sync)];
+}
+
+// Round 4, finding 5: a group's first piece goes alone and the rest only
+// once the room holds it (its ACK), so a busy answer costs one piece, not
+// the burst; the tab is held back until the room acknowledges the rest.
+// Fails with every piece sent at once.
+it('sends an update over 2 MiB as one group of ordered pieces, the rest once the room holds the first', async () => {
   const { document, join, provider, server, socket } = await syncedRoom();
   const long = 'x'.repeat(5 * 1024 * 1024);
   document.getText('content').insert(0, long);
-  const pieces = socket.take(MessageKind.Sync);
-  expect(pieces.length).toBeGreaterThan(2);
+  const [first, ...none] = socket.take(MessageKind.Sync);
+  expect(none).toEqual([]);
+  const count = provider.unsyncedChanges;
+  expect(count).toBeGreaterThan(2);
+  expect(isHeld()).toBe(true);
+  socket.deliver(ack(join.channel, 1));
+  const pieces = [first, ...socket.take(MessageKind.Sync)];
+  expect(pieces).toHaveLength(count);
   expect(applyPieces(server, pieces)).toEqual({
+    grouped: true,
     kinds: [SyncKind.Update],
     pending: 0,
     small: true,
   });
   expect(server.getText('content').toString()).toBe(long);
   expect(isHeld()).toBe(true);
-  expect(provider.unsyncedChanges).toBe(pieces.length);
-  // Each piece is acknowledged on its own; the hold ends with the last.
-  socket.deliver(
+  expect(provider.unsyncedChanges).toBe(count - 1);
+  // The room admits the group after its last piece and acknowledges the
+  // rest at once.
+  socket.deliver(ack(join.channel, count - 1));
+  expect(isHeld()).toBe(false);
+  expect(provider.unsyncedChanges).toBe(0);
+});
+
+// A group goes as PIECE messages after a plain update, is in flight until
+// the room acknowledged all of its pieces (an earlier update's ACK, its first
+// piece's, and one short of the group keep it so), then admitted, and unsent
+// until a second store's notice after that ACK (review r1 H1), as a single
+// update is. Fails with the pieces sent as plain updates (d8fb10933), or if
+// an ACK short of the group releases the tab or counts it admitted.
+it('counts a group in flight until the room acknowledges all of it, then admitted', async () => {
+  const { document, join, provider, socket } = await synced();
+  const channel = join.channel;
+  socket.deliver(stored(channel, 5), ack(channel, 1));
+  document.getText('content').insert(0, 'a');
+  document.getText('content').insert(1, 'b'.repeat(5 * 1024 * 1024));
+  const [single, first, ...none] = socket.take(MessageKind.Sync);
+  expect(none).toEqual([]);
+  const server = new Y.Doc();
+  const update = readSync(single.payload);
+  expect(update.kind).toBe(SyncKind.Update);
+  Y.applyUpdate(server, update.body);
+  const group = provider.unsyncedChanges - 1;
+  expect(group).toBeGreaterThan(2);
+  // The single update's ACK and a store that may lack both.
+  socket.deliver(ack(channel, 1), stored(channel, 6), stored(channel, 7));
+  expect(provider.unsyncedChanges).toBe(group);
+  expect(isHeld()).toBe(true);
+  expect(provider.reportedVersion).toBe(5);
+  // The room holds the first piece: the rest goes.
+  socket.deliver(ack(channel, 1));
+  const pieces = [first, ...socket.take(MessageKind.Sync)];
+  expect(pieces).toHaveLength(group);
+  expect(applyPieces(server, pieces)).toMatchObject({
+    grouped: true,
+    kinds: [SyncKind.Update],
+    pending: 0,
+  });
+  socket.deliver(ack(channel, group - 2));
+  expect(isHeld()).toBe(true);
+  expect(provider.reportedVersion).toBe(5);
+  socket.deliver(ack(channel, 1));
+  expect(provider.unsyncedChanges).toBe(0);
+  expect(isHeld()).toBe(false);
+  // Admitted at 7: unsent until a second store after it.
+  socket.deliver(stored(channel, 8));
+  expect(provider.reportedVersion).toBe(5);
+  socket.deliver(stored(channel, 9));
+  expect(provider.reportedVersion).toBe(9);
+});
+
+// A writer gone mid-group (the socket dropped before the room acknowledged
+// it) leaves nothing in the room; its next step 2 carries the whole edit
+// again, as a group of its own. Fails if the drop forgets the group's edit.
+it('resends a group cut short by a dropped socket in its next step 2', async () => {
+  const { document, join, provider, socket } = await synced();
+  socket.deliver(stored(join.channel, 5), ack(join.channel, 1));
+  const long = 'c'.repeat(3 * 1024 * 1024);
+  document.getText('content').insert(0, long);
+  // Its first piece, alone until the room holds it.
+  expect(socket.take(MessageKind.Sync)).toHaveLength(1);
+  vi.useFakeTimers();
+  socket.close();
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(isHeld()).toBe(false);
+  expect(provider.reportedVersion).toBe(5);
+  const again = FakeSocket.instances.at(-1) as FakeSocket;
+  expect(again).not.toBe(socket);
+  again.open();
+  await vi.advanceTimersByTimeAsync(0);
+  const [join2] = again.take(MessageKind.Join);
+  const server = new Y.Doc();
+  again.deliver(
+    message(join2.channel, MessageKind.Joined, Uint8Array.of(1)),
     message(
-      join.channel,
-      MessageKind.Ack,
-      new Writer().varUint(pieces.length - 1).done()
+      join2.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
     )
   );
-  expect(isHeld()).toBe(true);
+  const [, first] = again.take(MessageKind.Sync);
+  again.deliver(ack(join2.channel, 1));
+  const pieces = [first, ...again.take(MessageKind.Sync)];
+  expect(applyPieces(server, pieces)).toMatchObject({
+    grouped: true,
+    kinds: [SyncKind.Step2],
+  });
+  expect(server.getText('content').toString()).toBe(long);
+  expect(provider.unsyncedChanges).toBe(pieces.length - 1);
+  provider.destroy();
+});
+
+// Review of 43fae032a round 2, finding 5: a group the room dropped as late
+// (an uplink too slow for one piece within its slack) is not sent again on
+// the same channel, where it would be late again with no end: its ACK
+// admits none of it, the room's step 1 and later edits send nothing, and
+// it stays one unsynced change (no receipt asked for, not saved) until the
+// next join, whose step 2 carries all of it. Fails if the drop is answered
+// with a resend, or the dropped edit counts as admitted.
+it('holds a group dropped as late until the next join, unsynced meanwhile', async () => {
+  const { document, join, provider, socket } = await synced();
+  const channel = join.channel;
+  socket.deliver(stored(channel, 5), ack(channel, 1));
+  const long = 'd'.repeat(3 * 1024 * 1024);
+  document.getText('content').insert(0, long);
+  const pieces = heldGroup(socket, channel);
+  expect(pieces.length).toBeGreaterThan(1);
+  const dropped = JSON.stringify({ room: 'r', type: 'group-dropped' });
   socket.deliver(
-    message(join.channel, MessageKind.Ack, new Writer().varUint(1).done())
+    message(channel, MessageKind.Stateless, text(dropped)),
+    ack(channel, pieces.length - 1)
   );
+  expect(provider.unsyncedChanges).toBe(1);
   expect(isHeld()).toBe(false);
+  socket.deliver(
+    message(
+      channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(new Y.Doc()))
+    )
+  );
+  document.getText('content').insert(0, 'e');
+  expect(socket.take(MessageKind.Sync)).toEqual([]);
+  socket.deliver(stored(channel, 6), stored(channel, 7));
+  expect(provider.reportedVersion).toBe(5);
+  expect(provider.unsyncedChanges).toBe(1);
+  // The next join sends it all.
+  vi.useFakeTimers();
+  socket.close();
+  await vi.advanceTimersByTimeAsync(2000);
+  const again = FakeSocket.instances.at(-1) as FakeSocket;
+  again.open();
+  await vi.advanceTimersByTimeAsync(0);
+  const [join2] = again.take(MessageKind.Join);
+  const server = new Y.Doc();
+  again.deliver(
+    message(join2.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      join2.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
+    )
+  );
+  const [, first] = again.take(MessageKind.Sync);
+  again.deliver(ack(join2.channel, 1));
+  const resent = [first, ...again.take(MessageKind.Sync)];
+  expect(applyPieces(server, resent)).toMatchObject({
+    grouped: true,
+    kinds: [SyncKind.Step2],
+  });
+  expect(server.getText('content').toString()).toBe(`e${long}`);
+  provider.destroy();
+});
+
+// Epo 2026-11-23: a group that found another of the user's unfinished
+// (`group-busy`) is held as a late one, unsynced, having sent only its first
+// piece (round 4, finding 5), and the same channel joins again 10 s later,
+// silently: its step 2 carries the group and the edits made meanwhile. Fails
+// if the busy group is never sent again, or counts as admitted.
+it('joins again 10 s after a busy group, its step 2 carrying it', async () => {
+  const { document, join, provider, socket } = await synced();
+  const channel = join.channel;
+  socket.deliver(stored(channel, 5), ack(channel, 1));
+  const long = 'f'.repeat(3 * 1024 * 1024);
+  document.getText('content').insert(0, long);
+  expect(socket.take(MessageKind.Sync)).toHaveLength(1);
+  vi.useFakeTimers();
+  const busy = JSON.stringify({ room: 'r', type: 'group-busy' });
+  socket.deliver(
+    message(channel, MessageKind.Stateless, text(busy)),
+    ack(channel, 1)
+  );
+  expect(socket.take(MessageKind.Sync)).toEqual([]);
+  expect(provider.unsyncedChanges).toBe(1);
+  document.getText('content').insert(0, 'g');
+  expect(socket.take(MessageKind.Sync)).toEqual([]);
+  await vi.advanceTimersByTimeAsync(GROUP_BUSY_RETRY_MS - 100);
+  expect(socket.take(MessageKind.Join)).toEqual([]);
+  await vi.advanceTimersByTimeAsync(100);
+  const [rejoin] = socket.take(MessageKind.Join);
+  expect(rejoin.channel).toBe(channel);
+  const server = new Y.Doc();
+  socket.deliver(
+    message(channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
+    )
+  );
+  const [, first] = socket.take(MessageKind.Sync);
+  socket.deliver(ack(channel, 1));
+  const resent = [first, ...socket.take(MessageKind.Sync)];
+  expect(applyPieces(server, resent)).toMatchObject({
+    grouped: true,
+    kinds: [SyncKind.Step2],
+  });
+  expect(server.getText('content').toString()).toBe(`g${long}`);
+  expect(provider.unsyncedChanges).toBe(resent.length - 1);
+  provider.destroy();
+});
+
+// Round 3, finding 1 (Epo 2026-11-23): a late drop hands the editor a Retry
+// for its save strip and retries nothing on a timer; Retry joins the same
+// channel again at once, whose step 2 carries the held edits, and the strip
+// goes once it joined. Fails if a late drop leaves the channel with no way
+// to sync, or rejoins by itself.
+it('hands a late drop its Retry, which joins again now, and no timer does', async () => {
+  const onHeld = vi.fn();
+  const { document, join, provider, socket } = await synced({ onHeld });
+  const channel = join.channel;
+  socket.deliver(stored(channel, 5), ack(channel, 1));
+  const long = 'h'.repeat(3 * 1024 * 1024);
+  document.getText('content').insert(0, long);
+  const pieces = heldGroup(socket, channel);
+  vi.useFakeTimers();
+  const dropped = JSON.stringify({ room: 'r', type: 'group-dropped' });
+  socket.deliver(
+    message(channel, MessageKind.Stateless, text(dropped)),
+    ack(channel, pieces.length - 1)
+  );
+  expect(onHeld).toHaveBeenCalledTimes(1);
+  const { retry, retrying } = onHeld.mock.calls[0][0] as HeldEdits;
+  expect(retrying).toBe(false);
+  await vi.advanceTimersByTimeAsync(30 * 60 * 1000);
+  expect(socket.take(MessageKind.Join)).toEqual([]);
+  expect(provider.unsyncedChanges).toBe(1);
+  retry();
+  await vi.advanceTimersByTimeAsync(0);
+  const [rejoin] = socket.take(MessageKind.Join);
+  expect(rejoin.channel).toBe(channel);
+  const server = new Y.Doc();
+  socket.deliver(
+    message(channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
+    )
+  );
+  expect(onHeld).toHaveBeenLastCalledWith(null);
+  const [, first] = socket.take(MessageKind.Sync);
+  socket.deliver(ack(channel, 1));
+  applyPieces(server, [first, ...socket.take(MessageKind.Sync)]);
+  expect(server.getText('content').toString()).toBe(long);
+  provider.destroy();
+});
+
+// Round 5, finding 3: a late drop while the user is in a timeout raises no
+// strip, whose Retry would join nothing then; the join after the timeout
+// carries the held edits. Fails with the strip raised in the timeout.
+it('raises no strip for a late drop in a timeout, whose join after carries the edits', async () => {
+  const onHeld = vi.fn();
+  const { document, join, provider, socket } = await synced({ onHeld });
+  const channel = join.channel;
+  socket.deliver(stored(channel, 5), ack(channel, 1));
+  const long = 'p'.repeat(3 * 1024 * 1024);
+  document.getText('content').insert(0, long);
+  const pieces = heldGroup(socket, channel);
+  vi.useFakeTimers();
+  const timeout = JSON.stringify({ remainingMs: 3000, type: 'update-timeout' });
+  const dropped = JSON.stringify({ room: 'r', type: 'group-dropped' });
+  socket.deliver(
+    message(channel, MessageKind.Stateless, text(timeout)),
+    message(channel, MessageKind.Stateless, text(dropped)),
+    ack(channel, pieces.length - 1)
+  );
+  expect(onHeld).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(3000);
+  const [rejoin] = socket.take(MessageKind.Join);
+  expect(rejoin.channel).toBe(channel);
+  const server = new Y.Doc();
+  socket.deliver(
+    message(channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
+    )
+  );
+  const [, first] = socket.take(MessageKind.Sync);
+  socket.deliver(ack(channel, 1));
+  applyPieces(server, [first, ...socket.take(MessageKind.Sync)]);
+  expect(server.getText('content').toString()).toBe(long);
+  expect(onHeld).not.toHaveBeenCalled();
+  provider.destroy();
+});
+
+// Round 4, finding 4: a second Retry while the first's join is pending does
+// nothing, and the strip hears the join pending (its Retry disabled). Fails
+// with a JOIN for each click.
+it('joins once for two Retries while the first is pending', async () => {
+  const onHeld = vi.fn();
+  const { document, join, provider, socket } = await synced({ onHeld });
+  const channel = join.channel;
+  socket.deliver(stored(channel, 5), ack(channel, 1));
+  document.getText('content').insert(0, 'r'.repeat(3 * 1024 * 1024));
+  const pieces = heldGroup(socket, channel);
+  const dropped = JSON.stringify({ room: 'r', type: 'group-dropped' });
+  socket.deliver(
+    message(channel, MessageKind.Stateless, text(dropped)),
+    ack(channel, pieces.length - 1)
+  );
+  const { retry } = onHeld.mock.calls[0][0] as HeldEdits;
+  retry();
+  expect(onHeld).toHaveBeenLastCalledWith({ retry, retrying: true });
+  retry();
+  await flush();
+  expect(socket.take(MessageKind.Join)).toHaveLength(1);
+  provider.destroy();
+});
+
+// Epo 2026-11-23: a provider its owner lets go (refused for good, read-only,
+// gone, a Discard) clears the strip, so the editor shows what its refusal
+// says instead. Fails with the unsynced strip left over the refusal's.
+it('clears the held strip when its owner lets the room go', async () => {
+  const onHeld = vi.fn();
+  const { document, join, provider, socket } = await synced({ onHeld });
+  const channel = join.channel;
+  socket.deliver(stored(channel, 5), ack(channel, 1));
+  document.getText('content').insert(0, 'g'.repeat(3 * 1024 * 1024));
+  const pieces = heldGroup(socket, channel);
+  const dropped = JSON.stringify({ room: 'r', type: 'group-dropped' });
+  socket.deliver(
+    message(channel, MessageKind.Stateless, text(dropped)),
+    ack(channel, pieces.length - 1)
+  );
+  expect(onHeld).toHaveBeenCalledTimes(1);
+  provider.disconnect();
+  expect(onHeld).toHaveBeenLastCalledWith(null);
+  provider.destroy();
+  expect(onHeld).toHaveBeenCalledTimes(2);
+});
+
+// Round 3, finding 2: a group dropped as late has its pieces still waiting
+// for the allowance dropped, so they neither upload for nothing nor hold the
+// socket's other frames (a busy group's rest never went: it waits for its
+// first piece's ACK, round 4). Fails if the waiting pieces still go out
+// after the notice.
+it("drops a late group's waiting pieces from the socket", async () => {
+  const { document, join, socket } = await synced();
+  const channel = join.channel;
+  socket.deliver(stored(channel, 5), ack(channel, 1));
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  resetAllowance();
+  // 20 MiB: the 8 MiB burst lets the first pieces go, the rest wait.
+  document.getText('content').insert(0, 'i'.repeat(20 * 1024 * 1024));
+  expect(heldGroup(socket, channel).length).toBeGreaterThan(1);
+  expect(isHeld()).toBe(true);
+  const dropped = JSON.stringify({ room: 'r', type: 'group-dropped' });
+  socket.deliver(message(channel, MessageKind.Stateless, text(dropped)));
+  await vi.advanceTimersByTimeAsync(10_000);
+  expect(socket.take(MessageKind.Sync)).toEqual([]);
+  expect(isHeld()).toBe(false);
+});
+
+// Round 3, finding 4: one group of pieces at a time on a socket, as the
+// room holds one unfinished group per user: a second room's group waits
+// (one unsynced change, nothing sent) until the first room's group is
+// acknowledged, then goes whole with the edits made meanwhile. Fails if
+// two rooms' groups go back to back, which the room answers busy.
+it("sends a second room's group only after the first room's ACK", async () => {
+  const shared = `wss://collab.test/${url++}`;
+  const first = await synced({ url: shared });
+  const second = await synced({ url: shared });
+  expect(second.socket).toBe(first.socket);
+  const socket = first.socket;
+  const long = 'j'.repeat(3 * 1024 * 1024);
+  first.document.getText('content').insert(0, long);
+  const [head, ...none] = socket.take(MessageKind.Sync);
+  expect(none).toEqual([]);
+  expect(head.channel).toBe(first.join.channel);
+  // Its own step 2 reply is still unacknowledged.
+  const before = second.provider.unsyncedChanges;
+  second.document.getText('content').insert(0, long);
+  second.document.getText('content').insert(0, 'k');
+  expect(socket.take(MessageKind.Sync)).toEqual([]);
+  expect(second.provider.unsyncedChanges).toBe(before + 1);
+  // The first room's own step 2 reply and its group's first piece: the
+  // rest goes, still the first room's alone.
+  socket.deliver(ack(first.join.channel, 2));
+  const rest = socket.take(MessageKind.Sync);
+  expect(rest.length).toBeGreaterThan(0);
+  expect(rest.every((sent) => sent.channel === first.join.channel)).toBe(true);
+  socket.deliver(ack(first.join.channel, rest.length));
+  const [next, ...waiting] = socket.take(MessageKind.Sync);
+  expect(waiting).toEqual([]);
+  expect(next.channel).toBe(second.join.channel);
+  socket.deliver(ack(second.join.channel, 2));
+  const later = [next, ...socket.take(MessageKind.Sync)];
+  expect(later.every((sent) => sent.channel === second.join.channel)).toBe(
+    true
+  );
+  const server = new Y.Doc();
+  expect(applyPieces(server, later)).toMatchObject({
+    grouped: true,
+    kinds: [SyncKind.Update],
+  });
+  expect(server.getText('content').toString()).toBe(`k${long}`);
+  expect(second.provider.unsyncedChanges).toBe(before + later.length - 2);
+  first.provider.destroy();
+  second.provider.destroy();
 });
 
 it('answers a resync with its step 2 in pieces', async () => {
@@ -1196,10 +1645,14 @@ it('answers a resync with its step 2 in pieces', async () => {
       syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
     )
   );
-  const [step1, ...pieces] = socket.take(MessageKind.Sync);
+  const [step1, first, ...none] = socket.take(MessageKind.Sync);
   expect(readSync(step1.payload).kind).toBe(SyncKind.Step1);
+  expect(none).toEqual([]);
+  socket.deliver(ack(join.channel, 1));
+  const pieces = [first, ...socket.take(MessageKind.Sync)];
   expect(pieces.length).toBeGreaterThan(2);
   expect(applyPieces(server, pieces)).toEqual({
+    grouped: true,
     kinds: [SyncKind.Step2],
     pending: 0,
     small: true,
@@ -1213,7 +1666,8 @@ it('answers a resync with its step 2 in pieces', async () => {
 /**
  * Past the user's 8 MiB burst, pieces wait for the allowance (2 MiB a
  * second) instead of timing the user out, the tab holding back meanwhile,
- * and a frame sent after them (a checkpoint request) waits behind them.
+ * and a frame sent after them (a checkpoint request) waits behind them, and
+ * behind the rest that waits for the first piece's ACK (round 4, finding 5).
  */
 it('paces pieces under the allowance and keeps later frames behind them', async () => {
   const { document, join, provider, socket } = await syncedRoom();
@@ -1221,6 +1675,9 @@ it('paces pieces under the allowance and keeps later frames behind them', async 
   resetAllowance();
   document.getText('content').insert(0, 'z'.repeat(10 * 1024 * 1024));
   provider.sendStateless('{"type":"checkpoint-request"}');
+  expect(socket.take(MessageKind.Sync)).toHaveLength(1);
+  expect(socket.take(MessageKind.Stateless)).toEqual([]);
+  socket.deliver(ack(join.channel, 1));
   const now = socket.sent.length;
   expect(now).toBeGreaterThan(0);
   expect(socket.take(MessageKind.Stateless)).toEqual([]);
@@ -1228,10 +1685,8 @@ it('paces pieces under the allowance and keeps later frames behind them', async 
   await vi.advanceTimersByTimeAsync(3000);
   expect(socket.sent.length).toBeGreaterThan(now);
   expect(socket.sent.at(-1)?.kind).toBe(MessageKind.Stateless);
-  const sent = socket.take(MessageKind.Sync).length + now;
-  socket.deliver(
-    message(join.channel, MessageKind.Ack, new Writer().varUint(sent).done())
-  );
+  const rest = socket.take(MessageKind.Sync).length;
+  socket.deliver(ack(join.channel, rest));
   expect(isHeld()).toBe(false);
 });
 
@@ -1442,6 +1897,37 @@ it('speaks the collaboration server’s client protocol', () => {
   expect(rust).toContain(
     `pub const CLIENT_PROTOCOL: u32 = ${CLIENT_PROTOCOL};`
   );
+  expect(rust).toContain(`pub const HEARTBEAT: &str = "${HEARTBEAT}";`);
+  const every = RUST_HEARTBEAT_MS.exec(rust)?.[1];
+  expect(Number(every?.replaceAll('_', ''))).toBe(HEARTBEAT_MS);
+});
+
+// The tab's heartbeat (protocol 41): a long frame to the tab holds back the
+// server's pings, so an open socket sends `HEARTBEAT` on each of the tab's
+// heartbeats (the clock it is given, the tab's in the app), straight on the
+// socket, and none before it opens or once it closed. Fails without the
+// heartbeat, or if it outlives its socket.
+it('sends the heartbeat on each tick while its socket is open, and none once closed', () => {
+  const socket = CollabSocket.create(`wss://collab.test/${url++}`, onHeartbeat);
+  const room = {
+    onMessage() {},
+    onResume() {},
+    onSleep() {},
+    onSocketClose() {},
+    onSocketOpen() {},
+  };
+  socket.attach(room);
+  const ws = FakeSocket.instances.at(-1) as FakeSocket;
+  tickHeartbeat();
+  expect(ws.texts).toEqual([]);
+  ws.open();
+  tickHeartbeat();
+  tickHeartbeat();
+  expect(ws.texts).toEqual([HEARTBEAT, HEARTBEAT]);
+  ws.close();
+  tickHeartbeat();
+  expect(ws.texts).toEqual([HEARTBEAT, HEARTBEAT]);
+  socket.detach(room);
 });
 
 /** The room's presence (Epo 2026-10-20) reaches `onPresence`, never the

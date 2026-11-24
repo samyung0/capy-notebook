@@ -10,16 +10,19 @@ import { FileBanner, type FileBannerAction } from './FileBanner';
  *   `offline-unstored`: and this device cannot store them (private mode, a
  *   full disk). `offline-limit`: the device holds as much as the file allows,
  *   and the editor stops taking edits until it reconnects.
- * - `refused`: a save was refused for good. `changed`: the file moved on
+ * - `refused`: a save was refused for good; `refused-size`: an Office or
+ *   text file's, for its size limit (Q827 A). `changed`: the file moved on
  *   (a newer version, a room reset) while the edits waited to sync.
- *   `expired`: the edits are past the 7-day expiry, too old to sync. All
- *   three show the edits read-only for copying (Office and text files and
- *   item rooms; a note opens the merge view instead, Q251); Reload is the
- *   only way out, so these cannot be closed. `deleted`: the item was
- *   deleted with unsent edits on this device (Q39), shown the same way for
- *   every editor; its Discard (ghost-hover) drops them and loads the page
- *   again, and its Download (dark, after Discard: Epo 2026-11-20 and
- *   2026-11-21, `DeletedDownload`) saves what shows, deleting nothing.
+ *   `expired`: the edits are past the 7-day expiry, too old to sync.
+ *   `deleted`: the item was deleted with unsent edits on this device (Q39).
+ *   All of these show the edits read-only for copying (Office and text files
+ *   and item rooms; a note opens the merge view instead, except when
+ *   deleted, Q251) and cannot be closed. Their Discard (ghost-hover, first)
+ *   drops the edits and continues from the last saved version, and their
+ *   Download (dark) saves what shows, deleting nothing (Epo 2026-11-20,
+ *   2026-11-21, and 2026-11-23 for all but `deleted`, in place of Reload):
+ *   the editor's own (`onDownload`), a deleted item's its page's
+ *   (`DeletedDownload`) first; with none, Discard stands alone.
  * - `outdated`: Capy was updated and the room refuses this build (the
  *   version gate); the editor is read-only, its edits stay on this device for
  *   the reloaded page to send, and Reload waits for the new app.
@@ -27,6 +30,12 @@ import { FileBanner, type FileBannerAction } from './FileBanner';
  *   so the reload loses them.
  * - `late-unloaded`: a late note's merge code did not load; its edits stay
  *   read-only on this device until Retry or a reconnect loads it (Q398).
+ * - `unsynced`: the room dropped a group of the editor's pieces as late (an
+ *   uplink too slow for it, Epo 2026-11-23): its edits wait unsynced, with
+ *   no timed retries, until Retry (dark, Epo 2026-11-23) joins again (a
+ *   reconnect or a reload does too), or Discard (ghost-hover, first) drops
+ *   them and continues from the last saved version, as the deleted strip's
+ *   does; it cannot be closed.
  * - `unreachable`: a note's join ran past its 30 s (Epo 2026-11-04): over the
  *   note on screen, with Retry.
  * - `access-lost`: an Office or text file's room refused this editor, whose
@@ -44,12 +53,14 @@ export type SaveBannerState =
   | 'offline-unstored'
   | 'offline-limit'
   | 'refused'
+  | 'refused-size'
   | 'changed'
   | 'expired'
   | 'outdated'
   | 'outdated-unstored'
   | 'review'
-  | 'unreachable';
+  | 'unreachable'
+  | 'unsynced';
 
 export function isOutdatedBanner(state: SaveBannerState | null | undefined) {
   return state === 'outdated' || state === 'outdated-unstored';
@@ -58,6 +69,7 @@ export function isOutdatedBanner(state: SaveBannerState | null | undefined) {
 export function isRecoveryBanner(state: SaveBannerState | null) {
   return (
     state === 'refused' ||
+    state === 'refused-size' ||
     state === 'changed' ||
     state === 'expired' ||
     state === 'deleted'
@@ -94,69 +106,104 @@ const MESSAGES: Record<
   'offline-limit': () => m.editor_offline_limit(),
   'offline-unstored': () => m.editor_offline_unstored(),
   refused: () => m.source_edit_recovery(),
+  'refused-size': () => m.source_edit_recovery_size(),
   review: () => m.merge_strip(),
   unreachable: () => m.editor_collab_unavailable(),
+  unsynced: () => m.editor_late_unloaded(),
 };
 
 /**
  * Render it only while its state lasts: closing hides it for that episode,
- * and the next episode mounts it again. One row in every state: Reload (the
- * deleted strip's Discard and Download) takes the close button's place in
- * recovery and when outdated.
+ * and the next episode mounts it again. One row in every state: its actions
+ * take the close button's place where it has any.
  */
 export function SaveBanner({
   state,
   onDiscard,
-  onReload,
+  onDownload,
   onReview,
   onRetry,
-  reloading = false,
+  discarding = false,
+  retrying = false,
 }: {
   state: SaveBannerState;
-  /** `review`: drop every piece (after a confirmation). */
+  /** The Discard of recovery and `unsynced`; `review`'s drops every piece
+   * (after a confirmation). */
   onDiscard?: () => void;
-  /** Recovery's Reload; the deleted strip's Discard. */
-  onReload?: () => void;
+  /** Recovery's Download: the page's own of what shows (an item's edits, a
+   * file's draft). */
+  onDownload?: () => void;
   /** `review`: open the merge view. */
   onReview?: () => void;
-  /** The Retry of `late-unloaded` and `unreachable`. */
+  /** The Retry of `late-unloaded`, `unreachable` and `unsynced`. */
   onRetry?: () => void;
-  reloading?: boolean;
+  /** A Discard is under way: it waits. */
+  discarding?: boolean;
+  /** `unsynced`: its Retry's join is pending, so Retry waits (round 4,
+   * finding 4). */
+  retrying?: boolean;
 }) {
-  const download = useContext(DeletedDownload);
+  const shown = useContext(DeletedDownload);
   if (isOutdatedBanner(state))
     return <OutdatedBanner stored={state === 'outdated'} />;
   const review = state === 'review' && onReview && onDiscard;
   const retry =
-    (state === 'late-unloaded' || state === 'unreachable') && onRetry;
+    (state === 'late-unloaded' ||
+      state === 'unreachable' ||
+      state === 'unsynced') &&
+    onRetry;
+  const discard: FileBannerAction | null = onDiscard
+    ? {
+        disabled: discarding,
+        label: m.action_discard(),
+        onClick: onDiscard,
+        variant: 'ghost-hover',
+      }
+    : null;
+  // A deleted item's Download is its page's (the rows it shows, Q39); the
+  // other recovery strips' the editor's own, of what it shows.
+  const download = state === 'deleted' ? (shown ?? onDownload) : onDownload;
+  const actions: FileBannerAction[] = review
+    ? [
+        { label: m.merge_review(), onClick: onReview },
+        { label: m.merge_discard_all(), onClick: onDiscard },
+      ]
+    : isRecoveryBanner(state) && discard
+      ? [
+          discard,
+          ...(download
+            ? [
+                {
+                  label: m.action_download(),
+                  onClick: download,
+                  variant: 'dark' as const,
+                },
+              ]
+            : []),
+        ]
+      : retry
+        ? [
+            ...(state === 'unsynced' && discard ? [discard] : []),
+            {
+              disabled: retrying,
+              label: m.error_action_retry(),
+              onClick: retry,
+              // The unsynced strip's one main action, filled as recovery's
+              // Download (Epo 2026-11-23).
+              ...(state === 'unsynced' ? { variant: 'dark' as const } : {}),
+            },
+          ]
+        : [];
   return (
     <FileBanner
-      actions={
-        review
-          ? [
-              { label: m.merge_review(), onClick: onReview },
-              { label: m.merge_discard_all(), onClick: onDiscard },
-            ]
-          : state === 'deleted' && onReload
-            ? deletedActions(onReload, download, reloading)
-            : isRecoveryBanner(state) && onReload
-              ? [
-                  {
-                    disabled: reloading,
-                    label: m.error_action_reload(),
-                    onClick: onReload,
-                  },
-                ]
-              : retry
-                ? [{ label: m.error_action_retry(), onClick: retry }]
-                : []
-      }
+      actions={actions}
       closeable={
         !(
           isRecoveryBanner(state) ||
           state === 'review' ||
           state === 'late-unloaded' ||
-          state === 'unreachable'
+          state === 'unreachable' ||
+          state === 'unsynced'
         )
       }
       inline
@@ -175,30 +222,6 @@ export function SaveBanner({
       }
     />
   );
-}
-
-/** The deleted strip's Discard, then the page's Download when it has one
- * (Epo 2026-11-21). */
-function deletedActions(
-  discard: () => void,
-  download: (() => void) | null,
-  discarding: boolean
-): FileBannerAction[] {
-  const actions: FileBannerAction[] = [
-    {
-      disabled: discarding,
-      label: m.action_discard(),
-      onClick: discard,
-      variant: 'ghost-hover',
-    },
-  ];
-  if (download)
-    actions.push({
-      label: m.action_download(),
-      onClick: download,
-      variant: 'dark',
-    });
-  return actions;
 }
 
 /** Reload loads the page only once the new app is served; until then the

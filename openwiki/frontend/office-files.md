@@ -2953,8 +2953,12 @@ deleted structs; a string's bytes, a binary's length and a value's strings and
 buffers, never the item headers or the deleted markers, and only items that
 existed before the update, that the commit collected, and (Office) newer than
 the seed, whose content a delete only marks in the stored change. Overwrites,
-deletes and replaced pictures no longer drift the estimate toward refusals,
-and it stays an upper bound of the state. The writer's access is revalidated at most every
+deletes and replaced pictures no longer drift the estimate toward refusals.
+The estimate is not an upper bound of the state: it undercounts scattered
+deletes (about 13 B each) and formatting such as bold (about 10 B), whose
+headers and markers it leaves out, and overcounts typing (about 26 B a key), so
+the save's exact check below stays the last word (office-cap investigation,
+2026-11-22). The writer's access is revalidated at most every
 5 s per connection. A narrowing membership, role or share change closes the
 connections of those it took the file from, through the collaboration eviction
 outbox's `revoke`, and a user's own account lock closes theirs. The recheck closes
@@ -2982,7 +2986,22 @@ second use of an original picture binds the same package part
 writes an original twice. Admission keeps `STATE_WRITE_RESERVE_BYTES` (64 KiB)
 free under the cap, so the contributor marker written after an update fits and
 the save's check against the cap stays exact; an agent edit is held to the
-same reserve and counts toward the room's running size. A file with no
+same reserve and counts toward the room's running size. An agent edit (its
+Undo and Redo too) goes through the room's admission like a writer's update:
+an open room's on its snapshot (Q402), and one computed with no room open
+looks again right before it commits and goes to a room that opened meanwhile
+(Q826 A, `edits::source_request`), so at the cap the agent is refused (413,
+which Go words for the model) and no room resets for size. A room loading
+while such a commit is in flight waits for it (`sources::edit::Commits`), so
+it loads the committed row before any writer's update. A person opening Edit
+then waits that long before the room answers the join (View needs no room):
+one Go checkpoint, usually tens to hundreds of milliseconds, at most the
+gateway's 60 s timeout if Go hangs (Q831 A). A room that is loaded but does not
+hand over its snapshot within 10 s, or rooms that keep opening and unloading
+for three rounds, refuse the edit before anything applied instead of the edit
+writing past them (Q829 A): the authority answers 503, which the agent's tool
+retries and then reports as "might have been saved, re-read before further
+editing", so the agent redoes the edit. A file with no
 growth budget left reads as not editable (Epo 2026-10-20): the view read's
 `atSizeLimit` (Go works it out on the current base, with no blob read)
 disables the mode control before any Edit attempt. An edit open whose read
@@ -3012,7 +3031,15 @@ by it alone, with the update's apply to the measured copy limited to
 unrecoverable
 `source-checkpoint-failed` message, so the client resets to the last saved
 version instead of reconnecting and resending. The exact limit at save still
-applies and is final too (a 413 `SourceRequestError`, never retried).
+applies and is final too (a 413 `SourceRequestError`, never retried): the room
+resets with an unrecoverable `source-checkpoint-failed`, then
+`authorization-revoked`. Both size messages carry `reason: "source_state_bytes"`
+(Q827 A), and the tab's recovery banner then says the file reached its size
+limit (`source_edit_recovery_size`, the `refused-size` strip); a fully saved
+tab reloads silently, as before. Source tabs also act on `authorization-revoked`
+naming their room, as on `room-read-only`: a tab with unsaved edits goes to
+recovery (`refuse()`), which covers a reset after a server error (a panic's
+discard sends that message alone).
 
 The browser retains unacknowledged edits in IndexedDB, in the draft store notes
 share (`src/lib/editDrafts.ts`, database `capy-edit-drafts`; the old

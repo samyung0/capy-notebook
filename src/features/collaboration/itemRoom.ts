@@ -77,7 +77,11 @@ import {
   renameClients,
   renameRefusal,
 } from './renameClient';
-import { RoomProvider, type RoomProviderConfig } from './roomProvider';
+import {
+  type HeldStrip,
+  RoomProvider,
+  type RoomProviderConfig,
+} from './roomProvider';
 import { markItemWorking } from './roomRefusals';
 import { itemUndo, limitUndo, type UndoTarget, undoTarget } from './undo';
 
@@ -114,11 +118,11 @@ export interface ItemRecovery {
   doc: Y.Doc;
   /** An early board's edits the room's state hides (made to something
    * another person deleted meanwhile, Q33): the room runs on its document
-   * beside them, and Reload drops them and shows it. */
+   * beside them, and Discard drops them and shows it. */
   merged?: boolean;
   /** Refused for good (otherwise: the room moved on meanwhile). */
   refused: boolean;
-  /** The stored rows Reload deletes. */
+  /** The stored rows Discard deletes. */
   rows: DraftRef[];
 }
 
@@ -136,6 +140,10 @@ export interface ItemRoomSnapshot {
    * 2026-11-19, Q27 b1, Q31): under its document's own client id, kept as
    * drafts, renamed to the room's in place at the join (`rename`, Q38). */
   early: boolean;
+  /** The room dropped a group of this tab's pieces as late: its edits wait
+   * unsynced until its Retry (the `unsynced` strip's, Epo 2026-11-23), a
+   * reconnect or a reload joins again. */
+  held: HeldStrip | null;
   /** Bumped when the readers' lists change (`lists`). */
   listsVersion: number;
   /** An editor's save strip while the room cannot be used: unreachable
@@ -154,7 +162,7 @@ export interface ItemRoomSnapshot {
   /** Why the room is read-only for this writer, when it said (a block
    * this version cannot edit). */
   readOnlyCode: ReadOnlyCode | null;
-  /** Edits that cannot join this room, shown for copying until Reload. */
+  /** Edits that cannot join this room, shown for copying until Discard. */
   recovery: ItemRecovery | null;
   /** Stored steps of never-accepted sessions are in the draft send (Q319),
    * or an early board's edits wait to be renamed (`unloaded`): view-only
@@ -327,6 +335,7 @@ export class ItemRoom {
     delayed: false,
     deleted: false,
     early: false,
+    held: null,
     listsVersion: 0,
     offline: null,
     presence: NO_PRESENCE,
@@ -832,6 +841,8 @@ export class ItemRoom {
         }
         this.refused();
       },
+      onHeld: (held) =>
+        this.set({ held: held && { ...held, discard: this.discardHeld } }),
       onPresence: (presence) => this.set({ presence }),
       onSlowed: (slowed) =>
         slowed ? this.slowed() : this.set({ slowed: false }),
@@ -1549,7 +1560,7 @@ export class ItemRoom {
    * copying (`paintEarly`). No join offers them, so they show here, none left
    * unsaid (review re-check 3 m6): the first group the room cannot take as
    * `restore` shows it, else the rows over the copy, as Yjs merges them,
-   * under the refused toast, until Reload, which asks first. Their late
+   * under the refused toast, until Discard, which asks first. Their late
    * sessions' locks hold until the room goes. */
   private async keepStored() {
     const key = this.draftKey();
@@ -2129,6 +2140,23 @@ export class ItemRoom {
     this.provider.connect();
   }
 
+  /** The `unsynced` strip's Discard (Epo 2026-11-23): the held edits go
+   * from the device, as a read-only turn discards them, and a fresh room
+   * opens on the last saved version. */
+  private readonly discardHeld = () => {
+    if (this.ended || this.destroyed) return;
+    this.ended = true;
+    this.keeper?.stop();
+    this.keeper = null;
+    const discarded = this.recorder?.discard();
+    this.recorder = null;
+    // The early rows a renamed edit stood for go with it.
+    this.leaveRenamed();
+    this.replacedHolds = false;
+    this.dropReplaced();
+    this.end(discarded);
+  };
+
   /** Leaves recovery: the stored edits go and a fresh room opens. */
   async reload() {
     const { deleted, recovery } = this.snapshot;
@@ -2358,6 +2386,7 @@ const INITIAL: ItemRoomSnapshot = {
   delayed: false,
   deleted: false,
   early: false,
+  held: null,
   listsVersion: 0,
   offline: null,
   presence: NO_PRESENCE,
