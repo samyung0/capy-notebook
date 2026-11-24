@@ -182,14 +182,26 @@ func TestLockedOwnerEvictsMembersRoomsInTheirWorkspaces(t *testing.T) {
 				t.Fatal(err)
 			}
 			lockOwner(t, s, owner, state)
-			for _, id := range ids {
-				var discards int
-				if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM collaboration_eviction_outbox
-					WHERE channel='capy:collaboration:evict' AND payload->>'materialId'=$1
-					AND payload->>'mode'='discard'`, id).Scan(&discards); err != nil || discards != 1 {
-					t.Fatalf("discards of %s's room = %d (%v), want 1", id, discards, err)
+			discarded := func(when string) {
+				t.Helper()
+				for _, id := range ids {
+					var discards int
+					if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM collaboration_eviction_outbox
+						WHERE channel='capy:collaboration:evict' AND payload->>'materialId'=$1
+						AND payload->>'mode'='discard'`, id).Scan(&discards); err != nil || discards != 1 {
+						t.Fatalf("%s: discards of %s's room = %d (%v), want 1", when, id, discards, err)
+					}
 				}
 			}
+			discarded("locked")
+			// A second lock change on the locked account queues nothing again:
+			// those rooms closed at the first.
+			again := "suspended"
+			if state == "suspended" {
+				again = "deletion_pending"
+			}
+			lockOwner(t, s, owner, again)
+			discarded("locked again")
 		})
 	}
 }

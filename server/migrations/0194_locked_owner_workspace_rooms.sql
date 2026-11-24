@@ -6,6 +6,10 @@
 -- canvases drawn there. Before this only the materials the owner pays for
 -- (owner_user_id) were evicted, so the rest kept their rooms open, writers
 -- until their next access recheck and readers until they left.
+-- That block (and 0090's source-file loop in it) runs once, when the account
+-- becomes locked: later changes to an already-locked row (deletion requested
+-- after a suspension, a subscription change, the purge's DELETE) find those
+-- rooms closed and queue nothing again. Trashed materials have no room.
 -- The rest is unchanged from 0152.
 CREATE OR REPLACE FUNCTION user_acl_eviction_trigger()
 RETURNS trigger
@@ -61,19 +65,23 @@ BEGIN
     );
   END LOOP;
   -- A deleted, deletion-pending or suspended owner's workspaces are not found
-  -- for everyone else: discard the rooms of what others made in them (the
-  -- owner's own went above) and of their source files, so open viewers
+  -- for everyone else: when the account becomes locked (the trigger fires on
+  -- UPDATE and DELETE only), discard the rooms of what others made in them
+  -- (the owner's own went above) and of their source files, so open viewers
   -- reconnect through the access check.
-  IF TG_OP='DELETE' OR NEW.deleted_at IS NOT NULL
-    OR NEW.deletion_requested_at IS NOT NULL OR NEW.suspended_at IS NOT NULL
+  IF OLD.deleted_at IS NULL AND OLD.deletion_requested_at IS NULL
+    AND OLD.suspended_at IS NULL
+    AND (TG_OP='DELETE' OR NEW.deleted_at IS NOT NULL
+      OR NEW.deletion_requested_at IS NOT NULL OR NEW.suspended_at IS NOT NULL)
   THEN
     FOR material_row IN
       SELECT m.id FROM materials m JOIN workspaces w ON w.id=m.workspace_id
       WHERE w.user_id=target_user_id AND m.owner_user_id<>target_user_id
+        AND m.trashed_at IS NULL
       UNION
       SELECT m.id FROM materials m JOIN workspaces w ON w.id=m.canvas_workspace_id
       WHERE m.kind='canvas' AND w.user_id=target_user_id
-        AND m.owner_user_id<>target_user_id
+        AND m.owner_user_id<>target_user_id AND m.trashed_at IS NULL
     LOOP
       PERFORM enqueue_material_collaboration_eviction(
         material_row.id, 'access-changed', 'discard'
