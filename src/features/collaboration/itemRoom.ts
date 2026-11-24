@@ -618,25 +618,41 @@ export class ItemRoom {
     if (!(board && measured)) return;
     const before = measured.base + measured.since;
     measured.since += update.byteLength;
-    if (transaction.deleteSet.clients.size > 0) this.deletedSince = true;
+    const deletes = transaction.deleteSet.clients.size > 0;
+    if (deletes) this.deletedSince = true;
     // Offline, a board's work stops at the space its cap leaves (Epo
-    // 2026-11-18, client-limits A), once an update takes its size across that
-    // line: a board already past it (at the offline turn or a measure) is
-    // under the removals-only gate, and removals and moves on it never stop
-    // it, since a removals-only backlog always fits. With deletions applied
-    // since the last measure the crossing may be false, so the board is
-    // encoded first, at once: once per crossing, offline, with deletions
-    // waiting, a rare cost (a drag along the line pays it per crossing).
+    // 2026-11-18, client-limits A), so its backlog fits when it is back. An
+    // update that deletes nothing (a stroke, typing in a note, Undo of a
+    // removal, a card) stops it when it leaves the size past that line. One
+    // that deletes (a removal, a move, a replacement) never stops it for the
+    // line: when it takes the size past the cap itself, the board is measured
+    // and stops only if a repeat of that update could take it over the cap.
+    // A move barely grows the board (Yjs merges a key's consecutive
+    // overwrites: 1,000 moves of one element add 35 B), but a selection moved
+    // together adds about 10 B per element per move (1,000 moves of ten add
+    // 100 KB), so a long drag can reach the cap and stops there; it encodes
+    // at most once per (cap - exact size) bytes of updates, not per move.
+    // A size high from deletions since the last measure is encoded first, at
+    // once (offline, at those updates alone: an accepted cost, thrashing only
+    // in a long drag of many elements within a few KB of the cap), so a board
+    // removals freed takes adds until the next such update. A single update
+    // larger than the room left still goes past the line, as one large add
+    // always could.
     const line = board.max - BOARD_OFFLINE_MARGIN;
+    const after = measured.base + measured.since;
     if (
       this.snapshot.offline &&
       !this.boardFull &&
-      before <= line &&
-      measured.base + measured.since > line
+      (deletes ? before <= board.max && after > board.max : after > line)
     ) {
       if (this.deletedSince) this.measure();
       const size = this.size();
-      if (size && size.bytes > line) {
+      if (
+        size &&
+        (deletes
+          ? size.bytes + update.byteLength > board.max
+          : size.bytes > line)
+      ) {
         this.boardFull = true;
         this.showOffline();
       }
@@ -1816,6 +1832,7 @@ export class ItemRoom {
     if (this.stale || this.destroyed) return;
     this.reconnector.slowed();
     if (this.snapshot.offline) this.recorder?.connected();
+    this.boardFull = false;
     this.set({
       offline: null,
       slowed: true,

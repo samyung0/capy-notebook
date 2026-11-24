@@ -6885,16 +6885,25 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       the judge of what removes content: an update whose state with it is no larger than without it (a
       deletion) is always admitted, and a growing one at the cap is refused and kept
       for copying as above. Offline, a board's work stops under the offline-limit
-      strip when an update takes its size across the space its cap leaves (within
-      64 KiB of the cap; Epo 2026-11-18, client-limits A), or at 4 MiB of unsent
-      updates (its cap, not the note's 2 MiB), whichever comes first. Only an
-      upward crossing stops it: a board already past the line (as it goes offline,
-      or after a measure) stays under the removals-only gate, and removals and
-      moves on it never stop its work, since a removals-only backlog always fits;
-      an add that takes a freed board back across stops it. With deletions since
-      the last measure the crossing is encoded first, at once (once per crossing,
-      offline, with deletions waiting: an accepted, rare cost), and stops the work
-      only when the exact size is past the line.
+      strip at the space its cap leaves (within 64 KiB of the cap; Epo
+      2026-11-18, client-limits A), so its backlog fits when it is back, or at 4
+      MiB of unsent updates (its cap, not the note's 2 MiB), whichever comes
+      first. An update that deletes nothing (a stroke, typing in a note, Undo of
+      a removal, a card: the gate checks only some of these) stops it when it
+      leaves the size past the line. One that deletes (a removal, a move, a
+      replacement) never stops it for the line: when it takes the size past the
+      cap itself, the board is measured and stops only if a repeat of that update
+      could take it over the cap (exact size plus the update's bytes). A move of
+      one element barely grows the board (Yjs merges a key's consecutive
+      overwrites: 1,000 moves add 35 B), but a selection moved together adds
+      about 10 B per element per move (1,000 moves of ten add 100 KB), so a long
+      drag can fill a board and stops at its cap; it encodes once per (cap −
+      exact size) bytes of updates, not per move. With deletions since the last
+      measure, either check encodes first, at once (offline, at those updates
+      alone: an accepted cost, thrashing only in a long drag of many elements
+      within a few KB of the cap), so a board removals freed takes adds until one
+      takes it back past the line. A single update larger than the room left
+      still overshoots, as one large add always could.
     - **Opened from the Trash.** A canvas in its maker's Trash opens from the Trash's
       link on its own canvas page (the account's, or its workspace's with
       `view=canvas`): `useCanvasPicker` asks `GET /api/canvases/{id}` for a `c` the

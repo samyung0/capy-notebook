@@ -1156,7 +1156,9 @@ async function boardRoom(max: number, filled = 0) {
   });
   await room.start();
   if (filled) room.doc.getText('t').insert(0, 'x'.repeat(filled));
-  return { provider: providers[0], room };
+  const provider = providers.at(-1);
+  if (!provider) throw new Error('the board room joined nothing');
+  return { provider, room };
 }
 
 /** The board's encodes for its size so far. */
@@ -1283,21 +1285,30 @@ it('checks a full board at once after deletions, its listeners hearing the exact
   room.destroy();
 });
 
+/** A board room of cap `max` holding `filled` bytes of text and one element
+ * at a place, synced and then offline: the element's moves overwrite its
+ * `xywh`, as a drag's do. */
+async function offlineBoard(max: number, filled: number) {
+  vi.stubGlobal('navigator', { onLine: false });
+  const { provider, room } = await boardRoom(max, filled);
+  const block = room.doc.getMap('block');
+  block.set('xywh', '[0,0,10,10]');
+  provider.config.onSynced?.({ state: true });
+  provider.config.onClose?.({ code: 1006, reason: 'socket closed' });
+  return { block, room, text: room.doc.getText('t') };
+}
+
 // Review 3 finding 1, client-limits A: offline, a board already past the
 // space its cap leaves takes only removals (its gate checks first), and
 // removals and moves on it never stop its work, however small their bytes.
 // Once removals freed it (its check measured), an add is taken, and one that
 // takes it back across the line stops its work.
-it('never stops an offline full board for removals, and stops it again for an add across the line', async () => {
-  vi.stubGlobal('navigator', { onLine: false });
+it('never stops an offline full board for removals or moves, and stops it again for an add across the line', async () => {
   const max = 100_000;
-  const { provider, room } = await boardRoom(max, 50_000);
-  provider.config.onSynced?.({ state: true });
-  provider.config.onClose?.({ code: 1006, reason: 'socket closed' });
-  const text = room.doc.getText('t');
+  const { block, room, text } = await offlineBoard(max, 50_000);
   const before = encodes();
   text.delete(0, 1000);
-  room.doc.getMap('block').set('xywh', '[1,0,10,10]');
+  block.set('xywh', '[1,0,10,10]');
   text.delete(0, 39_000);
   expect(room.getSnapshot().offline).toBe('offline');
   expect(encodes()).toBe(before);
@@ -1311,6 +1322,99 @@ it('never stops an offline full board for removals, and stops it again for an ad
   text.insert(0, 'z'.repeat(30_000));
   expect(room.getSnapshot().offline).toBe('offline-limit');
   room.destroy();
+});
+
+// Review 4 finding 1(a): offline, typing, Undo of a removal and a card add
+// bytes no gate checks. On a board past the line the first update that
+// deletes nothing stops its work, with no encode when nothing was deleted
+// since the last measure. Fails if only a crossing of the line stops it.
+it('stops an offline board past the line at its first add', async () => {
+  const { room, text } = await offlineBoard(100_000, 50_000);
+  const before = encodes();
+  text.insert(0, 'y');
+  expect(encodes()).toBe(before);
+  expect(room.getSnapshot().offline).toBe('offline-limit');
+  room.destroy();
+});
+
+// Review 4 finding 1(a): with deletions since the last measure, that add is
+// measured first, and stops the work only while the exact size is past the
+// line; a board removals freed takes adds until one takes it back across.
+it('measures an offline board past the line at an add after deletions, and stops it only while still past', async () => {
+  const max = 100_000;
+  const still = await offlineBoard(max, 50_000);
+  const before = encodes();
+  still.text.delete(0, 1000);
+  still.text.insert(0, 'y');
+  expect(encodes()).toBe(before + 1);
+  expect(still.room.getSnapshot().offline).toBe('offline-limit');
+  still.room.destroy();
+  const freed = await offlineBoard(max, 50_000);
+  const synced = encodes();
+  freed.text.delete(0, 40_000);
+  freed.text.insert(0, 'y'.repeat(5000));
+  expect(encodes()).toBe(synced + 1);
+  expect(freed.room.size()).toEqual({ bytes: exact(freed.room.doc), max });
+  expect(freed.room.getSnapshot().offline).toBe('offline');
+  freed.text.insert(0, 'y'.repeat(1000));
+  expect(encodes()).toBe(synced + 1);
+  expect(freed.room.getSnapshot().offline).toBe('offline');
+  freed.text.insert(0, 'z'.repeat(30_000));
+  expect(freed.room.getSnapshot().offline).toBe('offline-limit');
+  freed.room.destroy();
+});
+
+// Review 4 finding 1(b): offline, an update that deletes (a move, a
+// replacement) never stops the work for the line; once the size counted
+// passes the cap the board is measured, and stops only when a repeat of that
+// update could take it over the cap. A drag past the line encodes once in
+// hundreds of moves and goes on; a paste over a selection that fills the
+// board stops it. Fails if a move stops the work or encodes per move.
+it('measures an offline board only as a move passes the cap, and stops it for a replacement that fills it', async () => {
+  const max = 70_000;
+  const { block, room, text } = await offlineBoard(max, 10_000);
+  expect(room.size()?.bytes).toBeGreaterThan(max - BOARD_OFFLINE_MARGIN);
+  const before = encodes();
+  let moves = 0;
+  while (encodes() === before && moves < 5000)
+    block.set('xywh', `[${++moves},0,10,10]`);
+  expect(encodes()).toBe(before + 1);
+  expect(moves).toBeGreaterThan(500);
+  expect(room.size()).toEqual({ bytes: exact(room.doc), max });
+  expect(room.getSnapshot().offline).toBe('offline');
+  room.doc.transact(() => {
+    text.delete(0, 10);
+    text.insert(0, 'y'.repeat(60_000));
+  });
+  expect(encodes()).toBe(before + 2);
+  expect(room.getSnapshot().offline).toBe('offline-limit');
+  room.destroy();
+});
+
+// Review 4 finding 1(b), the comment's numbers: Yjs merges a key's
+// consecutive overwrites, so a drag of one element barely grows a board,
+// while a selection moved together grows it by about 10 B per element per
+// move (each element's overwrites interleave with the others').
+it('grows a board by a few bytes for a drag of one element, and by its elements for a selection', () => {
+  const doc = new Y.Doc();
+  const elements = Array.from({ length: 10 }, (_, at) => {
+    const element = new Y.Map<string>();
+    doc.getMap('elements').set(`e${at}`, element);
+    element.set('xywh', '[0,0,10,10]');
+    return element;
+  });
+  const size = () => exact(doc) ?? 0;
+  const start = size();
+  for (let at = 0; at < 1000; at++)
+    elements[0].set('xywh', `[${at % 500},${at % 300},10,10]`);
+  const one = size() - start;
+  expect(one).toBeLessThan(64);
+  for (let at = 0; at < 1000; at++)
+    doc.transact(() => {
+      for (const element of elements)
+        element.set('xywh', `[${at % 500},${at % 300},10,10]`);
+    });
+  expect(size() - start - one).toBeGreaterThan(80_000);
 });
 
 // Epo 2026-11-18 (client-limits A), review 2 finding 3: offline, no receipt

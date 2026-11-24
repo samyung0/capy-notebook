@@ -456,16 +456,19 @@ it('measures a board opened from its device copy never, and one without a copy o
     ItemRoom.prototype as unknown as { measure: () => void },
     'measure'
   );
-  const room = await open(id, copy);
-  await synced(room);
-  expect(measure).not.toHaveBeenCalled();
-  expect(room.size()?.bytes).toBeGreaterThanOrEqual(copy.row.size);
-  room.destroy();
-  const fresh = await open(id);
-  await synced(fresh);
-  expect(measure).toHaveBeenCalledOnce();
-  fresh.destroy();
-  measure.mockRestore();
+  try {
+    const room = await open(id, copy);
+    await synced(room);
+    expect(measure).not.toHaveBeenCalled();
+    expect(room.size()?.bytes).toBeGreaterThanOrEqual(copy.row.size);
+    room.destroy();
+    const fresh = await open(id);
+    await synced(fresh);
+    expect(measure).toHaveBeenCalledOnce();
+    fresh.destroy();
+  } finally {
+    measure.mockRestore();
+  }
 });
 
 it('lands an early stroke drawn after an unclean leave, whose id the room kept', async () => {
