@@ -22,6 +22,11 @@ const devModules = http.all(
 
 export const worker = setupWorker(devModules, ...handlers);
 
+/** The MSW benches' own worker script, defined only in their build
+ * (bench/editor/scripts/vite.cap.config.ts): it sends the build's chunks to
+ * the network before MSW's worker sees them. */
+declare const __CAPY_BENCH_MSW_WORKER__: string;
+
 /** For a spec's `worker.use`, from the app's own instance of the module. */
 export { HttpResponse, http } from 'msw';
 
@@ -33,6 +38,10 @@ export async function startMockServer() {
   await worker.start({
     onUnhandledRequest: 'bypass',
     quiet: true,
+    // `typeof` reads an undefined constant safely: no other build defines it.
+    ...(typeof __CAPY_BENCH_MSW_WORKER__ === 'string' && {
+      serviceWorker: { url: __CAPY_BENCH_MSW_WORKER__ },
+    }),
   });
   // No sign-in here to claim the device's store (AuthProvider).
   await claimSourceCache(user.id);

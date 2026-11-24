@@ -14,6 +14,7 @@ import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
 import { en, zhCN } from 'zod/locales';
+import { USE_MSW } from './api/auth';
 import { queryClient } from './api/queryClient';
 import { AppErrorBoundary } from './components/app/AppErrorBoundary';
 import { AppToaster } from './components/app/AppToaster';
@@ -50,16 +51,14 @@ document.documentElement.lang = getLocale();
 // Set here, not in @/i18n, so public pages that use copy load no zod.
 z.config(getLocale() === 'zh' ? zhCN() : en());
 
-// Mocks are on by default; set VITE_USE_MSW=false to hit the real Go gateway
-// (Vite proxies /api → http://localhost:8080).
-const USE_MOCKS =
-  import.meta.env.VITE_USE_MSW !== 'false' &&
-  import.meta.env.MODE === 'development';
-const MockScenarioPanel = USE_MOCKS
+// Mocks are on in development by default; set VITE_USE_MSW=false to hit the
+// real Go gateway (Vite proxies /api → http://localhost:8080). A production
+// build runs them only for the MSW benches (USE_MSW).
+const MockScenarioPanel = USE_MSW
   ? lazy(() => import('./components/dev/MockScenarioPanel'))
   : null;
 async function enableMocks() {
-  if (!USE_MOCKS) return;
+  if (!USE_MSW) return;
   const { startMockServer } = await import('./mocks/browser');
   const { registerMockCollaborationProvider } = await import(
     './mocks/collaboration'

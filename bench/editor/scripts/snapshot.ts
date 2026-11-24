@@ -3,6 +3,11 @@ import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 export type PerfSnapshot = {
+  /**
+   * What was measured (`buildLabel`). Absent on the dev server's snapshots
+   * from before 2026-11-24, which compare as another build.
+   */
+  build?: string;
   commit: string;
   createdAt: string;
   cpuModel: string;
@@ -55,9 +60,23 @@ export const RELATIVE_METRICS: RelativeMetric[] = [
   },
 ];
 
-type SnapshotMetadata = Omit<PerfSnapshot, 'cases' | 'createdAt'> & {
+type SnapshotMetadata = Omit<PerfSnapshot, 'build' | 'cases' | 'createdAt'> & {
   createdAt?: string;
 };
+
+/** The run's `buildLabel`, which `reportMetrics` writes beside the cases. */
+export const BUILD_FILE = 'build.txt';
+
+/**
+ * What a run measured, from the knobs playwright.perf.config.ts reads (its
+ * `metadata.build`), so only like runs compare: the production build it makes,
+ * the same build left unminified for profiles, or a preview someone else
+ * built.
+ */
+export function buildLabel({ PERF_BASE_URL, PERF_PROFILE }: NodeJS.ProcessEnv) {
+  if (PERF_BASE_URL) return 'external';
+  return PERF_PROFILE ? 'production-unminified' : 'production';
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -66,6 +85,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function parsePerfSnapshot(value: unknown): PerfSnapshot | null {
   if (
     !isRecord(value) ||
+    !(value.build === undefined || typeof value.build === 'string') ||
     typeof value.commit !== 'string' ||
     typeof value.createdAt !== 'string' ||
     typeof value.cpuModel !== 'string' ||
@@ -78,6 +98,7 @@ export function parsePerfSnapshot(value: unknown): PerfSnapshot | null {
   }
 
   return {
+    ...(typeof value.build === 'string' && { build: value.build }),
     cases: value.cases,
     chromium: value.chromium,
     commit: value.commit,
@@ -95,25 +116,25 @@ export async function assembleSnapshot({
   createdAt = new Date().toISOString(),
   snapshotDir,
 }: SnapshotMetadata & { snapshotDir: string }): Promise<PerfSnapshot> {
+  const buildFile = path.join(snapshotDir, BUILD_FILE);
+  if (!existsSync(buildFile))
+    throw new Error(
+      `${buildFile} is missing: the run writes what it measured there (reportMetrics)`
+    );
+  const build = (await readFile(buildFile, 'utf8')).trim();
   const cases: Record<string, unknown> = {};
-
-  if (existsSync(snapshotDir)) {
-    const entries = (await readdir(snapshotDir, { withFileTypes: true }))
-      .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
-      .sort((left, right) => left.name.localeCompare(right.name));
-
-    for (const entry of entries) {
-      const caseName = entry.name.slice(0, -'.json'.length);
-      const contents = await readFile(
-        path.join(snapshotDir, entry.name),
-        'utf8'
-      );
-      const payload: unknown = JSON.parse(contents);
-      cases[caseName] = payload;
-    }
+  const entries = (await readdir(snapshotDir, { withFileTypes: true }))
+    .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
+    .sort((left, right) => left.name.localeCompare(right.name));
+  for (const entry of entries) {
+    const caseName = entry.name.slice(0, -'.json'.length);
+    const contents = await readFile(path.join(snapshotDir, entry.name), 'utf8');
+    const payload: unknown = JSON.parse(contents);
+    cases[caseName] = payload;
   }
 
   return {
+    build,
     cases,
     chromium,
     commit,
@@ -170,15 +191,20 @@ function median(values: number[]): number | null {
 }
 
 /**
- * Compare the current snapshot with every retained green snapshot. The median
- * of the newest `MEDIAN_WINDOW` answers "are we drifting"; the best value over
- * all of them is a floor that cannot creep upward one checkpoint at a time.
+ * Compare the current snapshot with every retained green snapshot of the same
+ * build. The median of the newest `MEDIAN_WINDOW` answers "are we drifting";
+ * the best value over all of them is a floor that cannot creep upward one
+ * checkpoint at a time.
  */
 export function compareSnapshots(
   current: PerfSnapshot,
   baselines: PerfSnapshot[]
 ): { markdown: string; rows: ComparisonRow[] } {
-  const newestFirst = [...baselines].sort((a, b) =>
+  const sameBuild = baselines.filter(
+    (snapshot) => snapshot.build === current.build
+  );
+  const otherBuilds = baselines.length - sameBuild.length;
+  const newestFirst = sameBuild.sort((a, b) =>
     b.createdAt.localeCompare(a.createdAt)
   );
   const window = newestFirst.slice(0, MEDIAN_WINDOW);
@@ -206,9 +232,16 @@ export function compareSnapshots(
   const lines = [
     '## Editor perf comparison',
     '',
-    `Current snapshot: \`${current.commit}\` on \`${current.cpuModel}\`, CPU x${current.cpuRate}, ${current.chromium}.`,
+    `Current snapshot: \`${current.commit}\`, ${current.build} build, on \`${current.cpuModel}\`, CPU x${current.cpuRate}, ${current.chromium}.`,
     '',
   ];
+
+  if (otherBuilds) {
+    lines.push(
+      `${otherBuilds} snapshot(s) of another build, or of the dev server (no build recorded), left out: only ${current.build} builds compare.`,
+      ''
+    );
+  }
 
   if (newestFirst.length) {
     const oldest = newestFirst.at(-1)!;
@@ -227,7 +260,7 @@ export function compareSnapshots(
     }
   } else {
     lines.push(
-      '> First run: no successful Editor perf snapshot artifact is available yet.',
+      `> First run: no successful Editor perf snapshot of a ${current.build} build is available yet.`,
       ''
     );
   }

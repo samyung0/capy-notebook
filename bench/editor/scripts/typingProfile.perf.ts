@@ -19,6 +19,8 @@ import { CPU_RATE } from './metrics';
  *
  * Opt-in, because it asserts nothing:
  *   $env:PERF_PROFILE=1; pnpm bench:editor --grep "typing profile"
+ * PERF_PROFILE also leaves the production build unminified, so the profile
+ * names the functions (playwright.perf.config.ts).
  */
 
 /** Plain words only, matching `TYPING_TEXT` in editor.perf.ts, but short: the
@@ -169,7 +171,7 @@ test(`typing profile — near-limit document (cpu x${CPU_RATE})`, async ({
   const keystrokes = PROBE_TEXT.length + 1;
   const report = [
     `document: ${document.slateNodes} rendered slate nodes, ${document.topLevelBlocks} top-level blocks, ${document.headings} headings`,
-    `cpu x${CPU_RATE}, vite dev build, ${keystrokes} keystrokes per typing phase`,
+    `cpu x${CPU_RATE}, production build, unminified, ${keystrokes} keystrokes per typing phase`,
     '',
     profileSection('PHASE 1 — idle (no input)', idleProfile.profile, idleDom, {
       watch: WATCH,

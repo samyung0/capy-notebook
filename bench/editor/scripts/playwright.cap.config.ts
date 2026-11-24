@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
@@ -7,9 +8,9 @@ import '../../../e2e/i18n/compile';
  * How long a canvas at its size cap takes to open. Run by hand with:
  * node_modules/.bin/playwright test --config=bench/editor/scripts/playwright.cap.config.ts
  *
- * A production build (minified, React production mode) with MSW, as the Office
- * harness builds one: the Canvas page opens its board through the mock
- * collaboration room. The board's own route (/dev/drawing) is kept too
+ * The editor bench's production build with MSW (vite.cap.config.ts,
+ * VITE_BENCH_MSW; Vite's development mode before 2026-11-24): the Canvas page
+ * opens its board through the mock collaboration room. The board's own route (/dev/drawing) is kept too
  * (VITE_BENCH_ROUTES), for the same state opened with no room. No workflow
  * runs this; the build takes about eight minutes on an M1 under load.
  *
@@ -25,6 +26,9 @@ const port = Number(process.env.PERF_CAP_PORT ?? 4524);
 const running = process.env.PERF_CAP_BASE_URL;
 const outDir = path.join(perfDir, '..', '.results', 'cap-dist');
 const viteConfig = path.join(perfDir, 'vite.cap.config.ts');
+// The build's env directory (CAPY_ENV_DIR in vite.config.ts): none of deploy/.env.
+const envDir = path.join(perfDir, '..', '.results', 'empty-env');
+mkdirSync(envDir, { recursive: true });
 
 export default defineConfig({
   fullyParallel: false,
@@ -46,18 +50,18 @@ export default defineConfig({
   webServer: running
     ? undefined
     : {
-        // MSW needs the development mode; NODE_ENV=production keeps React and
-        // the bundle production. The heap flag is the one `pnpm build` uses.
-        // vite.cap.config.ts is the app's config for a checkout whose Office
-        // engines are not built.
-        command: `node --max-old-space-size=8192 node_modules/vite/bin/vite.js build --config ${viteConfig} --mode development --outDir ${outDir} --emptyOutDir && node node_modules/vite/bin/vite.js preview --config ${viteConfig} --mode development --outDir ${outDir} --host 127.0.0.1 --port ${port} --strictPort`,
+        // The production build with MSW the editor bench makes
+        // (playwright.perf.config.ts). The heap flag is the one `pnpm build`
+        // uses.
+        command: `node --max-old-space-size=8192 node_modules/vite/bin/vite.js build --config ${viteConfig} --outDir ${outDir} --emptyOutDir && node node_modules/vite/bin/vite.js preview --config ${viteConfig} --outDir ${outDir} --host 127.0.0.1 --port ${port} --strictPort`,
         cwd: root,
         env: {
           ...process.env,
+          CAPY_ENV_DIR: envDir,
           NODE_ENV: 'production',
+          VITE_BENCH_MSW: 'true',
           VITE_BENCH_ROUTES: 'true',
           VITE_CLERK_PUBLISHABLE_KEY: '',
-          VITE_USE_MSW: 'true',
         },
         reuseExistingServer: false,
         timeout: 1_200_000,

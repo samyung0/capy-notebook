@@ -6,8 +6,8 @@ import '../i18n/compile';
 /**
  * Editor feature matrix. Run with: pnpm e2e:msw:editor
  *
- * Like the perf harness (and unlike the functional sharing suite) this runs
- * against the Vite dev server with MSW mocks — no Docker stack. Everything the
+ * Unlike the functional sharing suite, this runs against the Vite dev server
+ * with MSW mocks — no Docker stack. Everything the
  * matrix asserts (block selection, context menu, drag handles, mentions,
  * collaboration, formatting) is client-side Plate behavior; MSW supplies
  * deterministic materials/members/discussions endpoints.

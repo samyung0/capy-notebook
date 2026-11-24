@@ -7,8 +7,9 @@ tags: [frontend, testing, playwright, performance, github-actions]
 
 # Editor performance checkpoints
 
-`pnpm bench:editor` measures the Plate editor against a Vite **dev** build and MSW. It
-is a regression tripwire, not a production SLO. Absolute `BUDGET` ceilings in
+`pnpm bench:editor` measures the Plate editor on a **production** build (Vite's
+production mode, production React, minified) with MSW in the page for the backend.
+It is a regression tripwire, not a production SLO. Absolute `BUDGET` ceilings in
 [`bench/editor/scripts/editor.perf.ts`](../bench/editor/scripts/editor.perf.ts) are the only hard fail
 and they gate production promotion. GitHub Actions adds a delta table on top
 so a human can see drift against recent and best green runs.
@@ -23,16 +24,87 @@ and why a save cycle must not re-render the tree live in
 pnpm bench:editor
 ```
 
+The harness ([`playwright.perf.config.ts`](../bench/editor/scripts/playwright.perf.config.ts))
+runs `vite build` in production mode, as UAT's `pnpm build` does, with
+`NODE_ENV=production` and the benches' switch `VITE_BENCH_MSW=true`, which turns on
+MSW, the mock collaboration provider, mock auth and the mock scenario panel in a
+production build (Epo 2026-11-24, "Yes, production mode"). Every deploy pins the
+switch off (`scripts/env/config.py`, checked in `scripts/env/test_config.py`), and
+`vite.config.ts` refuses to build with it when `VITE_APP_ENV` names a deploy (`uat`
+or `production`, which `config.py` sets on every deploy build). It also refuses it
+outside production mode or beside `VITE_USE_MSW=false`, so the switch never silently
+overrides another choice, and beside `SENTRY_AUTH_TOKEN`, `VITE_SENTRY_DSN` or
+`VITE_POSTHOG_KEY` (from a developer's shell, say): a bench build uploads no source
+maps and reports to no one. The build reads an empty env directory (`CAPY_ENV_DIR`),
+so a developer's `deploy/.env` stays out. It builds through
+[`vite.cap.config.ts`](../bench/editor/scripts/vite.cap.config.ts), shared with the
+canvas-at-cap harness, which adds two things to the app's config:
+
+- a service worker of its own, `bench-msw.js`, generated into the build's output (never
+  in `public/`, so no deploy ships it), which loads MSW's worker for everything but the
+  build's chunks. MSW's worker answers each request it handles by asking the page's
+  main thread, so chunk loads through it waited on a busy page (the dev bench paid the
+  same). Its install step adds a static route (`addRoutes`, the service worker static
+  routing API) sending `/assets/*` on its own origin to the network, so those requests
+  never reach a worker, as on UAT; where that API is missing, its fetch listener stops
+  them, same origin only, before MSW's listener runs, and the browser fetches them
+  itself. `startMockServer` registers it only when the build defines
+  `__CAPY_BENCH_MSW_WORKER__`;
+- in a checkout whose BetterOffice engines are not built (`pnpm office:prepare`), each
+  missing engine file becomes an empty module, with a warning naming it. In CI
+  (`CI` set) a missing one fails the build and no export is shimmed: with the engines
+  built nothing is missing, and a gap would mean measuring a build UAT's would fail
+  on.
+
+The build goes to `bench/editor/.results/editor-dist` and `vite preview` serves it on
+port 4517 (`PERF_PORT`); the build takes about two minutes in CI. `PERF_BASE_URL`
+points the specs at such a preview that is already running and builds nothing.
+`/api` keeps the dev server's mock latency (1.0 to 1.22 s a call,
+`src/mocks/handlers.ts`).
+
+What still differs from UAT's build (`deploy-environment.yml` runs `config.py build`,
+which runs `pnpm build` in production mode with `VITE_USE_MSW=false`):
+
+- the mocks run in the page: MSW, the mock collaboration room (it pulls yjs and
+  slate-yjs into boot) and the mock scenario panel start before the first render
+  (`src/main.tsx`), and the mock modules are in the build;
+- mock auth stands in for Clerk, and there is no Sentry or PostHog;
+- a service worker handles the API calls (MSW's), not the chunks.
+
 Four budget specs always run. Two V8 profile specs run only with
-`PERF_PROFILE=1`. Default CPU throttle is `PERF_CPU=4` via CDP after load. Open
+`PERF_PROFILE=1`, which also leaves the build unminified so the profiles name
+functions (React stays in production mode); the budget numbers of such a run are
+not comparable. Default CPU throttle is `PERF_CPU=4` via CDP after load. Open
 cost is measured unthrottled because that path is already tens of seconds.
 
-The dev server's module requests pass through MSW ahead of its handlers
-(`devModules` in `src/mocks/browser.ts`, Q617). On a busy PC on 2026-11-06 (three
-alternating runs, medians) that took the read-only open from 6.2 s to 3.9 s, the
-interactive open from 19.4 s to 15.0 s and the scroll from 11 to 24 FPS. `/api` keeps
-its mock latency. The budgets did not change (Q560), so they are looser in effect,
-and earlier numbers aren't comparable.
+Until 2026-11-24 the harness measured the Vite dev server (Epo, "Yes, move it",
+in place of Q560's "budgets unchanged", then "Yes, production mode" for the
+build's Vite mode): unminified modules, React's development mode and
+StrictMode's double render inflated every figure, and a production promotion
+was gated on numbers no user sees. The budgets set on the dev build
+stay until they are recalibrated from CI ([Recalibrating on the production
+build](#recalibrating-on-the-production-build)), so they are looser in effect,
+and earlier numbers are not comparable. One run of each on the Mac on 0ec9f8134
+(2026-11-24): the dev server, a production build in Vite's development mode, and
+this build (production mode, the benches' worker):
+
+| Case | Dev | Development mode | Production mode |
+| --- | ---: | ---: | ---: |
+| Interactive open (ms) | 8,624 | 5,375 | 5,212 |
+| Read-only open (ms) | 2,834 | 2,642 | 1,721 |
+| Near-limit typing p95 (ms) | 80 | 40 | 72 |
+| Near-limit blocking per keystroke (ms) | 16.3 | 0 | 1.4 |
+| Save cycle blocking (ms) | 186 | 22 | 63 |
+| Small-document typing p95 (ms) | 32 | 24 | 16 |
+| Scroll (FPS) | 42.6 | 50.6 | 53.1 |
+| Scroll longest frame (ms) | 134 | 83 | 83 |
+
+Three more near-limit typing runs on the last build, at a load of 5 to 10 from
+other sessions, spread 48 to 104 ms (p95) and 42 to 126 ms (save cycle), so
+single Mac runs don't tell those builds apart. On that build, chunks past MSW
+(the benches' worker) against through MSW's worker, alternating, three each:
+interactive open 4,917 to 6,113 ms (median 5,472) against 5,505 to 7,241
+(6,002), read-only 2,197 to 2,583 (2,363) against 1,753 to 2,739 (2,197).
 
 Numbers from a Windows laptop are not comparable to Linux CI. Different OS,
 different Chromium raster path, different CPU. Keep local runs for debugging
@@ -81,7 +153,9 @@ them too, 196 ms in dev, 23 once it answered as the service does
 
 [`bench/editor/scripts/runtime.office.ts`](../bench/editor/scripts/runtime.office.ts)
 runs against a production build ([`playwright.office.config.ts`](../bench/editor/scripts/playwright.office.config.ts)
-builds with `NODE_ENV=production`, MSW and `VITE_LOAD_TEST_SEED`, then serves it
+builds in Vite's production mode with `NODE_ENV=production`, the benches' switch
+`VITE_BENCH_MSW` (Vite's development mode before 2026-11-24), an empty env directory
+and `VITE_LOAD_TEST_SEED`, then serves it
 with the runtime on the next port of `localhost`: another origin on the same
 site, as `office.capynotebook.com` is to the app, so the iframe is cross-origin
 and shares the app's renderer process as in production). The build takes a few
@@ -515,7 +589,8 @@ board adds.
 A canvas at its size cap is measured apart, by hand, by
 [`board-open.cap.ts`](../bench/editor/scripts/board-open.cap.ts)
 (`node_modules/.bin/playwright test --config=bench/editor/scripts/playwright.cap.config.ts`,
-report only, in no workflow): a production build with MSW opens a blank canvas
+report only, in no workflow): a production build with MSW (`bench:editor`'s,
+production mode since 2026-11-24, Vite's development mode in the figures below) opens a blank canvas
 and boards of about 2 MiB and 4 MiB (`CANVAS_BOARD_MAX`) of the growth bench's
 mixed hour through the mock collaboration room, and the same states with no
 room on `/dev/drawing`. On the Mac at 28a77f5f0 (2026-11-18, medians of 3),
@@ -749,29 +824,38 @@ artifact.
 Steps of the `perf` job:
 
 0. Check out the BetterOffice submodule and run `pnpm office:prepare` (with
-   the BetterOffice WASM cache), as `ci.yml`'s `e2e_editor` does: the app
-   imports the fork, and without it Vite's dependency scan fails before any
-   budget runs.
-1. Run `pnpm bench:editor` with `PERF_SNAPSHOT_DIR` set. `reportMetrics` writes one JSON
-   file per budget case.
+   the BetterOffice WASM cache), as the `canvas` job does: the production
+   build imports the fork's WASM and stylesheet, and in CI a missing one fails
+   the build rather than being stubbed.
+1. Run `pnpm bench:editor` with `PERF_SNAPSHOT_DIR` set. It builds the app first,
+   inside the step (about two minutes; the job took about 4.5 minutes on the dev
+   server, timeout 40), then `reportMetrics` writes one JSON file per budget
+   case. The build in `.results/editor-dist` is a folder, which assembling skips.
 2. [`bench/editor/scripts/compare-cli.ts`](../bench/editor/scripts/compare-cli.ts) assembles a
-   `PerfSnapshot` (commit, CPU model, Playwright version, `PERF_CPU`, cases).
-   `PERF_COMMIT` carries the measured revision because `GITHUB_SHA` is the
-   caller's SHA under `workflow_call`.
+   `PerfSnapshot` (build, commit, CPU model, Playwright version, `PERF_CPU`,
+   cases). The build (`buildLabel`) is `production`, `production-unminified`
+   for a `PERF_PROFILE` run and `external` for a `PERF_BASE_URL` run: the
+   config records it as `metadata.build`, `reportMetrics` writes it to
+   `build.txt` beside the cases, and assembling fails without that file. `PERF_COMMIT` carries
+   the measured revision because `GITHUB_SHA` is the caller's SHA under
+   `workflow_call`.
 3. Download `perf-snapshot` from the last 10 successful runs of `perf.yml` and
    of `promote-production.yml` (promotions call this workflow, so their green
    runs count). Expired or missing artifacts are skipped.
-4. [`bench/editor/scripts/snapshot.ts`](../bench/editor/scripts/snapshot.ts) sorts them by creation
+4. [`bench/editor/scripts/snapshot.ts`](../bench/editor/scripts/snapshot.ts) keeps the
+   snapshots of the current one's build, sorts them by creation
    time and writes two columns: vs the **median of the newest 5** ("are we
    drifting") and vs the **best over all retained** (a floor that cannot creep
-   upward one checkpoint at a time). Artifacts expire at 90 days, which bounds
-   the lookback.
+   upward one checkpoint at a time). A snapshot of another build, or one with
+   no build (the dev server's, before 2026-11-24), is left out and counted in
+   the summary, so the first production runs read as first runs, not as large
+   deltas. Artifacts expire at 90 days, which bounds the lookback.
 5. Write the table to the job summary. Relative deltas never fail the job.
 6. Upload `perf-snapshot.json` (90 days). Assemble and upload run even when
    budgets fail; the job then fails on the budget result.
 
-First dispatch has nothing to diff. That is expected. After that, GHA-vs-GHA
-only. Do not check in a laptop JSON.
+First dispatch has nothing to diff, and neither has the first production run.
+That is expected. After that, GHA-vs-GHA only. Do not check in a laptop JSON.
 
 You can dispatch from any branch. Baselines are not automatically `main`.
 `share_pages` is the exception: its `uat` environment admits only `main`, so
@@ -796,11 +880,46 @@ CPU throttle is a multiplier of the host, so it does not cancel that spread.
 
 ## Why this stays warn-only
 
-Absolute ceilings are the gate. They were set on 2026-09-03 to about 1.3x the
-median of three GHA runs on the same SHA. A human lowers a ceiling when a real
-improvement lands; nothing raises one automatically. Recalibrate the same way:
-dispatch the workflow three times, download the `perf-snapshot` artifacts,
-take the median per metric.
+Absolute ceilings are the gate. They were set on 2026-09-03, on the dev build,
+to about 1.3x the median of three GHA runs on the same SHA, and are kept on the
+production build until recalibrated (below). A human lowers a ceiling when a
+real improvement lands; nothing raises one automatically.
+
+### Recalibrating on the production build
+
+Pending since the move (2026-11-24). The steps are also in the `BUDGET` comment
+of [`editor.perf.ts`](../bench/editor/scripts/editor.perf.ts):
+
+1. The Windows Editor dispatches the Performance workflow three times on one
+   commit, with only the editor suite (`office`, `canvas`, `stress` and
+   `share_pages` unticked). The Mac never dispatches it.
+2. Download each run's `perf-snapshot` artifact (`build: "production"`). It
+   holds the cases and the runner (`cpuModel`). Check the runs against each
+   other first; a run far off the other two is left out and another
+   dispatched.
+3. The opens are taken on the slowest CPU model in the runs (AMD EPYC 7763 so
+   far), as `bench:canvas`'s open was (Epo's "Yes, slower runner"): opens
+   differ 40 to 60% across the pool, and the dev build's read-only open budget
+   (4,050) was already missed on that runner (4,230). `large.interactiveOpenMs`
+   and `large.readOnlyOpenMs` are 1.3x the median of that runner's runs once
+   three exist, and 1.3x its one run until then (with two, the slower), from
+   `open-large-document`'s `interactive.openMs` and `readOnly.openMs`. Later
+   dispatches that draw it replace the figure with the median once there are
+   three.
+4. The inputs are 1.3x the median of all three runs, whatever runner:
+   `typing-large-document`'s `typing.p95SlowKeyEventMs`,
+   `typing.blockingPerKeystrokeMs` and `saveCycle.loafTotalBlockingMs`, and
+   `scroll-large-document`'s `longestFrameMs`. The `avgFps` budget is its
+   median divided by 1.3 (higher is better). `typing-small-document`'s
+   `p95SlowKeyEventMs` takes 1.5x (event durations come in 8 ms steps), and its
+   `blockingPerKeystrokeMs` keeps the 10 ms floor while 1.3x its median is
+   under it.
+5. Round as `bench:canvas`'s `budgetOf` does: up to 5 ms below a second and
+   50 ms above; FPS down to a whole frame.
+6. Replace each `BUDGET` number with its budget and a comment naming the three
+   runs (ids, runner, values) and the median, as `MEDIANS` in
+   [`board.canvas.ts`](../bench/editor/scripts/board.canvas.ts) does, and rewrite
+   the numbers in this section.
 
 Typing is gated on the p95 key event and on blocking per keystroke (large: 395
 and 275 ms, 1.3x the medians 304 and 209; small: 84 ms, 1.5x the median 56,
@@ -814,7 +933,7 @@ SHA it spread 80 to 128 ms (small) and 336 to 528 ms (large) across six runs.
 
 The near-limit read-only open was rebaselined on 2026-10-04 to 4,050 ms (1.3x
 the median 3,118 of six runs on 37fa7e53; it was 1,952 on 2026-09-03). The
-read-only render itself did not change (click to text 65 to 90 ms). The time is
+read-only render itself did not change (click to text 65 to 90 ms). The time was
 the workspace page's startup in the dev build, see the open item below.
 
 Standard GitHub-hosted runners are a mixed CPU pool. Independent PassMark
@@ -825,8 +944,9 @@ human-read delta, not a gate.
 
 Other caveats that already apply to the absolute budgets:
 
-- Dev-build inflation (unminified, React StrictMode). Deltas are not
-  user-facing SLOs.
+- The build is UAT's, but the network is MSW in the page with a fixed
+  latency, and the throttled CPU is a multiple of a shared runner. Deltas are
+  not user-facing SLOs.
 - MSW save-cycle work runs on the main thread. A real collab server does that
   work elsewhere. The mock keeps it to the projection write: a checkpoint
   appends the room's updates since the last one rather than re-encoding the
