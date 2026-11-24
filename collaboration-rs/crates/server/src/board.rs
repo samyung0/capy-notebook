@@ -22,9 +22,12 @@
 //!   ([Board::join]).
 
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
+use sha2::{Digest, Sha256};
 use yrs::block::{ClientID, Item, ItemContent, UpdateParent};
+use yrs::branch::BranchID;
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
 use yrs::{Any, Doc, ID, IdSet, Map, Out, ReadTxn, StateVector, Transact, Update, UpdateBlock};
@@ -190,7 +193,9 @@ pub struct Fold(u64);
 
 /// A base's indexes, which a load takes instead of decoding the base (T5
 /// stores them with it): its state vector, its whole delete set and its
-/// items' [Origins].
+/// items' [Origins]. A load takes the rows stored past the base into them
+/// too, their origins and keys included: the base's alone would pass an
+/// update the rows make unsafe.
 #[derive(Clone, Debug, Default)]
 pub struct Indexes {
     pub sv: StateVector,
@@ -199,19 +204,40 @@ pub struct Indexes {
 }
 
 impl Indexes {
-    /// A fold's indexes, read from the document it encodes the base from.
+    /// A fold's indexes, read from the document it encodes the base from:
+    /// each sequence's first item as the document holds it.
     pub fn of_doc<T: ReadTxn>(txn: &T) -> Indexes {
         let snapshot = txn.snapshot();
         let store = txn.store();
-        let mut taken = Taken::default();
+        let (mut origins, mut taken) = (Origins::default(), Taken::default());
         for (client, end) in snapshot.state_map.iter() {
             for (_, item) in store.blocks_in(client, 0..*end) {
-                if let Some(item) = item {
-                    taken.add(&item);
+                let Some(item) = item else {
+                    continue;
+                };
+                taken.add(&item);
+                // Every key or sequence holding items holds one with no
+                // origin: its first. A collected one's parent is deleted,
+                // where an insert costs nothing.
+                if item.origin().is_some() {
+                    continue;
+                }
+                let Some(parent) = item.parent_branch() else {
+                    continue;
+                };
+                let place = match parent.id() {
+                    BranchID::Nested(id) => place(Parent::Nested(id), item.parent_sub()),
+                    BranchID::Root(name) => place(Parent::Root(&name), item.parent_sub()),
+                };
+                origins.keys.insert(place);
+                if item.parent_sub().is_none() {
+                    origins.heads.insert(*item.id(), place);
+                    if item.left().is_none() {
+                        origins.firsts.insert(place, *item.id());
+                    }
                 }
             }
         }
-        let mut origins = Origins::default();
         origins.take(taken);
         Indexes {
             sv: snapshot.state_map,
@@ -221,21 +247,30 @@ impl Indexes {
     }
 }
 
-/// The held units the one-held-side rule reads ([Board::placed]), compressed
-/// per run as the delete-set index is. T5 stores them with the base's other
-/// indexes; the room's take each appended update's items.
+/// What the one-held-side rule reads of the held items ([Board::placed]).
+/// T5 stores them with the base's other indexes; the room's take each
+/// appended update's items.
 #[derive(Clone, Debug, Default)]
 pub struct Origins {
     /// Units a held item names as its origin, except an item's own client's
-    /// previous unit: something was placed right after them.
+    /// previous unit: something was placed right after them. Compressed per
+    /// run, as the delete-set index is.
     pub named: IdSet,
     /// Units whose client's next unit names them as its origin: a run goes
     /// on past them.
     pub continued: IdSet,
-    /// First units of held items with no origin that no held item with no
-    /// origin names as its right origin: the first item of a sequence or of
-    /// a map key's values.
-    pub starts: IdSet,
+    /// The places ([place]) holding at least one item: every map key set,
+    /// every sequence written. One hash each (8 bytes, about 10 to 20 in the
+    /// set).
+    pub keys: HashSet<u64>,
+    /// Each held sequence item with no origin, by its first unit, and its
+    /// sequence's place.
+    pub heads: HashMap<ID, u64>,
+    /// Each sequence's first item while the room knows it. An item with no
+    /// origin appended to the sequence without naming its first (two tabs
+    /// typing at its start at once, or crafted) may land before it, and the
+    /// sequence has none until a load takes a later fold's indexes.
+    pub firsts: HashMap<u64, ID>,
 }
 
 impl Origins {
@@ -243,13 +278,40 @@ impl Origins {
         let Taken {
             named,
             continued,
-            heads,
-            fronted,
+            unanchored,
         } = taken;
         self.named.merge_with(units(named));
         self.continued.merge_with(continued);
-        self.starts.merge_with(heads);
-        self.starts.diff_with(&units(fronted));
+        for (id, anchor) in unanchored {
+            let (place, first) = match anchor {
+                Anchor::At { place, sequence } => {
+                    let empty = self.keys.insert(place);
+                    if !sequence {
+                        continue;
+                    }
+                    (place, empty)
+                }
+                Anchor::Before(right) => match self.heads.get(&right) {
+                    Some(&place) => (place, self.firsts.get(&place) == Some(&right)),
+                    // No sequence the room knows (a map key's value, an item
+                    // with an origin): never from an editor.
+                    None => {
+                        self.firsts.clear();
+                        continue;
+                    }
+                },
+                Anchor::Unknown => {
+                    self.firsts.clear();
+                    continue;
+                }
+            };
+            self.heads.insert(id, place);
+            if first {
+                self.firsts.insert(place, id);
+            } else {
+                self.firsts.remove(&place);
+            }
+        }
     }
 }
 
@@ -258,10 +320,19 @@ impl Origins {
 struct Taken {
     named: Vec<ID>,
     continued: IdSet,
-    /// First units of the items with no origin.
-    heads: IdSet,
-    /// The right origins of the items with no origin.
-    fronted: Vec<ID>,
+    /// An appended update's items with no origin, in its order, and where
+    /// each was put.
+    unanchored: Vec<(ID, Anchor)>,
+}
+
+/// Where an item with no origin was put.
+enum Anchor {
+    /// With no right origin: the key or sequence its parent names.
+    At { place: u64, sequence: bool },
+    /// Before its right origin.
+    Before(ID),
+    /// Nowhere it names (never from yrs's decoder).
+    Unknown,
 }
 
 impl Taken {
@@ -277,10 +348,7 @@ impl Taken {
                 return;
             }
             Some(origin) => self.named.push(*origin),
-            None => {
-                self.heads.insert(id, 1);
-                self.fronted.extend(item.right_origin().copied());
-            }
+            None => {}
         }
         if item.len() > 1 {
             self.continued.insert(id, item.len() - 1);
@@ -296,6 +364,77 @@ fn units(mut ids: Vec<ID>) -> IdSet {
         set.insert(id, 1);
     }
     set
+}
+
+/// A parent type: a nested type's item, or a root by name.
+enum Parent<'a> {
+    Nested(ID),
+    Root(&'a str),
+}
+
+/// A map key, or a sequence (no key), of a parent type, as 64 bits of
+/// SHA-256 over both, each part tagged and the root's name length-prefixed:
+/// stable across processes and releases, since T5 stores it. Two places
+/// sharing a hash only flag an update ([Board::placed] takes a held hash as
+/// a place holding items), never pass one.
+fn place(parent: Parent, key: Option<&Arc<str>>) -> u64 {
+    let mut hash = Sha256::new();
+    match parent {
+        Parent::Nested(id) => {
+            hash.update([0]);
+            hash.update(id.client.get().to_le_bytes());
+            hash.update(id.clock.to_le_bytes());
+        }
+        Parent::Root(name) => {
+            hash.update([1]);
+            hash.update((name.len() as u64).to_le_bytes());
+            hash.update(name.as_bytes());
+        }
+    }
+    if let Some(key) = key {
+        hash.update([1]);
+        hash.update(key.as_bytes());
+    } else {
+        hash.update([0]);
+    }
+    let mut first = [0; 8];
+    first.copy_from_slice(&hash.finalize()[..8]);
+    u64::from_le_bytes(first)
+}
+
+/// The place an update's item names with its parent, if it names one.
+fn named_place(item: &Item) -> Option<u64> {
+    let parent = match item.update_parent() {
+        UpdateParent::Item(id) => Parent::Nested(*id),
+        UpdateParent::Root(name) => Parent::Root(name),
+        _ => return None,
+    };
+    Some(place(parent, item.parent_sub()))
+}
+
+/// An update's items by client, in clock order.
+struct Items<'a>(HashMap<ClientID, Vec<&'a Item>>);
+
+impl<'a> Items<'a> {
+    fn of(update: &'a Update) -> Items<'a> {
+        let mut items: HashMap<ClientID, Vec<&'a Item>> = HashMap::new();
+        for block in update.blocks() {
+            if let UpdateBlock::Item(item) = block {
+                items.entry(item.id().client).or_default().push(item);
+            }
+        }
+        Items(items)
+    }
+
+    /// The item holding `id`.
+    fn at(&self, id: &ID) -> Option<&'a Item> {
+        let items = self.0.get(&id.client)?;
+        let at = items.partition_point(|item| item.id().clock + item.len() <= id.clock);
+        items
+            .get(at)
+            .copied()
+            .filter(|item| item.id().clock <= id.clock)
+    }
 }
 
 pub struct Board {
@@ -323,7 +462,7 @@ pub struct Board {
     /// concurrent overwrite's loser, content added to a type deleted at the
     /// same time) until a fold's base names them.
     deleted: IdSet,
-    /// The base's and every appended item's origins.
+    /// The base's and every appended item's origins and places.
     origins: Origins,
     /// This life's contributor markers, the only structs the room writes, in
     /// a document of their own under the room's client.
@@ -411,6 +550,7 @@ impl Board {
         let mut kept = structs.to_vec();
         kept.extend_from_slice(&deleted.encode_v1());
         let trimmed = Update::decode_v1(&kept)?;
+        let items = Items::of(&trimmed);
         let held = |id: &ID| id.clock < state.get(&id.client);
         let (mut ends, mut taken) = (StateVector::default(), Taken::default());
         let (mut count, mut writer, mut flagged) = (0, None, false);
@@ -434,8 +574,19 @@ impl Board {
                 }
                 _ => {}
             }
-            flagged |= !self.placed(item, &held);
+            flagged |= !self.placed(item, &held, &items);
             taken.add(item);
+            if item.origin().is_none() {
+                let anchor = match (item.right_origin(), named_place(item)) {
+                    (Some(right), _) => Anchor::Before(*right),
+                    (None, Some(place)) => Anchor::At {
+                        place,
+                        sequence: item.parent_sub().is_none(),
+                    },
+                    (None, None) => Anchor::Unknown,
+                };
+                taken.unanchored.push((*item.id(), anchor));
+            }
         }
         // T5: the depth index refuses a type past 64 levels here, and the
         // earlier lives' marker clients any struct or deletion naming one.
@@ -697,15 +848,21 @@ impl Board {
 
     /// The one-held-side rule (the review of 2026-11-24): whether a new
     /// item's conflict scan meets at most its own update's items and one
-    /// held item, read from the [Origins] alone. Placed: an item after a held
-    /// unit nothing else was placed after (where that unit's run goes on,
-    /// just before the run's next unit); after an item of its own update,
-    /// before none or another; first in a sequence or a key's values with no
-    /// origin, before the held first item; or with no origin and no right
-    /// origin under a parent its update creates. Anything else naming held
-    /// content is not: a new key of a held map among them, since the room
-    /// cannot tell it from one with held values the scan would walk.
-    fn placed(&self, item: &Item, held: &impl Fn(&ID) -> bool) -> bool {
+    /// held item, read from the [Origins] alone. Placed:
+    /// * after a held unit nothing else was placed after (where that unit's
+    ///   run goes on, just before the run's next unit);
+    /// * after an item of its own update, before none, another of its update,
+    ///   or what that earlier item was placed before (or inside the earlier
+    ///   item), as `few_placed_structs` takes it: formatted text typed or
+    ///   pasted inside a text;
+    /// * with no origin, before the first item of a sequence;
+    /// * with no origin and no right origin, at a key or into a sequence
+    ///   holding nothing (a new block, element or property, typing into an
+    ///   empty text, anything under a parent its update creates).
+    ///
+    /// Anything else naming held content is not: a set of a key holding
+    /// values among them, which the scan would walk.
+    fn placed(&self, item: &Item, held: &impl Fn(&ID) -> bool, items: &Items) -> bool {
         let origins = &self.origins;
         match (item.origin(), item.right_origin()) {
             (Some(origin), right) if held(origin) => {
@@ -713,14 +870,26 @@ impl Board {
                     && (!origins.continued.contains(origin)
                         || right == Some(&ID::new(origin.client, origin.clock + 1)))
             }
-            (Some(_), right) => right.is_none_or(|right| !held(right)),
-            (None, Some(right)) if held(right) => origins.starts.contains(right),
+            (Some(origin), right) => {
+                right.is_none_or(|right| !held(right))
+                    || items.at(origin).is_some_and(|earlier| {
+                        let last = earlier.id().clock + earlier.len() - 1;
+                        (origin.clock == last && right == earlier.right_origin())
+                            || right.is_some_and(|right| {
+                                right.client == origin.client
+                                    && right.clock == origin.clock + 1
+                                    && right.clock <= last
+                            })
+                    })
+            }
+            (None, Some(right)) if held(right) => origins
+                .heads
+                .get(right)
+                .is_some_and(|place| origins.firsts.get(place) == Some(right)),
             // Its parent is implicit and its scan starts at the sequence's
             // first item.
             (None, Some(_)) => false,
-            (None, None) => {
-                matches!(item.update_parent(), UpdateParent::Item(parent) if !held(parent))
-            }
+            (None, None) => named_place(item).is_some_and(|place| !origins.keys.contains(&place)),
         }
     }
 
@@ -853,7 +1022,7 @@ mod tests {
     use std::collections::HashMap;
 
     use yrs::block::ClientID;
-    use yrs::types::ToJson;
+    use yrs::types::{Attrs, ToJson};
     use yrs::updates::decoder::Decode;
     use yrs::updates::encoder::Encode;
     use yrs::{
@@ -937,21 +1106,6 @@ mod tests {
             Err(other) => panic!("{other}"),
             Ok(_) => panic!("read"),
         }
-    }
-
-    /// The first units of the new items of `sent` [Board::placed] leaves
-    /// unplaced.
-    fn unplaced(board: &Board, sent: &[u8]) -> Vec<ID> {
-        let state = board.state_vector();
-        let trimmed = decode(&bytes::diff(sent, &state).unwrap());
-        let held = |id: &ID| id.clock < state.get(&id.client);
-        trimmed
-            .blocks()
-            .filter_map(|block| match block {
-                UpdateBlock::Item(item) if !board.placed(item, &held) => Some(*item.id()),
-                _ => None,
-            })
-            .collect()
     }
 
     /// A board room under test: the board, the rows its stores committed
@@ -1100,6 +1254,18 @@ mod tests {
             let marked = ydoc::committed_update(txn);
             self.relay(&marked);
             marked
+        }
+
+        /// The room clears the marker of `key`.
+        fn clear(&self, key: &str) {
+            let markers = self
+                .board
+                .markers()
+                .get_or_insert_map(ydoc::CONTRIBUTORS_ROOT);
+            let mut txn = self.board.markers().transact_mut();
+            markers.remove(&mut txn, key);
+            let cleared = ydoc::committed_update(txn);
+            self.relay(&cleared);
         }
     }
 
@@ -1741,8 +1907,9 @@ mod tests {
 
     /// The one-held-side rule places these: typing at the end of a text,
     /// inside a run and at its start, dragging a block from the value it
-    /// holds, and the keys and text of a new block (the block's own entry,
-    /// a new key of the held blocks root, is not placed).
+    /// holds, bold text typed inside a text, typing into an empty text, and
+    /// a new block, a new element and a property set for the first time,
+    /// each at a key holding nothing.
     #[test]
     fn an_insert_its_scan_passes_quickly_is_placed() {
         let mut room = Room::new();
@@ -1750,6 +1917,8 @@ mod tests {
         room.deliver(&edited(&first, |txn, blocks| {
             let x = blocks.insert(txn, "x", MapPrelim::default());
             x.insert(txn, "prop:text", TextPrelim::new("hello"));
+            x.insert(txn, "prop:empty", TextPrelim::new(""));
+            x.insert(txn, "prop:elements", MapPrelim::default());
             x.insert(txn, "prop:xywh", "v0");
         }));
         let mut client = 20;
@@ -1761,28 +1930,53 @@ mod tests {
             assert_eq!(check(&typing(at)), Check::Small, "typing at {at}");
         }
         assert_eq!(check(&drag("v1")), Check::Small);
-        let adding = synced(&room, 40);
-        let added = edited(&adding, |txn, blocks| {
-            let block = blocks.insert(txn, "b40", MapPrelim::default());
-            block.insert(txn, "sys:flavour", "affine:note");
-            block.insert(txn, "prop:text", TextPrelim::new("note"));
-            block.insert(txn, "prop:xywh", "[0,0,200,80]");
-        });
+        let bold = |txn: &mut TransactionMut, blocks: &MapRef| {
+            let attrs = Attrs::from([("bold".into(), Any::from(true))]);
+            text(txn, blocks, "x", "prop:text").insert_with_attributes(txn, 2, "xy", attrs);
+        };
+        assert_eq!(check(&bold), Check::Small);
         assert_eq!(
-            unplaced(&room.board, &added),
-            [ID::new(ClientID::new(40), 0)]
+            check(&|txn, blocks| {
+                text(txn, blocks, "x", "prop:empty").insert(txn, 0, "a");
+            }),
+            Check::Small
         );
-        assert_eq!(checked(&room.board, &added), Check::Flagged);
+        assert_eq!(
+            check(&|txn, blocks| {
+                let block = blocks.insert(txn, "b40", MapPrelim::default());
+                block.insert(txn, "sys:flavour", "affine:note");
+                block.insert(txn, "prop:text", TextPrelim::new("note"));
+                block.insert(txn, "prop:xywh", "[0,0,200,80]");
+            }),
+            Check::Small
+        );
+        assert_eq!(
+            check(&|txn, blocks| {
+                if let Some(Out::YMap(elements)) = block(txn, blocks, "x").get(txn, "prop:elements")
+                {
+                    let element = elements.insert(txn, "e1", MapPrelim::default());
+                    element.insert(txn, "type", "brush");
+                    element.insert(txn, "xywh", "[0,0,10,10]");
+                }
+            }),
+            Check::Small
+        );
+        assert_eq!(
+            check(&|txn, blocks| {
+                block(txn, blocks, "x").insert(txn, "prop:color", "red");
+            }),
+            Check::Small
+        );
     }
 
     /// The one-held-side rule leaves these to a trial, each an insert whose
     /// conflict scan could walk held items: a map set from a value
     /// overwritten since (a stale drag, or one crafted deep in the key's
-    /// values), a new key of a held block (which the room cannot tell from
-    /// a key with values to walk), typing between two units of a run others
-    /// typed between, after a unit its writer typed on from, or at a start
-    /// someone typed before, and a struct the room holds the start of, read
-    /// from its first new unit, after one others typed after.
+    /// values), a key two tabs set for the first time at once (the second,
+    /// with no origin, walks the first's value), typing between two units of
+    /// a run others typed between, after a unit its writer typed on from, or
+    /// at a start someone typed before, and a struct the room holds the start
+    /// of, read from its first new unit, after one others typed after.
     #[test]
     fn an_insert_its_scan_could_walk_held_items_is_flagged() {
         let mut room = Room::new();
@@ -1805,10 +1999,17 @@ mod tests {
             checked(&room.board, &edited(&stale, drag("w"))),
             Check::Flagged
         );
-        let fresh_key = edited(&synced(&room, 14), |txn, blocks| {
-            block(txn, blocks, "x").insert(txn, "prop:color", "red");
-        });
-        assert_eq!(checked(&room.board, &fresh_key), Check::Flagged);
+        let (one, other) = (synced(&room, 14), synced(&room, 21));
+        let color = |value: &'static str| {
+            move |txn: &mut TransactionMut, blocks: &MapRef| {
+                block(txn, blocks, "x").insert(txn, "prop:color", value);
+            }
+        };
+        room.deliver(&edited(&one, color("red")));
+        assert_eq!(
+            checked(&room.board, &edited(&other, color("blue"))),
+            Check::Flagged
+        );
         // Others type between "h" and "e"; a tab that missed it types there.
         let between = synced(&room, 15);
         room.deliver(&edited(&between, |txn, blocks| {
@@ -2056,5 +2257,157 @@ mod tests {
         let live = ydoc::live_markers(&room.board.markers().transact());
         let step2 = decode(&room.step2(&fresh));
         assert!(!live.is_empty() && live.iter().all(|id| !step2.delete_set().contains(id)));
+    }
+
+    /// Markers across three folds: a live one is written again at each, one
+    /// cleared between folds stays cleared, one a row hid and the room
+    /// cleared before the fold is not written again, and the stored base and
+    /// rows hold no live marker.
+    #[test]
+    fn markers_stay_right_across_folds() {
+        let mut room = Room::new();
+        room.mark("w1");
+        room.mark("w2");
+        let updates = session(2, 120, 5);
+        for sent in &updates[..40] {
+            room.deliver(sent);
+        }
+        room.store();
+        let early = room.join();
+        assert_eq!(decode(&room.fold().unwrap()).blocks().count(), 2);
+        room.clear("w2");
+        for sent in &updates[40..80] {
+            room.deliver(sent);
+        }
+        room.store();
+        assert_eq!(decode(&room.fold().unwrap()).blocks().count(), 1);
+        room.mark("w3");
+        room.store();
+        room.clear("w3");
+        for sent in &updates[80..] {
+            room.deliver(sent);
+        }
+        room.store();
+        assert_eq!(decode(&room.fold().unwrap()).blocks().count(), 1);
+        room.catch_up(&early);
+        let board = room.board.replica().unwrap();
+        for doc in [&room.join(), &early, &room.peer, &board] {
+            assert!(held(doc) == held(&room.reference));
+        }
+        let mut stored = vec![room.stored_base.clone()];
+        stored.extend(room.rows.iter().cloned());
+        let none = Some(Any::from(HashMap::<String, Any>::new()));
+        assert!(held(&replica(&stored)).2[1] == none);
+    }
+
+    /// Two tabs type at a text's start at once, or tabs that never heard its
+    /// first character type one there with no origins (from low client ids,
+    /// so they land first): tried, each may land before the first item
+    /// without naming it, so the room trusts no first for the text, and an
+    /// insert before any of them, from a tab that heard them or one that
+    /// holds only its own, is tried too.
+    #[test]
+    fn a_first_item_others_may_have_passed_is_no_longer_trusted() {
+        let mut room = Room::new();
+        let owner = synced(&room, 11);
+        room.deliver(&edited(&owner, |txn, blocks| {
+            blocks.insert(txn, "x", MapPrelim::default()).insert(
+                txn,
+                "prop:text",
+                TextPrelim::new(""),
+            );
+        }));
+        let empty = room
+            .reference
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        let typed = edited(&synced(&room, 1000), typing(0));
+        assert_eq!(checked(&room.board, &typed), Check::Small);
+        room.deliver(&typed);
+        let (one, other) = (synced(&room, 1001), synced(&room, 1002));
+        let before_first = edited(&one, typing(0));
+        assert_eq!(checked(&room.board, &before_first), Check::Small);
+        room.deliver(&before_first);
+        let late = synced(&room, 1003);
+        let at_once = edited(&other, typing(0));
+        assert_eq!(checked(&room.board, &at_once), Check::Flagged);
+        room.deliver(&at_once);
+        for tab in [&late, &other] {
+            assert_eq!(
+                checked(&room.board, &edited(tab, typing(0))),
+                Check::Flagged
+            );
+        }
+        let late = synced(&room, 1004);
+        let unheard: Vec<Tab> = (100..103).map(tab).collect();
+        for tab in &unheard {
+            apply(&tab.doc, &empty);
+            let sent = edited(tab, typing(0));
+            assert_eq!(checked(&room.board, &sent), Check::Flagged);
+            room.deliver(&sent);
+        }
+        for tab in [&late, &unheard[2]] {
+            assert_eq!(
+                checked(&room.board, &edited(tab, typing(0))),
+                Check::Flagged
+            );
+        }
+        for doc in [&room.join(), &room.peer] {
+            assert!(held(doc) == held(&room.reference));
+        }
+    }
+
+    /// A five-tab session read as it arrives, stored every 50 and folded
+    /// twice: each small update costs a peer's yrs at most [ydoc::SMALL_EDIT]
+    /// squared steps, and the room's origins and keys cover the document's,
+    /// each sequence first it trusts the document's own.
+    #[test]
+    fn small_stays_small_and_the_indexes_cover_the_document() {
+        let updates = session(5, 600, 77);
+        let mut room = Room::new();
+        let mut worst = 0;
+        for (at, sent) in updates.iter().enumerate() {
+            apply(&room.reference, sent);
+            match read(&room.board, sent) {
+                Read::New(fresh) => {
+                    let small = fresh.check == Check::Small;
+                    let relayed = decode(room.board.append(fresh));
+                    let mut txn = room.peer.transact_mut();
+                    txn.limit_work(u64::MAX);
+                    txn.apply_update(relayed).unwrap();
+                    if small {
+                        worst = worst.max(txn.work());
+                    }
+                    drop(txn);
+                    room.resync();
+                }
+                Read::Unheld => room.waiting.push(sent.clone()),
+                Read::Held => {}
+            }
+            if at % 50 == 7 {
+                room.store();
+            }
+            if at % 250 == 125 {
+                room.store();
+                room.fold();
+            }
+        }
+        assert!(room.waiting.is_empty());
+        assert!(worst > 0 && worst <= (ydoc::SMALL_EDIT * ydoc::SMALL_EDIT) as u64);
+        let doc = room.board.replica().unwrap();
+        assert!(held(&doc) == held(&room.reference));
+        let (ours, document) = (
+            &room.board.origins,
+            Indexes::of_doc(&doc.transact()).origins,
+        );
+        assert!(document.named.diff(&ours.named).is_empty());
+        assert!(document.continued.diff(&ours.continued).is_empty());
+        assert!(document.keys.is_subset(&ours.keys));
+        // A sequence the document no longer holds is under a deleted block.
+        assert!(
+            ours.firsts.iter().all(|(place, first)| {
+                document.firsts.get(place).is_none_or(|own| own == first)
+            })
+        );
     }
 }
