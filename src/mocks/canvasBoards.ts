@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { fromBase64, toBase64 } from '@/features/blocksuite/base64';
 import { SAVED } from '@/features/blocksuite/boardFixture';
 import { drawBoardPreview } from '@/features/blocksuite/boardPreview';
+import { encodeStrokePoints } from '@/features/blocksuite/strokePoints';
 import { mockBoardAssets, mockSvgAsset } from './editorAssets';
 
 /* Drawn canvases for the seeded quizzes (Epo 2026-11-23): each a question
@@ -76,7 +77,10 @@ const line = (color: string, corners: [number, number][], lineWidth = 6) => {
   return {
     color,
     lineWidth,
-    points: points.map(([px, py]) => [px - x, py - y, 0.5]),
+    points: encodeStrokePoints(
+      points.map(([px, py]) => [px, py, 0.5]),
+      [x, y]
+    ),
     type: 'brush',
     xywh: `[${x},${y},${Math.max(...xs) + lineWidth - x},${Math.max(...ys) + lineWidth - y}]`,
   };

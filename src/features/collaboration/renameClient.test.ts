@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { beforeAll, expect, it } from 'vitest';
 import * as Y from 'yjs';
+import { encodeStrokePoints } from '@/features/blocksuite/strokePoints';
 import { initSync } from './lateMerge/generated/late_merge.js';
 import { applyMerged } from './lateMerge/lateMerge';
 import { mergeRequest } from './lateMerge/lateMerge.worker';
@@ -55,10 +56,13 @@ function stroke(d: Y.Doc, id: string, x = 0) {
     const made = new Y.Map<unknown>();
     made.set('type', 'brush');
     made.set('xywh', `[${x},0,10,10]`);
-    made.set('points', [
-      [x, 0],
-      [x + 10, 10],
-    ]);
+    made.set(
+      'points',
+      encodeStrokePoints([
+        [0, 0],
+        [10, 10],
+      ])
+    );
     elements(d).set(id, made);
   });
 }

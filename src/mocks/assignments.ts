@@ -24,6 +24,7 @@ import type {
 } from '@/api/types';
 import { fromBase64, toBase64 } from '@/features/blocksuite/base64';
 import { SAVED, withElements } from '@/features/blocksuite/boardFixture';
+import { encodeStrokePoints } from '@/features/blocksuite/strokePoints';
 import {
   createMaterialDocument,
   quizNode,
@@ -309,7 +310,7 @@ mockDrawings.set(
     withElements({
       color: '#1c7ed6',
       lineWidth: 4,
-      points: wave,
+      points: encodeStrokePoints(wave),
       type: 'brush',
       xywh: '[900,0,480,240]',
     })
@@ -447,10 +448,12 @@ mockBoardAssets.set(
       // Over the fixture's plane (index a0).
       index: 'a1',
       lineWidth: 4,
-      points: Array.from({ length: 48 }, (_, i) => [
-        200 + Math.cos((i / 47) * Math.PI * 2) * 180,
-        140 + Math.sin((i / 47) * Math.PI * 2) * 110,
-      ]),
+      points: encodeStrokePoints(
+        Array.from({ length: 48 }, (_, i) => [
+          200 + Math.cos((i / 47) * Math.PI * 2) * 180,
+          140 + Math.sin((i / 47) * Math.PI * 2) * 110,
+        ])
+      ),
       type: 'brush',
       xywh: '[0,0,400,280]',
     })

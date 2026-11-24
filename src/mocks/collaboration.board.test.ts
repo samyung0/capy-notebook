@@ -2,6 +2,7 @@ import { beforeAll, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '@/api/board.generated';
 import type { WorkspaceRole } from '@/api/types';
+import { encodeStrokePoints } from '@/features/blocksuite/strokePoints';
 import type { ItemProvider } from '@/features/collaboration/itemRoom';
 import type { RoomProviderConfig } from '@/features/collaboration/roomProvider';
 import { COLLABORATION_NOT_FOUND_REASON } from '@/features/notes/collaborationEvents';
@@ -84,10 +85,10 @@ const stroke = {
   color: '#000000',
   index: 'a0',
   lineWidth: 4,
-  points: [
+  points: encodeStrokePoints([
     [0, 0],
     [10, 10],
-  ],
+  ]),
   rotate: 0,
   seed: 1,
   type: 'brush',

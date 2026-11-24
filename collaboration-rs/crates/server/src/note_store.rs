@@ -161,24 +161,37 @@ pub(crate) async fn bootstrap(
     }
     let kind: String = row.get("kind");
     let value = envelope_value(&content.value)?;
+    let model = Model::of(&kind);
     // A quiz's two documents seed together from the stored questions.
     let (state, keys) = if kind == "quiz" {
         let (content, keys) = items::quiz::states_from_value(value, 0);
         (content, Some(keys))
     } else {
-        (Model::of(&kind).state_from_value(value), None)
+        (model.state_from_value(value), None)
     };
     largest.note(state.len());
     largest.note(keys.as_ref().map_or(0, Vec::len));
     let schema = i32::try_from(schema)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
+    // A board's seed (a few hundred bytes) is stored with its indexes.
+    let (state_vector, delete_set) = match model {
+        Model::Board => {
+            let seed = ydoc::scratch_doc();
+            ydoc::replay(&seed, &state, &[] as &[&[u8]])
+                .map_err(|error| StoreError::Other(error.to_string()))?;
+            let (state_vector, delete_set) = base_indexes(&seed.transact());
+            (Some(state_vector), Some(delete_set))
+        }
+        _ => (None, None),
+    };
     let inserted = tx
         .execute(
             "INSERT INTO material_yjs_documents
-               (material_id, room_schema, state, stored_version, projected_version, projected_at)
-             VALUES ($1,$2,$3,1,1,now())
+               (material_id, room_schema, state, stored_version, projected_version, projected_at,
+                base_state_vector, base_delete_set)
+             VALUES ($1,$2,$3,1,1,now(),$4,$5)
              ON CONFLICT (material_id) DO NOTHING",
-            &[&material_id, &schema, &state],
+            &[&material_id, &schema, &state, &state_vector, &delete_set],
         )
         .await?;
     if let Some(keys) = keys
@@ -191,6 +204,19 @@ pub(crate) async fn bootstrap(
         .await?;
     }
     Ok(())
+}
+
+/// A board base's state vector and delete set, encoded (v1), as stored in
+/// `base_state_vector` and `base_delete_set` beside its state.
+type BaseIndexes = (Vec<u8>, Vec<u8>);
+
+/// The indexes of the document `txn` reads: those of its whole state.
+fn base_indexes<T: ReadTxn>(txn: &T) -> BaseIndexes {
+    let snapshot = txn.snapshot();
+    (
+        snapshot.state_map.encode_v1(),
+        snapshot.delete_set.encode_v1(),
+    )
 }
 
 pub(crate) async fn rows(
@@ -824,7 +850,11 @@ const IT_FOLDED_LATER: &str = "capy-it-folded-later";
 /// that window's version is kept as the latest (`collected_window`), and
 /// the folded document is stored as a later window candidate. A collection
 /// the guard refuses, or that panics, folds uncollected and is reported once
-/// per material (human/ 2026-10-24); the next fold collects again.
+/// per material (human/ 2026-10-24); the next fold collects again. A board's
+/// new base is stored with its state vector and delete set. A board's fold
+/// brings its board work `permit` (`work.rs`), taken before the material's
+/// lock, and gives it back once the new base is stored and freed.
+#[allow(clippy::too_many_arguments)]
 pub async fn fold(
     pool: &Pool,
     material_id: &str,
@@ -832,6 +862,7 @@ pub async fn fold(
     doc: Doc,
     through: Option<i64>,
     holds: Option<Holds>,
+    permit: Option<crate::work::Permit>,
 ) -> Result<Option<Folded>, StoreError> {
     if cfg!(debug_assertions) && material_id.contains(IT_FOLD_LATER) {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -906,26 +937,32 @@ pub async fn fold(
     let folded_bytes: i64 = rows.iter().map(|(_, row)| row.len() as i64).sum();
     let count = rows.len();
     let it_panic = cfg!(debug_assertions) && material_id.contains(IT_PANIC_COLLECTION);
+    let board = model == Model::Board;
     // The state, the folded document as a window candidate, the window and
-    // held set of a collection, why the guard refused one, and the units it
-    // discarded.
+    // held set of a collection, why the guard refused one, the units it
+    // discarded, and a board's base indexes.
     type Built = (
         Vec<u8>,
         Option<Window>,
         Option<(Window, IdSet)>,
         Option<String>,
         u64,
+        Option<BaseIndexes>,
     );
-    let (state, window, collected, refused, discarded) =
+    let (state, window, collected, refused, discarded, indexes) =
         tokio::task::spawn_blocking(move || -> Result<Built, StoreError> {
             let scratch = ydoc::scratch_doc();
             let updates: Vec<Vec<u8>> = rows.into_iter().map(|(_, row)| row).collect();
             ydoc::replay(&scratch, &base, &updates)
                 .map_err(|error| StoreError::Other(error.to_string()))?;
+            drop((base, updates));
             let txn = scratch.transact();
             model.assert_roots(&txn).map_err(StoreError::Invalid)?;
+            // A board keeps no sessions, so it never collects: its base is
+            // the whole scratch document, whose indexes go with it.
             let Some(holds) = holds else {
-                return Ok((whole(&scratch), None, None, None, 0));
+                let indexes = board.then(|| base_indexes(&txn));
+                return Ok((whole(&scratch), None, None, None, 0, indexes));
             };
             let now = Window::of(&txn, last);
             drop(txn);
@@ -935,7 +972,7 @@ pub async fn fold(
             }
             .filter(|_| alone);
             let Some(window) = window else {
-                return Ok((whole(&scratch), Some(now), None, None, 0));
+                return Ok((whole(&scratch), Some(now), None, None, 0, None));
             };
             let collected = guarded(|| {
                 if it_panic {
@@ -948,24 +985,54 @@ pub async fn fold(
             Ok(match collected {
                 Ok(collected) => {
                     let at = (window.clone(), holds.held);
-                    (collected.state, Some(now), Some(at), None, collected.units)
+                    (
+                        collected.state,
+                        Some(now),
+                        Some(at),
+                        None,
+                        collected.units,
+                        None,
+                    )
                 }
-                Err(why) => (whole(&scratch), Some(now), None, Some(why), 0),
+                Err(why) => (whole(&scratch), Some(now), None, Some(why), 0, None),
             })
         })
         .await
         .map_err(|error| StoreError::Other(error.to_string()))??;
     let after_bytes = state.len() as i64;
     largest.note(state.len());
-    tx.execute(
-        &format!(
-            "UPDATE {state_table}
-             SET state=$2, log_bytes=log_bytes-$3, log_rows=log_rows-$4
-             WHERE material_id=$1"
-        ),
-        &[&material_id, &state, &folded_bytes, &(count as i32)],
-    )
-    .await?;
+    if board {
+        let Some((state_vector, delete_set)) = indexes else {
+            return Err(StoreError::Other(
+                "a board's fold built no base indexes".into(),
+            ));
+        };
+        tx.execute(
+            "UPDATE material_yjs_documents
+             SET state=$2, log_bytes=log_bytes-$3, log_rows=log_rows-$4,
+                 base_state_vector=$5, base_delete_set=$6
+             WHERE material_id=$1",
+            &[
+                &material_id,
+                &state,
+                &folded_bytes,
+                &(count as i32),
+                &state_vector,
+                &delete_set,
+            ],
+        )
+        .await?;
+    } else {
+        tx.execute(
+            &format!(
+                "UPDATE {state_table}
+                 SET state=$2, log_bytes=log_bytes-$3, log_rows=log_rows-$4
+                 WHERE material_id=$1"
+            ),
+            &[&material_id, &state, &folded_bytes, &(count as i32)],
+        )
+        .await?;
+    }
     tx.execute(
         &format!("DELETE FROM {log} WHERE material_id=$1 AND seq <= $2"),
         &[&material_id, &last],
@@ -983,7 +1050,11 @@ pub async fn fold(
         .await?;
     }
     tx.commit().await?;
+    // The new base and the connection's buffers go before the permit, whose
+    // drop asks for a trim.
     drop(pooled);
+    drop(state);
+    drop(permit);
     if let Some(why) = refused {
         report_refusal(material_id, doc, "fold", &why);
     }
@@ -1506,6 +1577,12 @@ mod tests {
 
     /// A note of a fresh user's holding `text`, as the rooms tests make one.
     async fn it_note(pool: &Pool, text: &str) -> String {
+        let value = serde_json::json!({"type": "p", "id": "b1", "children": [{"text": text}]});
+        it_material(pool, "note", value).await
+    }
+
+    /// A material of `kind` holding the one block `block`, of a fresh user's.
+    async fn it_material(pool: &Pool, kind: &str, block: Value) -> String {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1516,8 +1593,7 @@ mod tests {
             format!("u_it_{nanos:x}{next:x}"),
             format!("m_it_{nanos:x}{next:x}"),
         );
-        let value = [serde_json::json!({"type": "p", "id": "b1", "children": [{"text": text}]})];
-        let content = serde_json::json!({ "schemaVersion": 1, "value": value });
+        let content = serde_json::json!({ "schemaVersion": 1, "value": [block] });
         let client = pool.get().await.unwrap();
         client
             .execute("INSERT INTO users (id, name) VALUES ($1, 'IT')", &[&user])
@@ -1525,12 +1601,73 @@ mod tests {
             .unwrap();
         client
             .execute(
-                "INSERT INTO materials (id, created_by, kind, title, content) VALUES ($1, $2, 'note', 'IT', $3)",
-                &[&material, &user, &content],
+                "INSERT INTO materials (id, created_by, kind, title, content) VALUES ($1, $2, $3, 'IT', $4)",
+                &[&material, &user, &kind, &content],
             )
             .await
             .unwrap();
         material
+    }
+
+    /// A board's stored base, checked against its stored indexes: they are
+    /// the state vector and delete set the state decodes to. Returns that
+    /// delete set.
+    async fn stored_indexes_match(pool: &Pool, material_id: &str) -> IdSet {
+        let row = pool
+            .get()
+            .await
+            .unwrap()
+            .query_one(
+                "SELECT state, base_state_vector, base_delete_set FROM material_yjs_documents
+                 WHERE material_id=$1",
+                &[&material_id],
+            )
+            .await
+            .unwrap();
+        let state = yrs::Update::decode_v1(row.get::<_, &[u8]>(0)).unwrap();
+        let state_vector = StateVector::decode_v1(row.get::<_, &[u8]>(1)).unwrap();
+        let delete_set = IdSet::decode_v1(row.get::<_, &[u8]>(2)).unwrap();
+        assert_eq!(state_vector, state.state_vector());
+        assert_eq!(&delete_set, state.delete_set());
+        delete_set
+    }
+
+    /// Bytes-room step 1b: a board's base is stored with its state vector
+    /// and delete set, at its seed and after each fold, equal to those its
+    /// state decodes to (a later board room loads from them without decoding
+    /// the base). Against the rooms tests' Postgres. Fails if the seed or a
+    /// fold leaves them out or stores another document's.
+    #[tokio::test]
+    async fn a_boards_base_is_stored_with_its_state_vector_and_delete_set() {
+        let Some(pool) = it_pool() else { return };
+        let block = serde_json::json!({
+            "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
+            "version": 0, "images": [],
+        });
+        let board = it_material(&pool, "canvas", block).await;
+        let loaded = load(&pool, &board, 1, Doc::Content).await.unwrap();
+        stored_indexes_match(&pool, &board).await;
+        // A block drawn and erased by another client: the fold's base holds
+        // a deletion too.
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(&doc, &loaded.base, &loaded.rows).unwrap();
+        let writer = yrs::Doc::with_options(ydoc::doc_options(7));
+        ydoc::replay(&writer, &state(&doc), &[] as &[&[u8]]).unwrap();
+        let before = writer.transact().state_vector();
+        let blocks = writer.get_or_insert_map("blocks");
+        yrs::Map::insert(&blocks, &mut writer.transact_mut(), "b1", "drawn");
+        yrs::Map::remove(&blocks, &mut writer.transact_mut(), "b1");
+        let row = writer.transact().encode_state_as_update_v1(&before);
+        let none = sessions::Unsaved::default();
+        append(&pool, &board, 1, Doc::Content, &row, &[], &none, &[])
+            .await
+            .unwrap();
+        fold(&pool, &board, 1, Doc::Content, None, None, None)
+            .await
+            .unwrap()
+            .unwrap();
+        let deleted = stored_indexes_match(&pool, &board).await;
+        assert!(deleted.contains(&yrs::ID::new(ClientID::new(7), 0)));
     }
 
     /// `text` typed at the start of `doc`'s first block by `client`: the
@@ -1580,7 +1717,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(idle(&pool).await, kept, "a small store's connection");
-        fold(&pool, &small, 1, Doc::Content, None, None)
+        fold(&pool, &small, 1, Doc::Content, None, None, None)
             .await
             .unwrap()
             .unwrap();
@@ -1604,7 +1741,7 @@ mod tests {
             .unwrap();
         assert_eq!(pool.status().size, 0, "a large store's connection");
         idle(&pool).await;
-        fold(&pool, &small, 1, Doc::Content, None, None)
+        fold(&pool, &small, 1, Doc::Content, None, None, None)
             .await
             .unwrap()
             .unwrap();

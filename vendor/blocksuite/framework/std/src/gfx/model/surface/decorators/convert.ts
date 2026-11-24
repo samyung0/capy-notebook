@@ -9,11 +9,13 @@ const convertSymbol = Symbol('convert');
  *
  * Note:
  * 1. This decorator function will not execute in model initialization.
+ * 2. Capy (local change 79): what is set (`I`) may differ from what is stored
+ *    and read (`V`): a stroke is set as drawn and stored as bytes.
  * @param fn
  * @returns
  */
-export function convert<V, T extends GfxPrimitiveElementModel>(
-  fn: (propValue: V, instance: T) => unknown
+export function convert<V, T extends GfxPrimitiveElementModel, I = V>(
+  fn: (propValue: I, instance: T) => unknown
 ) {
   return function convertDecorator(
     _: unknown,

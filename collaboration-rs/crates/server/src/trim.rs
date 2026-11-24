@@ -1,4 +1,5 @@
-//! Gives glibc's free memory back once a room unloads (`malloc_trim(0)`;
+//! Gives glibc's free memory back once a room unloads or a board's
+//! whole-board work ends (`malloc_trim(0)`;
 //! `bench/collaboration/reports/2026-11-23-room-memory-prod.md` and
 //! `2026-11-24-room-memory-prod-2.md`). What a room's document, fold and
 //! projection freed lies between chunks still in use, which glibc's own trim
@@ -85,9 +86,10 @@ mod spaced {
     }
 }
 
-/// After a room unloaded and its projection and fold ended, or a discard
-/// moved its lineage: gives the memory it freed back, never on a room's
-/// thread.
+/// After a room unloaded and its projection and fold ended, a discard moved
+/// its lineage, or a board's whole-board work freed what it built (a board
+/// work permit's drop, `work.rs`): gives the memory freed back, never on a
+/// room's thread.
 pub fn after_unload() {
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
     glibc::after_unload();

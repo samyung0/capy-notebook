@@ -2964,6 +2964,16 @@ design, option d), and the nudge's release file on 2026-10-17.
   `MIN_MATERIAL` to 43, so material tabs from before the format (protocol
   42) reload; `MIN_SOURCE` stays 42 and `OFFICE_PROTOCOL_VERSION` stays 15.
   Its deploy request names "client protocol 42 -> 43, material 41 -> 43".
+  Binary pen points (Epo 2026-11-24: a canvas stroke's points are one binary
+  value of Float32s, `strokePoints.ts`, vendored BlockSuite local change 79)
+  raised `CLIENT_PROTOCOL` to 44 and `MIN_MATERIAL` to 44: a tab from before
+  draws a stroke stored so as a placeholder, as its rules refuse bytes, and
+  writes number arrays a newer tab draws as one. No source room changed, so
+  `MIN_SOURCE` stays 42 and `OFFICE_PROTOCOL_VERSION` stays 15. Nothing reads
+  the number arrays any more and no production data holds them: UAT's canvases
+  are deleted by hand at the deploy (a saved drawing answer or drawn sample
+  with strokes from before is refused as it opens, as any misfit is). Its
+  deploy request names "client protocol 43 -> 44, material 43 -> 44".
 
 #### When to bump
 
@@ -5872,6 +5882,24 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   reports pressure keeps it. A stroke at pressure 0.5 is exactly its width wide, as
   `boardPreview.ts` draws it (AFFiNE drew each width 1.41 times over). The highlighter starts
   at its third width, 18.
+  A stroke's points are stored as one binary value (local change 79, Epo 2026-11-24;
+  `strokePoints.ts`, the one codec): a 4-byte header naming 2 values a point (x, y) or 3
+  (with pressure), then the values as little-endian Float32s, relative to the stroke's
+  box as BlockSuite keeps them, so a stroke 10,000 units long keeps about a thousandth
+  of a unit anywhere on the board. Upstream's number arrays cost a Yjs value per number:
+  a 6,000-stroke pen board took 47 MiB of the server's yrs heap and 79 to 85 MiB in a
+  tab's Y.Doc (the document alone, its heap and ArrayBuffers, not the tab), now 28 and
+  35 MiB. Its state goes from +15% (whole points at exactly 100%) to about −40% (any
+  zoom a fit or pinch gives); Float32-exact points at exactly 100%, as Chrome gives
+  them, come to about −15 to −25%, and pen pressure is always Float32-exact
+  (`bench/collaboration/reports/2026-11-24-binary-pen-points.md`). The model's `points`
+  reads the bytes and is set as drawn (`number[][]`), and `serialize` gives them back
+  as drawn, for copies and pastes. The board's rules require a stroke's points and
+  take only bytes that hold the header, whole points and finite values; anything else,
+  the number arrays included, is a misfit (a placeholder on a canvas, a refused
+  question's board). A peer's later write to an element's keys is read the same way:
+  an element it leaves unreadable becomes a placeholder then and there (local change
+  79's `_readAgain`), so a stroke overwritten with number arrays can't stop the canvas.
 - **One thing held at a time** (local change 47, Epo 2026-11-12): every toolbar piece
   (shape pieces, Graphs, Formulas, Misc tiles) goes through BlockSuite's shared
   `EdgelessDraggableElementController`. Taking a piece puts down whatever else was held
@@ -6227,9 +6255,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     loads.
   - `save()` returns `{ doc, bytes }`: the board copied into a fresh Yjs document, so no
     undo history (200 undo steps on a card were 606 KB live and a few KB saved). Stroke
-    points are rounded to whole pixels and every place (`xywh`) to a tenth, which leaves
-    60% of the bytes with no visible change (pressure stays: perfect-freehand draws the
-    line from it); highlighter strokes from the pen menu are rounded the same way. The
+    points are rounded to whole pixels and every place (`xywh`) to a tenth, with no
+    visible change (pressure stays: perfect-freehand draws the line from it);
+    highlighter strokes from the pen menu are rounded the same way. A place's text gets
+    shorter; a stroke's Float32s keep their size but gzip to 40% as the bucket keeps
+    them (2026-11-24, before binary points the rounding left 60% of the raw bytes). The
     answer flow refuses past `DRAWING_BOARD_MAX` on Done (400 KiB since
     2026-11-23, Epo's 250 KB before).
   - `saved` is checked before anything mounts (`boardLoad.ts`, by the board's rules in

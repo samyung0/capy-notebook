@@ -1080,6 +1080,47 @@ Outside this directory, for BlockSuite:
     `e2e/editor/drawing-board.spec.ts` ("a teacher's area moves by its label")
     redoes with it on CI's Linux.
 
+79. A pen or highlighter stroke's points are one binary value of Float32s
+    (`affine/model` `elements/brush/brush.ts` and `elements/highlighter/highlighter.ts`,
+    `affine/gfx/brush` `brush-tool.ts` and `highlighter-tool.ts`, `affine/blocks/surface`
+    `surface-transformer.ts`, `framework/std` `gfx/model/surface/decorators/convert.ts`
+    and `gfx/model/surface/surface-model.ts`, marked `Capy (local change 79)`; Epo
+    2026-11-24,
+    `bench/collaboration/reports/2026-11-24-binary-pen-points.md`). Upstream stored
+    `[[x, y, pressure?], ...]`, a Yjs value per number, which made a pen board's live
+    document about twelve times its saved size. The format and its one codec are
+    Capy's `src/features/blocksuite/strokePoints.ts` (a 4-byte header naming 2 or 3
+    values a point, then little-endian Float32s), which these files import as
+    `@/features/blocksuite/strokePoints`.
+    - `points` reads as the stored `Uint8Array` (relative to `xywh`, as before) and is
+      set as drawn, `number[][]` in board units: `@convert` encodes it, and the
+      `xywh` and `lineWidth` derives decode, move and set the points again.
+      `convert` takes a set type apart from the stored one (`I`) for this.
+    - `serialize()` gives the points back as drawn (relative), so a copy, a paste,
+      Duplicate and an Alt-drag clone set them through `@convert` as a peer's JSON
+      clipboard does.
+    - `includesPoint` reads the bytes in place (`strokeNearPoint`), the pointer turned
+      back about the box's centre, which also ends upstream's read past the end of a
+      one-point stroke; `getLineIntersections` decodes only for a line that crosses
+      the box, as the eraser asks every stroke on every move; `commands` and
+      `getNearestPoint` decode.
+    - The tools count the drawn points for their pop gap.
+    - The surface transformer writes a binary value into a snapshot as
+      `{ 'affine:surface:bytes': true, bytes }`, so a JSON snapshot keeps it.
+    - A peer's write to an existing element's keys is read again by the editor's
+      say (local change 62's `ElementReadableIdentifier`), and an element it can no
+      longer read becomes a placeholder then and there (`_readAgain`), as on load:
+      upstream only read an element as it was added, so a peer overwriting a
+      stroke's points with a number array made its model throw on every frame,
+      and the canvas drew nothing more for anyone in the room.
+    A stroke whose bytes break the format, or that has none, is refused by the
+    board's rules (`boardRules.ts`), drawn as a placeholder on a canvas and refusing
+    a question's board, and `strokeView` throws for any value that isn't stored
+    points. Pinned by `strokePoints.test.ts` and the stroke cases of
+    `boardRules.corpus.test.ts`. In dev, run `vite --force` after editing
+    `strokePoints.ts`: Vite pre-bundles the vendored models with their copy of it,
+    and a stale bundle and the app's rules would read the format apart.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no
