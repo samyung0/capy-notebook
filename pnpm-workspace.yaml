@@ -50,6 +50,20 @@ patchedDependencies:
   # BlockSuite's (AFFiNE yarn patch, vendor/blocksuite/README.md): an external
   # drag adapter that also handles drags started inside the page.
   "@atlaskit/pragmatic-drag-and-drop@1.4.0": patches/@atlaskit__pragmatic-drag-and-drop@1.4.0.patch
+  # Capy patch (2026-11-24): Plate's NodeApi.get and editor.api.node look a
+  # missing path up as undefined by catching slate's throw, whose message is
+  # the whole document stringified (2 MB, ~70 ms on a near-limit note). The
+  # list plugin asks for a missing next path on every bind, Enter, mark or
+  # block change, the affinity plugin on Backspace and arrows at a block's
+  # end. Checked with Node.has/getIf instead
+  # (bench/editor/reports/2026-11-24-editable-open-breakdown.md).
+  "@platejs/slate@53.3.10": patches/@platejs__slate@53.3.10.patch
+  # Capy patch (2026-11-24): Plate's node-prop pipeline runs every injecting
+  # plugin for every element, text and leaf, and only then finds a plugin
+  # limited to the other kind (inject isLeaf, isElement, isBlock) does not
+  # match. Skipped up front, as that match would reject it; ~26k nodes on a
+  # near-limit note (same report).
+  "@platejs/core@53.3.11": patches/@platejs__core@53.3.11.patch
 
 # Security overrides, only where no parent release carries the fix:
 # - geopattern 1.2.3 (its last release) pins extend ~1.2.1, which allows

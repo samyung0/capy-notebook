@@ -84,6 +84,7 @@ import {
   TableRowPlugin,
 } from '@platejs/table/react';
 import { TocPlugin } from '@platejs/toc/react';
+import { clsx } from 'clsx';
 import { common, createLowlight } from 'lowlight';
 import {
   createSlatePlugin,
@@ -91,6 +92,7 @@ import {
   ElementApi,
   ExitBreakPlugin,
   KEYS,
+  type Path,
   PathApi,
   type SlateEditor,
   type TElement,
@@ -99,9 +101,11 @@ import {
 import {
   BlockPlaceholderPlugin,
   createPlatePlugin,
+  type PlateEditor,
   type RenderNodeWrapper,
+  useEditorPluginOption,
 } from 'platejs/react';
-import { createElement } from 'react';
+import { createElement, useMemo } from 'react';
 import { isStyleValue, LIST_INDENT_MAX } from '@/features/materials/document';
 import { m } from '@/i18n';
 import { ghostTextPlugin } from './ai/ghostTextPlugin';
@@ -128,7 +132,7 @@ import { navigationFeedbackPlugin } from './navigationFeedback';
 import {
   FONT_SIZE_NODE_PROPS,
   INDENT_NODE_PROPS,
-  STYLE_MARK_NODE_PROPS,
+  styleMarkNodeProps,
 } from './nodeStyles';
 import { pastedImagesPlugin } from './pastedImages';
 import {
@@ -145,7 +149,11 @@ import { SlashInputElement } from './SlashInput';
 import { stableElementIdsPlugin } from './stableElementIds';
 import { mergeTableCellsSafe, sanitizeTableStructure } from './tableStructure';
 import { queryHeadings } from './tocHeadings';
-import { PLACEHOLDER_CLASS, trailingHintPlugin } from './trailingHint';
+import {
+  PLACEHOLDER_CLASS,
+  trailingHintPlugin,
+  useTrailingHint,
+} from './trailingHint';
 import { VoidBlockBreakPlugin } from './voidBlockBreak';
 
 // Plugin-derived editor types are intentionally wider than Plate's base tuple.
@@ -214,6 +222,9 @@ const IndentListKit = [
   }),
   ListPlugin.configure({
     inject: {
+      // Elements only: Plate runs an injecting plugin's query for every text
+      // and leaf too, and a list's never matches them.
+      isElement: true,
       nodeProps: {
         nodeKey: KEYS.listType,
         query: ({ nodeProps }) => {
@@ -481,9 +492,60 @@ const MediaKit = [
   }),
 ];
 
+/**
+ * BlockSelectionPlugin's node props (`useBlockSelectable`), read from the
+ * element's own props: Plate's hook looks the element, its path and the
+ * editor up in their stores, which subscribes every block to them. The same
+ * props, memoized on the same inputs: a selectable block gets
+ * `slate-selectable` and the block context menu.
+ *
+ * Plate's fast element render passes node props no path: the path is looked
+ * up then, only there. Plate renders an element that way when it has no
+ * component and no plugin wraps blocks (`aboveNodes`, `belowRootNodes`); the
+ * note's drag handles and selection overlay do, so today it never does.
+ */
+function useSelectableProps({
+  editor,
+  element,
+  path,
+}: {
+  editor: SlateEditor;
+  element: TElement;
+  path?: Path;
+}) {
+  const at = path ?? editor.api.findPath(element);
+  return useMemo(
+    () =>
+      at &&
+      editor
+        .getApi(BlockSelectionPlugin)
+        .blockSelection.isSelectable(element, at)
+        ? {
+            className: 'slate-selectable',
+            onContextMenu: (event: React.MouseEvent<HTMLDivElement>) =>
+              editor
+                .getApi(BlockSelectionPlugin)
+                .blockSelection.addOnContextMenu({ element, event }),
+          }
+        : {},
+    [editor, element, at]
+  );
+}
+
 function buildBlockInteractionKit(allowExternalAssets: boolean) {
   return [
     BlockSelectionPlugin.configure(({ editor }) => ({
+      inject: {
+        nodeProps: {
+          // A block's props carry its element, and its path unless Plate
+          // renders it the fast way; Plate's options type, shared with
+          // texts, has neither for sure.
+          transformProps: (props) =>
+            useSelectableProps(
+              props as typeof props & { element: TElement; path?: Path }
+            ),
+        },
+      },
       options: {
         enableContextMenu: true,
         // Nested structures keep normal text selection; their top-level
@@ -610,16 +672,16 @@ export const MaterialKit: AnyPlugin[] = [
   MentionInputPlugin.withComponent(MentionInputElement),
   // Text marks: an element carrying one is refused, and none is drawn.
   FontColorPlugin.configure({
-    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+    inject: { isLeaf: true, nodeProps: styleMarkNodeProps('color') },
   }),
   FontBackgroundColorPlugin.configure({
-    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+    inject: { isLeaf: true, nodeProps: styleMarkNodeProps('backgroundColor') },
   }),
   FontSizePlugin.configure({
     inject: { isLeaf: true, nodeProps: FONT_SIZE_NODE_PROPS },
   }),
   FontFamilyPlugin.configure({
-    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+    inject: { isLeaf: true, nodeProps: styleMarkNodeProps('fontFamily') },
   }),
   TextAlignPlugin.configure({
     inject: {
@@ -678,6 +740,32 @@ export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
     trailingBlockPlugin,
     trailingHintPlugin,
     BlockPlaceholderPlugin.configure({
+      inject: {
+        nodeProps: {
+          // Plate's, read through the editor rendering the block, with the
+          // trailing hint's props (trailingHint.ts) in the same pass. Merged
+          // as Plate merged the two plugins' props: classes in that order
+          // (clsx, as Plate's), the block placeholder's text over the hint's.
+          transformProps: (props) => {
+            const editor = props.editor as PlateEditor;
+            // A block's: only blocks reach it (isBlock).
+            const element = props.element as TElement;
+            const hint = useTrailingHint(editor, element);
+            const placeholder = useEditorPluginOption(
+              editor,
+              props.plugin,
+              'placeholder',
+              element
+            );
+            if (!placeholder) return hint;
+            const className = props.getOption('className');
+            return {
+              className: hint ? clsx(hint.className, className) : className,
+              placeholder,
+            };
+          },
+        },
+      },
       options: {
         className: PLACEHOLDER_CLASS,
         placeholders: { [KEYS.p]: m.editor_placeholder() },

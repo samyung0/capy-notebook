@@ -1,0 +1,17 @@
+diff --git a/dist/static-CTmHK15f.js b/dist/static-CTmHK15f.js
+index 89b16eab6feb1b345b263066245ea0a16e0b5ca4..4f2a9753bf4022330da866980deb5b3afa637c7c 100644
+--- a/dist/static-CTmHK15f.js
++++ b/dist/static-CTmHK15f.js
+@@ -50,8 +50,12 @@ const pluginInjectNodeProps = (editor, plugin, nodeProps, getElementPath) => {
+ //#region src/internal/plugin/pipeInjectNodeProps.tsx
+ /** Inject plugin props, editor. */
+ const pipeInjectNodeProps = (editor, nodeProps, getElementPath, readOnly = false) => {
++	const isElement = !!nodeProps.element;
+ 	editor.meta.pluginCache.inject.nodeProps.forEach((key) => {
+ 		const plugin = editor.getPlugin({ key });
++		// Capy patch: a plugin limited to the other kind of node (getInjectMatch's
++		// isLeaf, isElement, isBlock) is skipped before its per-node work.
++		if (isElement ? plugin.inject.isLeaf : plugin.inject.isElement || plugin.inject.isBlock) return;
+ 		const newAttributes = pluginInjectNodeProps(editor, plugin, nodeProps, getElementPath);
+ 		if (isEditOnly(readOnly, plugin, "inject")) return;
+ 		if (!newAttributes) return;

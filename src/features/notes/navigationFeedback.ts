@@ -8,7 +8,7 @@ import {
 import {
   NavigationFeedbackPlugin,
   type PlateEditor,
-  usePluginOptions,
+  useEditorPluginOptions,
 } from 'platejs/react';
 
 /**
@@ -20,13 +20,15 @@ import {
  * element reads the plugin's `activeTarget` option instead and resolves its own
  * path only while a flash is on. Same attributes on the same element; the flash
  * itself also sets them on the DOM node (`flashTarget`), this keeps them across
- * a re-render.
+ * a re-render. The option is read through the editor rendering the element:
+ * `usePluginOptions` would also subscribe every element to the editor's store.
  */
 function useNavigationTarget(
   editor: PlateEditor,
   node: TElement | TText | undefined
 ) {
-  return usePluginOptions(
+  return useEditorPluginOptions(
+    editor,
     BaseNavigationFeedbackPlugin,
     ({
       activeTarget,

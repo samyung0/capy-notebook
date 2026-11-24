@@ -123,9 +123,16 @@ export function guardQuestion(
   };
   // The board's place on the page, read when a pointer comes in or presses.
   let origin: DOMRect | null = null;
+  /** Where the board is looked at, and its size on the screen. */
+  const view = () => {
+    const { centerX, centerY, height, width, zoom } = gfx.viewport;
+    return `${zoom} ${centerX} ${centerY} ${width} ${height}`;
+  };
+  let shownIn = '';
   const show = (clientX: number, clientY: number) => {
     origin ??= board.getBoundingClientRect();
     element.style.transform = `translate(${clientX - origin.left}px,${clientY - origin.top}px) translate(-50%,-100%)`;
+    shownIn = view();
     element.hidden = false;
   };
   const hide = () => {
@@ -178,7 +185,14 @@ export function guardQuestion(
     : [];
   for (const [type, listener] of hover)
     board.addEventListener(type, listener, { capture: true, passive: true });
-  const panned = tip ? gfx.viewport.viewportUpdated.subscribe(hide) : null;
+  // A pan, zoom or resize moves the part from under the tip. BlockSuite also
+  // says the view updated with nothing moved, when its refresh after a view
+  // change settles (one lands a moment after the board opens), and that keeps it.
+  const panned = tip
+    ? gfx.viewport.viewportUpdated.subscribe(() => {
+        if (view() !== shownIn) hide();
+      })
+    : null;
 
   return () => {
     unselect.unsubscribe();

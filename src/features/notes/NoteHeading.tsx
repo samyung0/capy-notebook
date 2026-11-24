@@ -17,9 +17,16 @@ const titleSchema = z.object({
 type TitleFields = z.infer<typeof titleSchema>;
 const LINE_BREAKS = /\s*[\r\n]+\s*/g;
 
-/** A title field is as tall as its text. */
+/** Whether the browser sizes the title to its text itself (its
+ * `field-sizing-content` class). Then nothing reads the title's height: read
+ * just after a note's body went in, that read lays the whole note out first
+ * (585 ms for a near-limit note opened read-only, at CI speed). */
+const SIZES_ITSELF =
+  typeof CSS !== 'undefined' && CSS.supports('field-sizing', 'content');
+
+/** A title field is as tall as its text, where the browser does not size it. */
 const autosize = (element: HTMLTextAreaElement | null) => {
-  if (!element) return;
+  if (!element || SIZES_ITSELF) return;
   element.style.height = 'auto';
   element.style.height = `${element.scrollHeight}px`;
 };
@@ -169,7 +176,7 @@ function NoteTitle({
   useEffect(() => autosize(field.current), [shown]);
   useEffect(() => {
     const element = field.current;
-    if (!element) return;
+    if (!element || SIZES_ITSELF) return;
     let width = element.clientWidth;
     const observer = new ResizeObserver(() => {
       if (element.clientWidth === width) return;
@@ -209,7 +216,7 @@ function NoteTitle({
       {...title}
       aria-label={m.common_title()}
       // 40px at 700 from 768px, shrinking as the note's headings do (note-fs).
-      className="note-fs pointer-events-auto block w-full resize-none overflow-hidden bg-transparent py-[3px] font-bold text-fg leading-[1.2] outline-none placeholder:text-fg-muted"
+      className="note-fs field-sizing-content pointer-events-auto block w-full resize-none overflow-hidden bg-transparent py-[3px] font-bold text-fg leading-[1.2] outline-none placeholder:text-fg-muted"
       maxLength={updateMaterialBodyTitleMax}
       onInput={(event) => {
         typed.current = true;

@@ -18,6 +18,8 @@ overrides:
 patchedDependencies:
   "@atlaskit/pragmatic-drag-and-drop@1.4.0": 15512c3fac63145e91316deda955de129fb16c06aa27d64bf81300d7d3d31c45
   "@hocuspocus/provider@3.4.4": 81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5
+  "@platejs/core@53.3.11": 184261c2788e10d79c72c679fbdd34e151837e4eaf94a9a036f4a3d2e737633a
+  "@platejs/slate@53.3.10": 169ad259b46fb8b621a57a76a4d1c8b5e24530d2004fc7db84befe0fe251b061
   "@slate-yjs/core@1.0.2": b26505a22822809161d7e4e727dcaf885efe7009b5dd77e479c0c8790e8a6156
   yjs@13.6.31: 4642066ca5ccdec3328e1b29853231fb914861ce4a7a984dde9116d334f78497
 
@@ -19179,9 +19181,9 @@ snapshots:
       react-compiler-runtime: 1.0.0(react@19.2.8)
       react-dom: 19.2.8(react@19.2.8)
 
-  "@platejs/core@53.3.11(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))":
+  "@platejs/core@53.3.11(patch_hash=184261c2788e10d79c72c679fbdd34e151837e4eaf94a9a036f4a3d2e737633a)(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))":
     dependencies:
-      "@platejs/slate": 53.3.10
+      "@platejs/slate": 53.3.10(patch_hash=169ad259b46fb8b621a57a76a4d1c8b5e24530d2004fc7db84befe0fe251b061)
       "@udecode/react-hotkeys": 52.0.11(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       "@udecode/react-utils": 52.3.4(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       "@udecode/utils": 52.3.4
@@ -19382,7 +19384,7 @@ snapshots:
       react-compiler-runtime: 1.0.0(react@19.2.8)
       react-dom: 19.2.8(react@19.2.8)
 
-  "@platejs/slate@53.3.10":
+  "@platejs/slate@53.3.10(patch_hash=169ad259b46fb8b621a57a76a4d1c8b5e24530d2004fc7db84befe0fe251b061)":
     dependencies:
       "@udecode/utils": 52.3.4
       is-plain-object: 5.0.0
@@ -19418,8 +19420,8 @@ snapshots:
 
   "@platejs/utils@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))":
     dependencies:
-      "@platejs/core": 53.3.11(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))
-      "@platejs/slate": 53.3.10
+      "@platejs/core": 53.3.11(patch_hash=184261c2788e10d79c72c679fbdd34e151837e4eaf94a9a036f4a3d2e737633a)(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))
+      "@platejs/slate": 53.3.10(patch_hash=169ad259b46fb8b621a57a76a4d1c8b5e24530d2004fc7db84befe0fe251b061)
       "@udecode/react-utils": 52.3.4(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       "@udecode/utils": 52.3.4
       clsx: 2.1.1
@@ -24868,8 +24870,8 @@ snapshots:
 
   platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)):
     dependencies:
-      "@platejs/core": 53.3.11(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))
-      "@platejs/slate": 53.3.10
+      "@platejs/core": 53.3.11(patch_hash=184261c2788e10d79c72c679fbdd34e151837e4eaf94a9a036f4a3d2e737633a)(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))
+      "@platejs/slate": 53.3.10(patch_hash=169ad259b46fb8b621a57a76a4d1c8b5e24530d2004fc7db84befe0fe251b061)
       "@platejs/utils": 53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))
       "@udecode/react-hotkeys": 52.0.11(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       "@udecode/react-utils": 52.3.4(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)

@@ -2635,6 +2635,20 @@ test('PPTX Present fills the screen, and Presenter view drives the show from a s
   const show = frame.getByRole('dialog', { name: 'Slide presentation' });
   const fullscreen = () =>
     page.evaluate(() => document.fullscreenElement?.tagName ?? null);
+  // Each notes window loads the runtime's page before it hands itself over
+  // to the show, which takes seconds on CI's dev server.
+  const presenterView = async () => {
+    await page
+      .getByRole('button', { name: m.files_office_present_options() })
+      .click();
+    const popup = page.waitForEvent('popup');
+    await page.getByRole('menuitem', { name: 'Presenter view' }).click();
+    const opened = await popup;
+    await expect(
+      opened.getByRole('main', { name: 'Presenter view' })
+    ).toBeVisible({ timeout: 30_000 });
+    return opened;
+  };
 
   // Present: the slides in full screen in this tab, no second window.
   await page.getByRole('button', { exact: true, name: 'Present' }).click();
@@ -2645,15 +2659,7 @@ test('PPTX Present fills the screen, and Presenter view drives the show from a s
   await expect.poll(fullscreen).toBeNull();
 
   // Presenter view: the notes window opens beside the tab's show.
-  await page
-    .getByRole('button', { name: m.files_office_present_options() })
-    .click();
-  const opened = page.waitForEvent('popup');
-  await page.getByRole('menuitem', { name: 'Presenter view' }).click();
-  const notes = await opened;
-  await expect(
-    notes.getByRole('main', { name: 'Presenter view' })
-  ).toBeVisible();
+  const notes = await presenterView();
   await expect(notes.getByText('Slide 1 of 20')).toBeVisible();
   await expect(notes.getByText('No speaker notes')).toBeVisible();
   await expect(show.getByText('1 / 20')).toBeVisible();
@@ -2678,14 +2684,6 @@ test('PPTX Present fills the screen, and Presenter view drives the show from a s
 
   // The runtime reloading by itself takes the notes window with it, and the
   // next Presenter view gets a fresh one that shows its notes.
-  const presenterView = async () => {
-    await page
-      .getByRole('button', { name: m.files_office_present_options() })
-      .click();
-    const popup = page.waitForEvent('popup');
-    await page.getByRole('menuitem', { name: 'Presenter view' }).click();
-    return popup;
-  };
   const stale = await presenterView();
   await expect(stale.getByText('Slide 2 of 20')).toBeVisible();
   const runtime = page
