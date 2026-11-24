@@ -92,14 +92,25 @@ const BUDGET = {
   // 1.3x the medians of three Performance runs of the production build on
   // 5b054df3a, 2026-11-24 (CPU x4), opens from the slower runner (steps above).
   // Run values are listed as 45330694331 / 45330707441 (AMD EPYC 7763) /
-  // 45330721726 (AMD EPYC 9V45). They are the only perf gate and only a human
-  // lowers them. See openwiki/editor-perf.md.
+  // 45330721726 (AMD EPYC 9V45). The opens were set again on the fixed
+  // measure (below). They are the only perf gate and only a human lowers them.
+  // See openwiki/editor-perf.md.
   large: {
-    // Wall-clock from navigation to a synced, editable Plate instance. Measured
-    // unthrottled. 1.3x the slower EPYC 7763 run: 8,491 / 9,119 / 7,399.
-    interactiveOpenMs: 11_900,
-    // 1.3x the slower EPYC 7763 run: 2,137 / 2,279 / 2,602.
-    readOnlyOpenMs: 3000,
+    // Both opens end once the frame first showing the note's first block is
+    // rendered (`waitForNote`, 2026-11-24,
+    // bench/editor/reports/2026-11-24-editable-open-breakdown.md); the old
+    // measure stopped read-only on the left panel's title and waited
+    // interactive on a MathLive field. Set on that measure (Epo 2026-11-24,
+    // "Set them now") from three runs on 276d1de7e, listed as 45362191070
+    // (Intel Xeon 6975P-C) / 45362210464 / 45362227226 (AMD EPYC 9V74), by
+    // step 3: none drew the EPYC 7763, so 1.3x the slower run of the slowest
+    // runner present, the 9V74. The first runs that draw the 7763 replace
+    // them.
+    // Wall-clock from navigation to a synced, editable Plate instance showing
+    // the note. Measured unthrottled. 4,701 / 4,963 / 5,010.
+    interactiveOpenMs: 6550,
+    // 3,573 / 3,719 / 3,824.
+    readOnlyOpenMs: 5000,
     // Debounce, Yjs commit, the acknowledgement's state updates, and the
     // projection invalidation. Nothing here may touch the document tree, so
     // this budget is the tripwire for a regression that reconnects the save
@@ -187,6 +198,57 @@ interface OpenResult {
   openMs: number;
 }
 
+/** A note's block in either surface; the first is the note's first block. */
+const BLOCK = '[data-slate-node="element"]';
+/** The note's editable (Plate's). MathLive's fields are contenteditable too,
+ * in the read-only document and in the paint the editor takes over from
+ * (hidden, and its DOM removed when idle). */
+const EDITABLE = '[data-slate-editor="true"][contenteditable="true"]';
+
+/**
+ * Until the note itself is on screen: the frame that first shows its first
+ * block, in the read-only document (`material-preview`) or, once the room is
+ * live, in the editable, has been rendered (style, layout and paint). Checked
+ * every animation frame in the page (`raf` polling); a task posted from that
+ * frame's callback runs once its rendering is done. So an open ends there:
+ * not on a locator's next retry (up to 0.5 s later), not on the note's title
+ * in the left panel (on screen behind the gate), and not after a text scan of
+ * the whole editable (26k elements on the near-limit note, ~0.33 s a scan).
+ */
+async function waitForNote(page: Page, note: PerfNote, choice: OpenChoice) {
+  await page.waitForFunction(
+    ({ block, editable, readOnly, text }) => {
+      let first: Element | null | undefined;
+      if (readOnly) {
+        first = document.querySelector(
+          `[data-testid="material-preview"] ${block}`
+        );
+      } else {
+        const state = document
+          .querySelector('[data-testid="editor-save-state"]')
+          ?.getAttribute('data-save-state');
+        if (state === 'synced' || state === 'syncing' || state === 'saved')
+          first = document.querySelector(editable)?.querySelector(block);
+      }
+      if (
+        !(
+          first?.textContent?.includes(text) &&
+          first.checkVisibility({ visibilityProperty: true })
+        )
+      )
+        return false;
+      return new Promise<boolean>((done) => setTimeout(() => done(true), 0));
+    },
+    {
+      block: BLOCK,
+      editable: EDITABLE,
+      readOnly: choice === 'readOnly',
+      text: note.readyText,
+    },
+    { polling: 'raf', timeout: 120_000 }
+  );
+}
+
 /**
  * Navigate straight to a note and answer the heavy-document interstitial.
  * Whether the gate appears is asserted rather than tolerated: the perf fixture
@@ -206,7 +268,7 @@ async function openNote(
 
   const openAnyway = page.getByTestId('heavy-material-open');
   const openReadOnly = page.getByTestId('heavy-material-read-only');
-  const editor = page.locator('[contenteditable="true"]').first();
+  const editor = page.locator(EDITABLE).first();
 
   if (gated) {
     await expect(openAnyway, 'heavy-document interstitial').toBeVisible({
@@ -215,26 +277,30 @@ async function openNote(
     await (choice === 'readOnly' ? openReadOnly : openAnyway).click();
   }
 
+  await waitForNote(page, note, choice);
+  const openMs = Date.now() - startedAt;
+
+  // What the wait saw, as assertions with their own messages.
   if (choice === 'readOnly') {
     await expect(
-      page.getByRole('main').getByText(note.readyText).first()
-    ).toBeVisible({ timeout: 120_000 });
+      page.getByTestId('material-preview').locator(BLOCK).first()
+    ).toContainText(note.readyText);
+    // Any Plate editor, read-only ones too: slate-react's always carries
+    // contenteditable, the static document (`data-slate-editor` as well)
+    // never does.
     await expect(
-      editor,
-      'read-only never mounts an editable surface'
+      page.locator('[data-slate-editor="true"][contenteditable]'),
+      'read-only never mounts an editor'
     ).toHaveCount(0);
   } else {
-    await expect(editor).toBeVisible({ timeout: 120_000 });
-    await expect(editor.getByText(note.readyText).first()).toBeVisible({
-      timeout: 120_000,
-    });
     await expectLive(page);
+    await expect(editor).toBeVisible();
+    await expect(editor.locator(BLOCK).first()).toContainText(note.readyText);
     if (!gated) {
       await expect(openAnyway, 'small note must not be gated').toHaveCount(0);
     }
   }
 
-  const openMs = Date.now() - startedAt;
   // Let initial render and decoration effects settle so they do not pollute
   // the measurement window.
   await page.waitForTimeout(1500);

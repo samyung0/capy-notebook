@@ -1,12 +1,12 @@
 import { DndPlugin } from '@platejs/dnd';
 import {
   BlockSelectionPlugin,
-  useBlockSelected,
   useCursorOverlay,
 } from '@platejs/selection/react';
 import { ElementApi, KEYS } from 'platejs';
 import {
   type PlateElementProps,
+  useEditorPluginOption,
   useEditorRef,
   usePluginOption,
 } from 'platejs/react';
@@ -36,9 +36,21 @@ function hasSelectableClass({
 
 const NO_OVERLAY_KEYS = new Set<string>([KEYS.table, KEYS.tr]);
 
+/** Reads through the editor and element it is given: `useBlockSelected` and
+ * `usePluginOption` would subscribe every selectable block to the editor's
+ * and the element's stores as well. */
 export function BlockSelection(props: PlateElementProps) {
-  const isBlockSelected = useBlockSelected();
-  const isDragging = usePluginOption(DndPlugin, 'isDragging');
+  const isBlockSelected = useEditorPluginOption(
+    props.editor,
+    BlockSelectionPlugin,
+    'isSelected',
+    props.element.id as string
+  );
+  const isDragging = useEditorPluginOption(
+    props.editor,
+    DndPlugin,
+    'isDragging'
+  );
 
   if (!isBlockSelected || isDragging || NO_OVERLAY_KEYS.has(props.plugin.key))
     return null;
