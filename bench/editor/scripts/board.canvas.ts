@@ -1,15 +1,21 @@
 import { readFile } from 'node:fs/promises';
+import { cpus } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 import { type Browser, expect, type Page, test } from '@playwright/test';
 import {
+  type DenseTargets,
   type Expected,
   LARGE,
   makeBoard,
+  makeDenseBoard,
   openBoard,
   type Root,
+  screenOf,
+  startTyping,
   TYPICAL,
+  type TypingPath,
 } from './canvasBoards';
 import { CPU_RATE, percentile, reportMetrics, throttleCpu } from './metrics';
 
@@ -19,12 +25,15 @@ import { CPU_RATE, percentile, reportMetrics, throttleCpu } from './metrics';
  * a typical board's and a large one's cold opens, and on each panning, zooming, a
  * pen stroke and typing in a note card, each input's delay to its painted frame;
  * and Draw as a drawing question runs it (fix 4): the typical board mounted hidden
- * in a page that has the module, then shown. Gated: the blank and typical cold
- * opens, the typical board's inputs, the hidden mount's longest frame and Draw's
- * first frame. Reported only: warm opens and mounts, the large board and the bytes
- * each open downloads.
+ * in a page that has the module, then shown. Then the dense board (eight answers,
+ * `DENSE`): its cold open and, at its open's fit, typing a canvas label, a note
+ * card and a formula card, and dragging a plane card's point in the plane's
+ * editor (2026-11-23). Gated: the blank and typical cold opens, the typical
+ * board's inputs, the hidden mount's longest frame, Draw's first frame and the
+ * dense board's figures (`MEDIANS`). Reported only: warm
+ * opens and mounts, the large board and the bytes each open downloads.
  *
- * Both boards are made in the page through BlockSuite's own API and saved, so they
+ * The boards are made in the page through BlockSuite's own API and saved, so they
  * always match the board's current format: strokes, shapes, formulas and note
  * cards around the plane card.
  */
@@ -59,7 +68,29 @@ type Timings = {
   hiddenMountLongestMs: number;
   /** Draw on the board mounted ahead: showing it to its first frame, at CPU_RATE. */
   drawShownMs: number;
+  /** The dense board's cold open, at CPU_RATE. */
+  denseOpenMs: number;
+  /** On the dense board at its open's fit, at CPU_RATE: typing a canvas label
+   * (the path that drew the whole canvas each key), a note card and a formula
+   * card, and dragging a plane card's point in the plane's editor. */
+  denseLabelP90Ms: number;
+  denseNoteP90Ms: number;
+  denseFormulaP90Ms: number;
+  densePlaneDragP90Ms: number;
 };
+
+/** Figures timed from an input to its frame; the rest are opens and frames. */
+const INPUTS = new Set<keyof Timings>([
+  'denseFormulaP90Ms',
+  'denseLabelP90Ms',
+  'denseNoteP90Ms',
+  'densePlaneDragP90Ms',
+  'drawShownMs',
+  'panP90Ms',
+  'penP90Ms',
+  'typingP90Ms',
+  'zoomP90Ms',
+]);
 
 /**
  * Medians of three `canvas` job runs of the Performance workflow, as Office's are:
@@ -70,9 +101,26 @@ type Timings = {
  * `hiddenMountLongestMs` and `drawShownMs` are the medians of three later runs,
  * 42375517156, 42375520111 and 42375523741 on 3249ce018 (2026-11-07): 539/728/738
  * and 43/62/61 ms, so their budgets are 950 and 80 ms.
+ *
+ * The dense board's figures come from three runs on 0ec9f8134 (2026-11-24):
+ * 45296309908, 45296327983 and 45296345446. Its four inputs are their medians:
+ * label 21/23/23, note 20/23/24, formula 47/50/50 and plane drag 9/12/12 ms.
+ * Its open is the third run's 3,610 ms, not the median (2,228 and 2,205 ms in
+ * the other two). The CI pool mixes CPU models, and that run came out 40-60%
+ * slower on every open. It is the slower runner the opens above were
+ * calibrated on (blank open 782 ms there, 807 here; 564-567 on the faster runs),
+ * and a budget from the faster runs (2,900 ms) would fail on it. Inputs differ
+ * little between runners. So an open is calibrated on runs of the slower
+ * runner (the dense open on one so far: take the median once three are in),
+ * an input on all three; each result names its runner (`runner`).
  */
-const MEDIANS: Timings | null = {
+const MEDIANS: Partial<Timings> = {
   blankOpenMs: 807,
+  denseFormulaP90Ms: 50,
+  denseLabelP90Ms: 23,
+  denseNoteP90Ms: 23,
+  denseOpenMs: 3610,
+  densePlaneDragP90Ms: 12,
   drawShownMs: 61,
   hiddenMountLongestMs: 728,
   openMs: 2921,
@@ -85,26 +133,21 @@ const MEDIANS: Timings | null = {
 /** No input budget goes below this: a one-frame wobble fails anything smaller. */
 const INPUT_BUDGET_FLOOR_MS = 30;
 
-/** 1.3x the median, Office's rule: rounded up to 5 ms below a second, 50 ms above. */
-function budgetOf(median: Timings): Timings {
+/** 1.3x each median, Office's rule: rounded up to 5 ms below a second, 50 ms
+ * above; an input's never under INPUT_BUDGET_FLOOR_MS. */
+function budgetOf(medians: Partial<Timings>) {
   const limit = (ms: number) => {
     const scaled = Math.round(ms * 130) / 100;
     const step = scaled < 1000 ? 5 : 50;
     return Math.ceil(scaled / step) * step;
   };
-  const input = (ms: number) => Math.max(INPUT_BUDGET_FLOOR_MS, limit(ms));
-  return {
-    blankOpenMs: limit(median.blankOpenMs),
-    drawShownMs: input(median.drawShownMs),
-    hiddenMountLongestMs: limit(median.hiddenMountLongestMs),
-    openMs: limit(median.openMs),
-    panP90Ms: input(median.panP90Ms),
-    penP90Ms: input(median.penP90Ms),
-    typingP90Ms: input(median.typingP90Ms),
-    zoomP90Ms: input(median.zoomP90Ms),
-  };
+  const budget: Partial<Timings> = {};
+  for (const [key, ms] of Object.entries(medians) as [keyof Timings, number][])
+    budget[key] = INPUTS.has(key)
+      ? Math.max(INPUT_BUDGET_FLOOR_MS, limit(ms))
+      : limit(ms);
+  return budget;
 }
-
 
 /**
  * A cold open in a fresh context at `rate`, then a warm one (the build's files
@@ -521,6 +564,113 @@ async function drawAhead(browser: Browser, saved: string) {
   };
 }
 
+/** A fresh page holding the saved board at its open's fit, CPU at CPU_RATE. */
+async function onFreshPage<T>(
+  browser: Browser,
+  saved: string,
+  errors: string[],
+  run: (page: Page) => Promise<T>
+) {
+  const context = await browser.newContext({
+    viewport: { height: 800, width: 1280 },
+  });
+  const page = await context.newPage();
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.addInitScript((saved) => {
+    window.__benchBoard = saved;
+  }, saved);
+  await openBoard(page);
+  await page.waitForTimeout(2000);
+  await throttleCpu(page, CPU_RATE);
+  const result = await run(page);
+  await context.close();
+  return result;
+}
+
+/** KEYS keys typed into `path`'s editor on the dense board's first answer. */
+const typeOn =
+  (path: TypingPath, targets: DenseTargets) => async (page: Page) => {
+    const typed = await startTyping(page, path, targets);
+    await page.waitForTimeout(500);
+    await installInputProbe(page, ['keydown'], ['keypress', 'input']);
+    for (let i = 0; i < KEYS; i++) {
+      await page.keyboard.press(i % 6 === 5 ? 'b' : 'a');
+      await page.waitForTimeout(KEY_CADENCE_MS);
+    }
+    const delays = await inputDelays(page);
+    expect(await typed()).toContain('aaaaab');
+    return delays;
+  };
+
+/** Opens a plane card in the plane's editor and drags its first point (Select,
+ * the editor's first tool) PEN_MOVES times. The editor opens at the card's
+ * scale with the card's middle at its own. */
+const dragPlanePoint = (plane: string) => async (page: Page) => {
+  await page.mouse.dblclick(...(await screenOf(page, plane)));
+  await expect(page.locator('.capy-graph-editor canvas').first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await page.waitForTimeout(500);
+  const box = await page.locator('.capy-graph-editor').boundingBox();
+  if (!box) throw new Error('no plane editor');
+  const firstPoint = () =>
+    page.evaluate((id) => {
+      const root = document.querySelector('affine-edgeless-root') as Root & {
+        gfx: {
+          getElementById(id: string): {
+            elementList: { coords: [number, number] }[];
+            ppu: number;
+            xywh: string;
+            x0: number;
+            y0: number;
+          } | null;
+        };
+      };
+      const card = root.gfx.getElementById(id);
+      if (!card) throw new Error('no plane');
+      const [, , w, h] = JSON.parse(card.xywh) as number[];
+      return {
+        at: card.elementList[0].coords,
+        centre: [card.x0 + w / 2 / card.ppu, card.y0 - h / 2 / card.ppu],
+        ppu: card.ppu,
+      };
+    }, plane);
+  const start = await firstPoint();
+  const [x, y] = [
+    box.x + box.width / 2 + (start.at[0] - start.centre[0]) * start.ppu,
+    box.y + box.height / 2 + (start.centre[1] - start.at[1]) * start.ppu,
+  ];
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await installInputProbe(page, ['pointermove'], []);
+  for (let i = 1; i <= PEN_MOVES; i++) {
+    await page.mouse.move(x + i * 4, y - Math.sin(i / 4) * 40);
+    await page.waitForTimeout(PEN_CADENCE_MS);
+  }
+  const delays = await inputDelays(page);
+  await page.mouse.up();
+  expect((await firstPoint()).at).not.toEqual(start.at);
+  return delays;
+};
+
+/** The dense board's inputs, each on a fresh page at the open's fit (the whole
+ * board in view, every element drawn). */
+async function onDense(
+  browser: Browser,
+  dense: Awaited<ReturnType<typeof makeDenseBoard>>,
+  errors: string[]
+) {
+  const { doc } = dense.saved;
+  const fresh = <T>(run: (page: Page) => Promise<T>) =>
+    onFreshPage(browser, doc, errors, run);
+  return {
+    formula: await fresh(typeOn('formula', dense.targets)),
+    label: await fresh(typeOn('label', dense.targets)),
+    note: await fresh(typeOn('note', dense.targets)),
+    planeDrag: await fresh(dragPlanePoint(dense.targets.plane)),
+  };
+}
+
 test('the drawing board opens and responds within its budgets', async ({
   browser,
 }, testInfo) => {
@@ -547,8 +697,22 @@ test('the drawing board opens and responds within its budgets', async ({
   const onLarge = await interactions(browser, large.saved.doc, errors);
   const draw = await drawAhead(browser, typical.saved.doc);
 
+  const dense = await makeDenseBoard(browser);
+  const denseOpen = await opens(
+    browser,
+    CPU_RATE,
+    dense.expected,
+    dense.saved.doc
+  );
+  const onDenseBoard = await onDense(browser, dense, errors);
+
   const timings: Timings = {
     blankOpenMs: blankOpen.cold.paintedMs,
+    denseFormulaP90Ms: onDenseBoard.formula.p90Ms,
+    denseLabelP90Ms: onDenseBoard.label.p90Ms,
+    denseNoteP90Ms: onDenseBoard.note.p90Ms,
+    denseOpenMs: denseOpen.cold.paintedMs,
+    densePlaneDragP90Ms: onDenseBoard.planeDrag.p90Ms,
     drawShownMs: draw.shownMs,
     hiddenMountLongestMs: draw.hiddenMountLongestMs,
     openMs: typicalOpen.cold.paintedMs,
@@ -557,13 +721,14 @@ test('the drawing board opens and responds within its budgets', async ({
     typingP90Ms: onTypical.typing.p90Ms,
     zoomP90Ms: onTypical.zoom.p90Ms,
   };
-  const budget = MEDIANS ? budgetOf(MEDIANS) : 'uncalibrated';
+  const budget = budgetOf(MEDIANS);
   const opened = ({ cold, warm }: typeof blankOpen) => ({ cold, warm });
-  // Gated: `timings`. Report-only: warm opens and mounts, the large board and
-  // the bytes.
+  // Gated: the `timings` with a budget. Report-only: the rest (`uncalibrated`),
+  // warm opens and mounts, the large board and the bytes.
   await reportMetrics(testInfo, 'canvas-board', {
     blank: { cpu: 1, open: opened(blankOpen) },
     boards: {
+      dense: { bytes: dense.saved.bytes, ...dense.expected },
       large: { bytes: large.saved.bytes, ...large.expected },
       typical: { bytes: typical.saved.bytes, ...typical.expected },
     },
@@ -573,15 +738,21 @@ test('the drawing board opens and responds within its budgets', async ({
       large: await bytesOf(largeOpen.resources),
       typical: await bytesOf(typicalOpen.resources),
     },
+    dense: { open: opened(denseOpen), ...onDenseBoard },
     large: { open: opened(largeOpen), ...onLarge },
+    // The CI pool mixes CPU models, and opens differ 40-60% between them.
+    runner: { cpuModel: cpus()[0]?.model ?? 'unknown', cpus: cpus().length },
     timings,
     typical: { draw, open: opened(typicalOpen), ...onTypical },
+    uncalibrated: Object.keys(timings).filter((key) => !(key in budget)),
   });
 
   expect(errors).toEqual([]);
-  for (const steps of [onTypical, onLarge])
+  for (const steps of [onTypical, onLarge, onDenseBoard])
     for (const step of Object.values(steps)) expect(step.unpainted).toBe(0);
-  if (budget === 'uncalibrated') return;
-  for (const key of Object.keys(timings) as (keyof Timings)[])
-    expect.soft(timings[key], key).toBeLessThanOrEqual(budget[key]);
+  for (const [key, limit] of Object.entries(budget) as [
+    keyof Timings,
+    number,
+  ][])
+    expect.soft(timings[key], key).toBeLessThanOrEqual(limit);
 });

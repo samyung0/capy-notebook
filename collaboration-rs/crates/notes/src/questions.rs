@@ -19,19 +19,20 @@ use crate::limits::merged_cap;
 // The question bounds every validator shares, from the embed catalog
 // (Go `fieldlimits.QuestionBounds`).
 pub use crate::catalog::{
-    QUESTION_ANSWERS_MAX, QUESTION_ASSET_URL_MAX, QUESTION_BLOCKS_MAX, QUESTION_CHART_LABEL_MAX,
-    QUESTION_CHART_LABELS_MAX, QUESTION_CHART_SERIES_MAX, QUESTION_CHART_SERIES_NAME_MAX,
-    QUESTION_CHART_TITLE_MAX, QUESTION_CHART_VALUE_MAX, QUESTION_DESCRIPTION_MAX,
-    QUESTION_GRAPH_DIMENSION_MAX, QUESTION_GRAPH_DIMENSION_MIN, QUESTION_GRAPH_ELEMENTS_MAX,
-    QUESTION_GRAPH_EXPRESSION_MAX, QUESTION_GRAPH_LABEL_MAX, QUESTION_GRAPH_LATEX_MAX,
-    QUESTION_GRAPH_NAME_MAX, QUESTION_GRAPH_PATH_MAX, QUESTION_GRAPH_POLYGON_MAX,
-    QUESTION_GRAPH_TEXT_SIZE_MAX, QUESTION_GRAPH_TEXT_SIZE_MIN, QUESTION_ID_MAX,
-    QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX, QUESTION_MARKS_MAX,
-    QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX, QUESTION_PLOT_LABEL_MAX,
-    QUESTION_PLOT_MARKS_MAX, QUESTION_PLOT_POINTS_MAX, QUESTION_PLOT_SERIES_MAX,
-    QUESTION_PLOT_TITLE_MAX, QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX,
-    QUESTION_TEXT_MAX, QUESTION_TOPICS_MAX, QUESTION_UNIT_MAX, QUIZ_MARKSCHEME_MAX,
-    QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX, QUIZ_PARTS_MAX, QUIZ_QUESTION_PARTS_MAX,
+    QUESTION_ANSWERS_MAX, QUESTION_ASSET_URL_MAX, QUESTION_BLOCKS_MAX, QUESTION_CANVASES_MAX,
+    QUESTION_CHART_LABEL_MAX, QUESTION_CHART_LABELS_MAX, QUESTION_CHART_SERIES_MAX,
+    QUESTION_CHART_SERIES_NAME_MAX, QUESTION_CHART_TITLE_MAX, QUESTION_CHART_VALUE_MAX,
+    QUESTION_DESCRIPTION_MAX, QUESTION_GRAPH_DIMENSION_MAX, QUESTION_GRAPH_DIMENSION_MIN,
+    QUESTION_GRAPH_ELEMENTS_MAX, QUESTION_GRAPH_EXPRESSION_MAX, QUESTION_GRAPH_LABEL_MAX,
+    QUESTION_GRAPH_LATEX_MAX, QUESTION_GRAPH_NAME_MAX, QUESTION_GRAPH_PATH_MAX,
+    QUESTION_GRAPH_POLYGON_MAX, QUESTION_GRAPH_TEXT_SIZE_MAX, QUESTION_GRAPH_TEXT_SIZE_MIN,
+    QUESTION_ID_MAX, QUESTION_IMAGE_DIMENSION_MAX, QUESTION_IMAGES_MAX, QUESTION_MARK_ITEM_MAX,
+    QUESTION_MARKS_MAX, QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX,
+    QUESTION_PLOT_LABEL_MAX, QUESTION_PLOT_MARKS_MAX, QUESTION_PLOT_POINTS_MAX,
+    QUESTION_PLOT_SERIES_MAX, QUESTION_PLOT_TITLE_MAX, QUESTION_TABLE_COLUMNS_MAX,
+    QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX, QUESTION_TOPICS_MAX, QUESTION_UNIT_MAX,
+    QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX, QUIZ_PARTS_MAX,
+    QUIZ_QUESTION_PARTS_MAX,
 };
 
 /// `QuestionPolicy`, plus the host a quiz figure may link: the TS reads
@@ -393,7 +394,8 @@ pub fn valid_quantity_value(value: &str) -> bool {
 pub struct Block {
     pub kind: String,
     pub text: Option<String>,
-    /// An image's `image.url` (trimmed) or `image.assetId`.
+    /// An image's `image.url` (trimmed) or `image.assetId`; a drawn canvas's
+    /// picture, an `assetId`.
     pub image: Option<(&'static str, String)>,
     /// A figure's description (trimmed), when it has one.
     pub description: Option<String>,
@@ -1174,13 +1176,16 @@ struct Part {
     answer: String,
     gaps: usize,
     open_accepted: Vec<String>,
-    drawn_sample: bool,
     awarded: Option<f64>,
     item_awards: Option<Vec<f64>>,
     marks: f64,
     markscheme: Option<Vec<f64>>,
     blocks: Vec<Block>,
     solution: Vec<Block>,
+    /// A canvas part answered in the canvas above it (Epo 2026-11-23).
+    shared: bool,
+    /// A canvas part's drawn sample answer, one of the question's canvases.
+    sample: bool,
 }
 
 /// What `answer` leaves for the part's own checks.
@@ -1189,8 +1194,8 @@ struct Answer {
     gaps: usize,
     /// An open answer's accepted texts.
     open_accepted: Vec<String>,
-    /// A drawing part holds a drawn sample answer.
-    drawn_sample: bool,
+    shared: bool,
+    sample: bool,
 }
 
 impl Answer {
@@ -1199,7 +1204,8 @@ impl Answer {
             kind: kind.into(),
             gaps: 0,
             open_accepted: vec![],
-            drawn_sample: false,
+            shared: false,
+            sample: false,
         }
     }
 }
@@ -1325,23 +1331,25 @@ fn answer(value: &Value, policy: &Policy) -> Result<Answer, String> {
                 ..Answer::of(kind)
             })
         }
-        "drawing" => {
-            // Answered on the drawing board, opened plain (Epo 2026-11-06), with
-            // an optional drawn sample answer: its board and image, both the
-            // quiz's editor assets (Q3).
-            strict(map, what, &["type"], &["sample"])?;
-            let drawn_sample = match present(map, "sample") {
-                Some(sample) => {
-                    let sample = object(sample, "sample")?;
-                    strict(sample, "sample", &["board", "image"], &[])?;
-                    identifier(&sample["board"], "sample")?;
-                    identifier(&sample["image"], "sample")?;
-                    true
-                }
-                None => false,
-            };
+        "canvas" => {
+            // Answered on the part's canvas or, shared, the one above it (Epo
+            // 2026-11-23), with an optional drawn sample answer: its board and
+            // image, both the quiz's editor assets (Q3).
+            strict(map, what, &["type"], &["sample", "shared"])?;
+            let shared = present(map, "shared");
+            if shared.is_some_and(|v| v != &Value::Bool(true)) {
+                return fail(format!("{what}: shared must be true"));
+            }
+            let sample = present(map, "sample");
+            if let Some(sample) = sample {
+                let sample = object(sample, "sample")?;
+                strict(sample, "sample", &["board", "image"], &[])?;
+                identifier(&sample["board"], "sample")?;
+                identifier(&sample["image"], "sample")?;
+            }
             Ok(Answer {
-                drawn_sample,
+                shared: shared.is_some(),
+                sample: sample.is_some(),
                 ..Answer::of(kind)
             })
         }
@@ -1349,12 +1357,45 @@ fn answer(value: &Value, policy: &Policy) -> Result<Answer, String> {
     }
 }
 
+/// A question's block list: a canvas among them too, which the checks after
+/// the schema place ([validate_question]).
 fn block_list(value: &Value, min: usize, policy: &Policy) -> Result<Vec<Block>, String> {
     array(value, "blocks", min, policy.held(QUESTION_BLOCKS_MAX))?
         .iter()
-        .map(|block| block_in(block, false, policy))
+        .map(|block| match block.get("type").and_then(Value::as_str) {
+            Some("canvas") => canvas(object(block, "block")?),
+            _ => block_in(block, false, policy),
+        })
         .collect()
 }
+
+/// A canvas (Epo 2026-11-23): empty, or its board (a gzipped board, the
+/// `board` editor asset purpose) and its picture (a quiz image) together,
+/// both the quiz's editor assets. Only a question's block lists take one;
+/// [block], a note's, refuses it.
+fn canvas(map: &Map<String, Value>) -> Result<Block, String> {
+    let what = "block";
+    strict(map, what, &["type"], &["board", "image"])?;
+    let board = present(map, "board")
+        .map(|v| identifier(v, what))
+        .transpose()?;
+    let image = present(map, "image")
+        .map(|v| identifier(v, what))
+        .transpose()?;
+    if board.is_some() != image.is_some() {
+        return fail("A drawn canvas needs both its board and its picture.");
+    }
+    Ok(Block {
+        kind: "canvas".into(),
+        text: None,
+        image: image.map(|id| ("assetId", id)),
+        description: None,
+    })
+}
+
+/// The canvases one block list holds, the stem's, a group's or a part's (Epo
+/// 2026-11-23): one, which an editor stops at (TS `PART_CANVASES_MAX`).
+pub const PART_CANVASES_MAX: usize = 1;
 
 fn part(value: &Value, policy: &Policy) -> Result<Part, String> {
     let what = "part";
@@ -1373,7 +1414,8 @@ fn part(value: &Value, policy: &Policy) -> Result<Part, String> {
         kind: answer,
         gaps,
         open_accepted,
-        drawn_sample,
+        shared,
+        sample,
     } = answer(&map["answer"], policy)?;
     let awarded = match present(map, "awarded") {
         Some(v) => {
@@ -1434,13 +1476,14 @@ fn part(value: &Value, policy: &Policy) -> Result<Part, String> {
         answer,
         gaps,
         open_accepted,
-        drawn_sample,
         awarded,
         item_awards,
         marks,
         markscheme,
         blocks,
         solution,
+        shared,
+        sample,
     })
 }
 
@@ -1672,11 +1715,26 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
                 );
             }
         }
-        if policy.bank && part.drawn_sample {
-            return fail("A bank drawing part has no drawn sample answer.");
-        }
         if policy.bank && part.solution.is_empty() {
             return fail("Bank questions need a worked solution for every part.");
+        }
+        // A canvas part answers on a canvas, which bank images (public links)
+        // cannot hold yet: its own, or the one above it (shared, Epo
+        // 2026-11-23), its group's else the stem's.
+        if policy.bank && part.answer == "canvas" {
+            return fail("Bank questions can't hold a canvas yet.");
+        }
+        let group = groups
+            .iter()
+            .find(|g| part.group.as_deref() == Some(g.id.as_str()));
+        let above = group.is_some_and(|g| canvases(&g.blocks) > 0) || canvases(&stem) > 0;
+        if part.answer == "canvas" && part.shared && !above {
+            return fail(
+                "A canvas part answered in the canvas above needs one in the opening text or its group.",
+            );
+        }
+        if part.answer == "canvas" && !part.shared && canvases(&part.blocks) == 0 {
+            return fail("A canvas part needs its canvas.");
         }
         // A quiz's caps as its merges may leave them: up to twice each.
         let items = merged_cap(QUIZ_MARKSCHEME_MAX);
@@ -1696,6 +1754,46 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
     let most = merged_cap(QUIZ_QUESTION_PARTS_MAX);
     if !policy.bank && parts.len() > most {
         return fail(format!("A question has at most {most} parts."));
+    }
+    // The stem, a group and a part each take one canvas (Epo 2026-11-23),
+    // which two editors' adds at once may make two; the bank none yet, and
+    // an explanation none.
+    let lists: Vec<&[Block]> = std::iter::once(stem.as_slice())
+        .chain(groups.iter().map(|g| g.blocks.as_slice()))
+        .chain(parts.iter().map(|p| p.blocks.as_slice()))
+        .collect();
+    if policy.bank && lists.iter().any(|blocks| canvases(blocks) > 0) {
+        return fail("Bank questions can't hold a canvas yet.");
+    }
+    if lists
+        .iter()
+        .any(|blocks| canvases(blocks) > policy.held(PART_CANVASES_MAX))
+    {
+        return fail("The opening text, a group and a part each hold at most one canvas.");
+    }
+    if parts.iter().any(|p| canvases(&p.solution) > 0) {
+        return fail(
+            "A canvas goes in the opening text, a group or a part's text, not an explanation.",
+        );
+    }
+    // The grader is sent every image but the explanations' (Epo 2026-11-23,
+    // Go's `questionFigures`); canvases are counted on their own, their
+    // blocks and the drawn sample answers.
+    let images: usize = lists
+        .iter()
+        .map(|blocks| blocks.iter().filter(|b| b.kind == "image").count())
+        .sum();
+    if images > QUESTION_IMAGES_MAX {
+        return fail(format!(
+            "A question has at most {QUESTION_IMAGES_MAX} images outside its explanations."
+        ));
+    }
+    let total: usize = lists.iter().map(|blocks| canvases(blocks)).sum::<usize>()
+        + parts.iter().filter(|p| p.sample).count();
+    if total > QUESTION_CANVASES_MAX {
+        return fail(format!(
+            "A question has at most {QUESTION_CANVASES_MAX} canvases, its drawn sample answers included."
+        ));
     }
     for block in stem
         .iter()
@@ -1726,10 +1824,15 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
     })
 }
 
+/// The canvases a block list holds.
+fn canvases(blocks: &[Block]) -> usize {
+    blocks.iter().filter(|b| b.kind == "canvas").count()
+}
+
 /// Answer types a model marks against the part's marking items: written
-/// (open) and drawn answers.
+/// (open) and drawn (canvas) answers.
 pub fn model_marked(answer: &str) -> bool {
-    answer == "open" || answer == "drawing"
+    answer == "open" || answer == "canvas"
 }
 
 /// `Number(digits)` as JS prints it (leading zeros dropped).

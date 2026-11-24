@@ -17,6 +17,7 @@ pub mod handoff;
 pub mod observe;
 pub mod pending;
 pub mod pictures;
+pub mod pool;
 pub mod refresh;
 pub mod schedule;
 pub mod seed_check;

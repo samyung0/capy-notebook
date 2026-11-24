@@ -620,6 +620,45 @@ func TestResolveEditorAssetFollowsWhatItBelongsTo(t *testing.T) {
 	resolves("a frozen copy's image in a personal workspace", frozenAsset, map[string]int{"u_owner": 404, "u_viewer": 404})
 }
 
+// A quiz's editors still resolve its trashed assets until they are purged (Epo
+// 2026-11-24), so a canvas their tab kept comes back after a reload; its other
+// readers don't.
+func TestResolveTrashedQuizAssetForItsEditors(t *testing.T) {
+	h, st, mem := openInternalHTTPWithBlob(t)
+	ctx := context.Background()
+	ws, err := st.CreateWorkspace(ctx, "u_owner", store.WorkspaceCreate{Name: "Trashed assets", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _, _ = st.Pool().Exec(context.Background(), `DELETE FROM workspaces WHERE id=$1`, ws.ID) })
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
+		VALUES ($1,'u_editor','editor'), ($1,'u_viewer','viewer')`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	quiz, err := st.CreateMaterialDraft(ctx, store.MaterialDraft{
+		ActorUserID: "u_owner", WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: store.MaterialQuiz, Title: "Canvas quiz",
+		Questions: json.RawMessage(`[{"id":"q1","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p1","blocks":[{"type":"text","text":"Pick"}],"answer":{"type":"mcq","options":["a","b"],"correct":[1]},"marks":1,"solution":[]}]}]`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanupMaterial(t, st, quiz.ID)
+	assetID := "asset_trashed_" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	path := "editor-assets/" + assetID + "/blob.png"
+	if _, _, err := mem.Put(path, bytes.NewReader(testPNG(10))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO editor_assets
+		(id, workspace_id, material_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status, completed_at, trashed_at)
+		VALUES ($1,$2,$3,'u_owner','u_owner','canvas.png','image',$4,'image/png',10,'ready',now(),now())`,
+		assetID, ws.ID, quiz.ID, path); err != nil {
+		t.Fatal(err)
+	}
+	for user, status := range map[string]int{"u_owner": 200, "u_editor": 200, "u_viewer": 404, "u_other": 404} {
+		expectStatus(t, doReq(t, h, http.MethodGet, "/api/editor-assets/"+assetID+"/resolve", user, nil), status, "a trashed quiz asset for "+user)
+	}
+}
+
 // Signed-out visitors read a standalone link quiz through its signed token; a
 // forged token or a private quiz is indistinguishable from a missing one.
 func TestShareHTTPAnonymousMaterials(t *testing.T) {

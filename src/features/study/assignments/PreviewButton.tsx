@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState } from 'react';
-import { PageButton } from '@/components/ui/Button';
+import { Button, PageButton } from '@/components/ui/Button';
 import { usePhoneMenuItem } from '@/features/files/fileModeContext';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -11,25 +11,33 @@ const QuizPreviewDialog = lazy(() =>
 );
 
 /** Preview, outlined (Epo 2026-11-15), its word alone at every width: the
- * eye read as the Hidden chip's beside it (Epo 2026-11-16). */
+ * eye read as the Hidden chip's beside it (Epo 2026-11-16). A graded quiz's
+ * is borderless on its Questions tab (Epo 2026-11-23), `size` matching the
+ * tabs' row. */
 export function PreviewButton({
   className,
   disabled,
   onClick,
+  size,
+  variant = 'outline',
 }: {
   className?: string;
   disabled?: boolean;
   onClick: () => void;
+  size?: 'sm';
+  variant?: 'ghost-hover' | 'outline';
 }) {
+  const Shell = size ? Button : PageButton;
   return (
-    <PageButton
+    <Shell
       className={cn('shrink-0', className)}
       disabled={disabled}
       onClick={onClick}
-      variant="outline"
+      size={size}
+      variant={variant}
     >
       {m.assignment_preview()}
-    </PageButton>
+    </Shell>
   );
 }
 

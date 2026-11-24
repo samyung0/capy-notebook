@@ -1,11 +1,14 @@
 import 'fake-indexeddb/auto';
 import { describe, expect, it } from 'vitest';
 import {
+  copyLocalDrawingDrafts,
   deleteLocalDrawingDraft,
   localCardStates,
+  localDrawingDraft,
   localDrawingPictures,
   localQuizAttempts,
   recordLocalCardReview,
+  saveLocalDrawingDraft,
   saveLocalQuizAttempt,
   syncLocalDrawingPictures,
 } from './localDb';
@@ -74,5 +77,27 @@ describe('browser-local study data', () => {
     await deleteLocalDrawingDraft('quiz:q:p');
     expect(await localDrawingPictures('quiz:q:p')).toEqual([]);
     expect(await localDrawingPictures('quiz:q:other')).toHaveLength(1);
+  });
+
+  // Epo 2026-11-24: drafts are kept by canvas, and one an edit renamed (an
+  // Ungroup's) is copied to its new name, the old one staying.
+  it('copies a drawing draft with its pictures to another key', async () => {
+    const file = new Blob(['x'], { type: 'image/webp' });
+    await saveLocalDrawingDraft({
+      doc: 'G',
+      key: 'quiz:m:q:group:g',
+      savedAt: '2026-11-24',
+    });
+    await syncLocalDrawingPictures(
+      'quiz:m:q:group:g',
+      [{ file, id: 'G' }],
+      ['G']
+    );
+    await copyLocalDrawingDrafts([['quiz:m:q:group:g', 'quiz:m:q:part:a']]);
+    expect((await localDrawingDraft('quiz:m:q:part:a'))?.doc).toBe('G');
+    expect(
+      (await localDrawingPictures('quiz:m:q:part:a')).map(({ id }) => id)
+    ).toEqual(['G']);
+    expect(await localDrawingDraft('quiz:m:q:group:g')).toBeDefined();
   });
 });

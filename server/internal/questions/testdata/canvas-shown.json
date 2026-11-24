@@ -1,0 +1,38 @@
+{
+  "name": "canvas-shown",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Look at the canvas."
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Is the triangle right-angled?"
+          },
+          {
+            "type": "canvas",
+            "board": "asset_board_2",
+            "image": "asset_image_2"
+          }
+        ],
+        "answer": {
+          "type": "boolean",
+          "correct": true
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

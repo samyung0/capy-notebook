@@ -1,7 +1,12 @@
 // What the app's tsconfig sees of ./drawingBoard.ts (see tsconfig.json paths).
 export type DrawingBoardOptions = {
-  answerArea?: { label: string };
+  /** A question board's answer area: its label; `movable` on the teacher's. */
+  answerArea?: { label: string; movable?: boolean };
   board: 'question' | 'workspace';
+  /** A Canvas part's question: without `saved`, the board opens as a copy of
+   * `board` whose every element and block is part of the question; pressing or
+   * hovering such a part shows `tip`. */
+  question?: { board: string; tip: string };
   workspace?: {
     /** The account's Canvas page: each tile says its workspace, and New makes one
      * in no workspace. */
@@ -79,7 +84,8 @@ export function mountDrawingBoard(
   closeNoteSizes: (sizes: 'save' | 'drop') => void;
   fit: (padding: [number, number, number, number]) => void;
   has: (id: string) => boolean;
-  /** The whole board as a PNG, as Download as image draws it. */
+  /** The board as a PNG, as Download as image draws it: a question board's
+   * answer area. */
   image: () => Promise<Blob>;
   openEditor: (id: string) => boolean;
   presence: BoardPresenceView | null;
@@ -100,13 +106,16 @@ export function mountDrawingBoard(
   view: () => BoardView | null;
   putAway: () => void;
   refreshCards: () => void;
+  /** `blocks` and `canvas` leave the question's parts out. */
   stats: () => {
     blocks: string[];
     bytes: number;
     canvas: string[];
     marks: number;
-    span: number;
   };
+  /** Whether anything but the question's parts lies wholly or partly outside a
+   * question board's answer area. */
+  outside: () => boolean;
   toImage: () => Promise<File>;
   /** `sizes`: a note's size waiting on a pause is saved, or dropped when the
    * room lost, refused or replaced the board. */

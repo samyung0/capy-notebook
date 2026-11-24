@@ -38,8 +38,14 @@ place (Epo 2026-10-10).
 
 The only CI-wired suite, run manually via the `Performance` workflow
 (`.github/workflows/perf.yml`, formerly `Editor perf`) and on
-production promotion. Budgets are regression tripwires, not UX targets; snapshot
-deltas stay warn-only. Details: [editor-perf.md](../openwiki/editor-perf.md).
+production promotion. `pnpm bench:editor` measures the Plate editor on a
+production build (Vite's production mode) with MSW in the page, turned on by the
+benches' switch `VITE_BENCH_MSW` that deploys pin off (`vite build` through
+`editor/scripts/vite.cap.config.ts`, served by `vite preview`; the Vite dev server
+until 2026-11-24). Budgets are
+regression tripwires, not UX targets, and wait on recalibration from three CI
+runs of that build; snapshot deltas stay warn-only and compare only snapshots of
+the same build. Details: [editor-perf.md](../openwiki/editor-perf.md).
 Results land in the gitignored `editor/.results/`; the family's committed
 reports (`editor/reports/`) are from runs made by hand.
 
@@ -74,9 +80,12 @@ contexts, through the mock room on the Canvas page and with no room on
 every element, the end of the last long frame before 3 s with none, the JS
 heap after a forced GC, and, on the settled board, wheel pans, a pen stroke
 and one write under a sampling profile (the mock room's share of it apart).
-Its build (`editor/scripts/vite.cap.config.ts`) is the app's with any
-BetterOffice artifact that is not built resolved to an empty module, so it
-runs in a checkout without `pnpm office:prepare`. Results land in the
+Its build (`editor/scripts/vite.cap.config.ts`) is `bench:editor`'s: Vite's
+production mode with the benches' switch `VITE_BENCH_MSW` since 2026-11-24
+(its development mode before, as in the 2026-11-18 report), the benches' own
+service worker for chunks, and any BetterOffice artifact that is not built
+resolved to an empty module, so it runs in a checkout without `pnpm
+office:prepare`. Results land in the
 gitignored `editor/.results/board-cap/`. Findings:
 [`editor/reports/2026-11-18-board-open-at-cap.md`](editor/reports/2026-11-18-board-open-at-cap.md),
 its record in `editor/reports/2026-11-18-mac-m1/board-open-at-cap.json`.
@@ -121,11 +130,13 @@ the decoded size beside, and with WASM and TTF fonts at the brotli-11 size the
 Office Worker stores; CJK slice indexes count as fonts), and records the runner's CPU model in every result. It
 fails on unpainted keys, typing that reaches no edit, a remote edit that never
 reaches its frame or errors, a fallback to the main-thread engine, a missed budget
-(from three CI runs per format), or scrolling a generated 50,000-row sheet
+(from CI runs: opens on the slow runner, keys on the production build's
+runs), or scrolling a generated 50,000-row sheet
 (`rows-50k.xlsx`) over a fixed ceiling (a paint gap over 100 ms or under 50
 paints/s, slow or fast); the
-end-of-file keys, the co-editor timings, the PPTX busy time, the downloads and
-the heap figures are report-only. Its web server (`editor/scripts/office-server.mjs`)
+end-of-file keys, the co-editor timings, the PPTX busy time, the downloads,
+the heap figures and each run's delta against its own runner's medians are
+report-only. Its web server (`editor/scripts/office-server.mjs`)
 runs on Linux and Windows, with Python 3.12 or later (`python3`; `python` on
 Windows) for the generated DOCX. It runs as
 the `office` job of the same `Performance` workflow, on dispatch only.
@@ -200,7 +211,14 @@ names everything a canvas room's yrs document holds, by kind of content, on
 the Mac and on Linux glibc, and prototyped the cuts that landed after it (the
 load into one document, board note sizes saved on a pause, the fork's yrs
 decoding value lists without spare capacity). Its scratch crate builds on a
-patched copy of yrs and is not in the repository.
+patched copy of yrs and is not in the repository. The
+[2026-11-23 production-box run](collaboration/reports/2026-11-23-room-memory-prod.md)
+measures the server itself before and after those cuts, and
+[pass 2](collaboration/reports/2026-11-24-room-memory-prod-2.md) traces what
+stays after a room unloads (pooled Postgres connections' buffers) and what
+`malloc_trim` gives back, behind the trim after each unload and the closing of
+large-message connections. Their scripts and raw records stay in the
+side-session notes.
 
 `bench/collaboration/scripts/update-rates.rates.ts` (`pnpm bench:rates`,
 `playwright.rates.config.ts`) measures what one user's editing sends: the
@@ -383,6 +401,8 @@ marking-point agreement, latency, memory and input truncation.
 The [Alibaba decision-model comparison](grading/reports/2026-09-27-alibaba-decision.md)
 uses the same requests through the hosted System One API, with separate
 format controls and server/client latency records.
+[`online_batching.py` and `question_figures.py`](grading/reports/2026-11-23-online-batching-and-figures.md)
+test the production grading prompt four parts to a call and with question figures as images.
 The [production contract report](grading/reports/2026-10-02-jev-production-contract.md)
 runs [`jev_contract.py`](grading/scripts/jev_contract.py) on new held-out fixtures
 to choose the Jev request for open quiz parts (question type, batching, state
@@ -457,6 +477,17 @@ the ingest host, the gold crops through `layout_score.py`, and region agreement
 on mixed and fresh pages (`layout_agree.py` compares two `layout_detect.py`
 records). Its pages and raw records stayed local; the build that ships is
 `layout/quantise.py`.
+
+`extraction/scripts/long_selections.py` runs selections past the 40-page cap
+through the production run: 110 pages of a committed CC BY textbook
+(`parsers/fixtures/budget/waterworks-math.pdf`, units 1 to 4, gold from its
+text layer, its own solutions as the answer file) as one map, in page windows,
+and as one map over the pages' indexed text with copy threads of at most 30
+question-page images; `--exams` runs the same arms on six scanned HKDSE papers
+picked together, and `scan-maps` maps the scanned gold papers from images and
+from their page reads.
+[Long selections](extraction/reports/2026-11-21-long-selections.md) has the
+results.
 
 ### rag
 

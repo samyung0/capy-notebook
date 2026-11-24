@@ -32,16 +32,48 @@ const KEY_DELAY_MS = 40;
 
 /**
  * Budgets are regression tripwires, not UX targets. They assume the default
- * PERF_CPU=4 throttle and the Vite DEV build (unminified, React dev mode,
- * StrictMode double-render), which inflates absolute numbers well beyond
- * production. Values are ~2x the numbers observed at recalibration (Aug 2026,
- * after the per-keystroke work described below was cut); if one trips, run
- * `typingProfile.perf.ts` under the same throttle before touching it — the
- * attached `worstLoafs` script attribution and that profile's watched frames
- * usually name the offender between them.
+ * PERF_CPU=4 throttle. Since 2026-11-24 the harness measures a production
+ * build with MSW in the page (Vite's production mode, minified, React
+ * production mode; Epo, "Yes, move it" and "Yes, production mode"), but the
+ * numbers below are still the ones set on the Vite dev build (unminified,
+ * React dev mode, StrictMode double-render), which inflated every figure: on
+ * the production build they are looser than they read, which is safe until
+ * they are recalibrated (below). If one trips, run `typingProfile.perf.ts`
+ * under the same throttle before touching it — the attached `worstLoafs`
+ * script attribution and that profile's watched frames usually name the
+ * offender between them.
  *
- * Observed at recalibration against the ~2MB / 7.4k-node load-test note (dev
- * build, unthrottled opens, cpu x4 elsewhere):
+ * Recalibrating on the production build (pending):
+ * 1. The Windows Editor dispatches the Performance workflow three times on one
+ *    commit, with only the editor suite (office, canvas, stress and
+ *    share_pages unticked). The Mac never dispatches it.
+ * 2. Each run's `perf-snapshot` artifact (`build: "production"`) holds its
+ *    cases and its runner (`cpuModel`). Check the runs against each other
+ *    first; a run far off the other two is left out and another dispatched.
+ * 3. The opens (`large.interactiveOpenMs`, `large.readOnlyOpenMs`) are taken
+ *    on the slowest CPU model in the runs (AMD EPYC 7763 so far), as
+ *    bench:canvas's open was (Epo's "Yes, slower runner": opens differ 40-60%
+ *    across the pool, and a budget from the faster runners fails on it):
+ *    1.3x the median of that runner's runs once three exist, and 1.3x its one
+ *    run until then (with two, the slower), from `open-large-document`'s
+ *    `interactive.openMs` and `readOnly.openMs`. Later dispatches that draw
+ *    it replace the figure with the median once there are three.
+ * 4. The inputs are 1.3x the median of all three runs, whatever runner:
+ *    `typing-large-document`'s `typing.p95SlowKeyEventMs`,
+ *    `typing.blockingPerKeystrokeMs` and `saveCycle.loafTotalBlockingMs`, and
+ *    `scroll-large-document`'s `longestFrameMs`; its `avgFps` budget is the
+ *    median divided by 1.3 (higher is better). `typing-small-document`'s
+ *    `p95SlowKeyEventMs` takes 1.5x (event durations come in 8 ms steps, so
+ *    1.3x sits one step above the median), and its `blockingPerKeystrokeMs`
+ *    keeps the 10 ms floor while 1.3x its median is under it.
+ * 5. Round as bench:canvas's `budgetOf` does: up to 5 ms below a second and
+ *    50 ms above; FPS down to a whole frame.
+ * 6. Replace each number below with its budget and a comment naming its three
+ *    runs (ids, runner, values) and median, as `MEDIANS` in board.canvas.ts
+ *    does, and update openwiki/editor-perf.md.
+ *
+ * Observed at the dev build's recalibration against the ~2MB / 7.4k-node
+ * load-test note (Aug 2026; unthrottled opens, cpu x4 elsewhere):
  * - opening it: ~16s interactive (11s blocking), ~2s read-only (0.2s blocking).
  *   Open is now the worst number here and the one left to attack.
  * - small doc typing: INP ~130ms, ~2.5ms blocking per keystroke
@@ -59,8 +91,9 @@ const KEY_DELAY_MS = 40;
  * is why scrolling moved with it.
  */
 const BUDGET = {
-  // Ceilings sit at ~1.3x the median of three ubuntu-24.04 runs on 2026-09-03
-  // (mixed AMD EPYC 9V74 / Intel Xeon pool, CPU x4). They are the only perf
+  // Ceilings sit at ~1.3x the median of three ubuntu-24.04 runs of the dev
+  // build on 2026-09-03 (mixed AMD EPYC 9V74 / Intel Xeon pool, CPU x4), kept
+  // on the production build until recalibrated (above). They are the only perf
   // gate and only a human lowers them. See openwiki/editor-perf.md.
   large: {
     // Wall-clock from navigation to a synced, editable Plate instance. Measured

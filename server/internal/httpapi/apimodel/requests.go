@@ -289,14 +289,16 @@ type CreateFlashcardSetReq struct {
 // preferences. detail, diagramType, and types have explicit defaults so
 // OpenAPI/orval capture them; the handler does not invent values after the gate.
 type GenerateReq struct {
-	Count      int                          `json:"count" minimum:"1" maximum:"50"`
-	Levels     []store.CognitiveLevel       `json:"levels,omitempty" nullable:"false"`
-	Types      []store.GenerateQuestionType `json:"types,omitempty" minItems:"1" default:"[\"mcq\"]" nullable:"false"`
-	Topics     []string                     `json:"topics,omitempty" nullable:"false"`
-	FileIds    []string                     `json:"fileIds,omitempty" maxItems:"5" nullable:"false"` // fieldlimits.GenerateFiles
-	Title      MaterialTitle                `json:"title" minLength:"1"`
-	Mix        bool                         `json:"mix,omitempty" doc:"Add the caller's answered questions to the new ones"`
-	GradedQuiz *AssignmentFormReq           `json:"gradedQuiz,omitempty" doc:"The New graded quiz dialog's settings (CreateMaterialReq.gradedQuiz), checked before the run starts; only an editor makes one. The response then holds assignmentId"`
+	Count   int                          `json:"count" minimum:"1" maximum:"50"`
+	Levels  []store.CognitiveLevel       `json:"levels,omitempty" nullable:"false"`
+	Types   []store.GenerateQuestionType `json:"types,omitempty" minItems:"1" default:"[\"mcq\"]" nullable:"false"`
+	Topics  []string                     `json:"topics,omitempty" nullable:"false"`
+	FileIds []string                     `json:"fileIds,omitempty" maxItems:"5" nullable:"false"` // fieldlimits.GenerateFiles
+	Title   MaterialTitle                `json:"title" minLength:"1"`
+	Mix     bool                         `json:"mix,omitempty" doc:"Add the caller's answered questions to the new ones"`
+	// Instructions are the user's own words to the model (Epo 2026-11-21).
+	Instructions GenerateInstructions `json:"instructions,omitempty" doc:"Optional instructions for the quiz, sent to the model as the user's own words"`
+	GradedQuiz   *AssignmentFormReq   `json:"gradedQuiz,omitempty" doc:"The New graded quiz dialog's settings (CreateMaterialReq.gradedQuiz), checked before the run starts; only an editor makes one. The response then holds assignmentId"`
 }
 
 // CreateExtractionReq starts a Make a quiz run (todo-study-tracking.md §8): the

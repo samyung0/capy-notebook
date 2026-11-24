@@ -80,6 +80,17 @@ export function questionBlocks(blocks: QuestionBlock[]): MaterialValue {
             width: block.width,
           }),
         ];
+      // A drawn canvas prints its picture; an empty one prints nothing.
+      case 'canvas':
+        return 'board' in block
+          ? [
+              element('img', [{ text: '' }], {
+                assetId: block.image,
+                caption: [{ text: '' }],
+                name: '',
+              }),
+            ]
+          : [];
       case 'table':
         return [
           element(
@@ -115,7 +126,7 @@ function answerLines(part: QuestionPart, labels: ExportLabels): string[] {
     // Its sample answer has its own section (Epo 2026-11-15).
     case 'open':
       return [];
-    case 'drawing':
+    case 'canvas':
       return [];
     case 'matching':
       return a.pairs.map((pair) => `${pair.left} → ${a.options[pair.right]}`);

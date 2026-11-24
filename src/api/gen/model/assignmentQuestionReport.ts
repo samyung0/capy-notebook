@@ -8,9 +8,7 @@ import type { AssignmentPartReport } from './assignmentPartReport.ts';
 import type { AssignmentQuestionReportQuestion } from './assignmentQuestionReportQuestion.ts';
 
 export interface AssignmentQuestionReport {
-  average?: number;
   parts: AssignmentPartReport[];
-  percent?: number;
   question: AssignmentQuestionReportQuestion;
   submitted: number;
 }

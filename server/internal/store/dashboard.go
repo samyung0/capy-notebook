@@ -79,7 +79,7 @@ func (s *Store) WorkspaceDashboard(ctx context.Context, userID, wsID string) (Wo
 			(SELECT 'assigned', s.created_by, NULL, NULL, s.id, s.title, s.posted_at, false, false
 			FROM assignments s JOIN workspaces w ON w.id=s.workspace_id
 			JOIN workspace_members wm ON wm.workspace_id=s.workspace_id AND wm.user_id=$2
-			WHERE s.workspace_id=$1 AND NOT s.draft AND NOT s.own AND w.kind='class' AND (wm.role IN ('owner', 'editor')
+			WHERE s.workspace_id=$1 AND NOT s.draft AND w.kind='class' AND (wm.role IN ('owner', 'editor')
 				OR (s.assign_all AND wm.role='viewer')
 				OR EXISTS (SELECT 1 FROM assignment_assignees aa WHERE aa.assignment_id=s.id AND aa.user_id=$2))
 			ORDER BY s.posted_at DESC LIMIT $3))

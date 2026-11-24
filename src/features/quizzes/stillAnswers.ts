@@ -4,14 +4,20 @@ import type {
   Question,
   QuestionPart,
 } from '@/features/questions/types';
+import {
+  canvasName,
+  drawingCanvases,
+  ungroupedCanvases,
+} from './drawing/canvasParts';
 import type { Answer } from './grade';
 
+type AnyQuestion = LearnerQuestion | Question;
 type AnyPart = LearnerPart | QuestionPart;
-type PartsById = ReadonlyMap<string, AnyPart>;
 
 /** Whether an answer still means what the learner chose after an editor
  * changed the part live (D9, Epo 2026-10-10): a chosen option, ordering item
- * or matching option that is gone, or a changed number of gaps, drops it. */
+ * or matching option that is gone, or a changed number of gaps, drops it. A
+ * canvas answer follows its canvas instead (`drawingMoves`). */
 function stillAnswers(before: AnyPart, after: AnyPart, value: Answer): boolean {
   const a = before.answer;
   const b = after.answer;
@@ -44,30 +50,87 @@ function stillAnswers(before: AnyPart, after: AnyPart, value: Answer): boolean {
   return true;
 }
 
-export const partsById = (
-  questions: readonly (LearnerQuestion | Question)[]
-): PartsById =>
+const partsById = (questions: readonly AnyQuestion[]) =>
   new Map<string, AnyPart>(
     questions.flatMap((question) =>
-      question.parts.map((part) => [part.id, part] as const)
+      (question.parts as AnyPart[]).map((part) => [part.id, part] as const)
     )
   );
 
-/** The answers that still mean what the learner chose; `current` itself when
- * they all do. */
+/** Where each drawing goes when the questions change under the learner (Epo
+ * 2026-11-24): a canvas is named by its question and where it sits (a group's
+ * handed to its sub-part, as its own), and the drawing kept under its first
+ * answering part goes to the first part answering in it now, or is dropped
+ * (null) when none does. Drawing parts that stay are left out. Go's
+ * `drawingTargets` is the same. */
+export function drawingMoves(
+  before: readonly AnyQuestion[],
+  after: readonly AnyQuestion[]
+): Map<string, string | null> {
+  const leads = new Map<string, string>();
+  for (const question of after)
+    for (const [part, canvas] of drawingCanvases(question))
+      leads.set(`${question.id}\u0000${canvas}`, part);
+  const now = new Map(after.map((question) => [question.id, question]));
+  const moves = new Map<string, string | null>();
+  for (const question of before) {
+    const next = now.get(question.id);
+    const renamed = next
+      ? ungroupedCanvases(question, next)
+      : new Map<string, string>();
+    for (const [part, canvas] of drawingCanvases(question)) {
+      const name = renamed.get(canvas) ?? canvas;
+      const lead = leads.get(`${question.id}\u0000${name}`) ?? null;
+      if (lead !== part) moves.set(part, lead);
+    }
+  }
+  return moves;
+}
+
+/** The canvases an edit gave a new name (`ungroupedCanvases`), as `canvasName`
+ * reads them before and after: their device drafts are copied across. */
+export function renamedDrafts(
+  before: readonly AnyQuestion[],
+  after: readonly AnyQuestion[]
+): [from: string, to: string][] {
+  const now = new Map(after.map((question) => [question.id, question]));
+  return before.flatMap((question) => {
+    const next = now.get(question.id);
+    if (!next) return [];
+    return [...ungroupedCanvases(question, next)].map(
+      ([from, to]): [string, string] => [
+        canvasName(question, from),
+        canvasName(next, to),
+      ]
+    );
+  });
+}
+
+/** The answers that still mean what the learner chose, each drawing under
+ * the part its canvas's drawing is kept under now (`drawingMoves`); `current`
+ * itself when nothing changed. */
 export function keptAnswers(
-  before: PartsById,
-  after: PartsById,
+  before: readonly AnyQuestion[],
+  after: readonly AnyQuestion[],
   current: Record<string, Answer>
 ) {
-  const kept = Object.fromEntries(
-    Object.entries(current).filter(([id, value]) => {
-      const was = before.get(id);
-      const now = after.get(id);
-      return !!(was && now && stillAnswers(was, now, value));
-    })
-  );
-  return Object.keys(kept).length === Object.keys(current).length
-    ? current
-    : kept;
+  const moves = drawingMoves(before, after);
+  const was = partsById(before);
+  const now = partsById(after);
+  const drawn = new Set(before.flatMap((q) => [...drawingCanvases(q).keys()]));
+  const kept: Record<string, Answer> = {};
+  const moved: Record<string, Answer> = {};
+  let changed = false;
+  for (const [id, value] of Object.entries(current)) {
+    const a = was.get(id);
+    const b = now.get(id);
+    if (a?.answer.type === 'canvas') {
+      // Only a drawing part holds one: it stays, moves or goes.
+      const to = drawn.has(id) ? (moves.has(id) ? moves.get(id) : id) : null;
+      if (to) moved[to] = value;
+      changed ||= to !== id;
+    } else if (a && b && stillAnswers(a, b, value)) kept[id] = value;
+    else changed = true;
+  }
+  return changed ? { ...kept, ...moved } : current;
 }

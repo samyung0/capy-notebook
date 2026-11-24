@@ -76,57 +76,115 @@ interface Timings {
 }
 
 /**
- * Medians of three runs of the Performance workflow's `office` job on
- * ubuntu-24.04, 2026-11-23 after the Google gap round's landings (Q832 A):
- * 45174430580, 45174458165 and 45174485643 on 69be9249e, two on AMD EPYC 7763
- * and one on Intel Xeon 6975P-C (the fastest on most figures, so the medians
- * are mostly the EPYC runs'). For XLSX/PPTX `editReadyMs` ends at
- * `collaboration-ready` (see above); DOCX `openFirstPaintMs` at `painted`, the
- * first pages (Q804 A). Heap figures are report-only (openwiki/editor-perf.md).
+ * What each fixture's budgets are 1.3x of (Q839 B; openwiki/editor-perf.md):
+ * - open and View to Edit: the slower of Q832's two AMD EPYC 7763 runs,
+ *   45174430580 and 45174458165 (2026-11-23, 69be9249e, the build in Vite's
+ *   development mode), a safety net on the pool's slow runner: the production
+ *   build's three runs all drew the fast runner, and on that runner they match
+ *   the earlier build's run;
+ * - keys: the medians of the production build's runs 45330694331, 45330707441
+ *   and 45330721726 (2026-11-24, 5b054df3a, all Intel Xeon 6975P-C).
+ * For XLSX/PPTX `editReadyMs` ends at `collaboration-ready` (see above); DOCX
+ * `openFirstPaintMs` at `painted`, the first pages (Q804 A). Heap figures are
+ * report-only.
  */
 const MEDIANS: Record<Fixture['id'], Timings> = {
   // MSW adds ~1.1 s per call to every open.
   'bio-office-docx': {
-    editReadyMs: 2531,
-    keyToFrameP50Ms: 24,
-    keyToFrameP90Ms: 34,
-    openFirstPaintMs: 3467,
+    editReadyMs: 2717,
+    keyToFrameP50Ms: 23,
+    keyToFrameP90Ms: 28,
+    openFirstPaintMs: 3699,
   },
   'bio-office-docx-long': {
-    editReadyMs: 3881,
-    keyToFrameP50Ms: 95,
-    keyToFrameP90Ms: 113,
-    openFirstPaintMs: 3875,
+    editReadyMs: 3989,
+    keyToFrameP50Ms: 76,
+    keyToFrameP90Ms: 84,
+    openFirstPaintMs: 3885,
   },
   'bio-office-docx-250': {
-    editReadyMs: 9271,
-    keyToFrameP50Ms: 155,
+    editReadyMs: 9496,
+    keyToFrameP50Ms: 173,
     keyToFrameP90Ms: 182,
-    openFirstPaintMs: 5063,
+    openFirstPaintMs: 5215,
   },
   'bio-office-pptx': {
-    editReadyMs: 835,
+    editReadyMs: 852,
     keyToFrameP50Ms: 11,
-    keyToFrameP90Ms: 14,
-    openFirstPaintMs: 2024,
+    keyToFrameP90Ms: 12,
+    openFirstPaintMs: 2298,
   },
   'bio-office-pptx-long': {
-    editReadyMs: 1977,
-    keyToFrameP50Ms: 49,
-    keyToFrameP90Ms: 54,
-    openFirstPaintMs: 4463,
+    editReadyMs: 1982,
+    keyToFrameP50Ms: 36,
+    keyToFrameP90Ms: 41,
+    openFirstPaintMs: 4468,
   },
   'bio-office-xlsx': {
-    editReadyMs: 975,
-    keyToFrameP50Ms: 4,
-    keyToFrameP90Ms: 9,
-    openFirstPaintMs: 1958,
+    editReadyMs: 1040,
+    keyToFrameP50Ms: 5,
+    keyToFrameP90Ms: 11,
+    openFirstPaintMs: 2168,
   },
   'bio-office-xlsx-long': {
-    editReadyMs: 2948,
+    editReadyMs: 3026,
     keyToFrameP50Ms: 5,
-    keyToFrameP90Ms: 9,
-    openFirstPaintMs: 2326,
+    keyToFrameP90Ms: 10,
+    openFirstPaintMs: 2373,
+  },
+};
+
+/**
+ * Report-only (Q839 B): each runner's own figures by its `cpuModel`, which a
+ * run's `runnerDelta` subtracts, so a gain shows on either runner. The slow
+ * runner's are the gate's above; the fast runner's are the medians of the
+ * production build's three runs. Another runner gets the gate and no delta.
+ */
+const RUNNER_MEDIANS: Partial<Record<string, Record<Fixture['id'], Timings>>> = {
+  'AMD EPYC 7763 64-Core Processor': MEDIANS,
+  'Intel(R) Xeon(R) 6975P-C': {
+    'bio-office-docx': {
+      editReadyMs: 1901,
+      keyToFrameP50Ms: 23,
+      keyToFrameP90Ms: 28,
+      openFirstPaintMs: 2880,
+    },
+    'bio-office-docx-long': {
+      editReadyMs: 2728,
+      keyToFrameP50Ms: 76,
+      keyToFrameP90Ms: 84,
+      openFirstPaintMs: 3135,
+    },
+    'bio-office-docx-250': {
+      editReadyMs: 5890,
+      keyToFrameP50Ms: 173,
+      keyToFrameP90Ms: 182,
+      openFirstPaintMs: 4049,
+    },
+    'bio-office-pptx': {
+      editReadyMs: 674,
+      keyToFrameP50Ms: 11,
+      keyToFrameP90Ms: 12,
+      openFirstPaintMs: 1855,
+    },
+    'bio-office-pptx-long': {
+      editReadyMs: 1444,
+      keyToFrameP50Ms: 36,
+      keyToFrameP90Ms: 41,
+      openFirstPaintMs: 3647,
+    },
+    'bio-office-xlsx': {
+      editReadyMs: 798,
+      keyToFrameP50Ms: 5,
+      keyToFrameP90Ms: 11,
+      openFirstPaintMs: 1734,
+    },
+    'bio-office-xlsx-long': {
+      editReadyMs: 2184,
+      keyToFrameP50Ms: 5,
+      keyToFrameP90Ms: 10,
+      openFirstPaintMs: 2301,
+    },
   },
 };
 
@@ -1711,6 +1769,7 @@ for (const fixture of FIXTURES) {
     const runtimeOrigin = new URL(frame.url()).origin;
 
     const budget = budgetOf(MEDIANS[fixture.id]);
+    const own = RUNNER_MEDIANS[RUNNER.cpuModel.trim()]?.[fixture.id];
     await reportMetrics(
       testInfo,
       `office-${fixture.format}-${fixture.id}`,
@@ -1722,6 +1781,7 @@ for (const fixture of FIXTURES) {
             fixture.format === 'docx' ? budget.editReadyMs : 'report-only',
           heap: 'report-only',
           ...(fixture.format === 'docx' && { openAllPagesMs: 'report-only' }),
+          runnerDelta: 'report-only',
         },
         downloads: {
           edit: downloadsBetween(
@@ -1760,6 +1820,16 @@ for (const fixture of FIXTURES) {
           runtime: open.runtime,
         },
         runner: RUNNER,
+        // This run less its runner's own figures (RUNNER_MEDIANS): negative is
+        // faster. Null on a runner without them.
+        runnerDelta: own
+          ? {
+              editReadyMs: edit.ms - own.editReadyMs,
+              keyToFrameP50Ms: typing.keyToFrameP50Ms - own.keyToFrameP50Ms,
+              keyToFrameP90Ms: typing.keyToFrameP90Ms - own.keyToFrameP90Ms,
+              openFirstPaintMs: open.ms - own.openFirstPaintMs,
+            }
+          : null,
         typing: { ...typing, cadenceMs: KEY_CADENCE_MS },
         typingEnd: { ...typingEnd, at: endAt, cadenceMs: KEY_CADENCE_MS },
         units: open.units,

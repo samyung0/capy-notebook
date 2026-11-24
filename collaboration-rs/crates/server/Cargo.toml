@@ -38,6 +38,10 @@ yrs.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 rlimit = "0.10"
 
+# glibc's `malloc_trim` after a room unloads (`trim.rs`).
+[target.'cfg(all(target_os = "linux", target_env = "gnu"))'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 # Run as a browser runs them, in the Q549 rooms tests.
 docx-edit = { package = "betteroffice-docx-edit", path = "../../../vendor/betteroffice/crates/docx-edit" }

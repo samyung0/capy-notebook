@@ -108,10 +108,13 @@ export function buildDrawingQuizNoteValue() {
     parts: [
       {
         answer,
-        blocks: [{ text, type: 'text' }],
+        blocks: [
+          { text, type: 'text' },
+          ...(answer.type === 'canvas' ? [{ type: 'canvas' as const }] : []),
+        ],
         id: `${id}:${name}:part`,
         marks: 1,
-        ...(answer.type === 'drawing'
+        ...(answer.type === 'canvas'
           ? { markscheme: [{ marks: 1, text: 'The nucleus labelled.' }] }
           : {}),
         solution: [],
@@ -128,7 +131,7 @@ export function buildDrawingQuizNoteValue() {
           options: ['Nucleus', 'Ribosome', 'Cell wall'],
           type: 'mcq',
         }),
-        question('drawing', drawing, { type: 'drawing' }),
+        question('drawing', drawing, { type: 'canvas' }),
       ],
     }),
   ];

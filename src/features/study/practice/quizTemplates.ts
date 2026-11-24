@@ -27,14 +27,14 @@ const EXAMPLES: Record<
     marks: 1,
     text: m.practice_template_boolean_stem(),
   }),
-  drawing: () => ({
-    answer: { type: 'drawing' },
+  canvas: () => ({
+    answer: { type: 'canvas' },
     marking: [
-      m.practice_template_drawing_mark_1(),
-      m.practice_template_drawing_mark_2(),
+      m.practice_template_canvas_mark_1(),
+      m.practice_template_canvas_mark_2(),
     ],
     marks: 2,
-    text: m.practice_template_drawing_stem(),
+    text: m.practice_template_canvas_stem(),
   }),
   gaps: () => ({
     answer: {
@@ -117,7 +117,7 @@ export const QUIZ_TEMPLATES: QuizTemplateId[] = [
   'gaps',
   'matching',
   'ordering',
-  'drawing',
+  'canvas',
 ];
 
 export const templateLabel = (id: QuizTemplateId) =>
@@ -135,7 +135,11 @@ export function templateQuestions(id: QuizTemplateId): Question[] {
       parts: [
         {
           answer,
-          blocks: [{ text, type: 'text' }],
+          // A canvas part is answered on its canvas, blank to start.
+          blocks: [
+            { text, type: 'text' },
+            ...(answer.type === 'canvas' ? [{ type: 'canvas' as const }] : []),
+          ],
           id: crypto.randomUUID(),
           marks,
           // Only model-marked parts carry a marking scheme, one mark an item.

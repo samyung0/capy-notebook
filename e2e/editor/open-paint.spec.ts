@@ -28,7 +28,9 @@ async function saved(page: Page) {
 
 async function typeIntoNote(page: Page, typed: string) {
   await expect(editable(page)).toBeVisible({ timeout: 30_000 });
-  await editable(page).getByText(SEED).click();
+  // At the text's end: a click in the middle with End after it can lose End
+  // before Slate takes focus, typing mid-word (as CI did on 5933da92a).
+  await clickTextEnd(editable(page).getByText(SEED));
   await page.keyboard.press('End');
   await page.keyboard.type(typed);
   await saved(page);

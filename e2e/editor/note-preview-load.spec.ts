@@ -75,7 +75,7 @@ test("Preview shows the pane's loader until its blocks' code has loaded", async 
   await expect(notice(preview(page))).toHaveCount(0);
 });
 
-test('a drawing part whose board could not load offline says so, and the rest of the quiz answers; back online, Reload is offered', async ({
+test('a canvas part whose board could not load offline says so, and the rest of the quiz answers; back online, Reload is offered', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -100,7 +100,7 @@ test('a drawing part whose board could not load offline says so, and the rest of
     sessionStorage.setItem('e2e.reads.fail', 'true');
   });
   await pressPreview(page);
-  // Preview waits for the board its drawing part opens; the device goes
+  // Preview waits for the board its canvas part opens; the device goes
   // offline before the load fails.
   await stillLoading(page);
   await page.context().setOffline(true);
@@ -111,7 +111,7 @@ test('a drawing part whose board could not load offline says so, and the rest of
   });
   await expect(notice(quiz)).toBeVisible();
   await expect(
-    quiz.getByRole('button', { name: m.drawing_answer_draw() })
+    quiz.getByRole('button', { exact: true, name: m.question_canvas_answer() })
   ).toHaveCount(0);
   const answer = quiz.getByRole('button', { name: /Nucleus/ });
   await answer.click();
@@ -199,7 +199,7 @@ test("Preview waits for the code of the quiz the editor's room holds, not its st
   decide('continue');
   const quiz = preview(page).locator('.slate-material_ref');
   await expect(
-    quiz.getByRole('button', { name: m.drawing_answer_draw() })
+    quiz.getByRole('button', { exact: true, name: m.question_canvas_answer() })
   ).toBeVisible({ timeout: 30_000 });
   await expect(notice(quiz)).toHaveCount(0);
 });

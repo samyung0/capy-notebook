@@ -95,7 +95,7 @@ func TestPaperIsHandedInReadAndDeleted(t *testing.T) {
 		t.Fatalf("to mark = %+v, err %v", waiting, err)
 	}
 
-	if _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
+	if _, _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
 		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{2, 1}}},
 	}, now.Add(3*time.Minute)); err != nil {
 		t.Fatal(err)
@@ -345,7 +345,7 @@ func TestFileGradedQuiz(t *testing.T) {
 	}
 	q := done.Questions[0]
 	part := q["parts"].([]any)[0].(map[string]any)
-	marked, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
+	marked, _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
 		QuestionID: q["id"].(string), Parts: []AssignmentPartMark{{PartID: part["id"].(string), Items: []float64{54}}},
 	}, now.Add(2*time.Minute))
 	if err != nil || marked.Correct != 54 || marked.WaitingAnswers != 0 {

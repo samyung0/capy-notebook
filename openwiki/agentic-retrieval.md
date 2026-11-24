@@ -5999,7 +5999,11 @@ call it, and a caller who cannot edit gets a quiz only they can reach.
    the pipeline the same). An item id may name any untrashed file or
    top-level material, notes, quizzes and flashcard sets included; a topic
    adds every item filed in it; omitted ids expand to every item in the
-   workspace (Epo 2026-10-21). One invalid id rejects the request, naming it
+   workspace (Epo 2026-10-21). The run reads the first
+   `fieldlimits.GenerateScopeFiles` (20) indexed items of that scope, files
+   then notes in topic order (Epo 2026-11-21); the dialog says "Uses the first
+   20 of N files" when a topic pick holds more. The made-from line
+   (`scope_file_names`) still names every scoped item. One invalid id rejects the request, naming it
    ("No workspace item has the id …: it may have been deleted or moved to
    trash." or "No topic has the id …: it may have been deleted."). Items
    without indexed text contribute none, and a scope with none at all fails
@@ -6008,9 +6012,35 @@ call it, and a caller who cannot edit gets a quiz only they can reach.
    or they are quizzes or flashcard sets, which hold no source text." (the
    pipeline's `GenerateNoContent` says the same). The resolved names go to
    the pipeline as `fileNames` for the prompt's scope line and are stored in
-   `scope_file_names`. `gather_context` samples chunks evenly across every
-   document in scope that has chunks (equal
-   share per file, not proportional to length). The gateway resolves the user's
+   `scope_file_names`. `gather_context` fills the budget, the model's usable
+   input less the prompt (about 245k tokens), the same way for a Topics and a
+   Files pick (Epo 2026-11-21):
+   - **Shares are max-min.** Shortest first, each document with chunks is
+     offered an equal split of what is left, so one shorter than its share goes
+     in whole and its unused share passes to the longer ones. Four short notes
+     and a book give the book nearly all of the budget, not a fifth.
+   - **A document longer than its share is read across its sections**
+     (`workflows.spread`). Its sections are the runs of one `section_path`
+     (a document without headings is one). They share the document's windows
+     by length: each of the windows lands in the section holding the middle of
+     one of as many equal stretches of its tokens, so when there are more
+     sections than windows, evenly spaced sections get one. A window is
+     `WINDOW` (3) consecutive passages, about 1,200 tokens; a section's first
+     window starts at its heading and the rest are evenly spaced through it.
+     The most windows that fit the share are taken. Embedding clusters were
+     weighed and turned down: they weight a bibliography like a chapter, read
+     5–23 KB of vectors per passage and add numpy.
+   - **The plan reads no text.** `store.chunk_map` gives each passage's id,
+     chunk number, heading path and token count; a passage's planned cost is
+     that count plus its numbered `<source>` header at its widest
+     (`_plan_cost`). Only the chosen passages are then read
+     (`store.history_passages`), in document order, documents in outline
+     order. The trim that fits the complete provider request still runs after.
+
+   Only indexed text is
+   read: an unindexed item, or an edit made since the last index, waits for
+   its reindex, so no whole file and no pending-edit evidence reaches the
+   model (Epo 2026-11-21). The gateway resolves the user's
    **Settings → LLM** chat preference and chat thinking (`resolveLLM` on the
    `chat` slot; migration `0044` merged the generate slot into chat) and
    forwards that exact pin; the browser `model` field is ignored. An unresolvable preference
@@ -6018,7 +6048,14 @@ call it, and a caller who cannot edit gets a quiz only they can reach.
    `/generate` never reads the study preferences (Epo 2026-10-14: people
    choose what they generate). The dialog's Questions is `count`, required by
    both Go and the pipeline.
-2. One `produce` call receives the bounded, evenly sampled context. There is no
+2. One `produce` call receives the bounded context. The system prompt carries
+   the chat prompt's Security rules (`generate.SECURITY`, Epo 2026-11-21):
+   source text is data, nobody tests prompts, and the user's instructions may
+   set focus, difficulty, style and audience but not the rules, the count, the
+   answer types or the format. The dialog's optional Instructions (at most
+   `fieldlimits.GenerateInstructions`, 1,000 characters, trimmed by Go) go in
+   the user message after the quiz request, inside `<instructions>` tags with a
+   closing tag in them neutralised. There is no
    unused map-reduce branch. `produce` appends a language rule from the gateway's `locale` so quiz copy
    matches the user's Settings language. JSON keys stay English. The grounding rule also says
    `[formula]` marks a formula printed as a picture (parser v12): it is never
@@ -6040,7 +6077,7 @@ job. The screens (boards X0a, X0b, X1, X2) are in
 - **Start.** `POST /api/workspaces/{id}/extractions` (workspace editors) takes
   a title, up to `ExtractionPaperFiles` (5) question files as `paper: [{fileId, pages,
   images}]` and up to `ExtractionAnswerFiles` (3) `answers` of the same shape (Epo 2026-11-05). Pages count
-  from 1 and every picked page counts towards `fieldlimits.ExtractionPages` (40) across
+  from 1 and every picked page counts towards `fieldlimits.ExtractionPages` (30, Epo 2026-11-21, down from 40: one call carries every page image and Cloudflare refuses one over 32) across
   the files, however it is sent. A PDF takes any of its pages, an image page 1, a Word
   or PowerPoint file its picked pages as browser-drawn JPEGs (`images`, at most 1 MB and 5 megapixels in Go, then shrunk by `capture.image_jpeg` to `capture_max_edge` like any image to a model), and any other
   indexed file no pages: it goes whole. Every file must be the workspace's and untrashed.
@@ -6094,6 +6131,14 @@ job. The screens (boards X0a, X0b, X1, X2) are in
      answers one plain line a question: label, first and last page, part labels,
      box numbers (`parse_map`). A reply that calls a tool, is cut off or holds no
      line is a failed attempt; with no line twice the run has no questions.
+     The map ask wants a section (A1, B1) only when two questions would share a
+     number, and the model doesn't always write one: over six scanned papers it labelled
+     every paper from 1 in one of two runs. A run keeps one question a label, so when
+     the map repeats a label code letters each run of numbering, a new letter where a
+     label repeats (`lettered`: two papers' 1, 2 and 1, 2 become A1, A2, B1, B2), and
+     the reply every thread continues becomes code's lines with those labels
+     (`map_lines`), so no copy replaces another (Epo 2026-11-21). A map with no repeat
+     stays as written; a question the map lists twice may be saved twice.
      Page text (Epo 2026-11-05, "scans only"): a run sends it only when no selected
      page of the question paper is a scan and at least one is born digital, so a run
      has one system prompt. An answer file has no say.
@@ -7130,16 +7175,11 @@ are omitted: the read says the document's pending edits are larger than a
 read carries and can be processed (`READ_OMITTED`), the changes stay durable,
 and once the turn's set of omitted files grows the user gets a
 `pending_sources` event naming all of them, for which the UI offers Process
-file changes. Generation uses the
-same evidence for its whole scope and returns `pending_sources_too_large`
-with the edited file ids (`fileIds`, which Process file changes sends) and
-note ids (`materialIds`, which wait for their reindex) only when it cannot
-include it (Epo 2026-10-20: with auto processing off too, the error shows
-only then).
-Either overflow (a chat read omitting its changes, or generation refusing)
-also sends the workspace owner a `system` notification per affected file
-(`pending_edits_too_large`, linking to the file), best effort and off the
-request path. In chat, the files whose read omitted its changes count. `source_documents.overflow_notified_checkpoint`
+file changes. Generation reads none of this evidence: it reads indexed
+chunks only (Epo 2026-11-21, [Generate workflow](#generate-workflow)).
+A chat read omitting its changes also sends the workspace owner a `system`
+notification per affected file (`pending_edits_too_large`, linking to the
+file), best effort and off the request path. `source_documents.overflow_notified_checkpoint`
 records the indexed checkpoint it was sent at; processing advances
 `indexed_checkpoint`, so the file notifies again only after it is processed.
 

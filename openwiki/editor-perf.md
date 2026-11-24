@@ -7,8 +7,9 @@ tags: [frontend, testing, playwright, performance, github-actions]
 
 # Editor performance checkpoints
 
-`pnpm bench:editor` measures the Plate editor against a Vite **dev** build and MSW. It
-is a regression tripwire, not a production SLO. Absolute `BUDGET` ceilings in
+`pnpm bench:editor` measures the Plate editor on a **production** build (Vite's
+production mode, production React, minified) with MSW in the page for the backend.
+It is a regression tripwire, not a production SLO. Absolute `BUDGET` ceilings in
 [`bench/editor/scripts/editor.perf.ts`](../bench/editor/scripts/editor.perf.ts) are the only hard fail
 and they gate production promotion. GitHub Actions adds a delta table on top
 so a human can see drift against recent and best green runs.
@@ -23,16 +24,87 @@ and why a save cycle must not re-render the tree live in
 pnpm bench:editor
 ```
 
+The harness ([`playwright.perf.config.ts`](../bench/editor/scripts/playwright.perf.config.ts))
+runs `vite build` in production mode, as UAT's `pnpm build` does, with
+`NODE_ENV=production` and the benches' switch `VITE_BENCH_MSW=true`, which turns on
+MSW, the mock collaboration provider, mock auth and the mock scenario panel in a
+production build (Epo 2026-11-24, "Yes, production mode"). Every deploy pins the
+switch off (`scripts/env/config.py`, checked in `scripts/env/test_config.py`), and
+`vite.config.ts` refuses to build with it when `VITE_APP_ENV` names a deploy (`uat`
+or `production`, which `config.py` sets on every deploy build). It also refuses it
+outside production mode or beside `VITE_USE_MSW=false`, so the switch never silently
+overrides another choice, and beside `SENTRY_AUTH_TOKEN`, `VITE_SENTRY_DSN` or
+`VITE_POSTHOG_KEY` (from a developer's shell, say): a bench build uploads no source
+maps and reports to no one. The build reads an empty env directory (`CAPY_ENV_DIR`),
+so a developer's `deploy/.env` stays out. It builds through
+[`vite.cap.config.ts`](../bench/editor/scripts/vite.cap.config.ts), shared with the
+canvas-at-cap harness, which adds two things to the app's config:
+
+- a service worker of its own, `bench-msw.js`, generated into the build's output (never
+  in `public/`, so no deploy ships it), which loads MSW's worker for everything but the
+  build's chunks. MSW's worker answers each request it handles by asking the page's
+  main thread, so chunk loads through it waited on a busy page (the dev bench paid the
+  same). Its install step adds a static route (`addRoutes`, the service worker static
+  routing API) sending `/assets/*` on its own origin to the network, so those requests
+  never reach a worker, as on UAT; where that API is missing, its fetch listener stops
+  them, same origin only, before MSW's listener runs, and the browser fetches them
+  itself. `startMockServer` registers it only when the build defines
+  `__CAPY_BENCH_MSW_WORKER__`;
+- in a checkout whose BetterOffice engines are not built (`pnpm office:prepare`), each
+  missing engine file becomes an empty module, with a warning naming it. In CI
+  (`CI` set) a missing one fails the build and no export is shimmed: with the engines
+  built nothing is missing, and a gap would mean measuring a build UAT's would fail
+  on.
+
+The build goes to `bench/editor/.results/editor-dist` and `vite preview` serves it on
+port 4517 (`PERF_PORT`); the build takes about two minutes in CI. `PERF_BASE_URL`
+points the specs at such a preview that is already running and builds nothing.
+`/api` keeps the dev server's mock latency (1.0 to 1.22 s a call,
+`src/mocks/handlers.ts`).
+
+What still differs from UAT's build (`deploy-environment.yml` runs `config.py build`,
+which runs `pnpm build` in production mode with `VITE_USE_MSW=false`):
+
+- the mocks run in the page: MSW, the mock collaboration room (it pulls yjs and
+  slate-yjs into boot) and the mock scenario panel start before the first render
+  (`src/main.tsx`), and the mock modules are in the build;
+- mock auth stands in for Clerk, and there is no Sentry or PostHog;
+- a service worker handles the API calls (MSW's), not the chunks.
+
 Four budget specs always run. Two V8 profile specs run only with
-`PERF_PROFILE=1`. Default CPU throttle is `PERF_CPU=4` via CDP after load. Open
+`PERF_PROFILE=1`, which also leaves the build unminified so the profiles name
+functions (React stays in production mode); the budget numbers of such a run are
+not comparable. Default CPU throttle is `PERF_CPU=4` via CDP after load. Open
 cost is measured unthrottled because that path is already tens of seconds.
 
-The dev server's module requests pass through MSW ahead of its handlers
-(`devModules` in `src/mocks/browser.ts`, Q617). On a busy PC on 2026-11-06 (three
-alternating runs, medians) that took the read-only open from 6.2 s to 3.9 s, the
-interactive open from 19.4 s to 15.0 s and the scroll from 11 to 24 FPS. `/api` keeps
-its mock latency. The budgets did not change (Q560), so they are looser in effect,
-and earlier numbers aren't comparable.
+Until 2026-11-24 the harness measured the Vite dev server (Epo, "Yes, move it",
+in place of Q560's "budgets unchanged", then "Yes, production mode" for the
+build's Vite mode): unminified modules, React's development mode and
+StrictMode's double render inflated every figure, and a production promotion
+was gated on numbers no user sees. The budgets set on the dev build
+stay until they are recalibrated from CI ([Recalibrating on the production
+build](#recalibrating-on-the-production-build)), so they are looser in effect,
+and earlier numbers are not comparable. One run of each on the Mac on 0ec9f8134
+(2026-11-24): the dev server, a production build in Vite's development mode, and
+this build (production mode, the benches' worker):
+
+| Case | Dev | Development mode | Production mode |
+| --- | ---: | ---: | ---: |
+| Interactive open (ms) | 8,624 | 5,375 | 5,212 |
+| Read-only open (ms) | 2,834 | 2,642 | 1,721 |
+| Near-limit typing p95 (ms) | 80 | 40 | 72 |
+| Near-limit blocking per keystroke (ms) | 16.3 | 0 | 1.4 |
+| Save cycle blocking (ms) | 186 | 22 | 63 |
+| Small-document typing p95 (ms) | 32 | 24 | 16 |
+| Scroll (FPS) | 42.6 | 50.6 | 53.1 |
+| Scroll longest frame (ms) | 134 | 83 | 83 |
+
+Three more near-limit typing runs on the last build, at a load of 5 to 10 from
+other sessions, spread 48 to 104 ms (p95) and 42 to 126 ms (save cycle), so
+single Mac runs don't tell those builds apart. On that build, chunks past MSW
+(the benches' worker) against through MSW's worker, alternating, three each:
+interactive open 4,917 to 6,113 ms (median 5,472) against 5,505 to 7,241
+(6,002), read-only 2,197 to 2,583 (2,363) against 1,753 to 2,739 (2,197).
 
 Numbers from a Windows laptop are not comparable to Linux CI. Different OS,
 different Chromium raster path, different CPU. Keep local runs for debugging
@@ -69,13 +141,21 @@ dev setup before both MSW's pass-through and this.
 decimals and notation. On a large board (8 answers: 25 plane cards, 64 formulas, 32 note
 cards) at 4x CPU in dev, zooming went from 23.5 to 28.5 FPS and from 1.66 s to 0.81 s of
 blocking, and typing a label from 28.7 to 15.9 ms of blocking per key; the label's input
-p95 stays near 470-500 ms, held by other work.
+p95 stays near 470-500 ms, held by other work. On the Mac on 2026-11-23 that board's
+label keys took a p90 of 118 ms in dev and 52 ms in a production build at 4x with the
+whole board in view (no 470-500 ms): presentation delay, the canvas drawing every
+element on it again per key, until vendored local change 76 drew only the label's part
+(12 ms in production, 15 in dev); on the Canvas tab the mock room's per-key store held
+them too, 196 ms in dev, 23 once it answered as the service does
+(`bench/editor/reports/2026-11-23-board-typing.md`).
 
 ## Office runtime (`pnpm bench:office`)
 
 [`bench/editor/scripts/runtime.office.ts`](../bench/editor/scripts/runtime.office.ts)
 runs against a production build ([`playwright.office.config.ts`](../bench/editor/scripts/playwright.office.config.ts)
-builds with `NODE_ENV=production`, MSW and `VITE_LOAD_TEST_SEED`, then serves it
+builds in Vite's production mode with `NODE_ENV=production`, the benches' switch
+`VITE_BENCH_MSW` (Vite's development mode before 2026-11-24), an empty env directory
+and `VITE_LOAD_TEST_SEED`, then serves it
 with the runtime on the next port of `localhost`: another origin on the same
 site, as `office.capynotebook.com` is to the app, so the iframe is cross-origin
 and shares the app's renderer process as in production). The build takes a few
@@ -335,29 +415,45 @@ the engine workers. Every file fails on unpainted keys, typing that sends no
 edit to the room, a viewer `ready` without timings, a worker fallback, or a
 missed budget (open, View to Edit, key p50 and p90 per fixture); the
 50,000-row sheet fails on its scroll ceiling. The spec
-keeps the medians (`MEDIANS`) and derives each budget (`budgetOf`): 1.3x the
-median, rounded up to 5 ms below a second and 50 ms above, and no keystroke
-budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a one-frame wobble fails
-anything smaller. The medians come from three runs of the `office` job below
-on 69be9249e, 2026-11-23 (Q832 A, recalibrated after the Google gap round's
-landings, DOCX first paint to `painted`, the ~250-page DOCX gated):
-45174430580, 45174458165 and 45174485643, two on AMD EPYC 7763 and one on
-Intel Xeon 6975P-C runners. The Xeon run was the fastest on most figures, so
-the medians are mostly the EPYC runs'. Per fixture, the three runs and their
-median (ms):
+keeps what each budget is taken from (`MEDIANS`) and derives each budget
+(`budgetOf`): 1.3x that figure, rounded up to 5 ms below a second and 50 ms
+above, and no keystroke budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a
+one-frame wobble fails anything smaller. The figures come from two builds and
+both of the pool's runners (Q839 B, after the move to a production build on
+2026-11-24). The production build's three `office` jobs (45330694331,
+45330707441 and 45330721726 on 5b054df3a, 2026-11-24) all drew the fast Intel
+Xeon 6975P-C, where they match Q832's Xeon run of the earlier build (the
+250-page DOCX's View to Edit 5,818-5,948 ms against 6,205, `exchange-plan.docx`'s
+open 2,723-2,980 against 2,968). A budget from them would fail on the AMD EPYC
+7763, which in Q832 took up to 1.3 times as long as the Xeon to open and 1.3
+to 1.5 times as long from View to Edit. So:
 
-| Fixture | Open | View to Edit | Key p50 | Key p90 |
-|---|---|---|---|---|
-| exchange-plan.docx | 3699/3467/2968 -> 3467 | 2531/2717/1882 -> 2531 | 24/26/21 -> 24 | 34/35/28 -> 34 |
-| long-handbook.docx | 3875/3885/3087 -> 3875 | 3881/3989/2741 -> 3881 | 95/98/72 -> 95 | 113/120/81 -> 113 |
-| long-handbook-250.docx | 5063/5215/3953 -> 5063 | 9271/9496/6205 -> 9271 | 137/155/170 -> 155 | 182/197/180 -> 182 |
-| lecture.pptx | 2024/2298/1834 -> 2024 | 835/852/653 -> 835 | 11/11/8 -> 11 | 14/15/9 -> 14 |
-| jp_llm2.pptx | 4468/4463/3560 -> 4463 | 1982/1977/1472 -> 1977 | 49/52/37 -> 49 | 54/56/40 -> 54 |
-| course-guide.xlsx | 1932/2168/1958 -> 1958 | 975/1040/762 -> 975 | 4/6/4 -> 4 | 8/14/9 -> 9 |
-| large-gradebook.xlsx | 2373/2326/2145 -> 2326 | 2948/3026/2122 -> 2948 | 5/6/4 -> 5 | 9/10/8 -> 9 |
+- open and View to Edit (an open too) are 1.3x the slower of Q832's two EPYC
+  7763 runs (45174430580 and 45174458165 on 69be9249e, 2026-11-23, the build
+  in Vite's development mode), a safety net on the slow runner;
+- keys, which differ little between runners, are 1.3x the medians of the
+  three production runs.
 
-The bench's earlier medians (2026-11-20 on 65bdfc1e8, Q757 A; 2026-11-07 on
-97e63a68a, Q692; 2026-10-04 before the 0.5.1 pin) are in its history; the PC baseline the second BetterOffice
+The fast runner's medians sit beside the gate (`RUNNER_MEDIANS`, by the
+result's `cpuModel`; the slow runner's figures are the gate's own). Each
+result's `runnerDelta` is the run less its runner's figures (negative is
+faster), report-only, so a gain shows on either runner; another CPU model gets
+the gate and `runnerDelta: null`. Per fixture, the runs, the figure taken and
+the budgets (ms; open, View to Edit, key p50, key p90):
+
+| Fixture | Open, EPYC 7763 | Open, Xeon 6975P-C | View to Edit, EPYC 7763 | View to Edit, Xeon 6975P-C | Key p50, Xeon 6975P-C | Key p90, Xeon 6975P-C | Budgets |
+|---|---|---|---|---|---|---|---|
+| exchange-plan.docx | 3699/3467 -> 3699 | 2723/2880/2980 -> 2880 | 2531/2717 -> 2717 | 1901/1956/1640 -> 1901 | 23/24/23 -> 23 | 28/37/28 -> 28 | 4850, 3550, 30, 40 |
+| long-handbook.docx | 3875/3885 -> 3885 | 3135/3167/2942 -> 3135 | 3881/3989 -> 3989 | 2643/2788/2728 -> 2728 | 74/76/76 -> 76 | 82/86/84 -> 84 | 5100, 5200, 100, 110 |
+| long-handbook-250.docx | 5063/5215 -> 5215 | 3837/4131/4049 -> 4049 | 9271/9496 -> 9496 | 5818/5948/5890 -> 5890 | 173/181/173 -> 173 | 180/194/182 -> 182 | 6800, 12350, 225, 240 |
+| lecture.pptx | 2024/2298 -> 2298 | 1769/2221/1855 -> 1855 | 835/852 -> 852 | 660/687/674 -> 674 | 8/11/11 -> 11 | 9/14/12 -> 12 | 3000, 1150, 30, 30 |
+| jp_llm2.pptx | 4468/4463 -> 4468 | 3656/3647/3586 -> 3647 | 1982/1977 -> 1982 | 1425/1509/1444 -> 1444 | 36/42/36 -> 36 | 41/45/41 -> 41 | 5850, 2600, 50, 55 |
+| course-guide.xlsx | 1932/2168 -> 2168 | 1685/1734/1833 -> 1734 | 975/1040 -> 1040 | 798/829/798 -> 798 | 5/5/5 -> 5 | 11/9/11 -> 11 | 2850, 1400, 30, 30 |
+| large-gradebook.xlsx | 2373/2326 -> 2373 | 2122/2301/2360 -> 2301 | 2948/3026 -> 3026 | 2186/2168/2184 -> 2184 | 5/5/6 -> 5 | 9/11/10 -> 10 | 3100, 3950, 30, 30 |
+
+The bench's earlier medians (2026-11-23 on 69be9249e, Q832 A; 2026-11-20 on
+65bdfc1e8, Q757 A; 2026-11-07 on 97e63a68a, Q692; 2026-10-04 before the 0.5.1
+pin) are in its history; the PC baseline the second BetterOffice
 sync is compared against is
 harness 2026-11-06-office-track/office-baseline/REPORT.md.
 
@@ -395,6 +491,24 @@ always match the board's current format (Q686 A):
   3 shapes, 2 formulas and 2 note cards of two paragraphs below it.
 - **Large:** far past an answer: 200 strokes, 30 shapes, 10 formulas and 30
   note cards of three paragraphs over a 2400 by 1600 area.
+- **Dense** (2026-11-23): eight answers of 1920 by 1200, four to a row, as
+  the board of the 2026-11-06 label measurement: 25 plane cards with four
+  named points, a segment, a curve, a line and two labels each, 64 formula
+  cards, 32 note cards of two paragraphs, and in each answer 10 strokes, two
+  labelled shapes joined by a connector and a canvas label. Its notes sit
+  under every canvas element (notes placed before the drawing, as a
+  question's cards), so its 200 canvas elements share one canvas.
+
+Each board is saved once its note cards hold their measured heights
+(`saveMeasured`), as a board a person typed is saved. Saved at once, a card
+whose text wraps taller than the 120 it was added with keeps 120, and a tab
+opening the board writes the size it measures 3 s later (local change 75), a
+write of every card inside the measured inputs. Before each tab showed its
+measured size at once (2026-11-24), a double click on the card's last line
+met empty canvas until that write and started a text label. That is why the
+bench failed on main 9c5de0266 (runs 45174430580, 45174458165 and
+45174485643; it last passed on 2026-11-07): the large board's note typing
+never entered its card.
 
 What it measures:
 
@@ -416,14 +530,41 @@ What it measures:
   then show it and fit it as Draw does. Reported: each hidden mount's longest
   animation frame (the page's first, cold, and the second, warm) and showing to
   the first task after the next frame.
+- **The dense board at `CPU_RATE`:** its cold open (three, as the others),
+  and, each on a fresh page at the open's fit (every element in view), 30 keys
+  typed into a canvas label, a note card and a formula card on the first
+  answer (`startTyping` in `canvasBoards.ts`), and 40 moves (32 ms apart)
+  dragging the first point of a plane card in the plane's editor.
 - **Bytes:** the JS and CSS each cold open requested, raw and gzipped from the
   build, with the five largest chunks.
 
 Gated: the blank and typical cold opens, the typical board's four input
-p90s, the cold hidden mount's longest frame and Draw's first frame. Reported
-only: warm opens and mounts, the large board and the bytes. It fails on a
+p90s, the cold hidden mount's longest frame, Draw's first frame and the dense
+board's five figures (`denseOpenMs`, `denseLabelP90Ms`, `denseNoteP90Ms`,
+`denseFormulaP90Ms`, `densePlaneDragP90Ms`).
+
+The dense board's figures come from three `canvas`-only Performance runs on
+0ec9f8134 (2026-11-24), 45296309908, 45296327983 and 45296345446, dispatched
+by the Windows Editor (Epo, "Windows Editor runs them"):
+- **Inputs:** their medians. Label 21/23/23, note 20/23/24, formula 47/50/50
+  and plane drag 9/12/12 ms, so the budgets are 30, 30, 65 and 30 ms.
+- **Open:** the third run's 3,610 ms, so the budget is 4,700 ms. That run was
+  40-60% slower on every open than the other two (dense open 2,228 and
+  2,205 ms, blank open 564-567 against 782). It is the slower runner the opens
+  below were calibrated on (blank open 807 ms there). A budget from the faster
+  runs (2,900 ms) would fail whenever a run lands on it. It rests on one run
+  of that runner so far; take the median once three are in.
+
+The CI pool mixes CPU models (the same runs' Plate jobs were on two Intel Xeon
+6975P-C and one AMD EPYC 7763), so each result now names its runner
+(`runner`, as Office's do). Calibrate an open on runs of the slower runner,
+and an input on all three. A Mac run with the fixes (2026-11-23) measured the
+dense open at 1,532 ms and the label, note, formula and plane drag p90s at 11,
+11, 41 and 6 ms. Reported only: warm opens
+and mounts, the large board and the bytes. It fails on a
 page error, an input with no painted frame, typing that doesn't reach the
-card, a stroke that draws no brush, or a missed budget. The budgets are 1.3x
+card, a stroke that draws no brush, a plane point that doesn't move, or a
+missed budget. The budgets are 1.3x
 the medians in `MEDIANS`, Office's rule (`budgetOf`, rounded up to 5 ms below
 a second and 50 ms above, inputs no lower than 30 ms). `MEDIANS` holds three
 runs on 630705a96 (2026-11-07): blank open 805/821/807 ms, typical open
@@ -433,14 +574,26 @@ Draw (Epo 2026-11-07, "just put this into a perf gate", in place of splitting
 the cold mount) are the medians of three later runs on 3249ce018: longest frame
 539/728/738 ms, Draw 43/62/61 ms (warm mount 230/303/316,
 report-only), so the budgets are 950 and 80 ms. A Mac run on 805e3c1f1 measured
-381 and 23 ms. With `MEDIANS` null the
-bench reports `budget: "uncalibrated"` and gates nothing. The first calibration (7d470b2e5,
+381 and 23 ms. A figure with no median in `MEDIANS` is reported, not gated
+(`uncalibrated`). The first calibration (7d470b2e5,
 three runs on 4cf06a4b6, 2026-11-06) measured the large board and the blank
 open at 4x, so it doesn't carry over; it also showed one runner 40-60% slower
 on every figure, so rerun before reading a miss as a regression.
 
 The boards both benches open are made by
 [`canvasBoards.ts`](../bench/editor/scripts/canvasBoards.ts).
+[`board-typing.canvas.ts`](../bench/editor/scripts/board-typing.canvas.ts)
+(`PERF_BOARD_TYPING=1 pnpm bench:canvas board-typing`, report only) times
+each place a student types on the dense board (a canvas label, a shape's
+label, a connector's label, a note card, a formula card and a plane card's
+label in its editor) with the first answer at 100% and with the whole board
+in view, and splits each key by Event Timing into input delay, processing and
+presentation delay. `PERF_CANVAS_BASE_URL` runs it against a running build or
+dev server, `PERF_TYPING_VIA=room` there types on the Canvas page through the
+mock collaboration room, and `PERF_PROFILE_DIR` writes a CPU profile summary
+per path. Its 2026-11-23 findings and the fixes they led to (vendored local
+change 76, the mock room's receipts) are in
+[the report](../bench/editor/reports/2026-11-23-board-typing.md).
 [`board-stages.canvas.ts`](../bench/editor/scripts/board-stages.canvas.ts)
 (`pnpm bench:canvas board-stages`, report only) answers how long the board takes
 to show (Epo 2026-11-07): the blank and typical boards' cold opens split into the
@@ -463,7 +616,8 @@ board adds.
 A canvas at its size cap is measured apart, by hand, by
 [`board-open.cap.ts`](../bench/editor/scripts/board-open.cap.ts)
 (`node_modules/.bin/playwright test --config=bench/editor/scripts/playwright.cap.config.ts`,
-report only, in no workflow): a production build with MSW opens a blank canvas
+report only, in no workflow): a production build with MSW (`bench:editor`'s,
+production mode since 2026-11-24, Vite's development mode in the figures below) opens a blank canvas
 and boards of about 2 MiB and 4 MiB (`CANVAS_BOARD_MAX`) of the growth bench's
 mixed hour through the mock collaboration room, and the same states with no
 room on `/dev/drawing`. On the Mac at 28a77f5f0 (2026-11-18, medians of 3),
@@ -697,29 +851,38 @@ artifact.
 Steps of the `perf` job:
 
 0. Check out the BetterOffice submodule and run `pnpm office:prepare` (with
-   the BetterOffice WASM cache), as `ci.yml`'s `e2e_editor` does: the app
-   imports the fork, and without it Vite's dependency scan fails before any
-   budget runs.
-1. Run `pnpm bench:editor` with `PERF_SNAPSHOT_DIR` set. `reportMetrics` writes one JSON
-   file per budget case.
+   the BetterOffice WASM cache), as the `canvas` job does: the production
+   build imports the fork's WASM and stylesheet, and in CI a missing one fails
+   the build rather than being stubbed.
+1. Run `pnpm bench:editor` with `PERF_SNAPSHOT_DIR` set. It builds the app first,
+   inside the step (about two minutes; the job took about 4.5 minutes on the dev
+   server, timeout 40), then `reportMetrics` writes one JSON file per budget
+   case. The build in `.results/editor-dist` is a folder, which assembling skips.
 2. [`bench/editor/scripts/compare-cli.ts`](../bench/editor/scripts/compare-cli.ts) assembles a
-   `PerfSnapshot` (commit, CPU model, Playwright version, `PERF_CPU`, cases).
-   `PERF_COMMIT` carries the measured revision because `GITHUB_SHA` is the
-   caller's SHA under `workflow_call`.
+   `PerfSnapshot` (build, commit, CPU model, Playwright version, `PERF_CPU`,
+   cases). The build (`buildLabel`) is `production`, `production-unminified`
+   for a `PERF_PROFILE` run and `external` for a `PERF_BASE_URL` run: the
+   config records it as `metadata.build`, `reportMetrics` writes it to
+   `build.txt` beside the cases, and assembling fails without that file. `PERF_COMMIT` carries
+   the measured revision because `GITHUB_SHA` is the caller's SHA under
+   `workflow_call`.
 3. Download `perf-snapshot` from the last 10 successful runs of `perf.yml` and
    of `promote-production.yml` (promotions call this workflow, so their green
    runs count). Expired or missing artifacts are skipped.
-4. [`bench/editor/scripts/snapshot.ts`](../bench/editor/scripts/snapshot.ts) sorts them by creation
+4. [`bench/editor/scripts/snapshot.ts`](../bench/editor/scripts/snapshot.ts) keeps the
+   snapshots of the current one's build, sorts them by creation
    time and writes two columns: vs the **median of the newest 5** ("are we
    drifting") and vs the **best over all retained** (a floor that cannot creep
-   upward one checkpoint at a time). Artifacts expire at 90 days, which bounds
-   the lookback.
+   upward one checkpoint at a time). A snapshot of another build, or one with
+   no build (the dev server's, before 2026-11-24), is left out and counted in
+   the summary, so the first production runs read as first runs, not as large
+   deltas. Artifacts expire at 90 days, which bounds the lookback.
 5. Write the table to the job summary. Relative deltas never fail the job.
 6. Upload `perf-snapshot.json` (90 days). Assemble and upload run even when
    budgets fail; the job then fails on the budget result.
 
-First dispatch has nothing to diff. That is expected. After that, GHA-vs-GHA
-only. Do not check in a laptop JSON.
+First dispatch has nothing to diff, and neither has the first production run.
+That is expected. After that, GHA-vs-GHA only. Do not check in a laptop JSON.
 
 You can dispatch from any branch. Baselines are not automatically `main`.
 `share_pages` is the exception: its `uat` environment admits only `main`, so
@@ -744,11 +907,46 @@ CPU throttle is a multiplier of the host, so it does not cancel that spread.
 
 ## Why this stays warn-only
 
-Absolute ceilings are the gate. They were set on 2026-09-03 to about 1.3x the
-median of three GHA runs on the same SHA. A human lowers a ceiling when a real
-improvement lands; nothing raises one automatically. Recalibrate the same way:
-dispatch the workflow three times, download the `perf-snapshot` artifacts,
-take the median per metric.
+Absolute ceilings are the gate. They were set on 2026-09-03, on the dev build,
+to about 1.3x the median of three GHA runs on the same SHA, and are kept on the
+production build until recalibrated (below). A human lowers a ceiling when a
+real improvement lands; nothing raises one automatically.
+
+### Recalibrating on the production build
+
+Pending since the move (2026-11-24). The steps are also in the `BUDGET` comment
+of [`editor.perf.ts`](../bench/editor/scripts/editor.perf.ts):
+
+1. The Windows Editor dispatches the Performance workflow three times on one
+   commit, with only the editor suite (`office`, `canvas`, `stress` and
+   `share_pages` unticked). The Mac never dispatches it.
+2. Download each run's `perf-snapshot` artifact (`build: "production"`). It
+   holds the cases and the runner (`cpuModel`). Check the runs against each
+   other first; a run far off the other two is left out and another
+   dispatched.
+3. The opens are taken on the slowest CPU model in the runs (AMD EPYC 7763 so
+   far), as `bench:canvas`'s open was (Epo's "Yes, slower runner"): opens
+   differ 40 to 60% across the pool, and the dev build's read-only open budget
+   (4,050) was already missed on that runner (4,230). `large.interactiveOpenMs`
+   and `large.readOnlyOpenMs` are 1.3x the median of that runner's runs once
+   three exist, and 1.3x its one run until then (with two, the slower), from
+   `open-large-document`'s `interactive.openMs` and `readOnly.openMs`. Later
+   dispatches that draw it replace the figure with the median once there are
+   three.
+4. The inputs are 1.3x the median of all three runs, whatever runner:
+   `typing-large-document`'s `typing.p95SlowKeyEventMs`,
+   `typing.blockingPerKeystrokeMs` and `saveCycle.loafTotalBlockingMs`, and
+   `scroll-large-document`'s `longestFrameMs`. The `avgFps` budget is its
+   median divided by 1.3 (higher is better). `typing-small-document`'s
+   `p95SlowKeyEventMs` takes 1.5x (event durations come in 8 ms steps), and its
+   `blockingPerKeystrokeMs` keeps the 10 ms floor while 1.3x its median is
+   under it.
+5. Round as `bench:canvas`'s `budgetOf` does: up to 5 ms below a second and
+   50 ms above; FPS down to a whole frame.
+6. Replace each `BUDGET` number with its budget and a comment naming the three
+   runs (ids, runner, values) and the median, as `MEDIANS` in
+   [`board.canvas.ts`](../bench/editor/scripts/board.canvas.ts) does, and rewrite
+   the numbers in this section.
 
 Typing is gated on the p95 key event and on blocking per keystroke (large: 395
 and 275 ms, 1.3x the medians 304 and 209; small: 84 ms, 1.5x the median 56,
@@ -762,7 +960,7 @@ SHA it spread 80 to 128 ms (small) and 336 to 528 ms (large) across six runs.
 
 The near-limit read-only open was rebaselined on 2026-10-04 to 4,050 ms (1.3x
 the median 3,118 of six runs on 37fa7e53; it was 1,952 on 2026-09-03). The
-read-only render itself did not change (click to text 65 to 90 ms). The time is
+read-only render itself did not change (click to text 65 to 90 ms). The time was
 the workspace page's startup in the dev build, see the open item below.
 
 Standard GitHub-hosted runners are a mixed CPU pool. Independent PassMark
@@ -773,8 +971,9 @@ human-read delta, not a gate.
 
 Other caveats that already apply to the absolute budgets:
 
-- Dev-build inflation (unminified, React StrictMode). Deltas are not
-  user-facing SLOs.
+- The build is UAT's, but the network is MSW in the page with a fixed
+  latency, and the throttled CPU is a multiple of a shared runner. Deltas are
+  not user-facing SLOs.
 - MSW save-cycle work runs on the main thread. A real collab server does that
   work elsewhere. The mock keeps it to the projection write: a checkpoint
   appends the room's updates since the last one rather than re-encoding the

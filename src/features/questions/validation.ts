@@ -6,14 +6,50 @@ import { CopyError } from '@/lib/copyError';
 import { quantityValuePattern } from './quantity';
 import {
   CHART_KINDS,
+  canvasCount,
   type GraphElement,
   gapNumbers,
   modelMarked,
+  partAnswerCanvas,
   type Question,
   type QuestionBlock,
 } from './types';
 
 const trailingSlash = /\/$/;
+
+/** The canvases one block list holds, the stem's, a group's or a part's
+ * (Epo 2026-11-23): one, which an editor stops at. Go's `partCanvases` and
+ * Rust's `PART_CANVASES_MAX` are the same. */
+export const PART_CANVASES_MAX = 1;
+
+/** The block lists that may hold a canvas, by where a live quiz keeps them:
+ * `stem`, `groups/<id>` and `parts/<id>` (`canvasCapIssue`). */
+export function canvasLists(
+  question: Question
+): (readonly [string, QuestionBlock[]])[] {
+  return [
+    ['stem', question.stem] as const,
+    ...(question.groups ?? []).map(
+      (group) => [`groups/${group.id}`, group.blocks] as const
+    ),
+    ...question.parts.map((part) => [`parts/${part.id}`, part.blocks] as const),
+  ];
+}
+
+/** A question's canvases (Epo 2026-11-23): its canvas blocks in the stem,
+ * groups and parts and its drawn sample answers, at most
+ * QUESTION_CANVASES_MAX. */
+export function questionCanvases(question: Question): number {
+  return (
+    canvasLists(question).reduce(
+      (sum, [, blocks]) => sum + canvasCount(blocks),
+      0
+    ) +
+    question.parts.filter(
+      (part) => part.answer.type === 'canvas' && part.answer.sample
+    ).length
+  );
+}
 
 export type QuestionPolicy = {
   bank?: boolean;
@@ -424,6 +460,19 @@ function questionSchemas(held: Held) {
   const text = textWithin(held(limits.QUESTION_TEXT_MAX));
   const list = z.array(text).min(1).max(held(limits.QUESTION_ANSWERS_MAX));
   const graph = graphSchema(held);
+  /** A canvas (Epo 2026-11-23): empty, or its board and picture together,
+   * both the quiz's editor assets. Every block list takes one, so the rules
+   * after the schema say where it may go (`ruleIssues`, never an
+   * explanation); notes hold none (the store refuses one). */
+  const canvas = z
+    .strictObject({
+      board: identifier.optional(),
+      image: identifier.optional(),
+      type: z.literal('canvas'),
+    })
+    .refine((v) => (v.board === undefined) === (v.image === undefined), {
+      error: () => m.question_validation_canvas_pair(),
+    });
   const block = z.discriminatedUnion('type', [
     z.strictObject({ text, type: z.literal('text') }),
     z
@@ -464,6 +513,7 @@ function questionSchemas(held: Held) {
       description: text.optional(),
     }),
     graph,
+    canvas,
   ]);
   /** A figure as a room holds it, repaired (Epo 2026-10-18): what a merge
    * leaves that the repair keeps, a chart or plot without series and a pie or
@@ -559,7 +609,9 @@ function questionSchemas(held: Held) {
       sample: z
         .strictObject({ board: identifier, image: identifier })
         .optional(),
-      type: z.literal('drawing'),
+      // Answered in the canvas above it (Epo 2026-11-23, `partAnswerCanvas`).
+      shared: z.literal(true).optional(),
+      type: z.literal('canvas'),
     }),
   ]);
   const blocks = z.array(block).max(held(limits.QUESTION_BLOCKS_MAX));
@@ -668,10 +720,16 @@ export type RuleIssue = {
     | 'markscheme-total'
     | 'awarded-range'
     | 'bank-solution'
-    | 'bank-drawn-sample'
+    | 'bank-canvas'
+    | 'canvas-place'
+    | 'canvas-count'
+    | 'canvas-part'
+    | 'canvas-shared'
+    | 'canvases'
     | 'quiz-markscheme'
     | 'open-answer-length'
     | 'quiz-question-parts'
+    | 'images'
     | 'description'
     | 'asset-host';
   part?: number;
@@ -744,9 +802,25 @@ export function ruleIssues(
       fail('awarded-range', m.question_validation_awarded_range());
     if (policy.bank && part.solution.length === 0)
       fail('bank-solution', m.question_validation_bank_solution());
-    if (policy.bank && part.answer.type === 'drawing' && part.answer.sample)
-      fail('bank-drawn-sample', m.question_validation_bank_drawn_sample());
-    if (policy.bank) return;
+    // A canvas part answers on a canvas, which bank images (public links)
+    // cannot hold yet (its canvas blocks are refused where they sit, below):
+    // its own, or the one above it (`shared`).
+    if (policy.bank) {
+      if (part.answer.type === 'canvas')
+        fail('bank-canvas', m.question_validation_bank_canvas());
+      return;
+    }
+    // One canvas a block list, which two editors' adds at once may make two
+    // (the stem's and the groups' after the parts).
+    if (canvasCount(part.blocks) > mergedCap(PART_CANVASES_MAX))
+      fail('canvas-count', m.question_validation_canvas_count());
+    if (part.answer.type === 'canvas' && !partAnswerCanvas(question, part))
+      fail(
+        part.answer.shared ? 'canvas-shared' : 'canvas-part',
+        part.answer.shared
+          ? m.question_validation_canvas_shared()
+          : m.question_validation_canvas_part()
+      );
     // User quizzes (not the bank) cap marking items and sample answer length,
     // as their merges may leave them: up to twice each.
     const items = mergedCap(limits.QUIZ_MARKSCHEME_MAX);
@@ -765,11 +839,45 @@ export function ruleIssues(
         m.question_validation_open_answer_length({ max: length })
       );
   });
+  if (
+    !policy.bank &&
+    [
+      question.stem,
+      ...(question.groups ?? []).map((group) => group.blocks),
+    ].some((blocks) => canvasCount(blocks) > mergedCap(PART_CANVASES_MAX))
+  )
+    issues.push({
+      message: m.question_validation_canvas_count(),
+      rule: 'canvas-count',
+    });
   const parts = mergedCap(limits.QUIZ_QUESTION_PARTS_MAX);
   if (!policy.bank && question.parts.length > parts)
     issues.push({
       message: m.question_validation_quiz_question_parts({ max: parts }),
       rule: 'quiz-question-parts',
+    });
+  // The grader is sent every image but the explanations' (Epo 2026-11-23);
+  // canvases are counted on their own.
+  const images = [
+    question.stem,
+    ...(question.groups ?? []).map((group) => group.blocks),
+    ...question.parts.map((part) => part.blocks),
+  ]
+    .flat()
+    .filter((block) => block.type === 'image').length;
+  if (images > limits.QUESTION_IMAGES_MAX)
+    issues.push({
+      message: m.question_validation_images({
+        max: limits.QUESTION_IMAGES_MAX,
+      }),
+      rule: 'images',
+    });
+  if (questionCanvases(question) > limits.QUESTION_CANVASES_MAX)
+    issues.push({
+      message: m.question_validation_canvases({
+        max: limits.QUESTION_CANVASES_MAX,
+      }),
+      rule: 'canvases',
     });
   type Section = NonNullable<RuleIssue['block']>['section'];
   const sections: {
@@ -798,6 +906,10 @@ export function ruleIssues(
         issues.push({ block: { index, section }, group, message, part, rule });
       if (!(policy.bank || descriptionFits(block)))
         fail('description', m.question_validation_text_too_long());
+      if (block.type === 'canvas' && section === 'solution')
+        fail('canvas-place', m.question_validation_canvas_place());
+      else if (block.type === 'canvas' && policy.bank)
+        fail('bank-canvas', m.question_validation_bank_canvas());
       if (block.type !== 'image') return;
       // Bank figures must be hosted bank assets; quiz figures are editor
       // assets, or a copied bank question's link under the deployment's
@@ -898,6 +1010,21 @@ export function quizCapsIssue(now: QuizCounts, next: QuizCounts) {
       max: limits.QUIZ_OPEN_PARTS_MAX,
     });
   return null;
+}
+
+/** What an editor's write of `next` checks against its block lists as they
+ * read now (`held`, each list's canvases by its `canvasLists` key): one that
+ * takes the stem, a group or a part past PART_CANVASES_MAX canvases does not
+ * go (its message), as two editors' adds merged at once may leave two
+ * (`quizCapsIssue` for the quiz's parts). */
+export function canvasCapIssue(
+  held: ReadonlyMap<string, number>,
+  next: Question
+) {
+  const over = canvasLists(next).some(([key, blocks]) =>
+    passesCap(canvasCount(blocks), held.get(key) ?? 0, PART_CANVASES_MAX)
+  );
+  return over ? m.question_validation_canvas_count() : null;
 }
 
 export function validateQuestions(

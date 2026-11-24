@@ -18,7 +18,7 @@ import (
 	"image/jpeg"
 	"time"
 
-	// The editor image formats Go decodes; an AVIF image gets no thumbnail.
+	// Every editor image format (imagecheck's editorFormats).
 	_ "image/gif"
 	_ "image/png"
 

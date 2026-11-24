@@ -14,17 +14,25 @@ import type {
 import { ErrorState } from '@/components/app/ErrorState';
 import { ListEnd } from '@/components/app/ListEnd';
 import { Button } from '@/components/ui/Button';
-import { checkboxVariants } from '@/components/ui/Checkbox';
+import { CheckRow } from '@/components/ui/Checkbox';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { SkeletonList, Spinner } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
 import { SearchInput } from '@/components/ui/SearchInput';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/Select';
+import { Tabs } from '@/components/ui/Tabs';
 import { TwoWaySwitch } from '@/components/ui/TwoWaySwitch';
 import { userToast } from '@/components/ui/userToast';
 import { collectSelectionPages } from '@/features/files/useFileSelection';
 import { questionMarks } from '@/features/questions/types';
 import { quizCapsIssue, quizCounts } from '@/features/questions/validation';
 import { questionSummary } from '@/features/quizzes/QuizSplit';
+import type { GradedSource } from '@/features/study/assignments/gradedSource';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -44,7 +52,7 @@ interface Picked {
 }
 
 /**
- * Add quiz's From the bank (Epo 2026-11-14, board BankPicker): the banks the
+ * New quiz's From the bank (Epo 2026-11-14, board BankPicker): the banks the
  * caller may use here (the class's and My bank, switched; My bank alone has no
  * switch), Search, a class bank's Topic, Tags, Select all and a box per
  * question, its topic's badge before its tags. The primary button
@@ -55,7 +63,7 @@ interface Picked {
  */
 export function useBankPicker({
   active,
-  gradedQuiz,
+  graded,
   label,
   onMade,
   title,
@@ -63,8 +71,8 @@ export function useBankPicker({
 }: {
   /** The tab is showing. */
   active: boolean;
-  /** A graded quiz's settings: the quiz is made with its graded quiz. */
-  gradedQuiz?: AssignmentFormReq;
+  /** New graded quiz's: its pick goes on to Settings, which says a failure. */
+  graded: boolean;
   /** The primary button's label. */
   label: string;
   onMade: (quizId: string, assignmentId?: string) => void;
@@ -76,35 +84,35 @@ export function useBankPicker({
     active,
     workspaceId,
   });
-  const { isPending: creating, mutate: create } =
-    useCreateBankQuiz(workspaceId);
+  const { isPending: creating, mutateAsync: create } = useCreateBankQuiz(
+    workspaceId,
+    graded ? { errorToast: false } : undefined
+  );
+  const ready = picked.items.length > 0 && !tooLarge;
+  // Made with its graded quiz when there is one, else on its own.
+  const make = (name: string, gradedQuiz?: AssignmentFormReq) =>
+    create({
+      bank: picked.bank,
+      gradedQuiz,
+      questionIds: picked.items.map((item) => item.id),
+      title: name,
+    }).then((material) => onMade(material.id, material.assignmentId));
   const action = (
     <Button
-      disabled={creating || picked.items.length === 0 || !!tooLarge}
-      onClick={() => {
-        const name = title();
-        create(
-          {
-            bank: picked.bank,
-            // An untitled graded quiz is named after its quiz.
-            gradedQuiz: gradedQuiz && {
-              ...gradedQuiz,
-              title: gradedQuiz.title || name,
-            },
-            questionIds: picked.items.map((item) => item.id),
-            title: name,
-          },
-          {
-            onSuccess: (material) => onMade(material.id, material.assignmentId),
-          }
-        );
-      }}
+      disabled={creating || !ready}
+      onClick={() => void make(title()).catch(() => undefined)}
       type="button"
     >
       {creating ? <Spinner /> : label}
     </Button>
   );
-  return { action, body, note };
+  // New graded quiz's pick, sent from its Settings.
+  const name = graded && ready ? title() : '';
+  const source: GradedSource | undefined =
+    graded && ready
+      ? { name, send: (gradedQuiz) => make(name, gradedQuiz) }
+      : undefined;
+  return { action, body, note, source };
 }
 
 /**
@@ -167,7 +175,8 @@ export function BankQuestionsDialog({
         </Button>
       }
       cardClassName="h-full"
-      className="flex flex-col gap-0 sm:h-[min(680px,88dvh)]"
+      className="flex flex-col gap-0 sm:h-[88dvh]"
+      compactFooter
       footer={
         note && (
           <p className="t-meta mr-auto flex min-w-0 items-center gap-1.5 self-center text-fg-muted max-sm:w-full">
@@ -179,7 +188,8 @@ export function BankQuestionsDialog({
       open={open}
       pending={copying}
       title={m.practice_tab_bank()}
-      width={600}
+      // Wide enough for its three columns (Epo 2026-11-20).
+      width={1040}
     >
       {body}
     </SimpleDialog>
@@ -277,28 +287,82 @@ function BankPickerBody({
     );
   if (!banks) return <SkeletonList count={6} rowHeight={52} />;
   const bank = picked.bank || banks[0].id;
+  const pickBank = (next: string) => onPick({ bank: next, items: [] });
+  const options = banks.map((option) => ({
+    label: switchName(option),
+    value: option.id,
+  }));
+  // A wide dialog (Epo 2026-11-20) keeps the banks in a column on the left,
+  // each with its question count (Epo 2026-11-21), and the questions in three
+  // columns; a narrow one, a phone's, a switch of two banks or a select of
+  // more above one column.
   return (
-    <>
-      {banks.length > 1 && (
-        <TwoWaySwitch
-          className="mb-3"
-          label={m.practice_tab_bank()}
-          onChange={(next) => onPick({ bank: next, items: [] })}
-          options={[
-            { label: switchName(banks[0]), value: banks[0].id },
-            { label: switchName(banks[1]), value: banks[1].id },
-          ]}
-          value={bank}
-        />
-      )}
-      {/* Keyed, so a bank's search and tags start over with it. */}
-      <BankQuestions
-        bank={bank}
-        key={bank}
-        onPick={(items) => onPick({ bank, items })}
-        picked={picked.bank === bank ? picked.items : []}
-      />
-    </>
+    <div className="@container flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1 @3xl:flex-row flex-col @3xl:gap-6">
+        {banks.length === 2 && (
+          <TwoWaySwitch
+            className="mb-3 @3xl:hidden"
+            label={m.practice_tab_bank()}
+            onChange={pickBank}
+            options={[options[0], options[1]]}
+            value={bank}
+          />
+        )}
+        {banks.length > 2 && (
+          <div className="mb-3 @3xl:hidden">
+            <Select onValueChange={pickBank} value={bank}>
+              <SelectTrigger aria-label={m.practice_tab_bank()}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {banks.map((option) => (
+                  <SelectItem
+                    hint={option.count}
+                    key={option.id}
+                    value={option.id}
+                  >
+                    {switchName(option)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {banks.length > 1 && (
+          <div className="scroll-fade-y @3xl:block hidden w-44 shrink-0 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <Tabs
+              // Its rows' text closer to the column's edge (Epo 2026-11-20).
+              className="[&>[role=tab]]:px-2.5"
+              onChange={pickBank}
+              orientation="vertical"
+              tabs={banks.map((option) => ({
+                label: (
+                  <span className="flex items-center gap-2">
+                    <span className="min-w-0 flex-1 truncate">
+                      {switchName(option)}
+                    </span>
+                    <span className="shrink-0 font-normal text-fg-muted">
+                      {option.count}
+                    </span>
+                  </span>
+                ),
+                value: option.id,
+              }))}
+              value={bank}
+            />
+          </div>
+        )}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* Keyed, so a bank's search and tags start over with it. */}
+          <BankQuestions
+            bank={bank}
+            key={bank}
+            onPick={(items) => onPick({ bank, items })}
+            picked={picked.bank === bank ? picked.items : []}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -389,43 +453,55 @@ function BankQuestions({
     list = (
       <>
         <div>
-          <PickRow
+          <CheckRow
+            // Level with its one line of smaller text (Epo 2026-11-21).
+            boxClassName="mt-px"
             checked={allPicked}
-            className="py-2 font-semibold text-sm"
+            className="@3xl:mb-2 @3xl:border-b-0 py-2 font-semibold text-sm"
             onChange={(on) => void toggleAll(on)}
           >
             {m.bank_select_all({ count: total })}
             {loadingAll && <Spinner className="ml-2 text-fg-muted" />}
-          </PickRow>
-          {items.map((item) => (
-            <PickRow
-              checked={pickedIds.has(item.id)}
-              key={item.id}
-              onChange={(on) => toggle(item, on)}
-            >
-              <span className="line-clamp-2">
-                {questionSummary(item.question)}
-              </span>
-              <span className="t-meta mt-1 flex flex-wrap gap-x-1.5 text-fg-secondary">
-                <span>{questionTypes(item.question)}</span>
-                <span>·</span>
-                <span>
-                  {questionMarks(item.question) === 1
-                    ? m.question_ui_one_mark()
-                    : m.question_ui_marks({
-                        count: questionMarks(item.question),
-                      })}
-                </span>
-              </span>
-              {hasTopicOrTags(item, topics) && (
-                <TopicAndTags
-                  className="t-meta mt-1.5 text-fg-secondary"
-                  item={item}
-                  topics={topics}
-                />
-              )}
-            </PickRow>
-          ))}
+          </CheckRow>
+          {/* Rows when narrow; cards three to a row when wide. */}
+          <div className="@3xl:grid @3xl:grid-cols-3 @3xl:gap-2">
+            {items.map((item) => {
+              const on = pickedIds.has(item.id);
+              return (
+                <CheckRow
+                  checked={on}
+                  className={cn(
+                    '@3xl:rounded-card @3xl:border @3xl:p-3',
+                    on && '@3xl:border-solid-accent-1'
+                  )}
+                  key={item.id}
+                  onChange={(next) => toggle(item, next)}
+                >
+                  <span className="@3xl:line-clamp-3 line-clamp-2">
+                    {questionSummary(item.question)}
+                  </span>
+                  <span className="t-meta mt-1 flex flex-wrap gap-x-1.5 text-fg-secondary">
+                    <span>{questionTypes(item.question)}</span>
+                    <span>·</span>
+                    <span>
+                      {questionMarks(item.question) === 1
+                        ? m.question_ui_one_mark()
+                        : m.question_ui_marks({
+                            count: questionMarks(item.question),
+                          })}
+                    </span>
+                  </span>
+                  {hasTopicOrTags(item, topics) && (
+                    <TopicAndTags
+                      className="t-meta mt-1.5 text-fg-secondary"
+                      item={item}
+                      topics={topics}
+                    />
+                  )}
+                </CheckRow>
+              );
+            })}
+          </div>
         </div>
         <ListEnd
           fetchNextPage={fetchNextPage}
@@ -462,44 +538,5 @@ function BankQuestions({
         {list}
       </div>
     </>
-  );
-}
-
-/** A row that is its own checkbox: a click or Space anywhere on it picks it. */
-function PickRow({
-  checked,
-  children,
-  className,
-  onChange,
-}: {
-  checked: boolean;
-  children: ReactNode;
-  className?: string;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <div
-      aria-checked={checked}
-      className={cn(
-        'flex cursor-pointer items-start gap-3 border-divider border-b px-1 py-3 outline-none hover:bg-surface-hover-bg focus-visible:bg-surface-hover-bg',
-        className
-      )}
-      onClick={() => onChange(!checked)}
-      onKeyDown={(event) => {
-        if (event.key !== ' ' && event.key !== 'Enter') return;
-        event.preventDefault();
-        onChange(!checked);
-      }}
-      role="checkbox"
-      tabIndex={0}
-    >
-      <span
-        aria-hidden
-        className={cn(checkboxVariants({ checked }), 'mt-0.5 size-4.5')}
-      >
-        {checked && <Icon name="check" size={13} strokeWidth={2.4} />}
-      </span>
-      <span className="flex min-w-0 flex-1 flex-col">{children}</span>
-    </div>
   );
 }

@@ -114,6 +114,7 @@ function PopoverContent({
 }
 
 const PopoverClose = PopoverPrimitive.Close;
+const PopoverArrow = PopoverPrimitive.Arrow;
 
 function PopoverAnchor({
   ...props
@@ -130,6 +131,7 @@ function PopoverTitle({ className, ...props }: React.ComponentProps<'h2'>) {
 export {
   Popover,
   PopoverAnchor,
+  PopoverArrow,
   PopoverClose,
   PopoverContent,
   PopoverTitle,

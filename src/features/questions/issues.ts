@@ -295,13 +295,17 @@ export function questionIssues(
   }
 
   for (const rule of ruleIssues(normal, policy)) {
+    const own = OWN_WORDS.has(rule.rule) ? rule.message : undefined;
     if (rule.block?.section === 'group' && rule.group !== undefined) {
-      add({ message: generic, row: groupRow(rule.group, rule.block.index) });
+      add({
+        message: own ?? generic,
+        row: groupRow(rule.group, rule.block.index),
+      });
       continue;
     }
     const part = parts(rule.part);
     if (!part || rule.part === undefined) {
-      add({ message: generic });
+      add({ message: own ?? generic });
       continue;
     }
     const message = ruleMessage(rule);
@@ -416,9 +420,21 @@ function answerMessage(
   }
 }
 
+/** The rules whose own message is the dialog's wording. */
+const OWN_WORDS = new Set<RuleIssue['rule']>([
+  'images',
+  'canvases',
+  'bank-canvas',
+  'canvas-place',
+  'canvas-count',
+  'canvas-part',
+  'canvas-shared',
+]);
+
 /** A hand-written rule's agreed wording, for the rules a user can break. */
 function ruleMessage(rule: RuleIssue): string | undefined {
   if (rule.rule === 'gap-markers') return m.question_issue_blanks_order();
+  if (OWN_WORDS.has(rule.rule)) return rule.message;
 }
 
 /** The issues' messages, each once, in order. */

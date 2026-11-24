@@ -269,8 +269,9 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
   const dueAt = watch('dueAt');
   const noLate = watch('noLate');
   const attempts = watch('attempts');
-  // A class's Assignment may be graded on points (Epo 2026-11-14), a task not.
-  const takesPoints = !marked && !assignment.own;
+  // An Assignment taking uploads may be graded on points (Epo 2026-11-14;
+  // only with uploads, 2026-11-21).
+  const takesPoints = !marked && watch('allowUploads');
   const gradedAssignment = takesPoints && watch('points') !== undefined;
   const changes = Object.keys(dirtyFields).length;
   // A new total waits for a yes while anyone is graded, past members too:
@@ -354,14 +355,6 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
               )}
             />
           </Field>
-          {takesPoints && (
-            <PointsField
-              control={control}
-              error={errors.points?.message}
-              label={m.assignment_field_points()}
-              name="points"
-            />
-          )}
           {marked && (
             <>
               <Field label={m.assignment_field_time_limit()}>
@@ -410,7 +403,7 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
               <PointsField
                 control={control}
                 error={errors.totalMarks?.message}
-                label={m.assignment_field_total_marks()}
+                label={m.assignment_field_points()}
                 name="totalMarks"
               />
             )}
@@ -442,6 +435,15 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
               name="allowUploads"
             />
           )}
+          {/* Under the switch, as in New assignment (Epo 2026-11-21). */}
+          {takesPoints && (
+            <PointsField
+              control={control}
+              error={errors.points?.message}
+              label={m.assignment_field_points()}
+              name="points"
+            />
+          )}
           {marked && (
             <SwitchRow
               control={control}
@@ -461,7 +463,7 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
           {!!dueAt && (marked || gradedAssignment) && !noLate && (
             <div className="flex min-h-8 items-center justify-between gap-4">
               <InputTitle>{m.assignment_field_late_penalty()}</InputTitle>
-              <LatePenaltySelect className="w-37.5" control={control} />
+              <LatePenaltySelect control={control} layout="row" />
             </div>
           )}
         </div>

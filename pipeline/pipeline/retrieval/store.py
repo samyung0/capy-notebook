@@ -2019,7 +2019,8 @@ async def file_ids_for_names(workspace_id: str, names: list[str]) -> list[str]:
 async def history_passages(
     workspace_id: str, chunk_ids: list[str]
 ) -> list[dict[str, Any]]:
-    """Validate saved evidence against the current untrashed workspace index."""
+    """Passages by id in the current untrashed workspace index: saved evidence's
+    check, and the passages Generate planned to read (chunk_map)."""
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
@@ -2116,6 +2117,41 @@ async def read_file_range(
                 hidden_readers(),
                 start,
                 count,
+            ),
+        )
+        return [dict(row) for row in await cur.fetchall()]
+
+
+async def chunk_map(workspace_id: str, file_ids: list[str]) -> list[dict[str, Any]]:
+    """The passages of these files and notes without their text (id, chunk
+    number, heading path, token count), in order, for Generate to plan which to
+    read before it reads them (history_passages)."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT c.id, fc.file_id, c.chunk_idx, c.section_path, c.token_count
+            FROM rag_file_contents fc
+            JOIN files f ON f.id = fc.file_id
+            JOIN rag_chunks c ON c.content_id = fc.content_id
+            WHERE f.workspace_id = %s AND fc.file_id = ANY(%s)
+              AND f.trashed_at IS NULL AND {file_visible}
+            UNION ALL
+            SELECT c.id, mc.material_id, c.chunk_idx, c.section_path, c.token_count
+            FROM rag_material_contents mc
+            JOIN materials m ON m.id = mc.material_id
+            JOIN rag_chunks c ON c.content_id = mc.content_id
+            WHERE m.workspace_id = %s AND mc.material_id = ANY(%s)
+              AND m.trashed_at IS NULL AND {material_visible}
+            ORDER BY file_id, chunk_idx
+            """.format(file_visible=_visible("f"), material_visible=_visible("m")),
+            (
+                workspace_id,
+                file_ids,
+                hidden_readers(),
+                workspace_id,
+                file_ids,
+                hidden_readers(),
             ),
         )
         return [dict(row) for row in await cur.fetchall()]

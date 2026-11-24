@@ -13,18 +13,20 @@ import { type HistorySearch, parseHistorySearch } from './reviewSearch';
 export type StudyTab = 'summary' | 'topics' | 'practice' | 'bank' | 'history';
 
 /** A report's tab in the URL: a graded quiz's Questions, Responses, Grading
- * (grading and approving its answers) and Settings; a task's Members, Grading
- * (one graded on points or taking files) and Settings. */
+ * (grading and approving its answers) and Settings; an Assignment's Content,
+ * Responses, Grading (one graded on points or taking files) and Settings (Epo
+ * 2026-11-21). */
 export type ReportTab =
   | 'questions'
+  | 'content'
   | 'responses'
-  | 'members'
   | 'grading'
   | 'settings';
 
 /** The Assignments page's URL, `assignments`. `assignment` opens
  * one: its report for a class's owner and teaching assistants (unless `own`, the
- * page of one given to them), its page for a member. `attempt` opens a try: a
+ * page of one they gave themselves with "You"), its page for a member.
+ * `attempt` opens a try: a
  * running one, or results, a member's for staff. `tab`, `by`, `question` and
  * `member` are a report's view (todo-study-tracking.md §9, Links), Grading's
  * `member` and `work` the member and hand-in file it shows (Epo 2026-11-19;
@@ -76,8 +78,8 @@ const text = (value: unknown) =>
 
 const REPORT_TABS = [
   'questions',
+  'content',
   'responses',
-  'members',
   'grading',
   'settings',
 ] as const satisfies readonly ReportTab[];
@@ -119,10 +121,14 @@ export function parseAssignmentsSearch(
     assignment,
     by:
       tab === 'responses' && search.by === 'question' ? 'question' : undefined,
-    // Grading's and the Questions editor's full screen (Epo 2026-11-19);
-    // no tab is the first, a graded quiz's Questions.
+    // Grading's and the Questions editor's full screen (Epo 2026-11-19), and
+    // By question's (Epo 2026-11-22); no tab is the first, a graded quiz's
+    // Questions.
     fullscreen:
-      (tab === 'grading' || tab === 'questions' || tab === undefined) &&
+      (tab === 'grading' ||
+        tab === 'questions' ||
+        tab === undefined ||
+        (tab === 'responses' && search.by === 'question')) &&
       (search.fullscreen === true || search.fullscreen === 'true')
         ? true
         : undefined,
@@ -161,10 +167,14 @@ function parsePracticeSearch(search: Record<string, unknown>): PracticeSearch {
 
 /** Study's tabs share one route, so their keys share one search: a staff
  * member's profile on Overview or Topics (`member`), Practice's session or
- * result, History's sort and filters. */
+ * result, History's sort and filters. On Overview `topic` opens a topic's
+ * questions (a topic id, or `others` for Other files) and `wrong` Frequently
+ * wrong's, beside `member` for a class's staff (Epo 2026-11-22). */
 export type StudySearch = PracticeSearch &
   HistorySearch & {
     member?: string;
+    topic?: string;
+    wrong?: true;
   };
 
 export function parseStudySearch(search: Record<string, unknown>): StudySearch {
@@ -177,6 +187,8 @@ export function parseStudySearch(search: Record<string, unknown>): StudySearch {
     ...parseHistorySearch(search),
     ...parsePracticeSearch(search),
     member: text(search.member),
+    topic: text(search.topic),
+    wrong: search.wrong === true || search.wrong === 'true' ? true : undefined,
   };
 }
 

@@ -9,7 +9,6 @@ import type { ColumnSort } from '@/components/app/SortHeader';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Tabs } from '@/components/ui/Tabs';
 import { SelectionAction, SelectionBar } from '@/features/files/SelectionBar';
-import { NewAssignmentAnywhere } from '@/features/study/assignments/NewAssignmentAnywhere';
 import {
   TodoTable,
   useTodoTicks,
@@ -32,16 +31,17 @@ import {
 import { waitsForConnection } from '@/lib/online';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
-/** Due and To do read ascending first; Done's date newest first. */
-const ascendsFirst = (sort: TodoSort) => sort !== 'done';
+/** Due and To do read ascending first; Posted and Done's date newest first. */
+const ascendsFirst = (sort: TodoSort) => sort === 'due' || sort === 'title';
 
 /** To do (Epo 2026-11-08; the table, 2026-11-10 board K): tabs To do · Done,
- * a Type filter, then a table grouped by class whose Due and To do headers
- * sort it. Selected rows turn the toolbar into a selection bar with Mark as
+ * a Type filter, then a table grouped by class whose To do, Posted and Due
+ * headers sort it, newest posted first until another is picked (Epo
+ * 2026-11-20). Selected rows turn the toolbar into a selection bar with Mark as
  * done and Mark as not done (Epo 2026-11-10), and Delete on Done. Approvals
  * stay in the To do tab; Done reads its own list, closed work included. The
- * table takes the page's full width (Epo 2026-11-10). Add task sits at the
- * toolbar's right for everyone (Epo 2026-11-10). */
+ * table takes the page's full width (Epo 2026-11-10). Nothing is added here:
+ * it is what classes give out (Epo 2026-11-21). */
 export default function Todo() {
   const search = useSearch({ from: '/auth-shell/todo' });
   const tab = search.tab ?? 'todo';
@@ -59,9 +59,9 @@ export default function Todo() {
 
   const sort: TodoSort = onDone
     ? 'done'
-    : search.sort === 'title'
-      ? 'title'
-      : 'due';
+    : search.sort === 'title' || search.sort === 'due'
+      ? search.sort
+      : 'posted';
   const ascending = search.dir ? search.dir === 'asc' : ascendsFirst(sort);
   const sorting: ColumnSort<TodoSort> = {
     ascending,
@@ -69,7 +69,7 @@ export default function Todo() {
     onSortChange: (next, asc) =>
       setSearch({
         dir: asc === ascendsFirst(next) ? undefined : asc ? 'asc' : 'desc',
-        sort: next === 'due' || next === 'done' ? undefined : next,
+        sort: next === 'posted' || next === 'done' ? undefined : next,
       }),
     sort,
   };
@@ -99,7 +99,7 @@ export default function Todo() {
     ? doneSections(done?.pages ?? [])
     : todoSections(todo?.workspaces ?? [], {
         ascending,
-        sort: sort === 'title' ? 'title' : 'due',
+        sort: sort === 'done' ? 'posted' : sort,
         types,
       });
   const ticks = useTodoTicks(sections, onDone);
@@ -139,7 +139,6 @@ export default function Todo() {
         value={tab}
       />
       <ListToolbar
-        action={<NewAssignmentAnywhere />}
         filters={[
           {
             key: 'type',

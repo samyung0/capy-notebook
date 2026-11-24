@@ -1,3 +1,4 @@
+import { mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
@@ -6,9 +7,13 @@ import '../../../e2e/i18n/compile';
 /**
  * Office runtime harness. Run with: pnpm bench:office
  *
- * Unlike the Plate harness this measures a production build (minified, React
- * production mode) with MSW mocks, because the Office runtime's costs are
- * engine and paint work that the dev build distorts. The runtime is served
+ * Like the Plate harness this measures a production build (minified, React
+ * production mode) with MSW mocks: the Office runtime's costs are engine and
+ * paint work that a dev build distorts. It builds in Vite's production mode
+ * with the benches' switch (VITE_BENCH_MSW) and an empty env directory, as
+ * that harness does, but with the app's own config (the engines built, `pnpm
+ * office:prepare`), since it opens Office files, and MSW's own worker; it
+ * stages that build as the Office Worker does. The runtime is served
  * from a second port of localhost: another origin on the same site, as
  * office.capynotebook.com is to the app, so view and edit run in the real
  * cross-origin iframe and share the app's renderer process as in production.
@@ -38,6 +43,9 @@ const scheme = tls ? 'https' : 'http';
 const outDir = path.join(perfDir, '..', '.results', 'office-dist');
 // The Office Worker's copy, for the stored `.br` sizes (runtime.office.ts).
 const stageDir = path.join(perfDir, '..', '.results', 'office-stage');
+// The build's env directory (CAPY_ENV_DIR in vite.config.ts): none of deploy/.env.
+const envDir = path.join(perfDir, '..', '.results', 'empty-env');
+mkdirSync(envDir, { recursive: true });
 
 export default defineConfig({
   fullyParallel: false,
@@ -64,12 +72,13 @@ export default defineConfig({
     cwd: root,
     env: {
       ...process.env,
+      CAPY_ENV_DIR: envDir,
       NODE_ENV: 'production',
+      VITE_BENCH_MSW: 'true',
       VITE_CLERK_PUBLISHABLE_KEY: '',
       // Seeds the 62-page document next to the rich-content fixtures.
       VITE_LOAD_TEST_SEED: 'true',
       VITE_OFFICE_RUNTIME_ORIGIN: `${scheme}://localhost:${runtimePort}`,
-      VITE_USE_MSW: 'true',
     },
     ignoreHTTPSErrors: tls,
     reuseExistingServer: false,

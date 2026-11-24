@@ -67,7 +67,12 @@ export function AddToBankItem({
   const { workspaceId } = useParams({ strict: false }) as {
     workspaceId?: string;
   };
-  const { data: banks = [] } = useItemBanks(workspaceId, !disabled);
+  const { data } = useItemBanks(workspaceId, !disabled);
+  // Only this workspace's bank and My bank (Epo 2026-11-21); From the bank
+  // lists every bank.
+  const banks = (data ?? []).filter(
+    (bank) => bank.kind === 'personal' || bank.id === workspaceId
+  );
   const { mutateAsync: save } = useSaveItemBankQuestion();
   return (
     <Popover>

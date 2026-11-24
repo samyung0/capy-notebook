@@ -6,6 +6,7 @@ import type {
 } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
+import { partAnswer } from '@/features/quizzes/drawing/canvasParts';
 import { m } from '@/i18n';
 import { dayLabel, markText, minutesText } from './assignmentText';
 import { LateBadge } from './LateBadge';
@@ -23,7 +24,7 @@ export function AssignmentSubmitted({
   onSeeResults: () => void;
 }) {
   const answered = (attempt.questions as AssignmentGradedQuestion[]).filter(
-    (q) => q.parts.some((p) => attempt.answers[p.id] !== undefined)
+    (q) => q.parts.some((p) => partAnswer(q, attempt.answers, p) !== undefined)
   ).length;
   const minutes =
     attempt.startedAt && attempt.submittedAt
@@ -101,11 +102,8 @@ export function AssignmentSubmitted({
           iconLeft="navigationBack"
           noArrow
         >
-          {/* A task with no workspace goes back to To do, which holds it. */}
           <Link search={{}} to=".">
-            {assignment.workspaceId
-              ? m.workspace_section_dashboard()
-              : m.nav_todo()}
+            {m.workspace_section_dashboard()}
           </Link>
         </UnderlineLink>
         <UnderlineLink className="text-fg" onClick={onSeeResults}>

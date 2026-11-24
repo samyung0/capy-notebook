@@ -45,6 +45,8 @@ import {
   FileSearchMenu,
   RemoveFileButton,
 } from '@/features/files/FileSearchMenu';
+import { questionMarks } from '@/features/questions/types';
+import { useQuizFileQuestions } from '@/features/quizzes/liveQuizReads';
 import { matchesSearch } from '@/features/workspace/PanelSearch';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -57,7 +59,6 @@ import {
   localInputValue,
   minutesText,
 } from './assignmentText';
-import { ChooseFileRow } from './TaskFiles';
 
 const TIME_LIMITS = [15, 30, 45, 60, 90, 120, 180];
 const ATTEMPTS = [1, 2, 3, 5];
@@ -91,10 +92,13 @@ export function Field({
 
 export function SwitchRow({
   control,
+  disabled,
   label,
   name,
 }: {
   control: Control<AssignmentFormReq>;
+  /** Held as it is, as Draft only is for questions read before they go out. */
+  disabled?: boolean;
   label: string;
   name: 'allowUploads' | 'draft' | 'noLate' | 'shuffle';
 }) {
@@ -109,6 +113,7 @@ export function SwitchRow({
             aria-label={label}
             checked={!!field.value}
             className="data-checked:bg-solid-accent-1"
+            disabled={disabled}
             onCheckedChange={field.onChange}
           />
         </div>
@@ -378,7 +383,7 @@ export function FilesField({
       ref: { fileId: f.id } as AssignmentFileRef,
     })),
     ...(materials ?? []).map((mt) => ({
-      icon: materialIconName(mt.type),
+      icon: materialIconName(mt.kind),
       id: mt.id,
       name: mt.title,
       ref: { materialId: mt.id } as AssignmentFileRef,
@@ -521,17 +526,21 @@ export function assignmentBody(
   members: WorkspaceMember[] | undefined
 ): AssignmentFormReq {
   const marked = values.kind === 'marked';
+  // An Assignment is graded only on what is handed in (Epo 2026-11-21).
+  const points = marked || !values.allowUploads ? undefined : values.points;
   return {
     ...values,
-    ...latePolicy(values),
+    ...latePolicy({ ...values, points }),
     assignees: values.assignees?.filter(
       (id) => !members || members.some((member) => member.userId === id)
     ),
     files: marked ? [] : values.files,
-    points: marked ? undefined : values.points,
+    points,
     quizId: marked ? values.quizId : undefined,
     // Grades held for release need something graded.
-    showGrades: isGraded(values) ? values.showGrades : 'automatic',
+    showGrades: isGraded({ kind: values.kind, points })
+      ? values.showGrades
+      : 'automatic',
     timeLimitMin: marked ? values.timeLimitMin : undefined,
     title: values.title.trim(),
     uploadOnly: marked && values.uploadOnly,
@@ -542,7 +551,8 @@ type Controlled = { control: Control<AssignmentFormReq> };
 
 /** A whole number of marks: a class's Assignment's Points (Epo 2026-11-14,
  * board Task), empty is not graded, staff then grading each member out of
- * them; or a graded quiz from a file's Total marks (Epo 2026-11-20). */
+ * them; or a graded quiz from a file's, the total it is marked out of (Epo
+ * 2026-11-20). */
 export function PointsField({
   control,
   error,
@@ -581,6 +591,26 @@ export function PointsField({
   );
 }
 
+/** A quiz copied into a graded quiz: its Points are its questions' marks as
+ * members would get them, fixed (Epo 2026-11-20). Empty while it loads. */
+export function QuizPointsField({ quizId }: { quizId: string }) {
+  const questions = useQuizFileQuestions(quizId);
+  const total = questions?.reduce(
+    (sum, question) => sum + questionMarks(question),
+    0
+  );
+  return (
+    <Field label={m.assignment_field_points()}>
+      <Input
+        aria-label={m.assignment_field_points()}
+        disabled
+        readOnly
+        value={total ?? ''}
+      />
+    </Field>
+  );
+}
+
 export function TimeLimitSelect({ control }: Controlled) {
   return (
     <Controller
@@ -610,7 +640,10 @@ export function TimeLimitSelect({ control }: Controlled) {
   );
 }
 
-export function AttemptsSelect({ control }: Controlled) {
+export function AttemptsSelect({
+  control,
+  layout,
+}: Controlled & { layout?: 'row' }) {
   return (
     <Controller
       control={control}
@@ -620,7 +653,10 @@ export function AttemptsSelect({ control }: Controlled) {
           onValueChange={(value) => field.onChange(Number(value))}
           value={String(field.value)}
         >
-          <SelectTrigger aria-label={m.assignment_field_attempts()}>
+          <SelectTrigger
+            aria-label={m.assignment_field_attempts()}
+            layout={layout}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -710,9 +746,12 @@ export function SubmissionSelect({
 
 /** When members see their grades (C4). */
 export function GradesSelect({
-  className,
   control,
-}: Controlled & { className?: string }) {
+  layout,
+}: Controlled & {
+  /** At the end of a row, the shared row width (as the Settings page's). */
+  layout?: 'row';
+}) {
   return (
     <Controller
       control={control}
@@ -721,7 +760,7 @@ export function GradesSelect({
         <Select onValueChange={field.onChange} value={field.value}>
           <SelectTrigger
             aria-label={m.assignment_field_grades()}
-            className={className}
+            layout={layout}
           >
             <SelectValue />
           </SelectTrigger>
@@ -740,14 +779,23 @@ export function GradesSelect({
 }
 
 /** When members see the answers (C3). */
-export function AnswersSelect({ control }: Controlled) {
+export function AnswersSelect({
+  control,
+  layout,
+}: Controlled & {
+  /** At the end of a row, the shared row width (as the Settings page's). */
+  layout?: 'row';
+}) {
   return (
     <Controller
       control={control}
       name="showAnswers"
       render={({ field }) => (
         <Select onValueChange={field.onChange} value={field.value}>
-          <SelectTrigger aria-label={m.assignment_field_answers()}>
+          <SelectTrigger
+            aria-label={m.assignment_field_answers()}
+            layout={layout}
+          >
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -768,9 +816,12 @@ export function AnswersSelect({ control }: Controlled) {
 }
 
 export function LatePenaltySelect({
-  className,
   control,
-}: Controlled & { className?: string }) {
+  layout,
+}: Controlled & {
+  /** At the end of a row, the shared row width (as the Settings page's). */
+  layout?: 'row';
+}) {
   return (
     <Controller
       control={control}
@@ -782,7 +833,7 @@ export function LatePenaltySelect({
         >
           <SelectTrigger
             aria-label={m.assignment_field_late_penalty()}
-            className={className}
+            layout={layout}
           >
             <SelectValue />
           </SelectTrigger>
@@ -798,5 +849,27 @@ export function LatePenaltySelect({
         </Select>
       )}
     />
+  );
+}
+
+/** Choose a file, with the files cap under it once an assignment holds as
+ * many as the server takes (its menu's unticked rows are disabled then; the
+ * trigger stays, so the menu still opens and closes). */
+function ChooseFileRow({
+  children,
+  count,
+}: {
+  children: ReactNode;
+  count: number;
+}) {
+  return (
+    <div className="flex flex-col gap-1">
+      {children}
+      {count >= createAssignmentBodyFilesMax && (
+        <span className="t-meta text-fg-muted">
+          {m.assignment_files_max({ max: createAssignmentBodyFilesMax })}
+        </span>
+      )}
+    </div>
   );
 }

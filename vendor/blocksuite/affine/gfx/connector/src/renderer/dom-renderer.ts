@@ -205,13 +205,15 @@ function renderConnectorLabel(
   renderer: DomRenderer,
   zoom: number
 ) {
-  if (!isConnectorWithLabel(model) || !model.labelXYWH) {
+  // Capy (local change 75): where the label shows on this tab's path.
+  const shown = model.shownLabelXYWH;
+  if (!isConnectorWithLabel(model) || !shown) {
     retained.label?.remove();
     retained.label = null;
     return;
   }
 
-  const [lx, ly, lw, lh] = model.labelXYWH;
+  const [lx, ly, lw, lh] = shown;
   const {
     labelStyle: {
       color,

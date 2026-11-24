@@ -109,7 +109,9 @@ import type {
   GetSourceUploadPolicyParams,
   GetStudyQuestionCountParams,
   GetTodoDoneParams,
+  GetWorkspaceMemberQuestionsParams,
   GetWorkspaceReviewParams,
+  GetWorkspaceStudyQuestionsParams,
   GradeAnonymousQuizReq,
   GradedQuestion,
   HiddenBody,
@@ -160,6 +162,7 @@ import type {
   MaterialPage,
   MaterialRef,
   MaterialUpdateResult,
+  MemberAnswer,
   MemberProfile,
   MembersProgress,
   Message,
@@ -187,6 +190,7 @@ import type {
   ReadableMaterialsOutputBody,
   RecentOutputBody,
   RedeemShareLinkInputBody,
+  RegradeQuestionInputBody,
   ReorderContentReq,
   ReorderTopicsReq,
   ReportEditIncidentReq,
@@ -223,6 +227,7 @@ import type {
   StudyHistoryOutputBody,
   StudyPreferences,
   StudyQuestionCountOutputBody,
+  StudyQuestionsOutputBody,
   StudySummary,
   StudyTopics,
   Syllabus,
@@ -817,6 +822,71 @@ export const getPaperFileLinks = async (id: string,
 
   const data: getPaperFileLinksResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getPaperFileLinksResponse
+}
+
+
+
+export type regradeAssignmentQuestionResponse200 = {
+  data: AssignmentAttempt
+  status: 200
+}
+
+export type regradeAssignmentQuestionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type regradeAssignmentQuestionResponseSuccess = (regradeAssignmentQuestionResponse200) & {
+  headers: Headers;
+};
+export type regradeAssignmentQuestionResponseError = (regradeAssignmentQuestionResponseDefault) & {
+  headers: Headers;
+};
+
+export type regradeAssignmentQuestionResponse = (regradeAssignmentQuestionResponseSuccess | regradeAssignmentQuestionResponseError)
+
+export const getRegradeAssignmentQuestionUrl = (id: string,) => {
+
+
+
+
+  return `/api/assignment-attempts/${id}/regrade`
+}
+
+/**
+ * @summary Have the AI grade one question of a member's answers again, on the caller's credits
+ */
+export const regradeAssignmentQuestion = async (id: string,
+    regradeQuestionInputBody: NonReadonly<RegradeQuestionInputBody>, options?: RequestInit): Promise<regradeAssignmentQuestionResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getRegradeAssignmentQuestionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(regradeQuestionInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: regradeAssignmentQuestionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as regradeAssignmentQuestionResponse
 }
 
 
@@ -6988,7 +7058,7 @@ export const getListItemBanksUrl = (params?: ListItemBanksParams,) => {
 }
 
 /**
- * @summary The banks the caller may use: a class workspace's when they are its staff, then their own
+ * @summary Every bank the caller reaches: the class they are in first when they are its staff, then their own, then every other class they own or edit, A–Z
  */
 export const listItemBanks = async (params?: ListItemBanksParams, options?: RequestInit): Promise<listItemBanksResponse> => {
 
@@ -11896,70 +11966,6 @@ const res = await fetch(getHideTodoDoneUrl(),
 
 
 
-export type createTodoTaskResponse201 = {
-  data: Assignment
-  status: 201
-}
-
-export type createTodoTaskResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type createTodoTaskResponseSuccess = (createTodoTaskResponse201) & {
-  headers: Headers;
-};
-export type createTodoTaskResponseError = (createTodoTaskResponseDefault) & {
-  headers: Headers;
-};
-
-export type createTodoTaskResponse = (createTodoTaskResponseSuccess | createTodoTaskResponseError)
-
-export const getCreateTodoTaskUrl = () => {
-
-
-
-
-  return `/api/todo/tasks`
-}
-
-/**
- * @summary Set oneself a task that belongs to no workspace
- */
-export const createTodoTask = async (assignmentFormReq: NonReadonly<AssignmentFormReq>, options?: RequestInit): Promise<createTodoTaskResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getCreateTodoTaskUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(assignmentFormReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createTodoTaskResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createTodoTaskResponse
-}
-
-
-
 export type deleteTopicResponse204 = {
   data: void
   status: 204
@@ -12904,7 +12910,7 @@ export const getCreateAssignmentUrl = (id: string,) => {
 }
 
 /**
- * @summary Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions
+ * @summary Give a class an unmarked assignment; a graded quiz is made with its questions
  */
 export const createAssignment = async (id: string,
     assignmentFormReq: NonReadonly<AssignmentFormReq>, options?: RequestInit): Promise<createAssignmentResponse> => {
@@ -14849,6 +14855,123 @@ export const getWorkspaceMemberProfile = async (id: string,
 
 
 
+export type getWorkspaceMemberAnswerResponse200 = {
+  data: MemberAnswer
+  status: 200
+}
+
+export type getWorkspaceMemberAnswerResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getWorkspaceMemberAnswerResponseSuccess = (getWorkspaceMemberAnswerResponse200) & {
+  headers: Headers;
+};
+export type getWorkspaceMemberAnswerResponseError = (getWorkspaceMemberAnswerResponseDefault) & {
+  headers: Headers;
+};
+
+export type getWorkspaceMemberAnswerResponse = (getWorkspaceMemberAnswerResponseSuccess | getWorkspaceMemberAnswerResponseError)
+
+export const getGetWorkspaceMemberAnswerUrl = (id: string,
+    memberId: string,
+    materialId: string,
+    questionId: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/study/members/${memberId}/answers/${materialId}/${questionId}`
+}
+
+/**
+ * @summary A member's latest answer to a question their lists show answered, marked, with the question's key, for a class's owner and teaching assistants
+ */
+export const getWorkspaceMemberAnswer = async (id: string,
+    memberId: string,
+    materialId: string,
+    questionId: string, options?: RequestInit): Promise<getWorkspaceMemberAnswerResponse> => {
+
+  const res = await fetch(getGetWorkspaceMemberAnswerUrl(id,memberId,materialId,questionId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getWorkspaceMemberAnswerResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getWorkspaceMemberAnswerResponse
+}
+
+
+
+export type getWorkspaceMemberQuestionsResponse200 = {
+  data: StudyQuestionsOutputBody
+  status: 200
+}
+
+export type getWorkspaceMemberQuestionsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getWorkspaceMemberQuestionsResponseSuccess = (getWorkspaceMemberQuestionsResponse200) & {
+  headers: Headers;
+};
+export type getWorkspaceMemberQuestionsResponseError = (getWorkspaceMemberQuestionsResponseDefault) & {
+  headers: Headers;
+};
+
+export type getWorkspaceMemberQuestionsResponse = (getWorkspaceMemberQuestionsResponseSuccess | getWorkspaceMemberQuestionsResponseError)
+
+export const getGetWorkspaceMemberQuestionsUrl = (id: string,
+    memberId: string,
+    params: GetWorkspaceMemberQuestionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/workspaces/${id}/study/members/${memberId}/questions?${stringifiedParams}` : `/api/workspaces/${id}/study/members/${memberId}/questions`
+}
+
+/**
+ * @summary A member's topic questions or Frequently wrong, each with their latest result, read only, for a class's owner and teaching assistants
+ */
+export const getWorkspaceMemberQuestions = async (id: string,
+    memberId: string,
+    params: GetWorkspaceMemberQuestionsParams, options?: RequestInit): Promise<getWorkspaceMemberQuestionsResponse> => {
+
+  const res = await fetch(getGetWorkspaceMemberQuestionsUrl(id,memberId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getWorkspaceMemberQuestionsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getWorkspaceMemberQuestionsResponse
+}
+
+
+
 export type getStudyQuestionCountResponse200 = {
   data: StudyQuestionCountOutputBody
   status: 200
@@ -14904,6 +15027,65 @@ export const getStudyQuestionCount = async (id: string,
 
   const data: getStudyQuestionCountResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getStudyQuestionCountResponse
+}
+
+
+
+export type getWorkspaceStudyQuestionsResponse200 = {
+  data: StudyQuestionsOutputBody
+  status: 200
+}
+
+export type getWorkspaceStudyQuestionsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getWorkspaceStudyQuestionsResponseSuccess = (getWorkspaceStudyQuestionsResponse200) & {
+  headers: Headers;
+};
+export type getWorkspaceStudyQuestionsResponseError = (getWorkspaceStudyQuestionsResponseDefault) & {
+  headers: Headers;
+};
+
+export type getWorkspaceStudyQuestionsResponse = (getWorkspaceStudyQuestionsResponseSuccess | getWorkspaceStudyQuestionsResponseError)
+
+export const getGetWorkspaceStudyQuestionsUrl = (id: string,
+    params: GetWorkspaceStudyQuestionsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/workspaces/${id}/study/questions?${stringifiedParams}` : `/api/workspaces/${id}/study/questions`
+}
+
+/**
+ * @summary A topic's questions or Frequently wrong's, each with the caller's latest result, to practise one at a time
+ */
+export const getWorkspaceStudyQuestions = async (id: string,
+    params: GetWorkspaceStudyQuestionsParams, options?: RequestInit): Promise<getWorkspaceStudyQuestionsResponse> => {
+
+  const res = await fetch(getGetWorkspaceStudyQuestionsUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getWorkspaceStudyQuestionsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getWorkspaceStudyQuestionsResponse
 }
 
 

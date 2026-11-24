@@ -1,8 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
+import { useQuiz } from '@/api/hooks';
 import type { InNote, NoteSeat } from '@/features/collaboration/noteSeat';
 import { whileVisible } from '@/features/collaboration/whileVisible';
 import type { LearnerQuestion } from '@/features/questions/types';
 import type { ShownOrders } from './liveQuiz';
+
+const NONE: LearnerQuestion[] = [];
+
+/** A quiz file's questions as members would get them (a draft's on Publish,
+ * one copied into a graded quiz): its stored questions followed live, and
+ * only those with answers, which publishing freezes (D4). Undefined while the
+ * quiz loads. */
+export function useQuizFileQuestions(quizId: string) {
+  const { data } = useQuiz(quizId, { errorBoundary: false, fresh: true });
+  const stored = data?.questions ?? NONE;
+  const live = useLiveQuizQuestions(quizId, stored, !!data);
+  if (!data) return;
+  const kept = new Set(stored.map((question) => question.id));
+  return live.filter((question) => kept.has(question.id));
+}
 
 /**
  * A quiz's questions as a learner sees them, following its live content

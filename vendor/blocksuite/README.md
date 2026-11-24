@@ -846,8 +846,10 @@ Outside this directory, for BlockSuite:
 75. A note's size is saved once typing pauses, by the tab editing it
     (`affine/blocks/note` `note-size.ts`, `components/edgeless-note-mask.ts`
     and `note-edgeless-block.ts`; `affine/gfx/connector`
-    `connector-watcher.ts`; `affine/shared` `utils/note-size-writes.ts`; all
-    marked `Capy (local change 75)`; Epo approved cut 2 of
+    `connector-watcher.ts`, `view/view.ts`, `renderer/element-renderer.ts` and
+    `renderer/dom-renderer.ts`; `affine/model` `elements/connector/connector.ts`;
+    `affine/shared` `utils/note-size-writes.ts`; all marked
+    `Capy (local change 75)`; Epo approved cut 2 of
     `bench/collaboration/reports/2026-11-22-room-memory.md`). The mask's
     height observer and an inline note's width observer (local change 53)
     each wrote `xywh` on every key, in every tab that could write, and each
@@ -879,31 +881,98 @@ Outside this directory, for BlockSuite:
       stores the size with it. A peer's or an Undo's write shows at once, the measured size
       over it, and the save writes the measured size (before the note's scale)
       onto it.
-    - **Every other tab** holds nothing and writes nothing per key: it writes
-      what it measures only once that has differed from the stored size for
-      3 s (`NOTE_SIZE_VIEWER_MS`, the editing tab's longest wait and 1 s) with
-      no new size arriving, as a plain write, or as a drag, resize or turn of
-      the note starts. A note no one edits (an agent's, a font change) still
-      gets its size.
+    - **Every other tab** shows what it measures at once too, as a size only
+      it shows, written only as below (`xywh` stashed, `display`: hit tests, the
+      selection box and connector paths follow the text it shows; 2026-11-24,
+      a wrong-behaviour fix: holding nothing, a note whose text outgrew its
+      stored height took a double click on its last lines as empty board, for
+      3 s in an editor's tab and for good in one that never writes). Each note
+      it measured is watched (`observe`): a peer's or an Undo's write shows at
+      once, what this tab measures over it, so a peer's newly written size
+      replaces the shown one wherever this tab's text measures the same.
+    - In a writable tab, the size a note shows is stored, untracked
+      (`storeShown`, its connectors' labels placed in the same write), before
+      a drag, resize or turn of it (`noteGestureStarts`; multi-select moves
+      start one per note) and before a tracked step of the store that can act
+      on it (the wrapped `transact`): a note selected, or in a selected group
+      or frame (`selectNoteSizes`, given the board's selection by
+      `drawingBoard.ts`), as for an align or a distribute. The gesture or
+      step then starts from the bound shown with no jump of the frame (the
+      drag and resize read their start from `xywh`), holds only what it
+      changes, and its Undo keeps the size, so previews (`boardPreview.ts`,
+      the stored height clipped) and tabs that have not drawn the note see it
+      as shown (2026-11-24, a wrong-behaviour fix: the shown size stepped
+      aside at a gesture's start and the frame jumped to the stored size;
+      then, written with the move, an Undo brought back a stored size nothing
+      rewrote, and a press on a handle alone made a size-only undo step). No
+      other note is stored before a step, and none after one: Yjs's Undo never
+      writes over a later write by another client, so a pen stroke that
+      stored every shown size took a peer's move of such a
+      note out of the peer's Undo, which undid the step before it instead,
+      and rewrote every note the two tabs measure differently on every stroke.
+      A plain write of a note showing a size, which the stash keeps here (the
+      arrow keys' nudge, untracked itself), is stored as written, the size
+      shown with it (`passOn`); one inside a step that did not store it is
+      written with the stored size where it kept the shown one, so that
+      step's Undo moves the note back alone. In a
+      read-only tab such a local write never reaches the store: the size
+      shows again. Copy, Duplicate and an Alt-drag's clone read the note's
+      `props`, so they take the size shown: harmless, the copy is a new note
+      whose own tab measures it, but a path outside the gesture rule.
+    - It writes nothing per key: it writes what it measures only once that
+      has differed from the stored size for 3 s (`NOTE_SIZE_VIEWER_MS`, the
+      editing tab's longest wait and 1 s), as a plain write, its connectors'
+      labels placed in the same write (no Undo step of their own). A note no
+      one edits (an agent's, a font change, a card code added) still gets its
+      size from the first tab that measures it. A size someone else writes
+      during the wait (a peer's, an Undo's) ends it: the tab goes on showing
+      its own measure and writes nothing (2026-11-24, a wrong-behaviour fix:
+      the wait started again, and its write 3 s later, the last, took a peer's
+      move of the note out of that peer's Undo, which undid the step before
+      it instead). Its own write ends the wait and the watch for it too, so two
+      tabs whose fonts measure a note differently write once at most and then
+      show their own sizes, with no write back and forth; only a step that
+      acts on the note (above) stores a tab's own size again, one write per
+      step, never one answering another.
+    - A connector's label shows where its stored offset falls on the path this
+      tab shows (`shownLabelXYWH`: the stored size, centred at
+      `labelOffset.distance`), for drawing (both renderers), hit tests and
+      bounds, the label's hit area (so a double click or a drag starts there)
+      and the canvas's redraw reach (local change 76). Every place BlockSuite
+      stores is that centre (the path's own placement, the label editor, a
+      label drag), so where a tab placed the label the two agree; in a tab
+      whose shown size moves a path with no label placed (a viewer, a size
+      shown without a wait) the label stays on its line, with nothing held or
+      written. Writes still read and write `labelXYWH` as before: a move, the
+      label editor, a label drag, the style toolbar, and their Undo. Two of
+      them can store a place off the offset, upstream: the style toolbar keeps
+      the stored centre as it resizes the label, wherever the path now is,
+      and a drag of the connector alone moves the stored place with the
+      pointer (and stashes it again at the end instead of saving it) while a
+      connector held at both ends keeps its path; drawn from its offset, the
+      label stays on its line there too
+      (2026-11-24, a wrong-behaviour fix: the path followed the shown bound and
+      the label stayed where the document had it, off its line).
     - The width is written only while the note is inline: a note turned into
       a card drops it.
-    - A read-only store writes nothing: a waiting size is dropped and the
-      stored one shown again; `setLocked` drops them (`dropNoteSizes`) before
-      clearing the selection, whose end would save them. The observers measure
-      while read-only too, and unlocking measures every note again with its
-      last size (`measureNoteSizesAgain`), a size the lock dropped as this
-      tab's own.
+    - A read-only store writes nothing: a waiting size is dropped, what the
+      tab measures still shown as its own; `setLocked` drops them
+      (`dropNoteSizes`) before clearing the selection, whose end would save
+      them. The observers measure while read-only too, and unlocking measures
+      every note again with its last size (`measureNoteSizesAgain`), a size
+      the lock dropped as this tab's own.
     - **A locked note** (`sizeIsFixed`: BlockSuite's `isLocked()`, the note's
       own lock or a group's, as a Canvas question's elements on a student's
       copy) keeps its stored size. The lock stops a person's edits, not code's,
       so without this a tab whose fonts measure differently would rewrite it.
-      No tab holds, saves or writes its size. After a transaction of the store
-      that can lock or unlock a note, this tab's or a peer's (`changesLocks`: a
+      No tab holds, saves or writes its size; each shows what it measures.
+      After a transaction of the store that can lock or unlock a note, this
+      tab's or a peer's (`changesLocks`: a
       block's `prop:lockedBySelf` or `prop:childElementIds`, a block added or
       gone, a surface element's `lockedBySelf` or `children`, a group's
       children, an element added or gone; never a typed key, a shape's text or
       a move, so typing checks no lock), a waiting note locked since drops its
-      size (the stored one shows again, nothing is written), and a note
+      size (nothing is written; what the tab measures still shows), and a note
       unlocked since is measured again with its last size as by a tab not
       editing it, so it is written after 3 s if that still differs. A lock made
       as a tracked step in the tab holding the size (the toolbar's Lock) stores
@@ -934,7 +1003,82 @@ Outside this directory, for BlockSuite:
     `src/features/blocksuite/noteSize.test.ts` and two tests in
     `e2e/editor/canvas-presence.spec.ts` ("a note's size reaches another person
     once typing pauses", "a note's waiting size is stored when editing ends or
-    the board is saved").
+    the board is saved") and `e2e/editor/board-note-size.spec.ts` (a note
+    stored shorter than its text takes a double click on its last line right
+    after an editor's board opens, a viewer's click there selects it, its
+    frame round the text, and an editor's drag of a note showing its text's
+    size starts from that size and writes it with the move in one step).
+
+76. A change to one canvas element draws again only the part of its canvas
+    that element covered and covers now (`affine/blocks/surface`
+    `renderer/canvas-renderer.ts`, marked `Capy (local change 76)`;
+    2026-11-23, `bench/editor/reports/2026-11-23-board-typing.md`). Upstream
+    an element's refresh marked its layer's canvas dirty and the next frame
+    cleared that canvas and drew every element in view on it. Typing a canvas
+    label, a shape's label or a connector's label writes the element each key
+    (its text, its size, the connector's label box), so each key redrew every
+    plane card's grid, formula's glyphs and stroke on that canvas, though the
+    edited label itself is hidden while its editor is open: on a board whose
+    notes sit under every canvas element (one canvas, as the large and dense
+    bench boards build them) that was the presentation delay of every key.
+    - Each dirty canvas now keeps a region, in model units: for each changed
+      element, where its drawing reached when it was last drawn and where it,
+      and the groups holding it (a mind map's lines, a group's title), reach
+      now. A reach is the element's turned bound (`getBoundWithRotation`, from
+      the element's parsed `xywh`; `elementBound` parses it again each call)
+      with what it draws outside it (`externalBound`, a connector's label),
+      plus 24 for antialiasing and glyph overhang, 8 times its stroke width (a
+      connector's arrowhead reaches 7.5) and its shadow. Local elements count
+      too: a connector's label has a transparent local shape as its hit area,
+      which follows the label each key.
+    - The frame clears that region in whole device pixels, clips to it and
+      draws there, in order, every element a whole pass would draw there (its
+      bound in the canvas's cull bound, as a whole pass culls, and its reach
+      in the cleared pixels), then the overlays.
+    - Each canvas remembers the origin, scale and size it was last drawn at
+      (the main canvas also which layers fell back to it), and a canvas whose
+      placement differs is drawn whole: a stacking canvas that grows or
+      moves, a pan or zoom, a canvas emptied when its layer left the view. So
+      is any refresh of everything or of the main canvas (an element or local
+      element added or gone, the selection, a layer change).
+    - Once region passes pause for 1 s, the board is drawn whole once (a plain
+      timer, then a frame), so a region's edge, where a stroke crossing it is
+      drawn clipped, ends as a whole pass draws it. Each region pass restarts
+      the timer and a whole pass cancels it, so typing (keys well under 1 s
+      apart) never pays it per key.
+    - Upstream's `_renderByBound` skipped an element with no renderer after
+      `ctx.save()` without restoring it; it restores now, or a region's clip
+      would stay on for the rest of the pass.
+    Pinned by "a change draws again only what it reaches, on the canvas under
+    a note and the one over it, as a whole board's redraw draws it" in
+    `e2e/editor/drawing-board.spec.ts`: on a board of about 70 elements, a
+    note between a stacking canvas and the main one, moving a shape off the
+    board and back, shrinking a shape a connector joins, typing a text label,
+    typing a shape's label that wraps and grows it and Backspace, and typing a
+    connector's label each draw more than 0 and fewer than 10 elements a pass,
+    the Backspace leaving the shape's height while its editor is open, and
+    fewer than 20 pixels of every canvas differ by more than 96 levels from a
+    whole redraw (each step's count logged) (on the GPU, read through a copy;
+    drawn without it, a stroke crossing a region's edge comes out up to about
+    64 of 255 levels off there, a stale dark stroke 200 or more). A pause after a key brings one whole pass, and a stacking
+    canvas that grows is drawn whole.
+
+77. The reference popup's input rules are scoped to `reference-popup`
+    (`affine/inlines/reference` `reference-popup.ts`, marked `Capy (local change
+    77)`): it is a ShadowlessElement, whose styles go to the document, and its
+    bare `input { display: flex; padding: 0; border: none; background:
+    transparent }` restyled every input on the page once a board loaded and
+    showed the app's hidden file inputs (Tailwind's `hidden` is layered, the
+    injected rule is not).
+
+78. Undo and redo keys stop at their own handler
+    (`affine/blocks/root/src/keyboard/keyboard-manager.ts`, marked `Capy (local
+    change 78)`): 'Mod-z', 'Shift-Mod-z' and 'Control-y' return true. Off a Mac,
+    Ctrl+Shift+Z arrives as a lowercase `z` with Shift, so the keymap, finding the
+    redo handler's return falsy, tried the key again without Shift and ran
+    'Mod-z': every Ctrl+Shift+Z on Windows and Linux redid and undid at once.
+    `e2e/editor/drawing-board.spec.ts` ("a teacher's area moves by its label")
+    redoes with it on CI's Linux.
 
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and

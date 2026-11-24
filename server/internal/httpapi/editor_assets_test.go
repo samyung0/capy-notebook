@@ -46,6 +46,10 @@ func TestValidateEditorAssetMetadata(t *testing.T) {
 		{"rejects svg", reserveEditorAssetRequest{
 			Name: "active.svg", Purpose: "image", SizeBytes: 20, ContentType: "image/svg+xml",
 		}},
+		// The browser re-encodes an AVIF first (Epo 2026-11-23).
+		{"rejects avif", reserveEditorAssetRequest{
+			Name: "photo.avif", Purpose: "image", SizeBytes: 20, ContentType: "image/avif",
+		}},
 		{"rejects mismatched mime", reserveEditorAssetRequest{
 			Name: "photo.png", Purpose: "image", SizeBytes: 20, ContentType: "image/jpeg",
 		}},

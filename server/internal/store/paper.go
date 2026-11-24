@@ -117,11 +117,16 @@ type PaperPart struct {
 	Type string
 	// Listing is the part as the read call lists it, its options lettered as
 	// the member saw them; Question is its grading text, Items its marking
-	// points, for the open and drawing parts the AI grades.
+	// points, for the open and canvas parts the AI grades.
 	Listing   string
 	Question  string
 	Items     []string
 	ItemMarks []float64
+	// Figures are the question's images, in the order Question numbers them,
+	// a canvas part's own canvas among them; SampleImage is a canvas part's
+	// drawn sample answer image, an editor asset (Epo 2026-11-23).
+	Figures     []map[string]any
+	SampleImage string
 }
 
 // Paper is a submitted paper with the parts its marking lists.
@@ -140,10 +145,11 @@ type Paper struct {
 	TextGap string
 }
 
-// paperTypes names each answer type as the read call's prompt does.
+// paperTypes names each answer type as the read call's prompt does (a canvas
+// part is still "drawing" there).
 var paperTypes = map[string]string{
 	"mcq": "choice", "boolean": "true/false", "short": "short", "gaps": "gaps",
-	"matching": "matching", "ordering": "ordering", "open": "open", "drawing": "drawing",
+	"matching": "matching", "ordering": "ordering", "open": "open", "canvas": "drawing",
 }
 
 func letter(i int) string { return string(rune('A' + i)) }
@@ -269,7 +275,8 @@ func (s *Store) GetPaper(ctx context.Context, attemptID string) (Paper, error) {
 			}
 			part := PaperPart{Label: label, QuestionID: qid, PartID: pid, Type: paperTypes[kind], Listing: listing}
 			if questions.ModelMarked(kind) {
-				part.Question = questions.GradingText(q, i)
+				part.Question, part.Figures = questions.PaperTextAndFigures(q, i)
+				part.SampleImage = questions.DrawnSampleImage(p)
 				part.Items, part.ItemMarks = questions.MarkItems(p)
 			}
 			out.Parts = append(out.Parts, part)
@@ -536,12 +543,11 @@ func (s *Store) PapersToRead(ctx context.Context, assignmentID, attemptID string
 // of its assignment's class once submitted; anyone else gets ErrNotFound. kind
 // tells a PDF, shown page by page, from other files.
 func (s *Store) PaperFileBlob(ctx context.Context, userID, attemptID, fileID string) (blobPath, kind string, err error) {
-	var owner string
-	var row taskRow
+	var owner, wsID string
 	var submitted bool
-	err = s.pool.QueryRow(ctx, `SELECT t.user_id, COALESCE(a.workspace_id, ''), a.own, a.created_by, t.submitted_at IS NOT NULL, COALESCE(f.blob_path, ''), f.kind
+	err = s.pool.QueryRow(ctx, `SELECT t.user_id, a.workspace_id, t.submitted_at IS NOT NULL, COALESCE(f.blob_path, ''), f.kind
 		FROM files f JOIN attempts t ON t.id=f.attempt_id JOIN assignments a ON a.id=t.assignment_id
-		WHERE f.id=$1 AND f.attempt_id=$2`, fileID, attemptID).Scan(&owner, &row.wsID, &row.own, &row.maker, &submitted, &blobPath, &kind)
+		WHERE f.id=$1 AND f.attempt_id=$2`, fileID, attemptID).Scan(&owner, &wsID, &submitted, &blobPath, &kind)
 	if isNoRows(err) {
 		return "", "", ErrNotFound
 	}
@@ -551,7 +557,7 @@ func (s *Store) PaperFileBlob(ctx context.Context, userID, attemptID, fileID str
 	if owner == userID {
 		return blobPath, kind, nil
 	}
-	staff, err := s.staffOf(ctx, s.pool, userID, row)
+	staff, err := s.assignmentStaff(ctx, s.pool, userID, wsID)
 	if err != nil || !staff || !submitted {
 		return "", "", ErrNotFound
 	}

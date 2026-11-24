@@ -8,7 +8,8 @@
 //! group id to `{blocks}`; part id to `{order, marks, blocks, answer, group?}`; the answer map holds the type and what a learner
 //! may see: mcq `options`, `multiple` (true while several are correct or
 //! the author's flag is set), `shuffle` and `locked` (ticks by option id;
-//! Shuffle options, Epo 2026-11-15), a short answer's `unit` and matching
+//! Shuffle options, Epo 2026-11-15), a canvas part's `shared` (answered in the
+//! canvas above, Epo 2026-11-23), a short answer's `unit` and matching
 //! `left` items.
 //! A group has no order of its own: it sits where its first part sits, and a
 //! merge's leftovers read repaired (`q::repair_groups`, Epo 2026-11-04).
@@ -23,7 +24,9 @@
 //! from them and nothing in either document is written by the server alone.
 //!
 //! A block entry holds its fields (D8 superseded by Epo 2026-11-16, D2, D3
-//! and D9): a chart, plot or graph entry is the figure map a note figure's
+//! and D9): a canvas, in the stem, a group's or a part's blocks (never a
+//! solution), a drawn one's board and picture asset ids as one plain `drawn`
+//! value `{board, image}`, so a merge never splits them (Epo 2026-11-23); a chart, plot or graph entry is the figure map a note figure's
 //! `block` is too (D15), beside its `order`, read, written and admitted by
 //! `notes::figure_map`: plain fields each replaced whole, a graph's `board`
 //! and its `elements` keyed by element id, a chart's series and labels held
@@ -63,11 +66,12 @@ pub const KEYS_ROOT: &str = "keys";
 pub const BLOCK_ID: &str = "quiz";
 
 const ANSWER_TYPES: &[&str] = &[
-    "mcq", "boolean", "short", "matching", "ordering", "open", "gaps", "drawing",
+    "mcq", "boolean", "short", "matching", "ordering", "open", "gaps", "canvas",
 ];
 /// The question block kinds a live quiz holds: the embed catalog's question
-/// blocks (chart, plot, graph) and the plain ones it does not list.
-pub const BLOCK_TYPES: &[&str] = &["text", "table", "image", "chart", "plot", "graph"];
+/// blocks (chart, plot, graph) and the plain ones it does not list; a canvas
+/// in any but a solution.
+pub const BLOCK_TYPES: &[&str] = &["text", "table", "image", "chart", "plot", "graph", "canvas"];
 /// Whole marks a marking item carries.
 const MAX_MARKS: f64 = q::QUESTION_MARKS_MAX;
 /// Whole marks a part carries: an open part's are its marking items' total,
@@ -238,6 +242,15 @@ fn read_block<T: ReadTxn>(txn: &T, map: &MapRef) -> Option<Value> {
             Some(block)
         }
         "chart" | "plot" | "graph" => figure_map::read(map.as_ref(), &kind),
+        "canvas" => Some(match any_at(txn, map, "drawn") {
+            Some(Any::Map(drawn)) => match (drawn.get("board"), drawn.get("image")) {
+                (Some(Any::String(board)), Some(Any::String(image))) => {
+                    json!({ "type": "canvas", "board": board.as_ref(), "image": image.as_ref() })
+                }
+                _ => json!({ "type": "canvas" }),
+            },
+            _ => json!({ "type": "canvas" }),
+        }),
         _ => None,
     }
 }
@@ -384,7 +397,7 @@ fn read_answer<C: ReadTxn, K: ReadTxn>(
             }
             (value, None)
         }
-        "open" | "drawing" => {
+        "open" | "canvas" => {
             let scheme = match keys {
                 Some((txn, key)) => ordered(txn, map_at(txn, key, "markscheme").as_ref())
                     .iter()
@@ -407,10 +420,17 @@ fn read_answer<C: ReadTxn, K: ReadTxn>(
                         "image": str_at(txn, key, "sampleImage")?,
                     }))
                 });
-                match sample {
-                    Some(sample) => json!({ "type": "drawing", "sample": sample }),
-                    None => json!({ "type": "drawing" }),
+                let mut value = json!({ "type": "canvas" });
+                if let Some(sample) = sample {
+                    value["sample"] = sample;
                 }
+                // Answered in the canvas above (Epo 2026-11-23).
+                if answer
+                    .is_some_and(|a| matches!(any_at(content, a, "shared"), Some(Any::Bool(true))))
+                {
+                    value["shared"] = json!(true);
+                }
+                value
             };
             (value, Some(Value::Array(scheme)))
         }
@@ -748,6 +768,16 @@ pub fn asset_ids<C: ReadTxn, K: ReadTxn>(content: &C, keys: &K) -> Vec<String> {
                 {
                     ids.insert(id.clone());
                 }
+                // A drawn canvas's board and picture.
+                if map.get("type").and_then(Value::as_str) == Some("canvas") {
+                    for name in ["board", "image"] {
+                        if let Some(Value::String(id)) = map.get(name)
+                            && !id.trim().is_empty()
+                        {
+                            ids.insert(id.clone());
+                        }
+                    }
+                }
                 for value in map.values() {
                     walk(value, ids);
                 }
@@ -764,11 +794,15 @@ pub fn asset_ids<C: ReadTxn, K: ReadTxn>(content: &C, keys: &K) -> Vec<String> {
     for question in held_questions_json(content, Some(&KeysRead::new(keys))) {
         walk(&question, &mut ids);
     }
-    // Drawn sample answers live in the keys: read them there, whatever the
-    // part's answer type says now, so one being written stays in use.
+    // Drawn sample answers and explanations live in the keys: read them there,
+    // whatever the part's answer type says now, so one being written stays in
+    // use.
     if let Some(root) = keys.get_map(KEYS_ROOT) {
         for (_, entry) in root.iter(keys) {
             if let Out::YMap(key) = entry {
+                for block in read_blocks(keys, map_at(keys, &key, "solution").as_ref()) {
+                    walk(&block, &mut ids);
+                }
                 for name in ["sampleBoard", "sampleImage"] {
                     if let Some(id) = str_at(keys, &key, name)
                         && !id.trim().is_empty()
@@ -1122,6 +1156,15 @@ fn sync_block(txn: &mut TransactionMut, map: &MapRef, block: &Value) {
             sync_text(txn, map, "description", str_of(block, "description"));
             sync_plain(txn, map, "attribution", plain_str("attribution"));
         }
+        "canvas" => {
+            let drawn = match (block.get("board"), block.get("image")) {
+                (Some(board), Some(image)) => {
+                    Some(json_any(&json!({ "board": board, "image": image })))
+                }
+                _ => None,
+            };
+            sync_plain(txn, map, "drawn", drawn);
+        }
         _ => figure_map::sync(txn, map, kind, block),
     }
 }
@@ -1295,8 +1338,15 @@ fn sync_answer(
             sync_plain(content, &answer_map, "unit", unit);
             sync_texts(keys, &key, "accepted", "a", &strings(&answer, "accepted"));
         }
-        "open" | "drawing" => {
-            if kind == "drawing" {
+        "open" | "canvas" => {
+            if kind == "canvas" {
+                let shared = answer.get("shared") == Some(&Value::Bool(true));
+                sync_plain(
+                    content,
+                    &answer_map,
+                    "shared",
+                    shared.then_some(Any::Bool(true)),
+                );
                 let sample = answer.get("sample");
                 let id = |name: &str| {
                     sample
@@ -1841,17 +1891,40 @@ impl Tally<'_> {
     }
 }
 
-/// A block's own fields: `rest` is the path below the block id.
+/// A block's own fields: `rest` is the path below the block id. The stem's,
+/// a group's and a part's blocks (`canvas`) may be a canvas, which sends the
+/// update to the exact check (a list's canvases, [check_blocks]); a
+/// solution's may not.
 fn block_shape(
     rest: &[&str],
     key: Option<&str>,
     content: &ItemContent,
     path: &[Arc<str>],
     tally: &mut Tally,
+    canvas: bool,
 ) -> Result<(), String> {
     match (rest, key) {
         ([], Some("order")) if order_key(content) => tally.value(content),
+        ([], Some("type")) if one_of(content, &["canvas"]) => {
+            if !canvas {
+                return refuse("a canvas in a solution");
+            }
+            tally.growth.over_cap = true;
+            tally.value(content);
+        }
         ([], Some("type")) if one_of(content, BLOCK_TYPES) => tally.value(content),
+        // A drawn canvas's board and picture, editor asset ids together.
+        ([], Some("drawn")) if canvas => match one_any(content) {
+            Some(Any::Map(drawn))
+                if drawn.len() == 2
+                    && ["board", "image"].iter().all(|key| {
+                        matches!(drawn.get(*key), Some(Any::String(id)) if id.chars().count() <= q::QUESTION_ID_MAX)
+                    }) =>
+            {
+                tally.value(content)
+            }
+            _ => return refuse("a drawn canvas that is not {board, image}"),
+        },
         ([], Some("attribution")) if a_meta(content) => tally.value(content),
         ([], Some("header")) if a_bool(content) => tally.value(content),
         // An image waiting for its upload is structure, not a refused value
@@ -2018,7 +2091,7 @@ fn content_shape(
         | ([R, _, "parts", _, "blocks"], Some(id)) => new_entry(content, id, full, tally),
         ([R, _, "stem", _, rest @ ..], key)
         | ([R, _, "groups", _, "blocks", _, rest @ ..], key) => {
-            block_shape(rest, key, content, full, tally)
+            block_shape(rest, key, content, full, tally, true)
         }
         ([R, _, "groups", _], Some("blocks")) if is_map(content) => {
             tally.structure(16);
@@ -2050,16 +2123,18 @@ fn content_shape(
             Ok(())
         }
         ([R, _, "parts", _, "blocks", _, rest @ ..], key) => {
-            block_shape(rest, key, content, full, tally)
+            block_shape(rest, key, content, full, tally, true)
         }
         ([R, _, "parts", _, "answer"], Some("type")) if one_of(content, ANSWER_TYPES) => {
-            if one_of(content, &["open", "drawing"]) {
+            if one_of(content, &["open", "canvas"]) {
                 tally.open += 1;
             }
             tally.value(content);
             Ok(())
         }
-        ([R, _, "parts", _, "answer"], Some("multiple" | "shuffle")) if a_bool(content) => {
+        ([R, _, "parts", _, "answer"], Some("multiple" | "shuffle" | "shared"))
+            if a_bool(content) =>
+        {
             tally.value(content);
             Ok(())
         }
@@ -2147,7 +2222,9 @@ fn keys_shape(
             Ok(())
         }
         ([K, _, "solution"], Some(id)) => new_entry(content, id, full, tally),
-        ([K, _, "solution", _, rest @ ..], key) => block_shape(rest, key, content, full, tally),
+        ([K, _, "solution", _, rest @ ..], key) => {
+            block_shape(rest, key, content, full, tally, false)
+        }
         ([K, _, "pairs"], Some(left)) if valid_id(left) => match one_any(content) {
             Some(Any::String(option)) if valid_id(option) => {
                 tally.value(content);
@@ -2495,8 +2572,9 @@ fn measure_text(
 }
 
 /// A section's blocks, each typed text and list up to twice its cap (Epo
-/// 2026-11-22); a figure's plain fields at theirs, as they came. `at` names
-/// the section.
+/// 2026-11-22), its canvases too (one, Epo 2026-11-23; a solution holds
+/// none); a figure's plain fields at theirs, as they came. `at` names the
+/// section.
 fn check_blocks<T: ReadTxn>(
     txn: &T,
     map: Option<&MapRef>,
@@ -2511,6 +2589,18 @@ fn check_blocks<T: ReadTxn>(
         "a section",
         blocks.len(),
         q::QUESTION_BLOCKS_MAX,
+    )?;
+    let canvases = blocks
+        .iter()
+        .filter(|block| str_at(txn, &block.map, "type").as_deref() == Some("canvas"))
+        .count();
+    measure_count(
+        visit,
+        at,
+        "canvases",
+        "a section's canvases",
+        canvases,
+        q::PART_CANVASES_MAX,
     )?;
     for block in &blocks {
         measure_text(
@@ -2680,12 +2770,8 @@ fn walk_content<T: ReadTxn>(txn: &T, visit: Visit) -> Result<(), String> {
         parts += question_parts.len();
         for part in &question_parts {
             let at = &part.id;
-            check_blocks(
-                txn,
-                map_at(txn, &part.map, "blocks").as_ref(),
-                &format!("{at}/blocks"),
-                visit,
-            )?;
+            let blocks = map_at(txn, &part.map, "blocks");
+            check_blocks(txn, blocks.as_ref(), &format!("{at}/blocks"), visit)?;
             let marks = num_at(txn, &part.map, "marks");
             check_marks(marks, MAX_PART_MARKS, "a part")?;
             if let Some(marks) = marks {

@@ -33,9 +33,15 @@ import {
   type Question,
   type QuestionPart,
 } from '@/features/questions/types';
+import {
+  answerId,
+  drawingParts,
+  partAnswer,
+} from '@/features/quizzes/drawing/canvasParts';
 import type { Answers } from '@/features/quizzes/grade';
 import { scorePart } from '@/features/quizzes/grade';
 import { learnerView } from './answerKeys';
+import { surfaceAreaGraph } from './biologyQuiz';
 import * as db from './db';
 import { mockBoardAssets } from './editorAssets';
 import { paperPdf } from './extraction';
@@ -51,8 +57,6 @@ type Viewer = 'owner' | 'member';
 type Row = {
   id: string;
   workspaceId: string;
-  /** A task its maker set themself: nobody else's, staff included. */
-  own?: boolean;
   /** Topics beyond its quiz's or files', to show a row with several. */
   moreTopicIds?: string[];
   kind: 'marked' | 'unmarked';
@@ -218,7 +222,7 @@ const pictureType = (data: string) =>
         : 'image/webp';
 
 /** A new assignment in a workspace, as POST makes it. */
-function addRow(wsId: string, body: AssignmentFormReq, own: boolean) {
+function addRow(wsId: string, body: AssignmentFormReq) {
   const row: Row = {
     allowUploads: false,
     assignAll: true,
@@ -231,7 +235,6 @@ function addRow(wsId: string, body: AssignmentFormReq, own: boolean) {
     latePenaltyPct: 0,
     marking: 'ai_approve' as const,
     noLate: false,
-    own,
     postedAt: new Date().toISOString(),
     quizId: body.quizId,
     showAnswers: 'closed' as const,
@@ -255,7 +258,7 @@ function addRow(wsId: string, body: AssignmentFormReq, own: boolean) {
  * (e2e/editor/assignment-settings.spec.ts, drawing-answer.spec.ts). */
 export function assignAsMockOwner(wsId: string, body: AssignmentFormReq) {
   seed();
-  return addRow(wsId, body, false).id;
+  return addRow(wsId, body).id;
 }
 
 /** A quiz maker's `gradedQuiz` (Epo 2026-11-16): the graded quiz made with
@@ -266,7 +269,7 @@ export function addMockGradedQuiz(
   quizId: string
 ) {
   seed();
-  return addRow(wsId, { ...form, kind: 'marked', quizId }, false).id;
+  return addRow(wsId, { ...form, kind: 'marked', quizId }).id;
 }
 
 /** A member's submitted attempt at an assignment: the Members mock's profile
@@ -419,7 +422,11 @@ const part = (
   parts: [
     {
       answer,
-      blocks: textBlock(text),
+      // A canvas part is answered on its canvas, blank here.
+      blocks: [
+        ...textBlock(text),
+        ...(answer.type === 'canvas' ? [{ type: 'canvas' as const }] : []),
+      ],
       id: `${id}:a`,
       marks,
       ...(markscheme && {
@@ -579,7 +586,7 @@ const pastPaper = (): Question[] => [
   part(
     'q17',
     'Draw a plant cell and label the cell wall, the vacuole and the nucleus.',
-    { sample: { board: SAMPLE_BOARD, image: SAMPLE_BOARD }, type: 'drawing' },
+    { sample: { board: SAMPLE_BOARD, image: SAMPLE_BOARD }, type: 'canvas' },
     3,
     'A box-shaped cell: the wall around the outside, a large central vacuole and the nucleus pushed to one side.',
     [
@@ -754,11 +761,12 @@ const richQuestions = (): Question[] => [
       {
         answer: {
           sample: { board: SAMPLE_BOARD, image: SAMPLE_BOARD },
-          type: 'drawing',
+          type: 'canvas',
         },
-        blocks: textBlock(
-          'Draw the cell as seen at ×1000 and add a scale bar.'
-        ),
+        blocks: [
+          ...textBlock('Draw the cell as seen at ×1000 and add a scale bar.'),
+          { type: 'canvas' },
+        ],
         id: 'q19:c',
         marks: 3,
         markscheme: [
@@ -864,6 +872,133 @@ const richQuestions = (): Question[] => [
     ],
     stem: [],
   },
+  ...leadingBlockQuestions(),
+];
+
+/** Questions that open with something other than their text (Epo
+ * 2026-11-22), for the report's rows, results and Grading: a figure, texts
+ * and a chart, a chart in the part, a graph and a table, a plot. */
+const leadingBlockQuestions = (): Question[] => [
+  {
+    ...short(
+      'q22',
+      'Name the structure that controls what enters and leaves the cell.',
+      ['cell membrane', 'membrane'],
+      1
+    ),
+    stem: [
+      CELL_FIGURE,
+      ...textBlock('The image shows an animal cell at ×400.'),
+    ],
+  },
+  {
+    ...open('q23', 'Explain the pattern in the chart.', [
+      ['Fewer bubbles further from the lamp', 1],
+      ['Less light, so slower photosynthesis', 1],
+    ]),
+    stem: [
+      ...textBlock('A student measured photosynthesis in pondweed.'),
+      ...textBlock(
+        'They counted the bubbles a minute at four distances from a lamp.'
+      ),
+      {
+        kind: 'bar',
+        labels: ['10 cm', '20 cm', '30 cm', '40 cm'],
+        series: [{ name: 'Bubbles a minute', values: [42, 25, 12, 6] }],
+        title: 'Bubbles at each distance from the lamp',
+        type: 'chart',
+        xTitle: 'Distance from the lamp',
+        yTitle: 'Bubbles a minute',
+      },
+    ],
+  },
+  {
+    ...base('q24'),
+    parts: [
+      {
+        answer: {
+          correct: [2],
+          options: ['100', '200', '300', '400'],
+          type: 'mcq',
+        },
+        // The chart first in the part itself, its text after.
+        blocks: [
+          {
+            kind: 'line',
+            labels: ['0', '100', '200', '300', '400'],
+            series: [
+              { name: 'Low CO₂', values: [0, 3, 6, 6, 6] },
+              { name: 'High CO₂', values: [0, 4, 8, 10, 10] },
+            ],
+            title: 'Oxygen production at two CO₂ concentrations',
+            type: 'chart',
+            xTitle: 'Light intensity',
+            yTitle: 'Oxygen (µmol/min)',
+          },
+          ...textBlock(
+            'At which light intensity does oxygen production stop rising with high CO₂?'
+          ),
+        ],
+        id: 'q24:a',
+        marks: 1,
+        solution: [],
+      },
+    ],
+  },
+  {
+    ...short(
+      'q25',
+      'Give the surface area to volume ratio at B.',
+      ['3', '3:1'],
+      1
+    ),
+    stem: [
+      surfaceAreaGraph,
+      {
+        header: true,
+        rows: [
+          ['Point', 'Side (µm)'],
+          ['A', '1'],
+          ['B', '2'],
+          ['C', '3'],
+        ],
+        type: 'table',
+      },
+    ],
+  },
+  {
+    ...short(
+      'q26',
+      'State the optimum temperature of the enzyme.',
+      ['37', '37 °C'],
+      1
+    ),
+    stem: [
+      {
+        series: [
+          {
+            name: 'Activity',
+            points: [
+              [10, 8],
+              [20, 22],
+              [30, 41],
+              [37, 50],
+              [45, 24],
+              [55, 3],
+            ],
+          },
+        ],
+        title: 'Enzyme activity against temperature',
+        type: 'plot',
+        unit: '%',
+        xTitle: 'Temperature (°C)',
+        yTitle: 'Activity (%)',
+      },
+      ...textBlock(
+        'The plot shows how fast an enzyme works at each temperature.'
+      ),
+    ],
+  },
 ];
 
 const worksheet = (count: number): Question[] =>
@@ -895,9 +1030,14 @@ function gradePaper(
   return questions.map((question) => ({
     ...question,
     parts: question.parts.map((part) => {
-      // A drawing Done stored waits for the AI, as an open answer does.
-      if (part.answer.type === 'drawing')
-        return (answers[part.id] as { drawing?: string } | undefined)?.drawing
+      // A canvas Done stored waits for the AI, as an open answer does; a
+      // part answered in the canvas above waits on that drawing.
+      if (part.answer.type === 'canvas')
+        return (
+          partAnswer(question, answers, part) as
+            | { drawing?: string }
+            | undefined
+        )?.drawing
           ? { ...part, awarded: 0, pending: true }
           : {
               ...part,
@@ -970,7 +1110,11 @@ function seedAttempt(
         answers[part.id] = part.answer.accepted.map((list, i) =>
           right >= 3 || i > 0 ? list[0] : 'diffusion'
         );
-      else if (part.answer.type === 'drawing')
+      // One drawing answers the parts sharing a canvas, under the first.
+      else if (
+        part.answer.type === 'canvas' &&
+        answerId(question, part) === part.id
+      )
         answers[part.id] = { drawing: 'dr_marked_1' };
     }
   const graded = gradePaper(questions, answers);
@@ -1610,17 +1754,17 @@ function finish(row: Row, attempt: Attempt, answers: Answers, auto: boolean) {
   }
 }
 
-/** A class has staff; a personal workspace only each person's own tasks. */
+/** A class has staff and gives out work; a personal workspace neither. */
 const isClass = (workspaceId: string) =>
   db.workspaces.find((ws) => ws.id === workspaceId)?.kind === 'class';
 
-/** Whether the viewer runs the row as its staff: a class's owner, or the maker
- * of a task they set themself, which the mock's viewer always is. */
-const runs = (row: Row, viewer: Viewer) => !!row.own || viewer === 'owner';
+/** Whether the viewer runs the row as its staff: a class's owner. */
+const runs = (row: Row, viewer: Viewer) =>
+  viewer === 'owner' && isClass(row.workspaceId);
 
 function toAssignment(row: Row, viewer: Viewer): Assignment {
   sweep(row);
-  const staff = row.own || (viewer === 'owner' && isClass(row.workspaceId));
+  const staff = runs(row, viewer);
   const questions = row.questions ?? [];
   const marks = questions.reduce(
     (sum, q) => sum + q.parts.reduce((n, p) => n + p.marks, 0),
@@ -1681,7 +1825,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     closedAt: closedAtOf(row),
     draft: row.draft,
     drawingParts: (row.questions ?? []).some((q) =>
-      q.parts.some((p) => p.answer.type === 'drawing')
+      q.parts.some((p) => p.answer.type === 'canvas')
     ),
     dueAt: row.dueAt,
     files: row.files.flatMap((f): Assignment['files'] => {
@@ -1718,13 +1862,10 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     latePenaltyPct: row.latePenaltyPct,
     marks,
     noLate: row.noLate,
-    own: !!row.own,
     paperFile: !!row.paperFile,
     points: row.points,
     postedAt: row.postedAt,
-    postedBy: row.own
-      ? db.user.name
-      : (POSTERS[row.workspaceId] ?? db.user.name),
+    postedBy: POSTERS[row.workspaceId] ?? db.user.name,
     questions: questions.length,
     timeLimitMin: row.timeLimitMin,
     title: row.title,
@@ -1976,16 +2117,13 @@ function partReport(part: QuestionPart, list: Attempt[]): AssignmentPartReport {
       };
     });
   }
-  // The part's own numbers, as the server takes them.
+  // The part's mean mark, as the server takes it.
   const marked = list.flatMap((a) => {
     const graded = gradedPart(a);
     return graded && !graded.pending ? [graded] : [];
   });
   const awarded = marked.reduce((sum, g) => sum + (g.awarded ?? 0), 0);
-  if (marked.length && modelMarked(part.answer.type))
-    out.average = awarded / marked.length;
-  else if (marked.length && part.marks)
-    out.percent = awarded / (part.marks * marked.length);
+  if (marked.length) out.average = awarded / marked.length;
   return out;
 }
 
@@ -2053,13 +2191,10 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
   const answers: AssignmentAnswerRow[] = [];
   const questions: AssignmentQuestionReport[] = (row.questions ?? []).map(
     (question) => {
-      // Written and drawn answers wait for marking alike.
-      const isOpen = question.parts.some((p) => modelMarked(p.answer.type));
       const graded = countedRows.flatMap((a) => {
         const q = a.graded.find((g) => g.id === question.id);
         return q ? [{ attempt: a, q }] : [];
       });
-      const marked = graded.filter(({ q }) => !q.parts.some((p) => p.pending));
       const score = (q: AssignmentGradedQuestion) =>
         q.parts.reduce((n, p) => n + (p.awarded ?? 0), 0);
       const marks = question.parts.reduce((n, p) => n + p.marks, 0);
@@ -2092,18 +2227,8 @@ function report(row: Row, viewer: Viewer): AssignmentReport {
             waiting: true,
           });
       }
-      const enough = marked.length > 0;
       return {
-        average:
-          enough && isOpen
-            ? marked.reduce((n, { q }) => n + score(q), 0) / marked.length
-            : undefined,
         parts: question.parts.map((p) => partReport(p, countedRows)),
-        percent:
-          enough && !isOpen && marks > 0
-            ? marked.reduce((n, { q }) => n + score(q), 0) /
-              (marked.length * marks)
-            : undefined,
         question,
         submitted: graded.length,
       };
@@ -2193,19 +2318,14 @@ function freeze(row: Row) {
 /** The Dashboard's "assigned" Activity rows. */
 export function assignmentActivity(workspaceId: string): WorkspaceActivity[] {
   seed();
-  return (
-    [...rows.values()]
-      // A member's own task is nobody's news.
-      .filter(
-        (row) => row.workspaceId === workspaceId && !row.draft && !row.own
-      )
-      .map((row) => ({
-        assignmentId: row.id,
-        at: row.postedAt,
-        kind: 'assigned' as const,
-        title: row.title,
-      }))
-  );
+  return [...rows.values()]
+    .filter((row) => row.workspaceId === workspaceId && !row.draft)
+    .map((row) => ({
+      assignmentId: row.id,
+      at: row.postedAt,
+      kind: 'assigned' as const,
+      title: row.title,
+    }));
 }
 
 /** Told once in this page's life. */
@@ -2241,13 +2361,13 @@ export function workspaceMaterialRefs(wsId: string, viewer: Viewer) {
       createdAt: mt.createdAt,
       hidden: mt.hidden,
       id: mt.id,
+      kind: mt.kind,
       maxDepth: mt.maxDepth,
       nodeCount: mt.nodeCount,
       position: mt.position,
       sizeBytes: mt.contentBytes,
       title: mt.title,
       topicId: mt.topicId,
-      type: mt.kind,
     }))
     .filter((ref) => viewer === 'owner' || !ref.hidden)
     .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
@@ -2340,12 +2460,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
   return [
     http.get('/api/todo', () => {
       seed();
-      // The viewer's tasks with no workspace come first, as a section with
-      // an empty id.
-      const workspaces = [
-        { iconId: '', id: '', kind: 'personal', name: '' },
-        ...db.workspaces,
-      ]
+      const workspaces = db.workspaces
         .map((ws) => ({
           iconId: ws.iconId,
           items: [...rows.values()]
@@ -2471,37 +2586,6 @@ export const assignmentHandlers = (viewer: Viewer) => {
           offset + PAGE < all.length ? String(offset + PAGE) : undefined,
       } satisfies AssignmentList);
     }),
-    // A task with no workspace: its maker's alone.
-    http.post('/api/todo/tasks', async ({ request }) => {
-      seed();
-      const body = (await request.json()) as AssignmentFormReq;
-      const row: Row = {
-        allowUploads: false,
-        assignAll: false,
-        assignees: [],
-        attempts: 1,
-        draft: false,
-        files: [],
-        id: newId('as'),
-        kind: body.kind,
-        latePenaltyPct: 0,
-        marking: 'ai_approve' as const,
-        noLate: false,
-        own: true,
-        postedAt: new Date().toISOString(),
-        quizId: body.quizId,
-        showAnswers: 'closed' as const,
-        showGrades: 'automatic' as const,
-        shuffle: false,
-        title: body.title,
-        uploadOnly: false,
-        workspaceId: '',
-      };
-      applyForm(row, body);
-      if (row.kind === 'marked') freeze(row);
-      rows.set(row.id, row);
-      return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
-    }),
     // Existing file: a workspace file as a graded quiz's question paper.
     http.post('/api/files/:id/graded-quiz', async ({ params, request }) => {
       const file = db.files.find((f) => f.id === params.id);
@@ -2511,11 +2595,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
       };
       const marks = gradedQuiz.totalMarks ?? 0;
       seed();
-      const row = addRow(
-        file.workspaceId,
-        { ...gradedQuiz, kind: 'marked' },
-        false
-      );
+      const row = addRow(file.workspaceId, { ...gradedQuiz, kind: 'marked' });
       row.paperFile = true;
       row.files = [{ fileId: file.id }];
       row.allowUploads = true;
@@ -2554,8 +2634,10 @@ export const assignmentHandlers = (viewer: Viewer) => {
         seed();
         const body = (await request.json()) as AssignmentFormReq;
         const wsId = String(params.id);
-        // From anyone but a class's staff it is a task for themself.
-        const row = addRow(wsId, body, !(viewer === 'owner' && isClass(wsId)));
+        // Only a class's staff give out work.
+        if (!(viewer === 'owner' && isClass(wsId)))
+          return new HttpResponse(null, { status: 403 });
+        const row = addRow(wsId, body);
         return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
       }
     ),
@@ -2666,7 +2748,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
       const { closed } = (await request.json()) as { closed: boolean };
       row.closedAt = closed ? new Date().toISOString() : undefined;
       // Under Do not show nothing is released (Epo 2026-11-14).
-      if (closed && (row.own || row.showAnswers !== 'never'))
+      if (closed && row.showAnswers !== 'never')
         row.releasedAt ??= new Date().toISOString();
       // The stream's word to whoever is taking it (`publishAssignmentClosed`).
       if (
@@ -2887,11 +2969,25 @@ export const assignmentHandlers = (viewer: Viewer) => {
             'attempt_finished',
             'This attempt has been submitted.'
           );
+        // As the server: only a part its drawing is stored under takes one,
+        // never a later part sharing that canvas.
+        const partId = String(params.partId);
+        const question = found.row.questions?.find((q) =>
+          q.parts.some((part) => part.id === partId)
+        );
+        const part = question?.parts.find((item) => item.id === partId);
+        if (
+          !(question && part && drawingParts(question).get(partId) === partId)
+        )
+          return HttpResponse.json(
+            { detail: 'that part takes no drawing', status: 422 },
+            { status: 422 }
+          );
         const body = (await request.json()) as {
           board: string;
           pictures?: { data: string; sourceId: string }[];
         };
-        const id = `dr_${String(params.partId)}_${Date.now()}`;
+        const id = `dr_${partId}_${Date.now()}`;
         mockDrawings.set(id, body.board);
         mockDrawingPictures.set(id, body.pictures ?? []);
         return HttpResponse.json({ id });
@@ -3002,6 +3098,62 @@ export const assignmentHandlers = (viewer: Viewer) => {
           const { answers } = (await request.json()) as { answers: Answers };
           finish(found.row, found.attempt, answers, false);
         }
+        return HttpResponse.json(attemptView(found.attempt, found.row, viewer));
+      }
+    ),
+    // Graded again at once: its answered AI parts take the AI's mark again,
+    // waiting for approval unless the AI's marks need none.
+    http.post(
+      '/api/assignment-attempts/:id/regrade',
+      async ({ params, request }) => {
+        const found = attemptOf(params.id);
+        if (!found || !runs(found.row, viewer)) return gone();
+        if (found.row.marking === 'manual')
+          return conflict(
+            'regrade_manual',
+            'this assignment is graded by hand'
+          );
+        const { questionId } = (await request.json()) as {
+          questionId: string;
+        };
+        const question = found.attempt.graded.find((q) => q.id === questionId);
+        if (!question) return gone();
+        let regraded = 0;
+        question.parts = question.parts.map((part) => {
+          const value = found.attempt.answers[part.id];
+          if (
+            !modelMarked(part.answer.type) ||
+            (typeof value === 'string' ? !value.trim() : value == null)
+          )
+            return part;
+          regraded++;
+          const {
+            aiComment: _c,
+            aiError: _e,
+            aiFlag: _f,
+            awarded: _a,
+            itemAwards: _i,
+            markedBy: _m,
+            ...rest
+          } = part;
+          const items = (part.markscheme ?? []).map((item, i) =>
+            i === 0 ? item.marks : 0
+          );
+          return found.row.marking === 'ai'
+            ? {
+                ...rest,
+                awarded: items.reduce((sum, v) => sum + v, 0),
+                itemAwards: items,
+                markedBy: 'ai',
+                pending: undefined,
+              }
+            : { ...rest, aiAwards: items, pending: true };
+        });
+        if (!regraded)
+          return conflict(
+            'nothing_to_regrade',
+            'this answer has nothing for the AI to grade again'
+          );
         return HttpResponse.json(attemptView(found.attempt, found.row, viewer));
       }
     ),

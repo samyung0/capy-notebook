@@ -1,4 +1,5 @@
 import { cva, type VariantProps } from 'class-variance-authority';
+import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
 import { Icon } from './Icon';
 
@@ -76,5 +77,70 @@ export function Checkbox({
     >
       {checked && <Icon name="check" size={size * 0.72} strokeWidth={2.4} />}
     </button>
+  );
+}
+
+/** A row that is its own checkbox: a click, Space or Enter anywhere on it
+ * toggles it (From question bank's rows and cards, Make a quiz's Select all). */
+export function CheckRow({
+  boxClassName,
+  checked,
+  children,
+  className,
+  disabled,
+  onChange,
+}: {
+  /** Nudges the box to the row's first line. */
+  boxClassName?: string;
+  checked: boolean;
+  children: ReactNode;
+  className?: string;
+  disabled?: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const toggle = () => {
+    if (!disabled) onChange(!checked);
+  };
+  return (
+    <div
+      aria-checked={checked}
+      aria-disabled={disabled || undefined}
+      className={cn(
+        'flex items-start gap-3 border-divider border-b px-1 py-3 outline-none',
+        disabled
+          ? 'cursor-not-allowed opacity-50'
+          : 'cursor-pointer hover:bg-surface-hover-bg focus-visible:bg-surface-hover-bg',
+        className
+      )}
+      onClick={toggle}
+      onKeyDown={(event) => {
+        if (event.key !== ' ' && event.key !== 'Enter') return;
+        event.preventDefault();
+        toggle();
+      }}
+      role="checkbox"
+      tabIndex={0}
+    >
+      <CheckBox checked={checked} className={cn('mt-0.5', boxClassName)} />
+      <span className="flex min-w-0 flex-1 flex-col">{children}</span>
+    </div>
+  );
+}
+
+/** The box alone, for a control that is already the checkbox or button. */
+export function CheckBox({
+  checked,
+  className,
+}: {
+  checked: boolean;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={cn(checkboxVariants({ checked }), 'size-4.5', className)}
+    >
+      {checked && <Icon name="check" size={13} strokeWidth={2.4} />}
+    </span>
   );
 }

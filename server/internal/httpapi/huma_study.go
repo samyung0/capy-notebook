@@ -81,6 +81,33 @@ type hideContinueInput struct {
 type reviewRatingInput struct {
 	Body apimodel.RateReviewItemReq
 }
+
+// studyQuestionsInput picks a topic's questions, Other files' or Frequently
+// wrong's (the topic questions pages, Epo 2026-11-22).
+type studyQuestionsInput struct {
+	ID      string `path:"id"`
+	List    string `query:"list" enum:"topic,others,wrong" required:"true" doc:"topic: a topic's questions; others: Other files'; wrong: every question whose latest answer was not right, most missed first"`
+	TopicID string `query:"topicId" doc:"The topic of a topic list"`
+}
+type memberQuestionsInput struct {
+	ID       string `path:"id"`
+	MemberID string `path:"memberId"`
+	List     string `query:"list" enum:"topic,others,wrong" required:"true" doc:"As getWorkspaceStudyQuestions's list"`
+	TopicID  string `query:"topicId" doc:"The topic of a topic list"`
+}
+type studyQuestionsOutput struct {
+	Body struct {
+		Questions []store.StudyQuestion `json:"questions" nullable:"false"`
+	}
+}
+
+func questionsFilter(list, topicID string) (store.QuestionsFilter, error) {
+	if list == "topic" && topicID == "" {
+		return store.QuestionsFilter{}, huma.Error422UnprocessableEntity("a topic list needs its topicId")
+	}
+	return store.QuestionsFilter{TopicID: topicID, Others: list == "others", Wrong: list == "wrong"}, nil
+}
+
 type reviewCheckInput struct {
 	Body apimodel.CheckReviewItemReq
 }
@@ -109,6 +136,7 @@ func (a *api) registerStudy(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/api/review/check", "checkReviewItem", tag, "Grade and rate one question of a review session", http.StatusOK, answersMaxBytes, a.checkReviewItem)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study/question-count", "getStudyQuestionCount", tag, "How many questions a practice group holds, for its start dialog", http.StatusOK, a.getStudyQuestionCount)
 	reg(api, http.MethodGet, "/api/learning/overview", "getLearningOverview", tag, "Learning's Overview: what to do next across workspaces and how each stands", http.StatusOK, a.getLearningOverview)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/study/questions", "getWorkspaceStudyQuestions", tag, "A topic's questions or Frequently wrong's, each with the caller's latest result, to practise one at a time", http.StatusOK, a.getWorkspaceStudyQuestions)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/study/topics", "getWorkspaceStudyTopics", tag, "Study → Summary: the caller's own standing per topic", http.StatusOK, a.getWorkspaceStudyTopics)
 	reg(api, http.MethodPatch, "/api/me/study-preferences", "setStudyPreferences", tag, "Save study preferences", http.StatusNoContent, a.setStudyPreferences)
 }
@@ -378,6 +406,34 @@ func (a *api) getWorkspaceStudyTopics(ctx context.Context, in *workspaceIDInput)
 		return nil, hErr(err)
 	}
 	return &studyTopicsOutput{Body: res}, nil
+}
+
+// getWorkspaceStudyQuestions is the caller's own list; each question they may
+// practise comes answer-free, checked by checkReviewItem with no session.
+func (a *api) getWorkspaceStudyQuestions(ctx context.Context, in *studyQuestionsInput) (*studyQuestionsOutput, error) {
+	f, err := questionsFilter(in.List, in.TopicID)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	role, err := a.s.WorkspaceRole(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	list, err := a.s.WorkspaceStudyQuestions(ctx, userID(ctx), in.ID, store.RoleCanEdit(role), f)
+	if err != nil {
+		return nil, storedContentError(ctx, "", err)
+	}
+	for i, q := range list {
+		if q.Question != nil {
+			list[i].Question = questions.LearnerView(q.Question)
+		}
+	}
+	out := &studyQuestionsOutput{}
+	out.Body.Questions = list
+	return out, nil
 }
 
 // sessionAnswer is the store's view of an answer's session, nil without one.

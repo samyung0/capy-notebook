@@ -21,20 +21,14 @@ import {
   type PieSpoke,
   pieCircle,
 } from './boardData';
-import {
-  type Box,
-  closeUp,
-  IMAGE_SIDE_MAX,
-  unite,
-  type Vec,
-} from './boardGeometry';
+import { AREA_PROP, areaBox, type Box, unite, type Vec } from './boardGeometry';
 import { BoardLoadError, checkSavedBoard } from './boardLoad';
 import { type BoardKind, type Fields, isPlace } from './boardRules';
 
 /** A saved board drawn from its data as an SVG string, for lists, results and marking
  * views, without the editor: what's on it, not every detail (Epo 2026-11-06). Framed as
- * the marking image is: everything on the board, on white, a quiz drawing's far groups
- * drawn nearer.
+ * the marking image is, on white: a question board's answer area exactly, what
+ * crosses its edge cut there (Epo 2026-11-23); a workspace canvas everything.
  * Strokes are plain lines, connectors straight, formulas their LaTeX, notes a line per
  * paragraph, a placed quiz or set its title and kind, pasted images a grey box, plane
  * cards as the graph engine draws them (numbers included) without their labels and
@@ -113,24 +107,20 @@ export function drawBoardPreview(
 
   const head = (width: number, height: number) =>
     `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="#fff"/>`;
-  if (!items.length) return `${head(size.width, size.height)}</svg>`;
-
-  const boxes = items.map((item) => item.box);
-  const whole = unite(boxes);
-  // Only a quiz's drawing draws far groups nearer: its answer has an area to
-  // stay near. A workspace canvas is shown where it is (Epo 2026-11-18).
-  const shifts =
-    board === 'question' && Math.max(whole.w, whole.h) > IMAGE_SIDE_MAX
-      ? closeUp(boxes)
-      : boxes.map(() => ({ dx: 0, dy: 0 }));
-  const all = unite(
-    boxes.map((box, i) => ({
-      ...box,
-      x: box.x - shifts[i].dx,
-      y: box.y - shifts[i].dy,
-    }))
+  const page = Object.values(blocks).find(
+    (block) => block['sys:flavour'] === 'affine:page'
   );
-  const frame = { h: all.h + 16, w: all.w + 16, x: all.x - 8, y: all.y - 8 };
+  const area = board === 'question' ? areaBox(page?.[AREA_PROP]) : null;
+  const shown = area ? items.filter(({ box }) => overlaps(box, area)) : items;
+  if (!shown.length) return `${head(size.width, size.height)}</svg>`;
+
+  const all = unite(shown.map((item) => item.box));
+  const frame = area ?? {
+    h: all.h + 16,
+    w: all.w + 16,
+    x: all.x - 8,
+    y: all.y - 8,
+  };
   const scale = Math.min(size.width / frame.w, size.height / frame.h);
   const width = fit ? Math.round(frame.w * scale) : size.width;
   const height = fit ? Math.round(frame.h * scale) : size.height;
@@ -138,24 +128,20 @@ export function drawBoardPreview(
   const ty = (height - frame.h * scale) / 2 - frame.y * scale;
   const pen: Pen = { pixel: 1 / scale };
   let body = '';
-  for (const [i, item] of items.entries()) {
+  for (const [i, item] of shown.entries()) {
     const drawn = drawItem(item, pen, blocks, i);
     if (!drawn) continue;
-    const { dx, dy } = shifts[i];
     // A block keeps its turn as `prop:rotate` (a note, local change 56; an image).
     const rotate =
       Number(item.fields.rotate ?? item.fields['prop:rotate']) || 0;
     const { h, w, x, y } = item.box;
-    const moves = [
-      dx || dy ? `translate(${num(-dx)} ${num(-dy)})` : '',
-      rotate
-        ? `rotate(${num(rotate)} ${num(x + w / 2)} ${num(y + h / 2)})`
-        : '',
-    ]
-      .filter(Boolean)
-      .join(' ');
-    body += moves ? `<g transform="${moves}">${drawn}</g>` : drawn;
+    body += rotate
+      ? `<g transform="rotate(${num(rotate)} ${num(x + w / 2)} ${num(y + h / 2)})">${drawn}</g>`
+      : drawn;
   }
+  // The area's edge cuts what crosses it, in the margin a centred picture leaves.
+  if (area)
+    body = `<clipPath id="area"><rect x="${num(area.x)}" y="${num(area.y)}" width="${num(area.w)}" height="${num(area.h)}"/></clipPath><g clip-path="url(#area)">${body}</g>`;
   return `${head(width, height)}<g transform="matrix(${num(scale)} 0 0 ${num(scale)} ${num(tx)} ${num(ty)})" fill="none" stroke-linecap="round" stroke-linejoin="round" font-family="Inter, Arial, sans-serif">${body}</g></svg>`;
 }
 
@@ -551,6 +537,10 @@ function colour(value: unknown, fallback: string): string {
 const SAFE_COLOUR = /^(#[0-9a-f]{3,8}|[a-z]+|rgba?\([\d\s.,%]+\))$/i;
 
 const UNPLACED = new Set(['group', 'connector', 'mindmap']);
+
+/** Whether two boxes meet, edges included. */
+const overlaps = (a: Box, b: Box) =>
+  a.x <= b.x + b.w && b.x <= a.x + a.w && a.y <= b.y + b.h && b.y <= a.y + a.h;
 
 function isOnCanvas(blocks: Record<string, Fields>, id: string) {
   return Object.values(blocks).some(

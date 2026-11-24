@@ -13,6 +13,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -174,6 +175,8 @@ type generateOpts struct {
 	Title   string
 	// Mix adds the caller's answered questions to the new ones.
 	Mix bool
+	// Instructions are the user's own words to the model, trimmed.
+	Instructions string
 	// GradedQuiz makes an editor's quiz with its graded quiz (Material.GradedQuiz).
 	GradedQuiz *store.AssignmentForm
 	// CanEdit makes the quiz a file of the workspace.
@@ -197,6 +200,8 @@ func generateOptsFrom(req apimodel.GenerateReq, title string) generateOpts {
 		FileIds: req.FileIds,
 		Title:   title,
 		Mix:     req.Mix,
+		// Blank instructions are none.
+		Instructions: strings.TrimSpace(string(req.Instructions)),
 	}
 }
 
@@ -214,17 +219,20 @@ func normalizeGenerateTitle(title string) (string, error) {
 // material the caller can read, and topics, which add every such item filed in
 // them. No ids means every item. Items without indexed text
 // contribute none; a scope with no text at all is refused.
-func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts) (fileIDs, fileNames, topicNames []string, err error) {
+// resolveScope returns the items a run reads (sent: the first
+// GenerateScopeFiles indexed ones, Epo 2026-11-21) with their names, every
+// scoped item's name for the made-from line, and the topics' names.
+func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts) (sentIDs, sentNames, fileNames, topicNames []string, err error) {
 	items, err := a.s.VisibleSourceItems(ctx, wsID, userID(ctx))
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	byID := make(map[string]store.SourceItem, len(items))
 	for _, item := range items {
 		byID[item.ID] = item
 	}
 	seen := map[string]struct{}{}
-	fileIDs = make([]string, 0, len(opts.FileIds))
+	fileIDs := make([]string, 0, len(opts.FileIds))
 	add := func(id string) {
 		if _, ok := seen[id]; ok {
 			return
@@ -234,7 +242,7 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 	}
 	for _, id := range opts.FileIds {
 		if _, ok := byID[id]; !ok {
-			return nil, nil, nil, unknownScopeIDError{kind: "item", id: id}
+			return nil, nil, nil, nil, unknownScopeIDError{kind: "item", id: id}
 		}
 		add(id)
 	}
@@ -246,7 +254,7 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 	if len(opts.Topics) > 0 {
 		topics, err := a.s.ListTopics(ctx, wsID)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		names := make(map[string]string, len(topics))
 		for _, ch := range topics {
@@ -255,7 +263,7 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 		for _, id := range opts.Topics {
 			name, ok := names[id]
 			if !ok {
-				return nil, nil, nil, unknownScopeIDError{kind: "topic", id: id}
+				return nil, nil, nil, nil, unknownScopeIDError{kind: "topic", id: id}
 			}
 			topicNames = append(topicNames, name)
 			for _, item := range items {
@@ -266,15 +274,18 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 		}
 	}
 	fileNames = make([]string, 0, len(fileIDs))
-	hasIndexed := false
 	for _, id := range fileIDs {
-		fileNames = append(fileNames, byID[id].Name)
-		hasIndexed = hasIndexed || byID[id].Indexed
+		item := byID[id]
+		fileNames = append(fileNames, item.Name)
+		if item.Indexed && len(sentIDs) < fieldlimits.GenerateScopeFiles {
+			sentIDs = append(sentIDs, id)
+			sentNames = append(sentNames, item.Name)
+		}
 	}
-	if !hasIndexed {
-		return nil, nil, nil, errScopeNoIndexedContent
+	if len(sentIDs) == 0 {
+		return nil, nil, nil, nil, errScopeNoIndexedContent
 	}
-	return fileIDs, fileNames, topicNames, nil
+	return sentIDs, sentNames, fileNames, topicNames, nil
 }
 
 type unknownScopeIDError struct {
@@ -296,13 +307,9 @@ func (a *api) generateViaPipe(
 	llm resolvedLLM,
 	spendSessionID string,
 ) (any, pipeUsage, error) {
-	fileIDs, fileNames, topicNames, err := a.resolveScope(ctx, wsID, opts)
+	sentIDs, sentNames, fileNames, topicNames, err := a.resolveScope(ctx, wsID, opts)
 	if err != nil {
 		return nil, pipeUsage{}, err
-	}
-	// Nothing readable to draw on: an empty list would read as the whole workspace.
-	if len(fileIDs) == 0 {
-		return nil, pipeUsage{}, errGenerateEmpty
 	}
 	mixed := []map[string]any{}
 	if opts.Mix {
@@ -313,7 +320,8 @@ func (a *api) generateViaPipe(
 	}
 	body := map[string]any{
 		"workspaceId": wsID, "readsHidden": opts.CanEdit, "count": opts.Count, "types": opts.Types, "levels": opts.Levels,
-		"topics": topicNames, "fileIds": fileIDs, "fileNames": fileNames,
+		"topics": topicNames, "fileIds": sentIDs, "fileNames": sentNames,
+		"instructions":   opts.Instructions,
 		"locale":         a.userLocale(ctx, userID),
 		"spendSessionId": spendSessionID,
 	}
@@ -325,9 +333,6 @@ func (a *api) generateViaPipe(
 			return nil, usage, mapped
 		}
 		if mapped := pipelineGenerateError(err); mapped != nil {
-			if tooLarge, ok := mapped.(*pendingSourcesTooLargeError); ok {
-				a.notifyPendingOverflow(ctx, wsID, tooLarge.FileIDs)
-			}
 			return nil, usage, mapped
 		}
 		return nil, usage, &aiServiceError{cause: err}

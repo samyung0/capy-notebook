@@ -89,9 +89,38 @@ func TestItemBanksAccessSearchAndTags(t *testing.T) {
 		t.Fatalf("tags = %v, err %v", tags, err)
 	}
 
-	banks, err := f.s.ItemBanks(ctx, editor, f.ws.ID)
-	if err != nil || len(banks) != 2 || banks[0].ID != f.ws.ID || banks[0].Count != 2 || banks[1].ID != PersonalBank {
-		t.Fatalf("the editor's banks = %+v, err %v", banks, err)
+	// The class they are in comes first, then their own, then every other
+	// class they own or edit, A–Z; a personal workspace has none.
+	algebra, err := f.s.CreateWorkspace(ctx, editor, WorkspaceCreate{Name: "Algebra", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.CreateWorkspace(ctx, editor, WorkspaceCreate{Name: "Notes", Tags: []TagRef{}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.pool.Exec(ctx, `UPDATE workspaces SET kind='class' WHERE id=$1`, algebra.ID); err != nil {
+		t.Fatal(err)
+	}
+	bankIDs := func(from string) []string {
+		t.Helper()
+		banks, err := f.s.ItemBanks(ctx, editor, from)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []string
+		for _, bank := range banks {
+			out = append(out, bank.ID)
+		}
+		return out
+	}
+	if got := bankIDs(f.ws.ID); !slices.Equal(got, []string{f.ws.ID, PersonalBank, algebra.ID}) {
+		t.Fatalf("the editor's banks from the class = %v", got)
+	}
+	if got := bankIDs(""); !slices.Equal(got, []string{PersonalBank, algebra.ID, f.ws.ID}) {
+		t.Fatalf("the editor's banks from no class = %v", got)
+	}
+	if banks, err := f.s.ItemBanks(ctx, editor, f.ws.ID); err != nil || banks[0].Count != 2 {
+		t.Fatalf("the class bank's count = %+v, err %v", banks, err)
 	}
 	if banks, err := f.s.ItemBanks(ctx, viewer, f.ws.ID); err != nil || len(banks) != 1 || banks[0].Kind != "personal" {
 		t.Fatalf("the viewer's banks = %+v, err %v", banks, err)

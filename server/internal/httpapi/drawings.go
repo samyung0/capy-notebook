@@ -14,6 +14,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/imagecheck"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -344,12 +345,15 @@ type keptImage struct {
 	contentType string
 }
 
-// keptDrawingImages reads the kept marking images of the attempt's parts being
-// marked (partIDs), for a part left Not marked that is marked later. A part
-// whose image is gone (marked already, or marked by hand) is absent and stays
-// as it is, as is one whose image can't be read: the rest still mark.
-func (a *api) keptDrawingImages(ctx context.Context, attemptID string, partIDs []string) (map[string]keptImage, error) {
-	if len(partIDs) == 0 {
+// keptDrawingImages reads, by drawing, the kept marking images of the
+// attempt's drawings being marked, each named by the part it is stored under
+// (drawingParts, questions.DrawingParts), for a part left Not marked that is
+// marked later; every part a drawing answers is marked on the one image read.
+// A drawing whose image is gone (marked already, or marked by hand) is absent
+// and its parts stay as they are, as are one's whose image can't be read: the
+// rest still mark.
+func (a *api) keptDrawingImages(ctx context.Context, attemptID string, drawingParts []string) (map[string]keptImage, error) {
+	if len(drawingParts) == 0 {
 		return nil, nil
 	}
 	drawings, err := a.s.AttemptDrawings(ctx, attemptID)
@@ -357,9 +361,9 @@ func (a *api) keptDrawingImages(ctx context.Context, attemptID string, partIDs [
 		return nil, err
 	}
 	out := map[string]keptImage{}
-	for _, partID := range partIDs {
+	for _, partID := range drawingParts {
 		d := drawings[partID]
-		if d.ImageKey == "" {
+		if _, read := out[partID]; read || d.ImageKey == "" {
 			continue
 		}
 		data, err := a.readKeptImage(ctx, d.ImageKey)
@@ -502,13 +506,17 @@ func (a *api) keepCheckDrawings(ctx context.Context, w *drawingWrites, plan grad
 	if len(plan.drawings) == 0 {
 		return nil, nil
 	}
+	// A drawing answering several parts in one canvas keeps its image while
+	// any of them is Not marked.
 	waiting := map[string]bool{}
+	owners := questions.DrawingParts(graded)
 	parts, _ := graded["parts"].([]any)
 	for _, raw := range parts {
 		p, _ := raw.(map[string]any)
 		if pending, _ := p["pending"].(bool); pending {
 			id, _ := p["id"].(string)
 			waiting[id] = true
+			waiting[owners[id]] = true
 		}
 	}
 	out := make(map[string]store.QuizDrawing, len(plan.drawings))

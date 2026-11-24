@@ -13,7 +13,7 @@ export const QUESTION_TYPES = [
   'ordering',
   'open',
   'gaps',
-  'drawing',
+  'canvas',
 ] as const;
 
 export type QuestionType = (typeof QUESTION_TYPES)[number];
@@ -85,13 +85,27 @@ export type ImageBlock = {
   description?: string;
   attribution?: string;
 };
+/** A canvas (Epo 2026-11-23), in the stem, a group's blocks or a part's
+ * blocks, one a list (never an explanation): empty, or drawn with its board
+ * (a gzipped BlockSuite board, the `board` editor asset purpose) and a
+ * picture of it (an ordinary quiz image), both the quiz's editor assets and
+ * always together. A canvas part answers on its own canvas or the one above
+ * it (`partAnswerCanvas`); any other canvas is only looked at. The bank
+ * holds none. */
+export type CanvasBlock =
+  | { type: 'canvas' }
+  | { type: 'canvas'; board: string; image: string };
+/** The canvases a block list holds. */
+export const canvasCount = (blocks: readonly QuestionBlock[]) =>
+  blocks.filter((block) => block.type === 'canvas').length;
 export type QuestionBlock =
   | TextBlock
   | ChartBlock
   | PlotBlock
   | GraphBlock
   | TableBlock
-  | ImageBlock;
+  | ImageBlock
+  | CanvasBlock;
 
 export type QuestionAnswer =
   /** One or more correct options (Epo 2026-10-15): one is answered as a single
@@ -120,10 +134,11 @@ export type QuestionAnswer =
   | { type: 'open'; accepted: string[] }
   /** One accepted list per numbered gap written in the part's text. */
   | { type: 'gaps'; accepted: string[][] }
-  /** Answered on the drawing board, which every drawing part opens plain
-   * (Epo 2026-11-06), and marked like an open part against its marking items.
-   * A quiz's part may hold a drawn sample answer (Q3). */
-  | { type: 'drawing'; sample?: DrawnSample };
+  /** Answered on a canvas the author draws the question on (Epo 2026-11-23),
+   * the part's own or, `shared`, the nearest one above it
+   * (`partAnswerCanvas`), and marked like an open part against its marking
+   * items. A quiz's part may hold a drawn sample answer (Q3). */
+  | { type: 'canvas'; sample?: DrawnSample; shared?: true };
 
 /** A drawn sample answer: its board (to edit again) and its image (shown after
  * a check and sent to marking), both the quiz's editor assets. */
@@ -131,7 +146,7 @@ export type DrawnSample = { board: string; image: string };
 
 /** Answer types a model marks against the part's marking items. */
 export const modelMarked = (type: QuestionType) =>
-  type === 'open' || type === 'drawing';
+  type === 'open' || type === 'canvas';
 
 /** An open part's marking item; harder steps can carry more whole marks. */
 export type MarkItem = { text: string; marks: number };
@@ -148,7 +163,7 @@ export type QuestionPart = {
   blocks: QuestionBlock[];
   answer: QuestionAnswer;
   marks: number;
-  /** Open and drawing parts only, adding up to `marks`; closed answers are
+  /** Open and canvas parts only, adding up to `marks`; closed answers are
    * their own key. */
   markscheme?: MarkItem[];
   solution: QuestionBlock[];
@@ -190,7 +205,8 @@ export type LearnerAnswer =
   | { type: 'matching'; options: string[]; left: string[] }
   | { type: 'ordering'; items: string[] }
   | { type: 'gaps'; gaps: number }
-  | { type: 'drawing' };
+  /** `shared`: answered in the canvas above (`partAnswerCanvas`). */
+  | { type: 'canvas'; shared?: true };
 export type LearnerPart = {
   id: string;
   group?: string;
@@ -201,6 +217,45 @@ export type LearnerPart = {
 export type LearnerQuestion = Omit<Question, 'parts'> & {
   parts: LearnerPart[];
 };
+
+/** Where a canvas sits: the stem, a group's blocks or a part's blocks. */
+export type CanvasPlace =
+  | { section: 'stem' }
+  | { section: 'group'; groupId: string }
+  | { section: 'part'; partId: string };
+/** A canvas block, where it sits and its index in that list. */
+export type AnswerCanvas = {
+  block: CanvasBlock;
+  index: number;
+  place: CanvasPlace;
+};
+
+/**
+ * The canvas a canvas part answers in (Epo 2026-11-23), for an authored or a
+ * learner's question: its own blocks' first canvas, or, answered in the
+ * canvas above (`shared`), the first canvas of its group's blocks when it is
+ * in a group that holds one, else the stem's. Null for a part of another
+ * type, or when that canvas is missing (the validators refuse it). Go's
+ * `questions.PartAnswerCanvas` is the same.
+ */
+export function partAnswerCanvas(
+  question: Question | LearnerQuestion,
+  part: QuestionPart | LearnerPart
+): AnswerCanvas | null {
+  if (part.answer.type !== 'canvas') return null;
+  const first = (blocks: readonly QuestionBlock[], place: CanvasPlace) => {
+    const index = blocks.findIndex((block) => block.type === 'canvas');
+    const block = blocks[index];
+    return block?.type === 'canvas' ? { block, index, place } : null;
+  };
+  if (!part.answer.shared)
+    return first(part.blocks, { partId: part.id, section: 'part' });
+  const group = question.groups?.find((item) => item.id === part.group);
+  return (
+    (group && first(group.blocks, { groupId: group.id, section: 'group' })) ??
+    first(question.stem, { section: 'stem' })
+  );
+}
 
 /** A numbered blank in a gaps part's text, written "(1) ______". */
 export const GAP_MARKER = /\((\d+)\) ?_{3,}/g;
@@ -413,6 +468,7 @@ function withoutBlankDescription<B extends { description?: string }>(
 export function blockWithoutBlanks(block: QuestionBlock): QuestionBlock {
   switch (block.type) {
     case 'text':
+    case 'canvas':
       return block;
     case 'table': {
       const width = Math.max(0, ...block.rows.map((row) => row.length));
@@ -489,26 +545,30 @@ export function withoutBlanks(question: Question): Question {
   };
 }
 
-/** The question with image asset ids swapped through `ids` (others kept). */
+/** The question with its editor asset ids (images, drawn canvases and drawn
+ * sample answers) swapped through `ids` (others kept). */
 export function replaceAssetIds(
   question: Question,
   ids: Map<string, string>
 ): Question {
+  const id = (asset: string) => ids.get(asset) ?? asset;
   const swap = (block: QuestionBlock): QuestionBlock => {
+    if (block.type === 'canvas')
+      return 'board' in block
+        ? { board: id(block.board), image: id(block.image), type: 'canvas' }
+        : block;
     if (block.type !== 'image' || !('assetId' in block.image)) return block;
     const assetId = ids.get(block.image.assetId);
     return assetId ? { ...block, image: { assetId } } : block;
   };
   const answer = (part: Question['parts'][number]): QuestionAnswer =>
-    part.answer.type === 'drawing' && part.answer.sample
+    part.answer.type === 'canvas' && part.answer.sample
       ? {
+          ...part.answer,
           sample: {
-            board:
-              ids.get(part.answer.sample.board) ?? part.answer.sample.board,
-            image:
-              ids.get(part.answer.sample.image) ?? part.answer.sample.image,
+            board: id(part.answer.sample.board),
+            image: id(part.answer.sample.image),
           },
-          type: 'drawing',
         }
       : part.answer;
   return {
@@ -529,21 +589,23 @@ export function replaceAssetIds(
   };
 }
 
-/** Editor assets referenced by a quiz question's images and its drawn sample
- * answers. */
+/** Editor assets referenced by a quiz question's images, its drawn canvases
+ * and its drawn sample answers. */
 export function questionAssetIds(question: Question): string[] {
   return [
     ...[
       ...question.stem,
       ...(question.groups ?? []).flatMap((group) => group.blocks),
       ...question.parts.flatMap((part) => [...part.blocks, ...part.solution]),
-    ].flatMap((block) =>
-      block.type === 'image' && 'assetId' in block.image
+    ].flatMap((block) => {
+      if (block.type === 'canvas')
+        return 'board' in block ? [block.board, block.image] : [];
+      return block.type === 'image' && 'assetId' in block.image
         ? [block.image.assetId]
-        : []
-    ),
+        : [];
+    }),
     ...question.parts.flatMap((part) =>
-      part.answer.type === 'drawing' && part.answer.sample
+      part.answer.type === 'canvas' && part.answer.sample
         ? [part.answer.sample.board, part.answer.sample.image]
         : []
     ),

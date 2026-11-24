@@ -12,25 +12,12 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/pipeline"
 )
 
-func TestPendingSourcesTooLargeKeepsFileIDs(t *testing.T) {
-	mapped := pipelineGenerateError(&pipeline.Error{Path: "/generate", Status: http.StatusBadRequest, Body: []byte(`{"code":"pending_sources_too_large","fileIds":["f_1","f_2"],"materialIds":["m_1"]}`)})
-	var model *huma.ErrorModel
-	if !errors.As(hErr(mapped), &model) || model.Status != http.StatusBadRequest || len(model.Errors) != 1 || model.Errors[0].Message != "pending_sources_too_large" {
-		t.Fatalf("generation lost pending sources error: %#v", model)
-	}
-	value := model.Errors[0].Value.(map[string]any)
-	if fmt.Sprint(value["fileIds"]) != "[f_1 f_2]" || fmt.Sprint(value["materialIds"]) != "[m_1]" {
-		t.Fatalf("named = %v", value)
-	}
-}
-
 func TestSourceContextErrorsRelay(t *testing.T) {
 	for _, tc := range []struct {
 		code   string
 		status int
 	}{
 		{"context_too_large", http.StatusBadRequest},
-		{"source_changed", http.StatusConflict},
 	} {
 		t.Run(tc.code, func(t *testing.T) {
 			for _, raw := range []string{
@@ -54,6 +41,13 @@ func TestSourceContextErrorsRelay(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestChatRelaysSourceChanged(t *testing.T) {
+	var event *chatEventError
+	if !errors.As(errorFromEvent("source_changed", "source request failed"), &event) || event.Code != "source_changed" {
+		t.Fatalf("chat lost source error: %#v", event)
 	}
 }
 

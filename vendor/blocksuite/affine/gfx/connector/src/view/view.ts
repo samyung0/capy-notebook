@@ -125,7 +125,10 @@ export class ConnectorElementView extends GfxElementModelView<ConnectorElementMo
       });
     };
     const updateLabelElement = () => {
-      if (!this.model.labelXYWH || !this.model.text) {
+      // Capy (local change 75): the hit area is where the label shows, on
+      // this tab's path, so a drag starts from there.
+      const shown = this.model.shownLabelXYWH;
+      if (!shown || !this.model.text) {
         // Clean up existing label element if conditions are no longer met
         if (curLabelElement) {
           this.surface.deleteLocalElement(curLabelElement);
@@ -136,7 +139,7 @@ export class ConnectorElementView extends GfxElementModelView<ConnectorElementMo
 
       const labelElement =
         curLabelElement || new LocalShapeElementModel(this.surface);
-      labelElement.xywh = serializeXYWH(...this.model.labelXYWH);
+      labelElement.xywh = serializeXYWH(...shown);
       labelElement.index = generateKeyBetween(this.model.index, null);
 
       if (!curLabelElement) {
@@ -160,6 +163,9 @@ export class ConnectorElementView extends GfxElementModelView<ConnectorElementMo
       this.model.propsUpdated.subscribe(payload => {
         if (
           payload.key === 'labelXYWH' ||
+          // Capy (local change 75): the label shows at its offset on the path.
+          payload.key === 'labelOffset' ||
+          payload.key === 'absolutePath' ||
           payload.key === 'text' ||
           payload.key === 'index'
         ) {

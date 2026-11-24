@@ -1,0 +1,45 @@
+{
+  "name": "canvas-stem-at-twice",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "layout": "paper",
+    "labels": "letters",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Canvas answers."
+      },
+      {
+        "type": "canvas"
+      },
+      {
+        "type": "canvas"
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it."
+          }
+        ],
+        "answer": {
+          "type": "canvas",
+          "shared": true
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      }
+    ]
+  }
+}

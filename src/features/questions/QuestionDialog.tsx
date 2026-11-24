@@ -222,7 +222,11 @@ function QuestionDialogSession({
         policy={policy}
         question={draft}
         uploadAsset={uploadAsset}
-        write={setDraft}
+        // A draft's write always goes.
+        write={(next) => {
+          setDraft(next);
+          return true;
+        }}
       />
       {topics && topics.length > 0 && (
         <div className="mt-3.5">

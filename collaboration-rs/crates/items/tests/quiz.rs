@@ -701,6 +701,147 @@ fn shapes_no_editor_writes_are_refused() {
     );
 }
 
+/// A canvas block keyed "bcanvas" added at the front of the section at `path`.
+fn add_canvas(doc: &Doc, path: &[&str]) -> MapRef {
+    let section = map_in(doc, path);
+    let mut txn = doc.transact_mut();
+    let block = section.insert(&mut txn, "bcanvas", MapPrelim::default());
+    block.insert(&mut txn, "order", items::order::after(None).as_str());
+    block.insert(&mut txn, "type", "canvas");
+    block
+}
+
+/// A canvas (Epo 2026-11-23) sits in the stem, a group's or a part's blocks,
+/// never a solution, and a drawn one holds just its board and picture: one in
+/// a stem or a group is admitted, one in a solution or a `drawn` of another
+/// shape is refused at admission. Fails if the gate takes a canvas where the
+/// validators refuse one, or refuses one where they take it.
+#[test]
+fn a_canvas_in_a_solution_or_drawn_otherwise_is_refused() {
+    let questions = fixtures();
+    let (question, part) = part_of(&questions, "canvas");
+    let grouped = questions
+        .iter()
+        .find(|q| q.get("groups").is_some())
+        .unwrap();
+    let group = grouped["groups"][0]["id"].as_str().unwrap();
+    let (content, _, client, _) = rooms(&questions);
+    add_canvas(&client, &["questions", &question, "stem"]);
+    add_canvas(
+        &client,
+        &[
+            "questions",
+            grouped["id"].as_str().unwrap(),
+            "groups",
+            group,
+            "blocks",
+        ],
+    );
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    refused(
+        Kind::QuizKeys,
+        |doc| {
+            add_canvas(doc, &["keys", &part, "solution"]);
+        },
+        "a canvas in a solution",
+    );
+    let drawn = |entries: &[(&str, &str)]| {
+        Any::Map(Arc::new(
+            entries
+                .iter()
+                .map(|(key, id)| ((*key).to_owned(), Any::String(Arc::from(*id))))
+                .collect(),
+        ))
+    };
+    for value in [
+        drawn(&[("board", "asset_board")]),
+        drawn(&[
+            ("board", "asset_board"),
+            ("image", "asset_image"),
+            ("x", "y"),
+        ]),
+    ] {
+        refused(
+            Kind::Quiz,
+            |doc| {
+                let blocks = ["questions", &question, "parts", &part, "blocks"];
+                add_canvas(doc, &blocks).insert(&mut doc.transact_mut(), "drawn", value);
+            },
+            "a drawn canvas that is not {board, image}",
+        );
+    }
+}
+
+/// One canvas a block list, which two editors' adds at once may make two
+/// (Epo 2026-11-22, "Yes, A everywhere"): a part's second is admitted, a
+/// third (past twice the cap) refused by the exact check, and a stem's
+/// third too (Epo 2026-11-23). Fails if a canvas skips it.
+#[test]
+fn a_part_takes_a_second_canvas_and_refuses_a_third() {
+    let questions = fixtures();
+    let shown = questions
+        .iter()
+        .find(|q| {
+            q["parts"][0]["answer"]["type"] != json!("canvas")
+                && q["parts"][0]["blocks"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|b| b["type"] == json!("canvas"))
+        })
+        .unwrap();
+    let (question, part) = (
+        shown["id"].as_str().unwrap(),
+        shown["parts"][0]["id"].as_str().unwrap(),
+    );
+    let (content, _, client, _) = rooms(&questions);
+    add_canvas(&client, &["questions", question, "parts", part, "blocks"]);
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    // canvas-at-twice: a canvas part already holding two.
+    let (question, part) = part_of(&questions, "canvas");
+    refused(
+        Kind::Quiz,
+        |doc| {
+            add_canvas(doc, &["questions", &question, "parts", &part, "blocks"]);
+        },
+        "a section's canvases holds at most 2",
+    );
+    // canvas-stem-at-twice: a stem already holding two.
+    let stem = questions
+        .iter()
+        .find(|q| {
+            q["stem"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|b| b["type"] == json!("canvas"))
+                .count()
+                == 2
+        })
+        .unwrap();
+    refused(
+        Kind::Quiz,
+        |doc| {
+            add_canvas(doc, &["questions", stem["id"].as_str().unwrap(), "stem"]);
+        },
+        "a section's canvases holds at most 2",
+    );
+}
+
+/// A drawn canvas's board and picture are the quiz's editor assets, as a
+/// drawn sample's are. Fails if the room's asset walk misses either.
+#[test]
+fn asset_ids_cover_a_drawn_canvas() {
+    let questions = fixtures();
+    let (content, keys, _, _) = rooms(&questions);
+    let ids = quiz::asset_ids(&content.transact(), &keys.transact());
+    for id in ["asset_board_2", "asset_image_2"] {
+        assert!(ids.iter().any(|held| held == id), "{id} not in {ids:?}");
+    }
+}
+
 /// A question's own topics are at most five distinct ids (Epo 2026-11-15).
 #[test]
 fn question_topics_past_their_bounds_are_refused() {

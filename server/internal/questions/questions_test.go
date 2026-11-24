@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 )
 
@@ -158,7 +159,7 @@ func TestGradingTextIncludesStemEarlierPartsAndFigures(t *testing.T) {
 	q := map[string]any{
 		"stem": []any{
 			map[string]any{"type": "text", "text": "Prices rose."},
-			map[string]any{"type": "image", "description": "A demand curve"},
+			map[string]any{"type": "image", "image": map[string]any{"assetId": "a1"}, "description": "A demand curve"},
 			map[string]any{"type": "graph"},
 			map[string]any{"type": "chart", "title": "Sales (kg)", "labels": []any{"Jan", "Feb", "Mar"},
 				"series": []any{map[string]any{"name": "Shop", "values": []any{1.5, 2.0, nil}}}},
@@ -168,9 +169,155 @@ func TestGradingTextIncludesStemEarlierPartsAndFigures(t *testing.T) {
 			map[string]any{"blocks": []any{map[string]any{"type": "text", "text": "Explain."}}},
 		},
 	}
-	want := "Prices rose.\n\n[Figure: A demand curve]\n\n[Figure]\n\nSales (kg)\nShop: Jan=1.5, Feb=2, Mar=–\n\nEarlier part 1: a | b\nc | d\n\nPart to grade: Explain."
-	if got := GradingText(q, 1); got != want {
+	// The image is numbered for the picture sent after it; the graph has none.
+	want := "Prices rose.\n\n[Figure 1: A demand curve]\n\n[Figure]\n\nSales (kg)\nShop: Jan=1.5, Feb=2, Mar=–\n\nEarlier part 1: a | b\nc | d\n\nPart to grade: Explain."
+	got, figures := GradingTextAndFigures(q, 1)
+	if got != want {
 		t.Fatalf("GradingText =\n%q\nwant\n%q", got, want)
+	}
+	if len(figures) != 1 || figures[0]["assetId"] != "a1" {
+		t.Fatalf("figures = %v", figures)
+	}
+}
+
+// Another part's drawn canvas is one of the question's figures, by its
+// picture; a canvas part's own is its answer, so neither its text nor a
+// figure, and an empty canvas shows nothing (Epo 2026-11-23).
+func TestGradingTextTakesACanvasAsAFigureButACanvasPartsOwn(t *testing.T) {
+	text := func(s string) map[string]any { return map[string]any{"type": "text", "text": s} }
+	q := map[string]any{
+		"stem": []any{text("A right triangle.")},
+		"parts": []any{
+			map[string]any{"answer": map[string]any{"type": "boolean"}, "blocks": []any{
+				text("Is it right-angled?"),
+				map[string]any{"type": "canvas", "board": "b1", "image": "c1"},
+			}},
+			map[string]any{"answer": map[string]any{"type": "short"}, "blocks": []any{
+				text("Name it."), map[string]any{"type": "canvas"},
+			}},
+			map[string]any{"answer": map[string]any{"type": "canvas"}, "blocks": []any{
+				text("Draw its height."),
+				map[string]any{"type": "canvas", "board": "b2", "image": "c2"},
+			}},
+		},
+	}
+	want := "A right triangle.\n\nEarlier part 1: Is it right-angled?\n\n[Figure 1]\n\nEarlier part 2: Name it.\n\nPart to grade: Draw its height."
+	got, figures := GradingTextAndFigures(q, 2)
+	if got != want {
+		t.Fatalf("GradingText =\n%q\nwant\n%q", got, want)
+	}
+	if len(figures) != 1 || figures[0]["assetId"] != "c1" {
+		t.Fatalf("figures = %v", figures)
+	}
+	// A paper's answers are on its pages: the part's own canvas is a figure
+	// too, the question as set (Epo 2026-11-23).
+	got, figures = PaperTextAndFigures(q, 2)
+	if want := want + "\n\n[Figure 2]"; got != want {
+		t.Fatalf("PaperText =\n%q\nwant\n%q", got, want)
+	}
+	if len(figures) != 2 || figures[1]["assetId"] != "c2" {
+		t.Fatalf("paper figures = %v", figures)
+	}
+}
+
+// Canvas levels (Epo 2026-11-23): online, the stem's or group's canvas a
+// shared part answers in is its answer, so no figure, while every other
+// canvas above a part is one, as set; a paper part gets every canvas as a
+// figure, the one it answers in too. An earlier canvas part's own canvas
+// stays out of a later part's text.
+func TestGradingTextLeavesOutOnlyTheCanvasAPartAnswersIn(t *testing.T) {
+	text := func(s string) map[string]any { return map[string]any{"type": "text", "text": s} }
+	canvas := func(image string) map[string]any {
+		return map[string]any{"type": "canvas", "board": "b" + image, "image": image}
+	}
+	part := func(s, group string, shared bool, blocks ...any) map[string]any {
+		answer := map[string]any{"type": "canvas"}
+		if shared {
+			answer["shared"] = true
+		}
+		p := map[string]any{"blocks": append([]any{text(s)}, blocks...), "answer": answer}
+		if group != "" {
+			p["group"] = group
+		}
+		return p
+	}
+	q := map[string]any{
+		"stem":   []any{text("Stem."), canvas("stem")},
+		"groups": []any{map[string]any{"id": "g", "blocks": []any{text("Group."), canvas("group")}}},
+		"parts": []any{
+			part("In the group's.", "g", true),
+			part("In the stem's.", "", true),
+			part("In its own.", "", false, canvas("own")),
+			map[string]any{"blocks": []any{text("Explain.")}, "answer": map[string]any{"type": "open"}},
+		},
+	}
+	const group = "Shared context: Group.\n\n[Figure 2]"
+	for _, c := range []struct {
+		part        int
+		paper       bool
+		want        string
+		wantFigures string
+	}{
+		{0, false, "Stem.\n\n[Figure 1]\n\nShared context: Group.\n\nPart to grade: In the group's.", "[stem]"},
+		{1, false, "Stem.\n\nShared context: Group.\n\n[Figure 1]\n\nEarlier part 1: In the group's.\n\nPart to grade: In the stem's.", "[group]"},
+		{2, false, "Stem.\n\n[Figure 1]\n\n" + group + "\n\nEarlier part 1: In the group's.\n\nEarlier part 2: In the stem's.\n\nPart to grade: In its own.", "[stem group]"},
+		{3, false, "Stem.\n\n[Figure 1]\n\n" + group + "\n\nEarlier part 1: In the group's.\n\nEarlier part 2: In the stem's.\n\nEarlier part 3: In its own.\n\nPart to grade: Explain.", "[stem group]"},
+		{0, true, "Stem.\n\n[Figure 1]\n\n" + group + "\n\nPart to grade: In the group's.", "[stem group]"},
+		{1, true, "Stem.\n\n[Figure 1]\n\n" + group + "\n\nEarlier part 1: In the group's.\n\nPart to grade: In the stem's.", "[stem group]"},
+		{2, true, "Stem.\n\n[Figure 1]\n\n" + group + "\n\nEarlier part 1: In the group's.\n\nEarlier part 2: In the stem's.\n\nPart to grade: In its own.\n\n[Figure 3]", "[stem group own]"},
+	} {
+		read := GradingTextAndFigures
+		if c.paper {
+			read = PaperTextAndFigures
+		}
+		got, figures := read(q, c.part)
+		ids := make([]string, len(figures))
+		for i, f := range figures {
+			ids[i], _ = f["assetId"].(string)
+		}
+		if got != c.want || fmt.Sprint(ids) != c.wantFigures {
+			t.Errorf("part %d (paper %v):\n%q %v\nwant\n%q %s", c.part, c.paper, got, ids, c.want, c.wantFigures)
+		}
+	}
+	// The question itself is untouched.
+	if blocks := q["stem"].([]any); len(blocks) != 2 {
+		t.Fatalf("stem = %v", blocks)
+	}
+}
+
+// Only the canvas a part answers in on its own is its answer; any other
+// drawn canvas in its blocks is a figure, as learners see it: a shared part's
+// own, or a second one a merge left (Epo 2026-11-23).
+func TestGradingTextTakesAPartsOtherCanvasesAsFigures(t *testing.T) {
+	text := func(s string) map[string]any { return map[string]any{"type": "text", "text": s} }
+	canvas := func(image string) map[string]any {
+		return map[string]any{"type": "canvas", "board": "b" + image, "image": image}
+	}
+	q := map[string]any{
+		"stem": []any{text("Stem."), canvas("stem")},
+		"parts": []any{
+			map[string]any{"answer": map[string]any{"type": "canvas", "shared": true},
+				"blocks": []any{text("In the stem's."), canvas("shown")}},
+			map[string]any{"answer": map[string]any{"type": "canvas"},
+				"blocks": []any{text("In its own."), canvas("own"), canvas("merged")}},
+		},
+	}
+	for _, c := range []struct {
+		part        int
+		want        string
+		wantFigures string
+	}{
+		{0, "Stem.\n\nPart to grade: In the stem's.\n\n[Figure 1]", "[shown]"},
+		{1, "Stem.\n\n[Figure 1]\n\nEarlier part 1: In the stem's.\n\n[Figure 2]\n\nPart to grade: In its own.\n\n[Figure 3]", "[stem shown merged]"},
+	} {
+		got, figures := GradingTextAndFigures(q, c.part)
+		ids := make([]string, len(figures))
+		for i, f := range figures {
+			ids[i], _ = f["assetId"].(string)
+		}
+		if got != c.want || fmt.Sprint(ids) != c.wantFigures {
+			t.Errorf("part %d:\n%q %v\nwant\n%q %s", c.part, got, ids, c.want, c.wantFigures)
+		}
 	}
 }
 
@@ -248,6 +395,58 @@ func TestLearnerViewKeepsGroups(t *testing.T) {
 	}
 	if _, ok := parts[0].(map[string]any)["group"]; ok {
 		t.Fatalf("ungrouped part = %v", parts[0])
+	}
+}
+
+// A canvas part answers in its own canvas or, shared, the nearest one above:
+// its group's, else the stem's, never its own (Epo 2026-11-23). A learner
+// view keeps shared, so it reads the same.
+func TestPartAnswerCanvas(t *testing.T) {
+	read := func(file string) map[string]any {
+		raw, err := os.ReadFile("testdata/" + file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var f struct{ Question map[string]any }
+		if err := json.Unmarshal(raw, &f); err != nil {
+			t.Fatal(err)
+		}
+		return f.Question
+	}
+	type want struct {
+		section, id string
+		index       int
+	}
+	for _, c := range []struct {
+		file  string
+		part  int
+		found want
+	}{
+		{"canvas-shared-group.json", 0, want{"group", "g1", 1}},
+		{"canvas-shared-group.json", 1, want{"part", "p2", 1}},
+		{"canvas-shared-stem.json", 1, want{"stem", "", 1}},
+		{"canvas.json", 0, want{"part", "p1", 1}},
+	} {
+		q := read(c.file)
+		for _, view := range []map[string]any{q, LearnerView(q)} {
+			got, ok := PartAnswerCanvas(view, c.part)
+			if !ok || got.Section != c.found.section || got.ID != c.found.id || got.Index != c.found.index || got.Block["type"] != "canvas" {
+				t.Fatalf("%s part %d: %+v %v", c.file, c.part, got, ok)
+			}
+		}
+	}
+	// A grouped shared part whose group holds none answers in the stem's.
+	q := read("canvas-shared-group.json")
+	q["groups"].([]any)[0].(map[string]any)["blocks"] = []any{}
+	q["stem"] = append(q["stem"].([]any), map[string]any{"type": "canvas"})
+	if got, ok := PartAnswerCanvas(q, 0); !ok || got.Section != "stem" || got.Index != 1 {
+		t.Fatalf("stem fallback: %+v %v", got, ok)
+	}
+	if _, ok := PartAnswerCanvas(read("canvas-shared-none-above-rejected.json"), 0); ok {
+		t.Fatal("found a canvas above none")
+	}
+	if _, ok := PartAnswerCanvas(read("canvas-shown.json"), 0); ok {
+		t.Fatal("a boolean part answers in a canvas")
 	}
 }
 
@@ -502,24 +701,33 @@ func TestRepairFigureFollowsTheSharedFixtures(t *testing.T) {
 	}
 }
 
-// A drawn sample answer's board and image are the quiz's assets: listed with
-// its images, copied with them, and dropped whole when either has no copy.
-func TestDrawnSampleAnswerAssets(t *testing.T) {
+// A drawn canvas's and a drawn sample answer's boards and images are the
+// quiz's assets: listed with its images, copied with them, and dropped as a
+// pair when either has no copy, the canvas staying empty.
+func TestDrawnCanvasAndSampleAssets(t *testing.T) {
 	question := func() map[string]any {
 		return map[string]any{"parts": []any{map[string]any{
-			"blocks": []any{map[string]any{"type": "text", "text": "Draw it."}},
-			"answer": map[string]any{"type": "drawing", "sample": map[string]any{"board": "a_board", "image": "a_image"}},
+			"blocks": []any{
+				map[string]any{"type": "text", "text": "Draw it."},
+				map[string]any{"type": "canvas", "board": "c_board", "image": "c_image"},
+			},
+			"answer": map[string]any{"type": "canvas", "sample": map[string]any{"board": "a_board", "image": "a_image"}},
 		}}}
 	}
 	q := question()
-	if got := AssetIDs(q); len(got) != 2 || got[0] != "a_board" || got[1] != "a_image" {
+	if got := AssetIDs(q); !slices.Equal(got, []string{"c_board", "c_image", "a_board", "a_image"}) {
 		t.Fatalf("asset ids = %v", got)
 	}
-	if !RewriteAssetIDs(q, map[string]string{"a_board": "b_board", "a_image": "b_image"}) || AssetIDs(q)[0] != "b_board" {
+	copies := map[string]string{"c_board": "d_board", "c_image": "d_image", "a_board": "b_board", "a_image": "b_image"}
+	if !RewriteAssetIDs(q, copies) || !slices.Equal(AssetIDs(q), []string{"d_board", "d_image", "b_board", "b_image"}) {
 		t.Fatalf("copied = %v", AssetIDs(q))
 	}
 	q = question()
-	if !RewriteAssetIDs(q, map[string]string{"a_board": "b_board"}) || len(AssetIDs(q)) != 0 {
-		t.Fatalf("a half-copied sample stayed: %v", q)
+	if !RewriteAssetIDs(q, map[string]string{"c_board": "d_board", "a_board": "b_board"}) || len(AssetIDs(q)) != 0 {
+		t.Fatalf("a half-copied canvas or sample stayed: %v", q)
+	}
+	canvas := q["parts"].([]any)[0].(map[string]any)["blocks"].([]any)[1]
+	if !reflect.DeepEqual(canvas, map[string]any{"type": "canvas"}) {
+		t.Fatalf("the canvas is %v", canvas)
 	}
 }

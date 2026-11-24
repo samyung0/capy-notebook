@@ -42,24 +42,44 @@ export function ToolbarPopoverButton({
 
 export function ToolbarPopoverItem({
   label,
+  hint,
   icon,
   shortcut,
   selected,
+  className,
   ...props
 }: React.ComponentProps<typeof ToolbarPopoverButton> & {
   label: string;
+  /** A line under the label: why it is off, say. */
+  hint?: string;
   icon?: React.ReactNode;
   shortcut?: string;
   selected?: boolean;
 }) {
   return (
-    <ToolbarPopoverButton aria-pressed={selected} {...props}>
+    <ToolbarPopoverButton
+      aria-pressed={selected}
+      className={cn(hint && 'h-auto min-h-7.5 items-start py-1', className)}
+      {...props}
+    >
       {icon && (
-        <span className="flex size-4.5 shrink-0 items-center justify-center">
+        <span
+          className={cn(
+            'flex size-4.5 shrink-0 items-center justify-center',
+            hint && 'mt-0.5'
+          )}
+        >
           {icon}
         </span>
       )}
-      <span className="min-w-0 flex-1">{label}</span>
+      {hint ? (
+        <span className="flex min-w-0 flex-1 flex-col">
+          <span>{label}</span>
+          <span className="font-normal text-fg-muted text-xs">{hint}</span>
+        </span>
+      ) : (
+        <span className="min-w-0 flex-1">{label}</span>
+      )}
       {shortcut && (
         <kbd
           aria-hidden

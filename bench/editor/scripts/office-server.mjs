@@ -51,16 +51,14 @@ const { seedOffice } = await import(
 const seeded = await seedOffice('docx', new Uint8Array(readFileSync(longDocx)));
 writeFileSync(`${fixtures}/long-handbook-250-checkpoint.bin`, seeded.state);
 
-// MSW needs the development mode; the config's NODE_ENV=production keeps
-// React and the bundle production. The heap flag is the one `pnpm build` uses.
+// Vite's production mode with the benches' switch VITE_BENCH_MSW, which the
+// config's environment sets. The heap flag is the one `pnpm build` uses.
 const build = spawnSync(
   process.execPath,
   [
     '--max-old-space-size=8192',
     'node_modules/vite/bin/vite.js',
     'build',
-    '--mode',
-    'development',
     '--outDir',
     outDir,
     '--emptyOutDir',
@@ -80,6 +78,5 @@ if (stage.status !== 0) process.exit(stage.status ?? 1);
 for (const on of [Number(port) + 1, Number(port)])
   await preview({
     build: { outDir },
-    mode: 'development',
     preview: { host: '127.0.0.1', https, port: on, strictPort: true },
   });

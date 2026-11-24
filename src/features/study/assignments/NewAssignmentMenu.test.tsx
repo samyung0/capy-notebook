@@ -29,12 +29,8 @@ vi.mock('@/components/ui/Menu', () => ({
   ),
 }));
 vi.mock('./LazyNewAssignmentDialog', () => ({
-  GradedQuizDialog: ({ own }: { own?: boolean }) => (
-    <div data-graded={String(!!own)} />
-  ),
-  NewAssignmentDialog: ({ own, title }: { own?: boolean; title?: string }) => (
-    <div data-form={String(!!own)} data-title={title ?? ''} />
-  ),
+  GradedQuizDialog: () => <div data-graded />,
+  NewAssignmentDialog: () => <div data-form />,
 }));
 
 const { createRoot } = await import('react-dom/client');
@@ -42,11 +38,9 @@ const { NewAssignmentMenu } = await import('./NewAssignmentMenu');
 
 const host = document.createElement('div');
 document.body.append(host);
-const show = async (own: boolean) => {
+const show = async () => {
   const root = createRoot(host);
-  await act(async () =>
-    root.render(<NewAssignmentMenu own={own} workspaceId="ws1" />)
-  );
+  await act(async () => root.render(<NewAssignmentMenu workspaceId="ws1" />));
   return root;
 };
 const press = (label: string) =>
@@ -57,22 +51,10 @@ const press = (label: string) =>
   });
 
 it("offers a class's Assignment and Graded quiz", async () => {
-  const root = await show(false);
+  const root = await show();
   await press(m.assignment_kind_assignment());
-  expect(host.querySelector('[data-form="false"]')).not.toBeNull();
+  expect(host.querySelector('[data-form]')).not.toBeNull();
   await press(m.assignment_kind_marked());
-  expect(host.querySelector('[data-graded="false"]')).not.toBeNull();
-  act(() => root.unmount());
-});
-
-it("offers a personal workspace's Task and Graded quiz, both for oneself", async () => {
-  const root = await show(true);
-  expect(host.textContent).not.toContain(m.assignment_kind_assignment());
-  await press(m.assignment_kind_task());
-  expect(
-    host.querySelector('[data-form="true"]')?.getAttribute('data-title')
-  ).toBe(m.todo_new_task());
-  await press(m.assignment_kind_marked());
-  expect(host.querySelector('[data-graded="true"]')).not.toBeNull();
+  expect(host.querySelector('[data-graded]')).not.toBeNull();
   act(() => root.unmount());
 });

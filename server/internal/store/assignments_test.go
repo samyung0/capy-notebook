@@ -168,18 +168,13 @@ func TestQuestionReports(t *testing.T) {
 	if items[0].Awarded != 1 || items[1].Awarded != 0 {
 		t.Fatalf("marking points = %+v", items)
 	}
-	if reports[0].Percent == nil || *reports[0].Percent != 0.75 {
-		t.Fatalf("percent = %v", reports[0].Percent)
+	// Every part's average is in marks (Epo 2026-11-22): a closed one-mark part
+	// right three times in four averages 0.75.
+	if p := reports[0].Parts[0].Average; p == nil || *p != 0.75 {
+		t.Fatalf("part average = %v", p)
 	}
 	// The waiting open answer is left out of the average; the two blanks are
 	// marked zeros: (2 + 0 + 0) / 3.
-	if reports[2].Average == nil || *reports[2].Average != 2.0/3 {
-		t.Fatalf("average = %v", reports[2].Average)
-	}
-	// Each part carries its own numbers, the report's row for it (Epo 2026-11-14).
-	if p := reports[0].Parts[0].Percent; p == nil || *p != 0.75 {
-		t.Fatalf("part percent = %v", p)
-	}
 	if a := reports[2].Parts[0].Average; a == nil || *a != 2.0/3 {
 		t.Fatalf("part average = %v", a)
 	}
@@ -494,7 +489,7 @@ func TestAssignmentRun(t *testing.T) {
 	if open := rowsOn(report.Answers, "q3"); len(report.Members) != 2 || len(open) != 1 || !open[0].Waiting {
 		t.Fatalf("report = %+v", report)
 	}
-	marked, err := f.s.MarkAssignmentAnswer(ctx, f.editor, run.ID, AssignmentMark{
+	marked, _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, run.ID, AssignmentMark{
 		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{2, 0}}}, Comment: "Say why",
 	}, now.Add(4*time.Minute))
 	if err != nil {
@@ -593,7 +588,7 @@ func TestAssignmentAuthorization(t *testing.T) {
 	if _, err := f.s.GetAssignmentAttempt(ctx, f.user, run.ID, now); err != nil {
 		t.Fatalf("the owner reads the result: %v", err)
 	}
-	_, err = f.s.MarkAssignmentAnswer(ctx, f.viewer, run.ID, AssignmentMark{QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{3, 0}}}}, now)
+	_, _, err = f.s.MarkAssignmentAnswer(ctx, f.viewer, run.ID, AssignmentMark{QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{3, 0}}}}, now)
 	if err == nil {
 		t.Fatal("a member marked their own answer")
 	}
@@ -896,7 +891,7 @@ func TestAssignmentLatePenalty(t *testing.T) {
 	if !done.Late || done.LatePenaltyPct != 20 || done.Correct != 3 || done.Mark != 2.4 {
 		t.Fatalf("late = %+v", done)
 	}
-	marked, err := f.s.MarkAssignmentAnswer(ctx, f.editor, late.ID, AssignmentMark{
+	marked, _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, late.ID, AssignmentMark{
 		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{2, 1}}},
 	}, past)
 	if err != nil {
@@ -1052,7 +1047,7 @@ func TestCountedAttemptIsTheHighest(t *testing.T) {
 	}
 
 	// Marked, the late one reads 4.8 and counts, off the list as nothing waits.
-	if _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, late, AssignmentMark{
+	if _, _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, late, AssignmentMark{
 		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{2, 1}}},
 	}, past); err != nil {
 		t.Fatal(err)
@@ -1068,7 +1063,7 @@ func TestCountedAttemptIsTheHighest(t *testing.T) {
 	}
 	counts(past, late, 3, 50)
 	// A mark changed down hands it back.
-	if _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, late, AssignmentMark{
+	if _, _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, late, AssignmentMark{
 		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{1, 1}}},
 	}, past); err != nil {
 		t.Fatal(err)
@@ -1164,7 +1159,7 @@ func TestReviewsRateTheLatestSubmission(t *testing.T) {
 	if got := rated(); got != 1 {
 		t.Fatalf("rated %d questions, want the latest submission's one", got)
 	}
-	if _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, earlier, AssignmentMark{
+	if _, _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, earlier, AssignmentMark{
 		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{2, 1}}},
 	}, later); err != nil {
 		t.Fatal(err)
@@ -2063,7 +2058,7 @@ func TestChangedMarkCountsOnce(t *testing.T) {
 	}
 	mark := func(at time.Time, items ...float64) {
 		t.Helper()
-		if _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
+		if _, _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{
 			QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: items}},
 		}, at); err != nil {
 			t.Fatal(err)
@@ -2384,7 +2379,7 @@ func TestRepublishReplacesTheFrozenCopy(t *testing.T) {
 		t.Fatalf("report questions = %d, q3 waiting = %v", len(report.Questions), waiting)
 	}
 	// What left the copy can still be marked.
-	marked, err := f.s.MarkAssignmentAnswer(ctx, f.editor, done.ID, AssignmentMark{
+	marked, _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, done.ID, AssignmentMark{
 		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{2, 0}}},
 	}, later)
 	if err != nil {

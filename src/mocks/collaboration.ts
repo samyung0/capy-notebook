@@ -2440,6 +2440,11 @@ class MockItemProvider implements ItemProvider {
 
 const BOARD_MAX = BOARD_CATALOG.limits.CANVAS_BOARD_MAX;
 const BOARD_STATE = 'capy.mock.board.';
+/** A board room stores as the service stores a room: a pause after its last
+ * change, shorter here, and at most 10 s after its first unstored one
+ * (`config.rs`'s debounce and its cap). */
+const BOARD_STORE_MS = 300;
+const BOARD_STORE_MAX_MS = 10_000;
 
 /** The editor's own first state (`boardFirstState.ts`), which the service
  * seeds a canvas's room with. Loaded when the first board room opens: the
@@ -2662,11 +2667,20 @@ function boardRoom(name: string, firstState: Uint8Array): Room {
   if (!checkpoints.has(name)) Y.applyUpdate(room.document, firstState);
   room.dirty = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let first: number | null = null;
   room.document.on('update', () => {
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      if (rooms.get(name) === room) checkpointRoom(room);
-    }, 300);
+    const now = Date.now();
+    first ??= now;
+    timer = setTimeout(
+      () => {
+        first = null;
+        if (rooms.get(name) !== room) return;
+        checkpointRoom(room);
+        for (const provider of boardProviders) provider.stored(name);
+      },
+      Math.min(BOARD_STORE_MS, first + BOARD_STORE_MAX_MS - now)
+    );
   });
   return room;
 }
@@ -2691,6 +2705,8 @@ class MockBoardProvider implements ItemProvider {
   /** Receipts the room holds back while its stores fail
    * (`mockBoardStoreFails`). */
   private held: string[] | null = null;
+  /** Receipts waiting for the room's debounced store. */
+  private waiting: string[] = [];
   private readonly heldEdits: MockHeld;
   /** The room holds an update of this tab's as soon as it took it: nothing
    * stays unacknowledged, and the room is asked for its receipt. A held
@@ -2946,9 +2962,10 @@ class MockBoardProvider implements ItemProvider {
     } else this.close(1006, 'socket closed');
   }
 
-  /** A checkpoint request: the room stores now and answers its receipt,
-   * with the board's size as the service measures it. While its stores fail
-   * the request waits for the next one that lands. */
+  /** A checkpoint request, answered as the service's note room answers it:
+   * at once with nothing to store, else once the room's debounced store
+   * lands (`stored`), with the board's size as the service measures it. While
+   * its stores fail the request waits for the next one that lands. */
   sendStateless(payload: string) {
     const request = JSON.parse(payload) as { id?: string; type?: string };
     if (request.type !== 'checkpoint-request' || !request.id) return;
@@ -2957,13 +2974,25 @@ class MockBoardProvider implements ItemProvider {
       this.held.push(request.id);
       return;
     }
+    if (rooms.get(this.config.name)?.dirty) {
+      this.waiting.push(request.id);
+      return;
+    }
     this.receipt([request.id]);
+  }
+
+  /** The room `name` stored: the requests that waited for it are answered. */
+  stored(name: string) {
+    if (name !== this.config.name || this.held || !this.waiting.length) return;
+    const ids = this.waiting;
+    this.waiting = [];
+    this.receipt(ids);
   }
 
   private receipt(ids: string[]) {
     const room = rooms.get(this.config.name);
     if (!(room && this.leave)) return;
-    checkpointRoom(room);
+    if (room.dirty) checkpointRoom(room);
     const receipt = JSON.stringify({
       checkpointIds: ids,
       materialId: this.materialId,
@@ -2984,7 +3013,8 @@ class MockBoardProvider implements ItemProvider {
    * it says so and answers nothing; back, it answers what waited. */
   storeFails(failing: boolean) {
     if (failing) {
-      this.held ??= [];
+      this.held = [...(this.held ?? []), ...this.waiting];
+      this.waiting = [];
       this.config.onStateless?.({
         payload: JSON.stringify({
           materialId: this.materialId,
@@ -3006,6 +3036,7 @@ class MockBoardProvider implements ItemProvider {
     this.leave?.();
     this.leave = null;
     this.channel = null;
+    this.waiting = [];
   }
 
   /** A Leave. A clean one (nothing of the tab's unsent) expires the id its

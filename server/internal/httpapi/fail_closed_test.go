@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 
@@ -54,10 +53,10 @@ func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 	if got := body["readsHidden"]; got != true {
 		t.Errorf("readsHidden = %#v for an editor", got)
 	}
-	// An omitted scope is every workspace item, notes included.
-	if got, ok := body["fileIds"].([]any); !ok || !slices.Contains(got, any("f_e2e_private")) ||
-		!slices.Contains(got, any("note_e2e_private")) {
-		t.Errorf("omitted scope did not expand to every workspace item: %#v", body["fileIds"])
+	// An omitted scope is every workspace item; only those with indexed text
+	// are sent (Epo 2026-11-21), so the unindexed note stays out.
+	if got := body["fileIds"]; !reflect.DeepEqual(got, []any{"f_e2e_private"}) {
+		t.Errorf("omitted scope sent %#v, want the indexed file", got)
 	}
 	if got := body["count"]; got != float64(5) {
 		t.Errorf("count = %#v, want the dialog's 5", got)
@@ -113,7 +112,8 @@ func TestGenerateRejectsUnknownScopeIDs(t *testing.T) {
 }
 
 // Generate takes any workspace item id (Epo 2026-10-21); items without
-// indexed text add none, and a scope with no text at all is refused in words.
+// indexed text are not sent (Epo 2026-11-21), and a scope with no text at all
+// is refused in words.
 func TestGenerateTakesAnyItemButNeedsSomeText(t *testing.T) {
 	seen := make(chan map[string]any, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -144,8 +144,8 @@ func TestGenerateTakesAnyItemButNeedsSomeText(t *testing.T) {
 		_ = doReq(t, h, http.MethodDelete, "/api/materials/"+generatedMaterialID(t, rec.Body.Bytes()), "u_owner", nil)
 	})
 	body := <-seen
-	if !reflect.DeepEqual(body["fileIds"], []any{"qz_e2e_private", "f_e2e_private"}) ||
-		!reflect.DeepEqual(body["fileNames"], []any{"E2E Private Quiz", "secret-notes.md"}) {
+	if !reflect.DeepEqual(body["fileIds"], []any{"f_e2e_private"}) ||
+		!reflect.DeepEqual(body["fileNames"], []any{"secret-notes.md"}) {
 		t.Fatalf("pipeline got %#v / %#v", body["fileIds"], body["fileNames"])
 	}
 }

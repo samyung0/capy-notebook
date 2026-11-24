@@ -63,6 +63,14 @@ import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
 import { gradeQuestions, learnerView } from './answerKeys';
 import { biologyQuizQuestions } from './biologyQuiz';
 import {
+  GROWTH_CANVAS,
+  P_GROWTH_CANVAS,
+  P_WEEKS_CANVAS,
+  P_WEEKS_SAMPLE,
+  PUNNETT_CANVAS,
+  WEEK_AXES_CANVAS,
+} from './canvasBoards';
+import {
   type ChatFixture,
   chatFixtures,
   fixtureCitations,
@@ -1366,19 +1374,20 @@ const seedQuizzes: EditableQuiz[] = [
         ],
         stem: [],
       },
-      // A drawing part (Epo 2026-11-03), answered on the drawing board.
+      // A canvas part (Epo 2026-11-23), answered on its canvas.
       {
         id: 'q_draw',
         labels: 'letters',
         layout: 'paper',
         parts: [
           {
-            answer: { type: 'drawing' },
+            answer: { type: 'canvas' },
             blocks: [
               {
                 text: 'Draw a Punnett square for Aa × Aa and label each offspring genotype.',
                 type: 'text',
               },
+              { type: 'canvas' },
             ],
             id: 'q_draw:part',
             marks: 2,
@@ -1393,6 +1402,144 @@ const seedQuizzes: EditableQuiz[] = [
           },
         ],
         stem: [],
+      },
+      // A canvas part whose canvas holds the question, answered inside it.
+      {
+        id: 'q_canvas',
+        labels: 'letters',
+        layout: 'paper',
+        parts: [
+          {
+            answer: { type: 'canvas' },
+            blocks: [
+              {
+                text: 'Complete the Punnett square for Aa × Aa.',
+                type: 'text',
+              },
+              PUNNETT_CANVAS,
+            ],
+            id: 'q_canvas:part',
+            marks: 2,
+            markscheme: [
+              { marks: 1, text: 'AA, Aa, Aa and aa in the four boxes.' },
+              { marks: 1, text: 'The ratio 1 : 2 : 1.' },
+            ],
+            solution: [],
+          },
+        ],
+        stem: [],
+      },
+      // A multiple choice part with a canvas to look at.
+      {
+        id: 'q_canvas_mc',
+        labels: 'letters',
+        layout: 'paper',
+        parts: [
+          {
+            answer: {
+              correct: [0],
+              options: ['P', 'Q', 'R', 'They all grow at the same rate'],
+              type: 'mcq',
+            },
+            blocks: [
+              {
+                text: 'The canvas shows three plants growing over four weeks. Which grows fastest?',
+                type: 'text',
+              },
+              GROWTH_CANVAS,
+            ],
+            id: 'q_canvas_mc:part',
+            marks: 1,
+            solution: [],
+          },
+        ],
+        stem: [],
+      },
+      // S1 (Epo 2026-11-23): two parts answered in the stem's canvas, one
+      // drawing kept under (a).
+      {
+        id: 'q_canvas_shared',
+        labels: 'letters',
+        layout: 'paper',
+        parts: [
+          {
+            answer: { shared: true, type: 'canvas' },
+            blocks: [{ text: 'Fill in the four boxes.', type: 'text' }],
+            id: 'q_canvas_shared:a',
+            marks: 2,
+            markscheme: [
+              { marks: 1, text: 'AA in one box and aa in another.' },
+              { marks: 1, text: 'Aa in the other two boxes.' },
+            ],
+            solution: [],
+          },
+          {
+            answer: { shared: true, type: 'canvas' },
+            blocks: [
+              { text: 'Write the ratio of the genotypes.', type: 'text' },
+            ],
+            id: 'q_canvas_shared:b',
+            marks: 1,
+            markscheme: [{ marks: 1, text: 'The ratio 1 : 2 : 1.' }],
+            solution: [],
+          },
+        ],
+        stem: [
+          {
+            text: 'A cross between two heterozygous pea plants, Aa × Aa.',
+            type: 'text',
+          },
+          PUNNETT_CANVAS,
+        ],
+      },
+      // S2 (Epo 2026-11-23): the stem's canvas only looked at, above two
+      // parts each answered on its own canvas, (b) with a drawn sample.
+      {
+        id: 'q_canvas_own',
+        labels: 'letters',
+        layout: 'paper',
+        parts: [
+          {
+            answer: { type: 'canvas' },
+            blocks: [
+              {
+                text: 'Sketch the curve you expect for plant Q, which gets half the light.',
+                type: 'text',
+              },
+              WEEK_AXES_CANVAS,
+            ],
+            id: 'q_canvas_own:a',
+            marks: 2,
+            markscheme: [
+              { marks: 1, text: 'A curve below P all the way.' },
+              { marks: 1, text: 'Rising more slowly than P.' },
+            ],
+            solution: [],
+          },
+          {
+            answer: { sample: P_WEEKS_SAMPLE, type: 'canvas' },
+            blocks: [
+              { text: 'Mark the week where P grows fastest.', type: 'text' },
+              P_WEEKS_CANVAS,
+            ],
+            id: 'q_canvas_own:b',
+            marks: 1,
+            markscheme: [
+              {
+                marks: 1,
+                text: 'A mark on the steepest stretch, week 2 to 3.',
+              },
+            ],
+            solution: [],
+          },
+        ],
+        stem: [
+          {
+            text: 'The graph shows how plant P grew over four weeks.',
+            type: 'text',
+          },
+          P_GROWTH_CANVAS,
+        ],
       },
     ],
     revision: 1,
@@ -1623,6 +1770,10 @@ const seedQuizzes: EditableQuiz[] = [
         ],
         stem: [],
       },
+      // Blocks before the question's text, to see how the topic page and its
+      // dialog read them (Epo 2026-11-22): a figure, texts and a chart, a
+      // graph, a table and a plot.
+      ...leadingBlockQuestions(),
     ],
     revision: 1,
     topics: ['Techniques of integration'],
@@ -1630,6 +1781,147 @@ const seedQuizzes: EditableQuiz[] = [
     workspaceName: 'Calculus II',
   },
 ];
+
+/** Calculus II's questions that open with something other than their text. */
+function leadingBlockQuestions(): Question[] {
+  const text = (value: string) => ({ text: value, type: 'text' as const });
+  const question = (
+    id: string,
+    stem: Question['stem'],
+    blocks: Question['parts'][number]['blocks'],
+    answer: Question['parts'][number]['answer'],
+    marks = 1,
+    markscheme?: { marks: number; text: string }[]
+  ): Question => ({
+    id,
+    labels: 'letters',
+    layout: 'paper',
+    level: 'application',
+    parts: [
+      {
+        answer,
+        blocks,
+        id: `${id}:part`,
+        marks,
+        ...(markscheme ? { markscheme } : {}),
+        solution: [],
+      },
+    ],
+    stem,
+  });
+  return [
+    // A figure, then the text.
+    question(
+      'q31',
+      [
+        {
+          description: 'The region under y = x² between x = 0 and x = 2.',
+          height: 540,
+          image: { assetId: 'asset_mock_area_figure' },
+          type: 'image',
+          width: 960,
+        },
+        text('The shaded region lies under y = x² between x = 0 and x = 2.'),
+      ],
+      [text('Find the area of the shaded region.')],
+      { accepted: ['8/3'], type: 'short' }
+    ),
+    // Two texts and a chart, then the part's text.
+    question(
+      'q32',
+      [
+        text('A student estimates ∫₀¹ x² dx with the trapezium rule.'),
+        text('Each estimate uses twice as many strips as the one before.'),
+        {
+          kind: 'bar',
+          labels: ['1 strip', '2 strips', '4 strips', '8 strips'],
+          series: [{ name: 'Estimate', values: [0.5, 0.375, 0.344, 0.336] }],
+          title: 'Trapezium estimates of ∫₀¹ x² dx',
+          type: 'chart',
+          xTitle: 'Strips',
+          yTitle: 'Estimate',
+        },
+      ],
+      [text('Which value are the estimates approaching?')],
+      { correct: [1], options: ['1/2', '1/3', '1/4', '1'], type: 'mcq' }
+    ),
+    // A graph alone in the stem; the text is the part's.
+    question(
+      'q33',
+      [
+        {
+          board: { axis: true, bbox: [-0.5, 1.5, 3.6, -0.5], grid: true },
+          description: 'y = sin x from 0 to π.',
+          elements: [
+            {
+              id: 'sine',
+              latex: 'y=\\sin x\\left\\lbrace 0\\le x\\le \\pi\\right\\rbrace',
+              type: 'expression',
+            },
+          ],
+          height: 360,
+          type: 'graph',
+          width: 600,
+        },
+      ],
+      [text('Find the area between y = sin x and the x-axis from 0 to π.')],
+      { accepted: ['2'], type: 'short' }
+    ),
+    // A table, then the text.
+    question(
+      'q34',
+      [
+        {
+          header: true,
+          rows: [
+            ['x', '0', '0.5', '1', '1.5', '2'],
+            ['f(x)', '1', '1.25', '2', '3.25', '5'],
+          ],
+          type: 'table',
+        },
+        text('The table gives values of f(x) = x² + 1.'),
+      ],
+      [
+        text(
+          'Use the trapezium rule with these five values to estimate ∫₀² f(x) dx.'
+        ),
+      ],
+      { accepted: ['4.75'], type: 'short' },
+      2
+    ),
+    // A plot and a text, then the part's text.
+    question(
+      'q35',
+      [
+        {
+          series: [
+            {
+              name: 'Velocity',
+              points: [
+                [0, 0],
+                [2, 6],
+                [6, 6],
+                [8, 0],
+              ],
+            },
+          ],
+          title: "A car's velocity",
+          type: 'plot',
+          xTitle: 'Time (s)',
+          yTitle: 'Velocity (m/s)',
+        },
+        text('The plot shows a car’s velocity over 8 seconds.'),
+      ],
+      [text('Explain what the area under the plot represents, and find it.')],
+      { accepted: [], type: 'open' },
+      2,
+      [
+        { marks: 1, text: 'The area is the distance travelled' },
+        { marks: 1, text: 'Distance = 36 m' },
+      ]
+    ),
+  ];
+}
 
 /** Seed answers are written per question; grading reads them per part. */
 const byPart = (answers: Record<string, Answer>) =>
@@ -2872,7 +3164,11 @@ for (const c of seedCards) flashcardCards[c.id] = { materialId: c.materialId };
 
 // Biology's quizzes sit in its topics, so Practice can filter and practise
 // by topic.
-const QUIZ_TOPICS: Record<string, string> = { qz_1: 'ch_2', qz_2: 'ch_3' };
+const QUIZ_TOPICS: Record<string, string> = {
+  qz_1: 'ch_2',
+  qz_2: 'ch_3',
+  qz_3: 'ch_c1',
+};
 seedQuizzes.forEach((q) => {
   materials.push(
     makeMaterial({
@@ -3233,6 +3529,10 @@ export function mockSharePath(mt: Material): string | undefined {
 /** Every mock material belongs to the mock user. */
 export const mockAuthor = { avatarUrl: user.avatarUrl, name: user.name };
 
+/** A class member's own practice quizzes (Make my own practice in the member
+ * scenario): their quiz reads say Only you, as the server's do. */
+export const ownPractice = new Set<string>();
+
 /** Derive the typed Quiz view from a quiz material (questions from the fence). */
 export function quizFromMaterial(mt: Material): EditableQuiz {
   const { questions } =
@@ -3254,6 +3554,7 @@ export function quizFromMaterial(mt: Material): EditableQuiz {
     questions,
     revision: mt.revision,
     sharePath: mockSharePath(mt),
+    ...(ownPractice.has(mt.id) ? { onlyYou: true } : {}),
     workspaceId: mt.workspaceId,
     workspaceName: mt.workspaceName,
   };

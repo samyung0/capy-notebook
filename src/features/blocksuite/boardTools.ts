@@ -1184,6 +1184,8 @@ const connectAction = {
 };
 
 const onlyOne = (ctx: ToolbarContext) => ctx.getSurfaceModels().length === 1;
+const notQuestion = (ctx: ToolbarContext) =>
+  boardKindOf(ctx.std) !== 'question';
 
 /** What a typed link places: a YouTube address as its video, any other web address
  * as itself; null when it is neither. */
@@ -1499,10 +1501,17 @@ export const boardToolbar = [
           'b.display-in-page',
           'a.insert-into-page',
         ].map((id) => ({ id, when: false })),
+        // A question board has no lock (Epo 2026-11-23): what is locked there is
+        // part of the question (questionLock.ts).
+        { id: 'b.lock', when: notQuestion },
         connectAction,
       ],
     },
     id: BlockFlavourIdentifier('custom:affine:surface:*'),
+  }),
+  ToolbarModuleExtension({
+    config: { actions: [{ id: 'b.unlock', when: notQuestion }] },
+    id: BlockFlavourIdentifier('custom:affine:surface:locked'),
   }),
   // A frame is a block, outside the surface's scope, with the same Insert into Page.
   ToolbarModuleExtension({

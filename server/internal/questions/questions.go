@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -207,7 +208,7 @@ func Validate(q map[string]any, policy Policy) error {
 	if level, ok := q["level"]; ok && !enum(level, "recall application analysis") {
 		return fail("invalid level")
 	}
-	if err := blocks(q["stem"], policy); err != nil {
+	if err := blocks(q["stem"], policy, true); err != nil {
 		return err
 	}
 	maxParts, maxItems := policy.held(fieldlimits.QuizQuestionParts), policy.held(fieldlimits.QuizMarkscheme)
@@ -224,7 +225,7 @@ func Validate(q map[string]any, policy Policy) error {
 		if err != nil {
 			return err
 		}
-		// Only model-marked parts (open and drawing) carry a marking scheme: the
+		// Only model-marked parts (open and canvas) carry a marking scheme: the
 		// model marks against it. A closed part's answer is its own key and its
 		// solution explains it.
 		a, _ := p["answer"].(map[string]any)
@@ -255,13 +256,13 @@ func Validate(q map[string]any, policy Policy) error {
 			return fail("duplicate part id")
 		}
 		ids[id] = true
-		if err := blocks(p["blocks"], policy); err != nil {
+		if err := blocks(p["blocks"], policy, true); err != nil {
 			return err
 		}
 		if len(p["blocks"].([]any)) == 0 {
 			return fail("part requires content")
 		}
-		if err := blocks(p["solution"], policy); err != nil {
+		if err := blocks(p["solution"], policy, false); err != nil {
 			return err
 		}
 		if policy.Bank && len(p["solution"].([]any)) == 0 {
@@ -300,7 +301,143 @@ func Validate(q map[string]any, policy Policy) error {
 			}
 		}
 	}
-	return checkGroups(q, parts, maxParts, policy)
+	if err := checkGroups(q, parts, maxParts, policy); err != nil {
+		return err
+	}
+	// A canvas part answers on its own canvas, or on the one above it
+	// (shared, Epo 2026-11-23).
+	for i, raw := range parts {
+		a, _ := raw.(map[string]any)["answer"].(map[string]any)
+		if a["type"] != "canvas" {
+			continue
+		}
+		if _, ok := PartAnswerCanvas(q, i); ok {
+			continue
+		}
+		if a["shared"] == true {
+			return fail("a canvas part answered in the canvas above needs one in the opening text or its group")
+		}
+		return fail("a canvas part needs its canvas")
+	}
+	images, canvases := questionFigures(q)
+	if images > fieldlimits.QuestionImages {
+		return fail(fmt.Sprintf("a question holds at most %d images, its stem, groups and parts together", fieldlimits.QuestionImages))
+	}
+	if canvases > fieldlimits.QuestionCanvases {
+		return fail(fmt.Sprintf("a question holds at most %d canvases, its drawn sample answers included", fieldlimits.QuestionCanvases))
+	}
+	return nil
+}
+
+// questionFigures counts a question's images, the ones the grader is sent
+// (the stem's, the groups' and the parts' own; solutions stay with the key),
+// and its canvases (Epo 2026-11-23): its canvas blocks there and its drawn
+// sample answers. A drawn canvas is no image.
+func questionFigures(q map[string]any) (images, canvases int) {
+	stem, _ := q["stem"].([]any)
+	lists := [][]any{stem}
+	groups, _ := q["groups"].([]any)
+	for _, raw := range groups {
+		g, _ := raw.(map[string]any)
+		blocks, _ := g["blocks"].([]any)
+		lists = append(lists, blocks)
+	}
+	parts, _ := q["parts"].([]any)
+	for _, raw := range parts {
+		p, _ := raw.(map[string]any)
+		blocks, _ := p["blocks"].([]any)
+		lists = append(lists, blocks)
+		if drawnSample(p) != nil {
+			canvases++
+		}
+	}
+	for _, blocks := range lists {
+		for _, raw := range blocks {
+			switch b, _ := raw.(map[string]any); b["type"] {
+			case "image":
+				images++
+			case "canvas":
+				canvases++
+			}
+		}
+	}
+	return images, canvases
+}
+
+// partCanvases is the canvases one block list holds, the stem's, a group's
+// or a part's (Epo 2026-11-23): one, which an editor stops at (TS
+// PART_CANVASES_MAX).
+const partCanvases = 1
+
+// AnswerCanvas is the canvas a canvas part answers in: the block, where it
+// sits (Section "stem", "group" or "part", ID the group's or the part's id,
+// empty for the stem) and its index in that list.
+type AnswerCanvas struct {
+	Block   map[string]any
+	Section string
+	ID      string
+	Index   int
+}
+
+// PartAnswerCanvas is the canvas part partIndex answers in (Epo
+// 2026-11-23), for an authored question or a learner view: its own blocks'
+// first canvas, or, answered in the canvas above (shared), the first canvas
+// of its group's blocks when it is in a group that holds one, else the
+// stem's. False for a part of another type, or when that canvas is missing
+// (Validate refuses it). TS partAnswerCanvas is the same.
+func PartAnswerCanvas(q map[string]any, partIndex int) (AnswerCanvas, bool) {
+	parts, _ := q["parts"].([]any)
+	if partIndex < 0 || partIndex >= len(parts) {
+		return AnswerCanvas{}, false
+	}
+	p, _ := parts[partIndex].(map[string]any)
+	a, _ := p["answer"].(map[string]any)
+	if a["type"] != "canvas" {
+		return AnswerCanvas{}, false
+	}
+	if a["shared"] != true {
+		id, _ := p["id"].(string)
+		return firstCanvas(p["blocks"], "part", id)
+	}
+	if id, ok := p["group"].(string); ok {
+		if found, ok := firstCanvas(GroupBlocks(q, p), "group", id); ok {
+			return found, true
+		}
+	}
+	return firstCanvas(q["stem"], "stem", "")
+}
+
+// firstCanvas is the first canvas block of a block list.
+func firstCanvas(list any, section, id string) (AnswerCanvas, bool) {
+	blocks, _ := list.([]any)
+	for i, raw := range blocks {
+		if b, _ := raw.(map[string]any); b["type"] == "canvas" {
+			return AnswerCanvas{Block: b, Section: section, ID: id, Index: i}, true
+		}
+	}
+	return AnswerCanvas{}, false
+}
+
+// QuestionBlocks is a part's blocks as its question reads them: the canvas a
+// canvas part answers in on its own, its first, is its answer, so neither its
+// text nor a figure; any other canvas there (a shared part's own, a second
+// one a merge left) is a figure as learners see it (Epo 2026-11-23).
+func QuestionBlocks(p map[string]any) []any {
+	blocks, _ := p["blocks"].([]any)
+	if a, _ := p["answer"].(map[string]any); a["type"] != "canvas" || a["shared"] == true {
+		return blocks
+	}
+	own, ok := firstCanvas(blocks, "part", "")
+	if !ok {
+		return blocks
+	}
+	return slices.Delete(slices.Clone(blocks), own.Index, own.Index+1)
+}
+
+// canvasImage is a drawn canvas block's picture, an editor asset.
+func canvasImage(b map[string]any) (string, bool) {
+	image, ok := b["image"].(string)
+	return image, ok && b["type"] == "canvas" && image != ""
 }
 
 // checkGroups holds grouped parts (Epo 2026-11-04): a group is text and
@@ -330,7 +467,7 @@ func checkGroups(q map[string]any, parts []any, maxParts int, policy Policy) err
 				return fail("duplicate group id")
 			}
 			held[id] = true
-			if err := blocks(g["blocks"], policy); err != nil {
+			if err := blocks(g["blocks"], policy, true); err != nil {
 				return err
 			}
 		}
@@ -406,20 +543,59 @@ func ValidateAll(qs []map[string]any, policy Policy) error {
 	return nil
 }
 
-func blocks(value any, policy Policy) error {
+// blocks checks a block list. The stem's, a group's and a part's hold
+// canvases (holdsCanvas, Epo 2026-11-23), one each, which two editors' adds
+// at once may make two; an explanation holds none, and the bank none yet: its
+// images are public links.
+func blocks(value any, policy Policy, holdsCanvas bool) error {
 	most := policy.held(fieldlimits.QuestionBlocks)
 	a, ok := array(value, 0, most)
 	if !ok {
 		return fail(fmt.Sprintf("blocks must contain at most %d blocks", most))
 	}
+	canvases := 0
 	for _, raw := range a {
 		b, err := obj(raw)
 		if err != nil {
 			return err
 		}
-		if err := ValidateBlock(b, policy); err != nil {
+		if b["type"] != "canvas" {
+			if err := ValidateBlock(b, policy); err != nil {
+				return err
+			}
+			continue
+		}
+		switch {
+		case !holdsCanvas:
+			return fail("a canvas goes in the opening text, a group or a part's text, not an explanation")
+		case policy.Bank:
+			return fail("bank questions can't hold a canvas yet")
+		}
+		if err := canvas(b); err != nil {
 			return err
 		}
+		canvases++
+	}
+	if canvases > policy.held(partCanvases) {
+		return fail("the opening text, a group and a part each hold at most one canvas")
+	}
+	return nil
+}
+
+// canvas checks a canvas block (Epo 2026-11-23): empty, or its board (a
+// gzipped board, the `board` editor asset purpose) and its picture (a quiz
+// image) together, both the quiz's editor assets.
+func canvas(b map[string]any) error {
+	if err := keys(b, "type", "board image"); err != nil {
+		return err
+	}
+	_, board := b["board"]
+	_, image := b["image"]
+	if board != image {
+		return fail("a drawn canvas needs both its board and its picture")
+	}
+	if board && (!str(b["board"], fieldlimits.QuestionID, true) || !str(b["image"], fieldlimits.QuestionID, true)) {
+		return fail("invalid canvas")
 	}
 	return nil
 }
@@ -1104,10 +1280,14 @@ func answer(value any, policy Policy) error {
 		required += " items"
 	case "open":
 		required += " accepted"
-	case "drawing":
-		// Answered on the drawing board, which every drawing part opens plain
-		// (Epo 2026-11-06); an optional drawn sample answer (Q3).
-		optional = "sample"
+	case "canvas":
+		// Answered on the part's canvas or, shared, the one above it (Epo
+		// 2026-11-23), which the bank holds none of yet; an optional drawn
+		// sample answer (Q3).
+		if policy.Bank {
+			return fail("bank questions can't hold a canvas yet")
+		}
+		optional = "sample shared"
 	case "gaps":
 		// One accepted list per numbered gap in the part's text.
 		required += " accepted"
@@ -1233,17 +1413,16 @@ func answer(value any, policy Policy) error {
 		if !stringsArray(a["items"], 2, answers, text) {
 			return fail("invalid ordering items")
 		}
-	case "drawing":
+	case "canvas":
+		if shared, ok := a["shared"]; ok && shared != true {
+			return fail("invalid shared")
+		}
 		raw, exists := a["sample"]
 		if !exists {
 			break
 		}
 		// The board (to edit again) and its image (shown after a check and sent
-		// to marking), both the quiz's own editor assets, as its images are; the
-		// bank has no private assets.
-		if policy.Bank {
-			return fail("a bank drawing part has no drawn sample answer")
-		}
+		// to marking), both the quiz's own editor assets, as its images are.
 		sample, err := obj(raw)
 		if err != nil {
 			return err
@@ -1259,9 +1438,9 @@ func answer(value any, policy Policy) error {
 }
 
 // ModelMarked says whether an answer type is marked by a model against the
-// part's marking items: written (open) and drawn answers.
+// part's marking items: written (open) and drawn (canvas) answers.
 func ModelMarked(answerType any) bool {
-	return answerType == "open" || answerType == "drawing"
+	return answerType == "open" || answerType == "canvas"
 }
 
 func index(v any, size int) bool {
@@ -1382,6 +1561,11 @@ func learnerView(q map[string]any, shuffle func(values []any, partID string) []a
 		case "ordering":
 			items, _ := a["items"].([]any)
 			learner["items"] = shuffle(items, partID)
+		case "canvas":
+			// Answered in the canvas above (PartAnswerCanvas).
+			if a["shared"] == true {
+				learner["shared"] = true
+			}
 		}
 		part := map[string]any{"id": p["id"], "blocks": p["blocks"], "answer": learner, "marks": partMarks(p)}
 		if group, ok := p["group"]; ok {
@@ -1454,14 +1638,18 @@ func shuffled(values []any, shuffle func(n int, swap func(i, j int))) []any {
 	return out
 }
 
-// AssetIDs returns the editor assets referenced by a quiz question's images
-// and its drawn sample answers' boards and images.
+// AssetIDs returns the editor assets referenced by a quiz question's images,
+// its drawn canvases' boards and pictures and its drawn sample answers'
+// boards and images.
 func AssetIDs(q map[string]any) []string {
 	var ids []string
 	for _, blocks := range blockLists(q) {
 		for _, raw := range blocks {
 			if id, ok := imageAssetID(raw); ok {
 				ids = append(ids, id)
+			}
+			if board, image, ok := drawnCanvas(raw); ok {
+				ids = append(ids, board, image)
 			}
 		}
 	}
@@ -1490,15 +1678,25 @@ func drawnSample(raw any) map[string]any {
 	sample, _ := a["sample"].(map[string]any)
 	board, okBoard := sample["board"].(string)
 	image, okImage := sample["image"].(string)
-	if a["type"] != "drawing" || !okBoard || !okImage || board == "" || image == "" {
+	if a["type"] != "canvas" || !okBoard || !okImage || board == "" || image == "" {
 		return nil
 	}
 	return sample
 }
 
+// drawnCanvas is a drawn canvas block's board and picture.
+func drawnCanvas(raw any) (board, image string, ok bool) {
+	b, _ := raw.(map[string]any)
+	board, okBoard := b["board"].(string)
+	image, okImage := canvasImage(b)
+	return board, image, okBoard && okImage && board != ""
+}
+
 // RewriteAssetIDs maps image assets through idMap and removes images whose
-// asset has no replacement. It returns false when a part is left without
-// content, because that question can no longer be stored.
+// asset has no replacement; a drawn canvas missing either of its assets'
+// replacements is left empty, as a drawn sample answer goes whole. It returns
+// false when a part is left without content, because that question can no
+// longer be stored.
 func RewriteAssetIDs(q map[string]any, idMap map[string]string) bool {
 	rewrite := func(raw any) []any {
 		blocks, _ := raw.([]any)
@@ -1509,6 +1707,15 @@ func RewriteAssetIDs(q map[string]any, idMap map[string]string) bool {
 					continue
 				}
 				block.(map[string]any)["image"].(map[string]any)["assetId"] = idMap[id]
+			}
+			if board, image, ok := drawnCanvas(block); ok {
+				b := block.(map[string]any)
+				if idMap[board] == "" || idMap[image] == "" {
+					delete(b, "board")
+					delete(b, "image")
+				} else {
+					b["board"], b["image"] = idMap[board], idMap[image]
+				}
 			}
 			kept = append(kept, block)
 		}
@@ -1586,14 +1793,51 @@ func imageAssetID(raw any) (string, bool) {
 // inside a group is graded with its context; a question with no group reads
 // exactly as it did before groups.
 func GradingText(q map[string]any, partIndex int) string {
+	text, _ := GradingTextAndFigures(q, partIndex)
+	return text
+}
+
+// GradingTextAndFigures is GradingText with its images numbered in order,
+// "[Figure 1: description]", and their `image` values (an editor asset id or
+// a bank URL) in that order, sent with the part as "Figure N:" (Epo
+// 2026-11-23). A drawn canvas is one by its picture, as set, but the canvas
+// the part answers in, which marking sends as the answer: its own
+// (QuestionBlocks), or the stem's or group's a shared part answers in (Epo
+// 2026-11-23). A graph has no stored picture and stays "[Figure: ...]".
+func GradingTextAndFigures(q map[string]any, partIndex int) (string, []map[string]any) {
+	return gradingTextAndFigures(q, partIndex, false)
+}
+
+// PaperTextAndFigures is GradingTextAndFigures for a paper, whose answers are
+// on its pages: every canvas is a figure, as set, the one the part answers in
+// too (Epo 2026-11-23).
+func PaperTextAndFigures(q map[string]any, partIndex int) (string, []map[string]any) {
+	return gradingTextAndFigures(q, partIndex, true)
+}
+
+func gradingTextAndFigures(q map[string]any, partIndex int, paper bool) (string, []map[string]any) {
+	var figures []map[string]any
+	blocksText := func(blocks []any) string { return blocksTextNumbered(blocks, &figures) }
+	// Online, a shared part's answer canvas, the stem's or its group's, is
+	// left out where it sits.
+	answer, _ := PartAnswerCanvas(q, partIndex)
+	if paper || answer.Section == "part" {
+		answer = AnswerCanvas{}
+	}
+	without := func(blocks []any, section, id string) []any {
+		if answer.Section != section || answer.ID != id {
+			return blocks
+		}
+		return slices.Delete(slices.Clone(blocks), answer.Index, answer.Index+1)
+	}
 	stem, _ := q["stem"].([]any)
-	sections := []string{blocksText(stem)}
+	sections := []string{blocksText(without(stem, "stem", ""))}
 	parts, _ := q["parts"].([]any)
 	shared := map[string]bool{}
 	context := func(p map[string]any) {
 		if group, grouped := p["group"].(string); grouped && !shared[group] {
 			shared[group] = true
-			if text := blocksText(GroupBlocks(q, p)); text != "" {
+			if text := blocksText(without(GroupBlocks(q, p), "group", group)); text != "" {
 				sections = append(sections, "Shared context: "+text)
 			}
 		}
@@ -1601,20 +1845,22 @@ func GradingText(q map[string]any, partIndex int) string {
 	for i, raw := range parts[:partIndex] {
 		p, _ := raw.(map[string]any)
 		context(p)
-		blocks, _ := p["blocks"].([]any)
-		sections = append(sections, fmt.Sprintf("Earlier part %d: %s", i+1, blocksText(blocks)))
+		sections = append(sections, fmt.Sprintf("Earlier part %d: %s", i+1, blocksText(QuestionBlocks(p))))
 	}
 	p, _ := parts[partIndex].(map[string]any)
 	context(p)
-	blocks, _ := p["blocks"].([]any)
-	sections = append(sections, "Part to grade: "+blocksText(blocks))
+	own := QuestionBlocks(p)
+	if paper {
+		own, _ = p["blocks"].([]any)
+	}
+	sections = append(sections, "Part to grade: "+blocksText(own))
 	nonEmpty := sections[:0]
 	for _, section := range sections {
 		if section != "" {
 			nonEmpty = append(nonEmpty, section)
 		}
 	}
-	return strings.Join(nonEmpty, "\n\n")
+	return strings.Join(nonEmpty, "\n\n"), figures
 }
 
 // PartText is a part's own text as a paper shows it: the question's stem and
@@ -1639,8 +1885,7 @@ func PartText(q map[string]any, partIndex int) string {
 			sections = append(sections, blocksText(GroupBlocks(q, p)))
 		}
 	}
-	blocks, _ := p["blocks"].([]any)
-	sections = append(sections, blocksText(blocks))
+	sections = append(sections, blocksText(QuestionBlocks(p)))
 	nonEmpty := sections[:0]
 	for _, section := range sections {
 		if section != "" {
@@ -1651,6 +1896,12 @@ func PartText(q map[string]any, partIndex int) string {
 }
 
 func blocksText(blocks []any) string {
+	return blocksTextNumbered(blocks, nil)
+}
+
+// blocksTextNumbered is blocksText; with figures it numbers each image after
+// those already in it and appends the image's `image` value.
+func blocksTextNumbered(blocks []any, figures *[]map[string]any) string {
 	out := make([]string, 0, len(blocks))
 	for _, raw := range blocks {
 		b, _ := raw.(map[string]any)
@@ -1658,11 +1909,25 @@ func blocksText(blocks []any) string {
 		switch b["type"] {
 		case "text":
 			out = append(out, str("text"))
-		case "image", "graph":
+		case "image", "graph", "canvas":
+			// A canvas only as its picture; an empty one shows nothing.
+			canvas, drawn := canvasImage(b)
+			if b["type"] == "canvas" && !drawn {
+				continue
+			}
+			label := "Figure"
+			if image, ok := b["image"].(map[string]any); ok && b["type"] == "image" && figures != nil {
+				*figures = append(*figures, image)
+				label = fmt.Sprintf("Figure %d", len(*figures))
+			}
+			if drawn && figures != nil {
+				*figures = append(*figures, map[string]any{"assetId": canvas})
+				label = fmt.Sprintf("Figure %d", len(*figures))
+			}
 			if description := str("description"); description != "" {
-				out = append(out, "[Figure: "+description+"]")
+				out = append(out, "["+label+": "+description+"]")
 			} else {
-				out = append(out, "[Figure]")
+				out = append(out, "["+label+"]")
 			}
 		case "table":
 			rows, _ := b["rows"].([]any)
@@ -1853,6 +2118,5 @@ func PromptText(q map[string]any) string {
 		return ""
 	}
 	p, _ := parts[0].(map[string]any)
-	blocks, _ := p["blocks"].([]any)
-	return strings.TrimSpace(StripMarks(blocksText(blocks)))
+	return strings.TrimSpace(StripMarks(blocksText(QuestionBlocks(p))))
 }

@@ -1,0 +1,48 @@
+{
+  "name": "canvas-unknown-key-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Canvas answers."
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it."
+          },
+          {
+            "type": "canvas",
+            "board": "asset_board_2",
+            "image": "asset_image_2",
+            "width": 400
+          }
+        ],
+        "answer": {
+          "type": "canvas"
+        },
+        "marks": 2,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          },
+          {
+            "text": "Labelled",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

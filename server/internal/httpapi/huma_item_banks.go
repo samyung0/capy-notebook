@@ -120,7 +120,7 @@ type copyBankQuestionsOutput struct {
 func (a *api) registerItemBanks(api huma.API) {
 	const tag = "Item banks"
 	reg(api, http.MethodGet, "/api/item-banks", "listItemBanks", tag,
-		"The banks the caller may use: a class workspace's when they are its staff, then their own", http.StatusOK, a.listItemBanks)
+		"Every bank the caller reaches: the class they are in first when they are its staff, then their own, then every other class they own or edit, A–Z", http.StatusOK, a.listItemBanks)
 	reg(api, http.MethodGet, "/api/item-banks/{bank}/questions", "listItemBankQuestions", tag,
 		"A bank's questions, newest first, a page at a time, with the filtered count", http.StatusOK, a.listItemBankQuestions)
 	reg(api, http.MethodGet, "/api/item-banks/{bank}/tags", "listItemBankTags", tag,

@@ -352,7 +352,6 @@ function useHeader(
       title: mt?.title,
     };
   }
-  const kind = 'type' in mt ? mt.type : mt.kind;
   const embedded = 'parentMaterialId' in mt && !!mt.parentMaterialId;
   return {
     canClone:
@@ -362,7 +361,7 @@ function useHeader(
         ? !('workspaceId' in mt && mt.workspaceId)
         : !!workspace?.canClone),
     deleted,
-    icon: materialIconName(kind),
+    icon: materialIconName(mt.kind),
     material: mt,
     materialCapabilities: capabilities,
     showImageZoom: false,
@@ -485,6 +484,8 @@ export function Header({
             ? () => toggleHidden({ id: item.id, type: item.kind }, false)
             : undefined
         }
+        // The first hidden quiz says what Hidden means (Epo 2026-11-20).
+        tip={material?.kind === 'quiz'}
       />
       {shareDialog}
     </>
@@ -539,13 +540,11 @@ export function Header({
     </>
   );
   // The file's ⋮ ends the row at every width (Epo 2026-11-16), after the
-  // file's own buttons.
-  // The dots are a thin column in a wide box, so they read further off than
-  // an icon at the same gap: from sm the box is 24px wide (not 32), so its
-  // hover hugs them and never overlaps Preview before it; phones, which have
-  // no Preview there, pull their 30px box 4px in.
+  // file's own buttons, in the toolbar's square box like Undo and Redo (a
+  // 24px-wide box read as squished in its focus ring, Epo 2026-11-20); phones,
+  // which have no Preview there, pull their 30px box 4px in.
   const menu = owned ? null : (
-    <div className="flex items-center gap-0 max-sm:-ml-1 sm:[&_[data-slot=dropdown-menu-trigger]]:w-6">
+    <div className="flex items-center gap-0 max-sm:-ml-1">
       <ContentActions
         beforeDeleteItems={oneColumn?.settingsItems}
         canClone={canClone}

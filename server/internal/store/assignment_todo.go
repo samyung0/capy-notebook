@@ -10,9 +10,7 @@ import (
 )
 
 // TodoWorkspace is one class's section of the To do page. Manages: the caller
-// owns it or is an editor member, as Assignment.Manage's readers are. The
-// section of the caller's tasks with no workspace (Epo 2026-11-11) has an empty
-// WorkspaceID, Name and IconID, and comes first.
+// owns it or is an editor member, as Assignment.Manage's readers are.
 type TodoWorkspace struct {
 	WorkspaceID string       `json:"workspaceId"`
 	Name        string       `json:"name"`
@@ -21,7 +19,7 @@ type TodoWorkspace struct {
 	Items       []Assignment `json:"items" nullable:"false"`
 }
 
-// TodoList is the To do page: every workspace holding something for the caller.
+// TodoList is the To do page: every class holding something for the caller.
 type TodoList struct {
 	Workspaces []TodoWorkspace `json:"workspaces" nullable:"false"`
 }
@@ -34,32 +32,18 @@ const (
 	todoNamed    = `EXISTS (SELECT 1 FROM assignment_assignees aa WHERE aa.assignment_id=a.id AND aa.user_id=$2)`
 	todoWaiting  = `EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=a.id AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0)`
 
-	todoStaffRows = `a.workspace_id = ANY($1) AND (` + todoWaiting + ` OR (` + todoOpenRows + ` AND ` + todoNamed + `))`
-	// A task the caller set themself has their own answers waiting for them.
-	todoMemberRows = `a.workspace_id = ANY($1) AND ((` + todoOpenRows + ` AND (a.assign_all OR ` + todoNamed + `))
-		OR (a.own AND a.created_by=$2 AND ` + todoWaiting + `))`
-	// The caller's ($1) tasks with no workspace.
-	todoLooseRows = ownedSQL + ` AND a.created_by=$1`
+	todoStaffRows  = `a.workspace_id = ANY($1) AND (` + todoWaiting + ` OR (` + todoOpenRows + ` AND ` + todoNamed + `))`
+	todoMemberRows = `a.workspace_id = ANY($1) AND ` + todoOpenRows + ` AND (a.assign_all OR ` + todoNamed + `)`
 )
 
-// ListTodo is what each class's Dashboard lists under To do, across the
-// workspaces the caller belongs to: answers waiting for them and what was given
-// to them (in a personal workspace, the tasks they set themself) and is still
-// open, done or not. A workspace with nothing for them is left out. Their tasks
-// with no workspace come first, as a section of their own.
+// ListTodo is what each class's Dashboard lists under To do, across the classes
+// the caller belongs to: answers waiting for them and what was given to them
+// and is still open, done or not. A class with nothing for them is left out.
 func (s *Store) ListTodo(ctx context.Context, userID string, now time.Time) (TodoList, error) {
 	out := TodoList{Workspaces: []TodoWorkspace{}}
 	cs, err := s.todoClasses(ctx, userID)
 	if err != nil {
 		return out, err
-	}
-	loose, err := s.readAssignments(ctx, userID, false, now, todoLooseRows+` AND (`+todoOpenRows+` OR `+todoWaiting+`)`, userID)
-	if err != nil {
-		return out, err
-	}
-	if len(loose) > 0 {
-		sort.SliceStable(loose, func(i, j int) bool { return todoBefore(loose[i], loose[j]) })
-		out.Workspaces = append(out.Workspaces, TodoWorkspace{Items: loose})
 	}
 	for _, group := range []struct {
 		ids   []string
@@ -91,10 +75,8 @@ func (s *Store) ListTodo(ctx context.Context, userID string, now time.Time) (Tod
 	return out, nil
 }
 
-// todoClasses are the workspaces the caller owns or belongs to whose owner's
-// account is open, split by whether the caller is staff there: a class's owner
-// and editor members. A personal workspace has no staff, only the tasks each
-// person set themself (givenSQL).
+// todoClasses are the classes the caller owns or belongs to whose owner's
+// account is open, split by whether the caller is staff there.
 type todoClasses struct {
 	byID           map[string]*TodoWorkspace
 	order          []string
@@ -103,11 +85,12 @@ type todoClasses struct {
 
 func (s *Store) todoClasses(ctx context.Context, userID string) (todoClasses, error) {
 	out := todoClasses{byID: map[string]*TodoWorkspace{}}
-	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id, w.kind='class' AND (w.user_id=$1 OR COALESCE(wm.role='editor', false))
+	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id, w.user_id=$1 OR COALESCE(wm.role='editor', false)
 		FROM workspaces w
 		JOIN users owner ON owner.id=w.user_id
 		LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$1
-		WHERE w.id IN (SELECT id FROM workspaces WHERE user_id=$1
+		WHERE w.kind='class'
+			AND w.id IN (SELECT id FROM workspaces WHERE user_id=$1
 				UNION ALL SELECT workspace_id FROM workspace_members WHERE user_id=$1)
 			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
 			AND (owner.suspended_at IS NULL OR owner.id=$1)
@@ -172,10 +155,9 @@ func (s *Store) ListTodoDone(ctx context.Context, userID string, now time.Time, 
 	// f.at is when it was finished: the counted submission, the tick or the tick
 	// by hand, else
 	// when it closed (assignmentClosedAt).
-	// A task with no workspace joins neither; it is its maker's (ownedSQL).
 	rows, err := s.pool.Query(ctx, `SELECT a.id FROM assignments a
-		LEFT JOIN workspaces aw ON aw.id=a.workspace_id
-		LEFT JOIN workspace_members wm ON wm.workspace_id=a.workspace_id AND wm.user_id=$1
+		JOIN workspaces aw ON aw.id=a.workspace_id
+		JOIN workspace_members wm ON wm.workspace_id=a.workspace_id AND wm.user_id=$1
 		LEFT JOIN assignment_done d ON d.assignment_id=a.id AND d.user_id=$1
 		LEFT JOIN assignment_todo_checks x ON x.assignment_id=a.id AND x.user_id=$1 AND NOT x.approvals
 		LEFT JOIN LATERAL (SELECT t.submitted_at FROM attempts t
@@ -184,7 +166,7 @@ func (s *Store) ListTodoDone(ctx context.Context, userID string, now time.Time, 
 		CROSS JOIN LATERAL (SELECT COALESCE(l.submitted_at, d.done_at, x.checked_at,
 			LEAST(a.closed_at, CASE WHEN a.no_late AND a.due_at <= $3 THEN a.due_at END)) AS at) f
 		WHERE NOT a.draft AND f.at IS NOT NULL
-			AND ((a.workspace_id = ANY($2) AND `+givenSQL+`) OR (`+ownedSQL+` AND a.created_by=$1))
+			AND a.workspace_id = ANY($2) AND `+givenSQL+`
 			AND ($4::text[] IS NULL OR a.kind = ANY($4))
 			AND NOT EXISTS (SELECT 1 FROM assignment_todo_hidden h WHERE h.assignment_id=a.id AND h.user_id=$1 AND h.hidden_at >= f.at)
 		ORDER BY `+order+` LIMIT $5 OFFSET $6`, userID, classes, now, kinds, p.Limit+1, p.Offset)
@@ -212,13 +194,6 @@ func (s *Store) ListTodoDone(ctx context.Context, userID string, now time.Time, 
 			read[a.ID] = a
 		}
 	}
-	loose, err := s.readAssignments(ctx, userID, false, now, `a.id = ANY($2) AND `+todoLooseRows, userID, ids)
-	if err != nil {
-		return out, err
-	}
-	for _, a := range loose {
-		read[a.ID] = a
-	}
 	at := map[string]int{}
 	for _, id := range ids {
 		a, ok := read[id]
@@ -227,10 +202,7 @@ func (s *Store) ListTodoDone(ctx context.Context, userID string, now time.Time, 
 		}
 		i, seen := at[a.WorkspaceID]
 		if !seen {
-			var c TodoWorkspace
-			if a.WorkspaceID != "" {
-				c = *cs.byID[a.WorkspaceID]
-			}
+			c := *cs.byID[a.WorkspaceID]
 			c.Items = []Assignment{}
 			out.Workspaces = append(out.Workspaces, c)
 			i = len(out.Workspaces) - 1
@@ -245,22 +217,20 @@ func (s *Store) ListTodoDone(ctx context.Context, userID string, now time.Time, 
 // 2026-11-10). A member ticks a marked assignment, or one handed in with files,
 // which submitting or handing in ticks on its own; staff tick the answers
 // waiting for them (approvals), until a later submission brings them back. A
-// plain task's tick is SetAssignmentDone. Nothing is submitted or handed in.
+// plain assignment's tick is SetAssignmentDone. Nothing is submitted or handed in.
 func (s *Store) SetAssignmentTodoCheck(ctx context.Context, userID, id string, approvals, checked bool, now time.Time) error {
-	var row taskRow
-	var kind string
+	var wsID, kind string
 	var draft, uploads bool
-	err := s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), own, created_by, kind, draft, allow_uploads FROM assignments WHERE id=$1`, id).
-		Scan(&row.wsID, &row.own, &row.maker, &kind, &draft, &uploads)
+	err := s.pool.QueryRow(ctx, `SELECT workspace_id, kind, draft, allow_uploads FROM assignments WHERE id=$1`, id).
+		Scan(&wsID, &kind, &draft, &uploads)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	// Not a class nor the caller's own task, or its owner's account is locked:
-	// nothing is ticked.
-	staff, err := s.staffOf(ctx, s.pool, userID, row)
+	// Not a class, or its owner's account is locked: nothing is ticked.
+	staff, err := s.assignmentStaff(ctx, s.pool, userID, wsID)
 	if err != nil {
 		return err
 	}
@@ -276,7 +246,7 @@ func (s *Store) SetAssignmentTodoCheck(ctx context.Context, userID, id string, a
 			return ErrNotFound
 		}
 		if kind == AssignmentUnmarked && !uploads {
-			return assignmentInput("a task is ticked as done")
+			return assignmentInput("an assignment taking no uploads is ticked as done")
 		}
 	}
 	if !checked {
@@ -326,12 +296,11 @@ func todoBefore(a, b Assignment) bool {
 }
 
 // TodoAudience is whose To do an assignment's change touches: everyone it is
-// given to, and the class's staff (its owner and editor members); a member's
-// own task touches its maker's alone.
+// given to, and the class's staff (its owner and editor members).
 func (s *Store) TodoAudience(ctx context.Context, id string) (members, staff []string, err error) {
 	rows, err := s.pool.Query(ctx, `SELECT user_id, false FROM (`+assigneesSQL+`) e
-		UNION SELECT w.user_id, true FROM assignments a JOIN workspaces w ON w.id=a.workspace_id WHERE a.id = ANY($1) AND NOT a.own
-		UNION SELECT wm.user_id, true FROM assignments a JOIN workspace_members wm ON wm.workspace_id=a.workspace_id AND wm.role='editor' WHERE a.id = ANY($1) AND NOT a.own`, []string{id})
+		UNION SELECT w.user_id, true FROM assignments a JOIN workspaces w ON w.id=a.workspace_id WHERE a.id = ANY($1)
+		UNION SELECT wm.user_id, true FROM assignments a JOIN workspace_members wm ON wm.workspace_id=a.workspace_id AND wm.role='editor' WHERE a.id = ANY($1)`, []string{id})
 	if err != nil {
 		return nil, nil, err
 	}

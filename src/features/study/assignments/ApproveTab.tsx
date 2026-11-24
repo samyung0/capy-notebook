@@ -4,6 +4,7 @@ import {
   useAssignmentAttempt,
   useMarkAssignmentAnswer,
   useMarkAssignmentWithAI,
+  useRegradeAssignmentQuestion,
 } from '@/api/hooks';
 import type {
   Assignment,
@@ -28,6 +29,7 @@ import {
   type Question,
   questionMarks,
 } from '@/features/questions/types';
+import { partAnswer } from '@/features/quizzes/drawing/canvasParts';
 import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -287,7 +289,9 @@ export function ApproveTab({
     <div
       className={cn(
         'flex min-h-0 flex-col md:flex-1',
-        fullscreen && 'page-px fixed inset-0 z-40 bg-surface'
+        // Full screen keeps the other full screens' 16px, not the page's
+        // padding (Epo 2026-11-23): the rows' 10px hover still shows.
+        fullscreen && 'fixed inset-0 z-40 bg-surface px-4'
       )}
       // Past the question list on a phone the page's own back link leads out,
       // so the workspace header and the report's head step aside (CSS).
@@ -355,10 +359,13 @@ export function ApproveTab({
         >
           {!paper && (
             <Button
+              // Borderless (Epo 2026-11-23), its label ending on the content's
+              // edge as Full screen's above it.
+              className={cn(!fullscreen && 'md:-mr-1 md:pr-1 md:pl-2')}
               iconLeft="grid"
               onClick={() => setOverview(true)}
               size="sm"
-              variant="outline"
+              variant="ghost-hover"
             >
               {m.assignment_overview()}
             </Button>
@@ -377,18 +384,6 @@ export function ApproveTab({
             {manual
               ? m.assignment_start_grading()
               : m.assignment_start_approving()}
-          </Button>
-          <Button
-            className="max-md:hidden"
-            disabled={!next}
-            iconRight="arrowRight"
-            onClick={() => next && open(next)}
-            size="sm"
-            variant="outline"
-          >
-            {manual
-              ? m.assignment_next_to_grade()
-              : m.assignment_next_to_approve()}
           </Button>
           {fullscreen && (
             <ToolbarButton
@@ -696,11 +691,13 @@ function OverviewGrid({
           </span>
         ))}
       </div>
+      {/* The member column stays put on the dialog's own colour as the
+          questions scroll under it. */}
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr>
-              <th className="sticky left-0 bg-surface-bg py-1.5 pr-3 text-left font-semibold text-fg-secondary text-xs">
+              <th className="sticky left-0 z-1 bg-overlay py-1.5 pr-3 text-left font-semibold text-fg-secondary text-xs">
                 {m.assignment_col_member()}
               </th>
               {questions.map((id) => (
@@ -719,7 +716,7 @@ function OverviewGrid({
               const person = names.get(userId);
               return (
                 <tr className="border-divider border-t" key={userId}>
-                  <td className="sticky left-0 bg-surface-bg py-1 pr-3">
+                  <td className="sticky left-0 z-1 bg-overlay py-1 pr-3">
                     <span className="flex items-center gap-2 whitespace-nowrap font-semibold">
                       <Avatar
                         aria-hidden
@@ -776,8 +773,8 @@ function OverviewGrid({
   );
 }
 
-/** One member's answer to one question: the answer, its marking points with an
- * AI column (empty until the grading switch) and the owner's mark. */
+/** One member's answer to one question: the answer, its marking points and
+ * the owner's mark, which starts as the AI's. */
 function MarkPane({
   assignment,
   avatar,
@@ -867,8 +864,12 @@ function MarkPane({
       attemptNumber={row.attemptNumber}
       avatar={avatar}
       canGoBack={canGoBack}
-      // Starts over from the AI's marks when its read brings them.
-      key={question.parts.some((p) => p.aiAwards) ? 'ai' : 'none'}
+      // Starts over from the AI's marks when its read or a regrade brings
+      // them, and once a regrade's run lets go.
+      key={[
+        question.parts.some((p) => p.aiAwards) ? 'ai' : 'none',
+        question.parts.some((p) => p.marking) ? 'marking' : '',
+      ].join()}
       name={name}
       onApproved={onApproved}
       onPrevious={onPrevious}
@@ -923,6 +924,14 @@ function MarkForm({
     assignment.workspaceId,
     assignment.id
   );
+  const { mutate: regrade, isPending: regrading } =
+    useRegradeAssignmentQuestion(assignment.workspaceId, assignment.id);
+  const marking = parts.some((p) => p.marking);
+  // Typed text, a drawing or a read paper's pages: something for the AI.
+  const answered = parts.some((p) => {
+    const value = partAnswer(question, answers, p);
+    return typeof value === 'string' ? value.trim() !== '' : value != null;
+  });
   const flat = Object.values(items).flat();
   const complete = flat.every((v) => v !== null);
   const total = flat.reduce<number>((sum, v) => sum + (v ?? 0), 0);
@@ -980,13 +989,12 @@ function MarkForm({
         name={name}
         question={question}
       />
-      {/* Each part as the member's results show it (Epo 2026-11-19), the
-          AI's marks beside the grade. */}
+      {/* Each part as the member's results show it (Epo 2026-11-19). */}
       {parts.map((part) => (
         <div className="mt-4 flex flex-col gap-5" key={part.id}>
           <OpenPart
-            aiColumn
-            answer={answers[part.id]}
+            // A part answered in the canvas above shows its drawing.
+            answer={partAnswer(question, answers, part)}
             editing
             items={items[part.id] ?? []}
             onItem={(i, value) =>
@@ -1012,31 +1020,44 @@ function MarkForm({
           />
         </div>
       ))}
-      <p className="mt-5 text-fg-secondary">
-        {parts.every((p) => p.aiAwards)
-          ? m.assignment_ai_mark({
-              mark: markText(
-                parts
-                  .flatMap((p) => p.aiAwards ?? [])
-                  .reduce((a, b) => a + b, 0),
-                marks
-              ),
-            })
-          : parts.some((p) => p.aiError === 'credits')
-            ? m.assignment_not_graded_credits()
-            : parts.some((p) => p.aiError === 'file')
-              ? m.assignment_not_graded_file()
-              : parts.some((p) => p.aiError === 'error')
-                ? m.assignment_not_graded_error()
-                : m.assignment_ai_not_marked()}
-        {' · '}
-        <b className="font-bold text-fg">
-          {m.assignment_mark_of({
-            marks: formatPoints(marks),
-            total: formatPoints(total),
-          })}
-        </b>
-      </p>
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        {/* The grade alone, not the AI's marks beside it (Epo 2026-11-23);
+            only grading now, or why the AI couldn't, goes before it. */}
+        <p className="text-fg-secondary">
+          {marking ? (
+            <>
+              <MarkingNow />
+              {' · '}
+            </>
+          ) : (
+            !parts.every((p) => p.aiAwards) &&
+            notGraded(parts) && (
+              <>
+                {notGraded(parts)}
+                {' · '}
+              </>
+            )
+          )}
+          <b className="font-bold text-fg">
+            {m.assignment_mark_of({
+              marks: formatPoints(marks),
+              total: formatPoints(total),
+            })}
+          </b>
+        </p>
+        {/* Graded again on the question as it is now, on the caller's
+            credits; manual grading has no AI to ask (Epo 2026-11-23). */}
+        {assignment.manage?.marking !== 'manual' && answered && (
+          <Button
+            disabled={marking || regrading || isPending}
+            onClick={() => regrade({ attemptId, questionId: question.id })}
+            size="sm"
+            variant="outline"
+          >
+            {m.assignment_regrade_with_ai()}
+          </Button>
+        )}
+      </div>
       <Input
         aria-label={m.assignment_comment_for({ name: first })}
         className="mt-0"
@@ -1186,4 +1207,15 @@ function PaperAnswer({
       />
     </div>
   );
+}
+
+/** Why the AI couldn't grade a question's parts, if it tried and failed. */
+function notGraded(parts: { aiError?: string }[]) {
+  if (parts.some((p) => p.aiError === 'credits'))
+    return m.assignment_not_graded_credits();
+  if (parts.some((p) => p.aiError === 'file'))
+    return m.assignment_not_graded_file();
+  if (parts.some((p) => p.aiError === 'error'))
+    return m.assignment_not_graded_error();
+  return null;
 }

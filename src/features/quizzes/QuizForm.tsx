@@ -141,6 +141,7 @@ export function QuizForm({
           }}
           picked={picked}
           questions={questions}
+          quizId={quizId}
           uploadAsset={quizImageUpload(quizId)}
           uploadSample={quizSampleUpload(quizId)}
           write={write}

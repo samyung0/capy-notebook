@@ -5,7 +5,7 @@ import { useMemberProfile } from '@/api/hooks';
 import type {
   MemberActivity,
   MemberAssignment,
-  MissedQuestion,
+  StudyQuestion,
   SummaryTopic,
 } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
@@ -14,6 +14,7 @@ import { PageButton } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
+import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -26,7 +27,7 @@ import {
   weekdayLabel,
 } from '../assignments/assignmentText';
 import { GradedQuizDialog } from '../assignments/LazyNewAssignmentDialog';
-import { PracticeFrame } from '../practice/studyPage';
+import { BackLink, PracticeFrame } from '../practice/studyPage';
 import { assignmentsLink, studyLink } from '../studyRoutes';
 import { LabelChip, TopicSquares } from '../topicLabels';
 import { topicName } from './membersRows';
@@ -80,20 +81,21 @@ export function MemberProfilePage({
     { errorBoundary: false }
   );
   const [assigning, setAssigning] = useState(false);
+  const tab = show === 'topics' ? 'topics' : 'summary';
   const back = (
-    <button
-      className="inline-flex items-center gap-1.5 font-semibold underline decoration-1 underline-offset-3 outline-none focus-visible:ring-2 focus-visible:ring-action"
-      onClick={() =>
-        void navigate(
-          studyLink(workspaceId, show === 'topics' ? 'topics' : 'summary')
-        )
-      }
-      type="button"
-    >
-      <Icon name="navigationBack" size={16} />
-      {m.workspace_tab_study()}
-    </button>
+    <BackLink
+      label={m.workspace_tab_study()}
+      onClick={() => void navigate(studyLink(workspaceId, tab))}
+    />
   );
+  // A topic's or Frequently wrong's questions as the member answered them.
+  const openQuestions = (topic?: string) =>
+    navigate(
+      studyLink(workspaceId, tab, {
+        member: memberId,
+        ...(topic ? { topic } : { wrong: true }),
+      })
+    );
   if (isPending)
     return (
       <PracticeFrame className="lg:pt-6">
@@ -146,7 +148,7 @@ export function MemberProfilePage({
               member: memberId,
               show,
             }
-          : { assignment: a.id, tab: 'members' }
+          : { assignment: a.id, tab: 'responses' }
       )
     );
   return (
@@ -238,7 +240,11 @@ export function MemberProfilePage({
               ) : (
                 <ul className="mt-1">
                   {data.topics.map((t) => (
-                    <TopicRow key={t.topicId ?? t.group} topic={t} />
+                    <TopicRow
+                      key={t.topicId ?? t.group}
+                      onOpen={() => void openQuestions(t.topicId ?? 'others')}
+                      topic={t}
+                    />
                   ))}
                 </ul>
               )}
@@ -247,7 +253,18 @@ export function MemberProfilePage({
 
           <div className="flex min-w-0 flex-col gap-7.5 lg:w-95 lg:shrink-0">
             <section>
-              <h2 className="t-subtitle">{m.member_frequently_wrong()}</h2>
+              <div className="flex items-center gap-3">
+                <h2 className="t-subtitle">{m.member_frequently_wrong()}</h2>
+                {data.missed.length > 0 && (
+                  <UnderlineLink
+                    className="ml-auto"
+                    noArrow
+                    onClick={() => void openQuestions()}
+                  >
+                    {m.action_see_all()}
+                  </UnderlineLink>
+                )}
+              </div>
               {data.missed.length === 0 ? (
                 <Empty>{m.common_nothing_yet()}</Empty>
               ) : (
@@ -374,47 +391,59 @@ function AssignmentRow({
   );
 }
 
-function TopicRow({ topic }: { topic: SummaryTopic }) {
+/** A topic's line; it opens the topic's questions as the member answered
+ * them (Epo 2026-11-22). */
+function TopicRow({
+  onOpen,
+  topic,
+}: {
+  onOpen: () => void;
+  topic: SummaryTopic;
+}) {
   return (
-    <li className={cn(ROW, COLS)}>
-      <span className="line-clamp-2 font-semibold">{topicName(topic)}</span>
-      <span className="justify-self-end md:justify-self-start">
-        <LabelChip label={topic.label} />
-      </span>
-      <span className="t-meta text-fg-muted">
-        {topic.asked > 0
-          ? m.summary_right({ asked: topic.asked, right: topic.right })
-          : ''}
-      </span>
-      <TopicSquares className="hidden md:flex" topic={topic} />
+    <li>
+      <button
+        className={cn(
+          ROW,
+          COLS,
+          'w-full text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset'
+        )}
+        onClick={onOpen}
+        type="button"
+      >
+        <span className="line-clamp-2 font-semibold">{topicName(topic)}</span>
+        <span className="justify-self-end md:justify-self-start">
+          <LabelChip label={topic.label} />
+        </span>
+        <span className="t-meta text-fg-muted">
+          {topic.asked > 0
+            ? m.summary_right({ asked: topic.asked, right: topic.right })
+            : ''}
+        </span>
+        <TopicSquares className="hidden md:flex" topic={topic} />
+      </button>
     </li>
   );
 }
 
-const missedText = (count: number) =>
-  count <= 1
-    ? m.member_missed_once()
-    : count === 2
-      ? m.member_missed_twice()
-      : m.member_missed_times({ count });
-
-function MissedRow({ q }: { q: MissedQuestion }) {
+/** A question and its topic; the list's order says how often it was missed
+ * (no count shown, Epo 2026-11-22). */
+function MissedRow({
+  q,
+}: {
+  q: Pick<StudyQuestion, 'group' | 'text' | 'topicName'>;
+}) {
   return (
-    <li className="flex flex-col gap-1.5 border-divider border-b py-2.5">
+    <li className="flex flex-col items-start gap-1.5 border-divider border-b py-2.5">
       <span className="line-clamp-2 font-semibold">{q.text}</span>
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            CHIP,
-            'min-w-0 truncate bg-page-hover text-fg-secondary'
-          )}
-        >
-          {topicName({ group: q.group, name: q.topicName })}
-        </span>
-        <span className="t-meta shrink-0 text-fg-muted">
-          {missedText(q.misses)}
-        </span>
-      </div>
+      <span
+        className={cn(
+          CHIP,
+          'min-w-0 max-w-full truncate bg-page-hover text-fg-secondary'
+        )}
+      >
+        {topicName({ group: q.group, name: q.topicName })}
+      </span>
     </li>
   );
 }
