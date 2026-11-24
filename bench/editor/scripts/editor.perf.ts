@@ -34,16 +34,14 @@ const KEY_DELAY_MS = 40;
  * Budgets are regression tripwires, not UX targets. They assume the default
  * PERF_CPU=4 throttle. Since 2026-11-24 the harness measures a production
  * build with MSW in the page (Vite's production mode, minified, React
- * production mode; Epo, "Yes, move it" and "Yes, production mode"), but the
- * numbers below are still the ones set on the Vite dev build (unminified,
- * React dev mode, StrictMode double-render), which inflated every figure: on
- * the production build they are looser than they read, which is safe until
- * they are recalibrated (below). If one trips, run `typingProfile.perf.ts`
+ * production mode; Epo, "Yes, move it" and "Yes, production mode"), and the
+ * numbers below were recalibrated on it on 2026-11-24 (Epo, "approve for
+ * now") by the steps below. If one trips, run `typingProfile.perf.ts`
  * under the same throttle before touching it — the attached `worstLoafs`
  * script attribution and that profile's watched frames usually name the
  * offender between them.
  *
- * Recalibrating on the production build (pending):
+ * Recalibrating on the production build (last done 2026-11-24, on 5b054df3a):
  * 1. The Windows Editor dispatches the Performance workflow three times on one
  *    commit, with only the editor suite (office, canvas, stress and
  *    share_pages unticked). The Mac never dispatches it.
@@ -91,37 +89,36 @@ const KEY_DELAY_MS = 40;
  * is why scrolling moved with it.
  */
 const BUDGET = {
-  // Ceilings sit at ~1.3x the median of three ubuntu-24.04 runs of the dev
-  // build on 2026-09-03 (mixed AMD EPYC 9V74 / Intel Xeon pool, CPU x4), kept
-  // on the production build until recalibrated (above). They are the only perf
-  // gate and only a human lowers them. See openwiki/editor-perf.md.
+  // 1.3x the medians of three Performance runs of the production build on
+  // 5b054df3a, 2026-11-24 (CPU x4), opens from the slower runner (steps above).
+  // Run values are listed as 45330694331 / 45330707441 (AMD EPYC 7763) /
+  // 45330721726 (AMD EPYC 9V45). They are the only perf gate and only a human
+  // lowers them. See openwiki/editor-perf.md.
   large: {
     // Wall-clock from navigation to a synced, editable Plate instance. Measured
-    // unthrottled: this path is already tens of seconds without any slowdown.
-    interactiveOpenMs: 20_000, // median 15,165
-    // Rebaselined 2026-10-04 to ~1.3x the median of six runs on 37fa7e53
-    // (3,118; it was 1,952 on 2026-09-03). The growth is the workspace page's
-    // startup imports, not the read-only render; trimming them back under
-    // 2,600 is tracked in openwiki/editor-perf.md.
-    readOnlyOpenMs: 4050,
+    // unthrottled. 1.3x the slower EPYC 7763 run: 8,491 / 9,119 / 7,399.
+    interactiveOpenMs: 11_900,
+    // 1.3x the slower EPYC 7763 run: 2,137 / 2,279 / 2,602.
+    readOnlyOpenMs: 3000,
     // Debounce, Yjs commit, the acknowledgement's state updates, and the
     // projection invalidation. Nothing here may touch the document tree, so
     // this budget is the tripwire for a regression that reconnects the save
-    // path to the editor's render.
-    saveCycleBlockingMs: 475, // median 362
-    typingBlockingPerKeystrokeMs: 275, // median 209
-    typingP95KeyEventMs: 395, // median 304
+    // path to the editor's render. Median 115 (118 / 115 / 64).
+    saveCycleBlockingMs: 150,
+    typingBlockingPerKeystrokeMs: 5, // median 1.2 (1.2 / 1.5 / 0.3)
+    typingP95KeyEventMs: 95, // median 72 (72 / 72 / 64)
   },
   scroll: {
-    avgFps: 38, // median 50.2, higher is better
-    longestFrameMs: 370, // median 283
+    avgFps: 40, // median 52.7 (52.7 / 50.3 / 53.4), higher is better
+    longestFrameMs: 130, // median 100 (83 / 100 / 117)
   },
   small: {
-    // GHA measures 0ms; the floor exists so a local run has something to hit.
+    // GHA measures 0ms (0 / 0 / 0); the floor exists so a local run has
+    // something to hit.
     typingBlockingPerKeystrokeMs: 10,
-    // Event durations come in 8ms steps, so 1.3x (73) would sit one step above
-    // the median and fail on the next step; held at 1.5x (median 56).
-    typingP95KeyEventMs: 84,
+    // Event durations come in 8ms steps, so 1.3x (45) would allow only one
+    // step above the median; held at 1.5x (median 32: 32 / 32 / 32).
+    typingP95KeyEventMs: 50,
   },
 };
 

@@ -81,10 +81,10 @@ Until 2026-11-24 the harness measured the Vite dev server (Epo, "Yes, move it",
 in place of Q560's "budgets unchanged", then "Yes, production mode" for the
 build's Vite mode): unminified modules, React's development mode and
 StrictMode's double render inflated every figure, and a production promotion
-was gated on numbers no user sees. The budgets set on the dev build
-stay until they are recalibrated from CI ([Recalibrating on the production
-build](#recalibrating-on-the-production-build)), so they are looser in effect,
-and earlier numbers are not comparable. One run of each on the Mac on 0ec9f8134
+was gated on numbers no user sees. The budgets were recalibrated on this build
+from CI on 2026-11-24 ([Recalibrating on the production
+build](#recalibrating-on-the-production-build)); earlier numbers are not
+comparable. One run of each on the Mac on 0ec9f8134
 (2026-11-24): the dev server, a production build in Vite's development mode, and
 this build (production mode, the benches' worker):
 
@@ -907,15 +907,14 @@ CPU throttle is a multiplier of the host, so it does not cancel that spread.
 
 ## Why this stays warn-only
 
-Absolute ceilings are the gate. They were set on 2026-09-03, on the dev build,
-to about 1.3x the median of three GHA runs on the same SHA, and are kept on the
-production build until recalibrated (below). A human lowers a ceiling when a
+Absolute ceilings are the gate. They were recalibrated on 2026-11-24, on the
+production build, from three GHA runs on one SHA (below). A human lowers a ceiling when a
 real improvement lands; nothing raises one automatically.
 
 ### Recalibrating on the production build
 
-Pending since the move (2026-11-24). The steps are also in the `BUDGET` comment
-of [`editor.perf.ts`](../bench/editor/scripts/editor.perf.ts):
+Last done on 2026-11-24 on 5b054df3a (Epo, "approve for now"); the results
+follow the steps. The steps are also in the `BUDGET` comment of [`editor.perf.ts`](../bench/editor/scripts/editor.perf.ts):
 
 1. The Windows Editor dispatches the Performance workflow three times on one
    commit, with only the editor suite (`office`, `canvas`, `stress` and
@@ -948,8 +947,27 @@ of [`editor.perf.ts`](../bench/editor/scripts/editor.perf.ts):
    [`board.canvas.ts`](../bench/editor/scripts/board.canvas.ts) does, and rewrite
    the numbers in this section.
 
-Typing is gated on the p95 key event and on blocking per keystroke (large: 395
-and 275 ms, 1.3x the medians 304 and 209; small: 84 ms, 1.5x the median 56,
+The 2026-11-24 runs on 5b054df3a: 45330694331 and 45330707441 on AMD EPYC 7763,
+45330721726 on AMD EPYC 9V45 (values in that order; opens from the slower 7763
+run, the rest from the median of all three):
+
+| Budget | Runs | Budget (dev build's) |
+| --- | --- | ---: |
+| `large.interactiveOpenMs` | 8,491 / 9,119 / 7,399 | 11,900 (20,000) |
+| `large.readOnlyOpenMs` | 2,137 / 2,279 / 2,602 | 3,000 (4,050) |
+| `large.saveCycleBlockingMs` | 118 / 115 / 64 | 150 (475) |
+| `large.typingBlockingPerKeystrokeMs` | 1.2 / 1.5 / 0.3 | 5 (275) |
+| `large.typingP95KeyEventMs` | 72 / 72 / 64 | 95 (395) |
+| `scroll.avgFps` (higher is better) | 52.7 / 50.3 / 53.4 | 40 (38) |
+| `scroll.longestFrameMs` | 83 / 100 / 117 | 130 (370) |
+| `small.typingP95KeyEventMs` | 32 / 32 / 32 | 50 (84) |
+| `small.typingBlockingPerKeystrokeMs` | 0 / 0 / 0 | 10 floor (10) |
+
+The tightest margins are the longest frame (a run at 117 against 130) and the
+read-only open (2,602, on the faster runner, against 3,000).
+
+Typing is gated on the p95 key event and on blocking per keystroke (large: 95
+and 5 ms, 1.3x the medians 72 and 1.2; small: 50 ms, 1.5x the median 32,
 because event durations come in 8 ms steps and 1.3x would sit one step above
 the median, plus the 10 ms blocking floor). The single worst keystroke
 (`inpApproxMs`) is still reported. Over 85 ms (small) or 500 ms (large) it adds
@@ -961,7 +979,8 @@ SHA it spread 80 to 128 ms (small) and 336 to 528 ms (large) across six runs.
 The near-limit read-only open was rebaselined on 2026-10-04 to 4,050 ms (1.3x
 the median 3,118 of six runs on 37fa7e53; it was 1,952 on 2026-09-03). The
 read-only render itself did not change (click to text 65 to 90 ms). The time was
-the workspace page's startup in the dev build, see the open item below.
+the workspace page's startup in the dev build, see the open item below. On the
+production build it measured 2,137 to 2,602 ms (2026-11-24, budget 3,000).
 
 Standard GitHub-hosted runners are a mixed CPU pool. Independent PassMark
 samples of ubuntu-24.04 x64 (same Azure fleet, mid-2026) land around 2200 to 2670
@@ -990,7 +1009,8 @@ breaks the deltas.
 ## Open items
 
 - **Trim the workspace page's startup imports** to bring the read-only open
-  back under 2,600 ms. Since 2026-09-03 the page went from 399 to 806 loaded
+  down (2,600 ms was the dev build's target; the production build measured
+  2,137 to 2,602 ms on 2026-11-24). Since 2026-09-03 the page went from 399 to 806 loaded
   modules (309 to 518 before the first API request), the i18n message bundle
   on that path from 6.2 to 10.6 MB, and the generated zod validators
   (`src/api/gen/validators.ts`, 2,911 to 5,449 lines) hold 12.8 MB of heap
