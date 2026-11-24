@@ -54,7 +54,7 @@ import { createElement } from 'react';
 import {
   FONT_SIZE_NODE_PROPS,
   INDENT_NODE_PROPS,
-  STYLE_MARK_NODE_PROPS,
+  styleMarkNodeProps,
 } from '@/features/notes/nodeStyles';
 import { isStyleValue } from './document';
 
@@ -148,6 +148,8 @@ const StaticListKit: AnyPlugin[] = [
   }),
   BaseListPlugin.configure({
     inject: {
+      // Elements only, as the editor's (notes/plugins.ts).
+      isElement: true,
       nodeProps: {
         nodeKey: KEYS.listType,
         query: ({ nodeProps }: AnyPlugin) => {
@@ -285,16 +287,16 @@ export const StaticMaterialKit: AnyPlugin[] = [
   BaseMentionPlugin,
   // Text marks: an element carrying one is refused, and none is drawn.
   BaseFontColorPlugin.configure({
-    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+    inject: { isLeaf: true, nodeProps: styleMarkNodeProps('color') },
   }),
   BaseFontBackgroundColorPlugin.configure({
-    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+    inject: { isLeaf: true, nodeProps: styleMarkNodeProps('backgroundColor') },
   }),
   BaseFontSizePlugin.configure({
     inject: { isLeaf: true, nodeProps: FONT_SIZE_NODE_PROPS },
   }),
   BaseFontFamilyPlugin.configure({
-    inject: { isLeaf: true, nodeProps: STYLE_MARK_NODE_PROPS },
+    inject: { isLeaf: true, nodeProps: styleMarkNodeProps('fontFamily') },
   }),
   BaseTextAlignPlugin.configure({
     inject: {

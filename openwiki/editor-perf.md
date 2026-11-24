@@ -77,6 +77,42 @@ functions (React stays in production mode); the budget numbers of such a run are
 not comparable. Default CPU throttle is `PERF_CPU=4` via CDP after load. Open
 cost is measured unthrottled because that path is already tens of seconds.
 
+### What the near-limit opens measure
+
+`open-large-document` opens the near-limit note twice, each in a fresh context
+after the small note: once answering the heavy-document gate with Read only
+(`readOnly.openMs`), once with Open anyway (`interactive.openMs`). Both run from
+navigation until the frame that first shows the note's first block has been
+rendered (`waitForNote` in [`editor.perf.ts`](../bench/editor/scripts/editor.perf.ts)).
+The page checks every animation frame (`waitForFunction`, `polling: 'raf'`) and,
+once it holds, resolves from a task posted in that frame, which runs after its
+style, layout and paint:
+
+- **Read-only:** the first block (`[data-slate-node="element"]`) of the static
+  document (`material-preview`) holds the note's first text and is visible.
+- **Interactive:** the room is live (save state Synced, Syncing or Saved), and
+  the first block of Plate's editable (`[data-slate-editor="true"][contenteditable="true"]`)
+  holds that text and is visible. Plate's editable by name: MathLive's fields are
+  contenteditable too, in the read-only document and in the paint the editor
+  takes over from, which stays in the DOM, hidden, until the page is idle. The
+  read-only case's "never mounts an editable surface" check uses the same
+  selector.
+
+Until 2026-11-24 ([breakdown](../bench/editor/reports/2026-11-24-editable-open-breakdown.md))
+the opens measured something else. Read-only waited for the note's text anywhere
+in `main`, which matched the note's title in the left panel, on screen behind the
+gate, so it stopped about 0.1 s after its click and never waited for the
+document. Interactive waited for the page's first contenteditable (a MathLive
+field in the hidden paint until its DOM left), then ran `getByText` over the
+26,470-element editable (about 0.33 s a poll, with `expect`'s backoff between
+polls), then checked live. On the Mac at CI speed (2.2x CDP throttle, medians
+of interleaved runs on one build) the fix moved read-only from 2,450 to
+4,599 ms and interactive from 8,867 to 6,587 ms. Read-only stays the cheaper
+way in, so its assertion stays. The budgets (`large.interactiveOpenMs`,
+`large.readOnlyOpenMs`) are still the old measure's and await recalibration
+(the `BUDGET` comment): until then a read-only miss is the measure, not a
+regression.
+
 Until 2026-11-24 the harness measured the Vite dev server (Epo, "Yes, move it",
 in place of Q560's "budgets unchanged", then "Yes, production mode" for the
 build's Vite mode): unminified modules, React's development mode and

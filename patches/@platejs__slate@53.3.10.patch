@@ -1,0 +1,30 @@
+diff --git a/dist/index.js b/dist/index.js
+index 1758522c7d051845a0d8603e6d75991b5d72926e..8a2cc5993ba9211589d849a6f26906d3eb6759d5 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -127,7 +127,9 @@ const NodeApi = {
+ 	},
+ 	get: (...args) => {
+ 		try {
+-			return Node.get(...args);
++			// Capy patch: getIf, so a missing path returns undefined without
++			// slate building its error message out of the whole document.
++			return Node.getIf(...args);
+ 		} catch {}
+ 	},
+ 	hasSingleChild: (node$2) => {
+@@ -1094,7 +1096,13 @@ const queryNode = (entry, { allow, exclude, filter, level, maxLevel } = {}) => {
+ //#region src/internal/editor/editor-node.ts
+ const node$1 = (editor, atOrOptions, nodeOptions) => {
+ 	try {
+-		if (LocationApi.isAt(atOrOptions)) return node(editor, getAt(editor, atOrOptions), nodeOptions);
++		if (LocationApi.isAt(atOrOptions)) {
++			const at = getAt(editor, atOrOptions);
++			// Capy patch: a missing path returns undefined before slate's
++			// Node.get throws with the whole document in its message.
++			if (PathApi.isPath(at) && nodeOptions?.depth == null && !Node.has(editor, at)) return;
++			return node(editor, at, nodeOptions);
++		}
+ 		const options = atOrOptions;
+ 		return editor.api.nodes(options).next().value;
+ 	} catch {

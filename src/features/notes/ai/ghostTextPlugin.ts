@@ -14,7 +14,7 @@ import {
 import { isApiError } from '@/api/client';
 import { userToast } from '@/components/ui/userToast';
 import { describeError } from '@/lib/errors';
-import { GhostText } from './GhostTextView';
+import { ghostTextBelowNodes } from './GhostTextView';
 import {
   contextBefore,
   creditsRanOut,
@@ -155,7 +155,6 @@ export function ghostTextPlugin(workspaceId: string) {
         askedFor.set(editor, caretKey(editor));
         return ghostPrompt(editor);
       },
-      renderGhostText: GhostText,
       triggerQuery: () =>
         isOn(editor) &&
         window.matchMedia(WIDE_ENOUGH).matches &&
@@ -163,6 +162,9 @@ export function ghostTextPlugin(workspaceId: string) {
         !!caretBlock(editor) &&
         editor.api.isAt({ end: true }),
     },
+    // In place of Plate's `renderGhostText`, which renders the ghost text
+    // without props, so each block looked its element and editor up.
+    render: { belowNodes: ghostTextBelowNodes },
     // Unhandled keys return false, so Plate leaves them to the editor.
     shortcuts: {
       accept: {
