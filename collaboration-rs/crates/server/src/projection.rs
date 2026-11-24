@@ -15,6 +15,7 @@ use crate::app::Shared;
 use crate::model::Model;
 use crate::note_store;
 use crate::observe::{self, ERROR_EVENT_HEADER, RETRY_EVENT_HEADER};
+use crate::work::WorkKind;
 
 /// The first failure's event per material, until a projection succeeds.
 #[derive(Default)]
@@ -202,9 +203,26 @@ pub async fn project_durable(app: &Shared, material_id: &str) -> Result<i64, Str
         return Err("material not found".into());
     };
     let version = durable.version;
-    let projected = tokio::task::spawn_blocking(move || projected(&durable))
-        .await
-        .map_err(|error| error.to_string())??;
+    // A board's replay waits for the board work limit (`work.rs`), after the
+    // read, so no connection is held while it waits.
+    let permit = match Model::of(&durable.kind) {
+        Model::Board => Some(
+            app.board_work
+                .acquire(WorkKind::Projection, material_id)
+                .await,
+        ),
+        _ => None,
+    };
+    // The rows and their replay go before the permit, whose drop asks for
+    // a trim.
+    let projected = tokio::task::spawn_blocking(move || {
+        let projected = projected(&durable);
+        drop(durable);
+        drop(permit);
+        projected
+    })
+    .await
+    .map_err(|error| error.to_string())??;
     let Some((content, asset_ids)) = projected else {
         if app.projection_refused.refuse(material_id, version) {
             observe::log(
