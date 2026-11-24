@@ -24,6 +24,7 @@ import {
 import { AREA_PROP, areaBox, type Box, unite, type Vec } from './boardGeometry';
 import { BoardLoadError, checkSavedBoard } from './boardLoad';
 import { type BoardKind, type Fields, isPlace } from './boardRules';
+import { decodeStrokePoints, type StrokePoint } from './strokePoints';
 
 /** A saved board drawn from its data as an SVG string, for lists, results and marking
  * views, without the editor: what's on it, not every detail (Epo 2026-11-06). Framed as
@@ -206,16 +207,17 @@ function drawItem(
 }
 
 function drawBrush({ x, y }: Box, fields: Fields, pen: Pen, ink: string) {
-  const points = ((fields.points as unknown[] | undefined) ?? []).filter(
-    (point): point is number[] => Array.isArray(point) && point.length >= 2
-  );
+  // Bytes the board's rules took, or none.
+  const points = fields.points
+    ? decodeStrokePoints(fields.points as Uint8Array)
+    : [];
   if (!points.length) return '';
   const width = Math.max(Number(fields.lineWidth) || 4, pen.pixel);
   const stroke = colour(fields.color, ink);
   if (points.length === 1)
     return `<circle cx="${num(x + points[0][0])}" cy="${num(y + points[0][1])}" r="${num(width / 2)}" fill="${stroke}"/>`;
   let d = '';
-  let last: number[] | undefined;
+  let last: StrokePoint | undefined;
   for (const [i, point] of points.entries()) {
     const end = i === points.length - 1;
     if (

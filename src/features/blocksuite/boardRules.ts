@@ -15,6 +15,7 @@ import {
   SPOKES_MAX,
 } from './boardData';
 import { isKlipyMedia, isListedEmoji, isWebAddress } from './boardPictureData';
+import { isStrokePoints } from './strokePoints';
 
 /* The board's rules (Epo 2026-11-22, "sure A then"): what each stored canvas
  * element and block may hold, key by key, read from its Y map as stored (never
@@ -108,7 +109,8 @@ const isId = (value: unknown) =>
 /** A Yjs plain value (Any), as stored: no `__proto__` key anywhere (Yjs's Any
  * decoder turns one into the object's prototype; a text format's value is JSON,
  * which keeps it as an own key), and no bytes (a Uint8Array) or bigint at any
- * depth, which Yjs can carry but the board never writes. */
+ * depth, which Yjs can carry but the board never writes inside one (a stroke's
+ * points are a binary value of their own, `strokePoints` below). */
 function isPlain(value: unknown): boolean {
   switch (typeof value) {
     case 'undefined':
@@ -133,10 +135,11 @@ function isPlain(value: unknown): boolean {
   }
 }
 
-/** A key's value as the rules read it: plain, a text, a map, an array, or
- * anything else (another Yjs type, an embed, bytes), which never fits. */
+/** A key's value as the rules read it: plain, bytes, a text, a map, an array,
+ * or anything else (another Yjs type, an embed), which never fits. */
 type Stored =
   | { kind: 'plain'; value: unknown }
+  | { kind: 'bytes'; value: Uint8Array }
   | { kind: 'text'; value: Y.Text }
   | { kind: 'map'; value: Y.Map<unknown> }
   | { kind: 'array'; value: Y.Array<unknown> }
@@ -150,6 +153,8 @@ function stored({ content }: Y.Item): Stored {
     return content.arr.every(isPlain)
       ? { kind: 'plain', value: content.arr.at(-1) }
       : OTHER;
+  if (content instanceof Y.ContentBinary)
+    return { kind: 'bytes', value: content.content };
   if (!(content instanceof Y.ContentType)) return OTHER;
   const { type } = content;
   if (type instanceof Y.XmlText) return OTHER;
@@ -241,14 +246,6 @@ export function isPlace(xywh: unknown) {
     return false;
   }
 }
-const isPoints = (value: unknown) =>
-  Array.isArray(value) &&
-  value.every(
-    (point) =>
-      Array.isArray(point) &&
-      (point.length === 2 || point.length === 3) &&
-      point.every(finite)
-  );
 /** A connector's end: on an element (by id) or at a point. */
 const isConnection = (value: unknown) =>
   isObject(value) && (isString(value.id) || isPair(value.position));
@@ -283,6 +280,9 @@ const plain =
     value.kind === 'plain' && fits(value.value);
 const sameId: Rule = (value, id) =>
   value.kind === 'plain' && value.value === id;
+/** A stroke's points: one binary value (`strokePoints.ts`). */
+const strokePoints: Rule = (value) =>
+  value.kind === 'bytes' && isStrokePoints(value.value);
 
 /** Text content: string runs and formats whose values are plain (BlockSuite reads
  * each format through its schema and drops one that doesn't parse, so an object
@@ -378,7 +378,8 @@ const element = (fields: Record<string, Field>) =>
 const STROKE = element({
   color: opt(colour),
   lineWidth: opt(number),
-  points: opt(plain(isPoints)),
+  // A stroke always has its points: the model reads them on every frame.
+  points: req(strokePoints),
   rotate: opt(number),
   xywh: req(place),
 });
