@@ -421,20 +421,10 @@ pub enum RoomValidator {
 }
 
 impl RoomValidator {
-    /// `bytes`: the update as it was sent (a board's size is counted in
-    /// them). `draft`: a draft send's update, refused
+    /// A note's or an item's update. `draft`: a draft send's update, refused
     /// when a note's typing would be hidden in a deleted block (live typing
-    /// there is collaboration). A board's `doc` is its replica
-    /// (`board::Board::replica`), built for the trial of an update past a
-    /// small edit or near the cap, under the board work permit, and its
-    /// `update` what the board lacks of the writer's (`board::Fresh`).
-    pub fn admit(
-        &mut self,
-        doc: &yrs::Doc,
-        update: &yrs::Update,
-        bytes: &[u8],
-        draft: bool,
-    ) -> Admitted {
+    /// there is collaboration).
+    pub fn admit(&mut self, doc: &yrs::Doc, update: &yrs::Update, draft: bool) -> Admitted {
         match self {
             RoomValidator::Note(validator) => match if draft {
                 validator.admit_draft(doc, update)
@@ -455,13 +445,19 @@ impl RoomValidator {
                 Err(items::Refusal::Limit { code, metrics }) => Admitted::Limit(code, metrics),
                 Err(error) => Admitted::Refused(error.to_string()),
             },
-            RoomValidator::Board(bound) => admit_board(doc, update, bytes, bound).0,
+            // A board admits on its bytes (`Room::admit_board_update`), its
+            // trial through [RoomValidator::admit_board] alone.
+            RoomValidator::Board(_) => Admitted::Refused("a board admits on its bytes".into()),
         }
     }
 
-    /// [RoomValidator::admit] of a board's update on its replica, with the
-    /// state's exact bytes when the trial measured them with the update
-    /// placed (near the cap, or deleting content it does not name).
+    /// A board's update on its replica ([admit_board]), with the state's
+    /// exact bytes when the trial measured them with the update placed (near
+    /// the cap, or deleting content it does not name). `doc` is the replica
+    /// (`board::Board::replica`), built for the trial of an update past a
+    /// small edit or near the cap, under the board work permit; `update`
+    /// what the board lacks of the writer's (`board::Fresh`); `bytes` the
+    /// update as it was sent, its size counted in them.
     pub fn admit_board(
         &mut self,
         doc: &yrs::Doc,
@@ -615,7 +611,7 @@ mod tests {
     /// lower than the state.
     fn send(room: &yrs::Doc, validator: &mut RoomValidator, bytes: &[u8]) -> Admitted {
         let update = ydoc::decode(bytes).unwrap();
-        let admitted = validator.admit(room, &update, bytes, false);
+        let (admitted, _) = validator.admit_board(room, &update, bytes);
         if matches!(admitted, Admitted::Accepted) {
             ydoc::apply(room, update).unwrap();
         }
@@ -721,7 +717,8 @@ mod tests {
         let txn = room.transact();
         Model::Board.assert_roots(&txn).unwrap();
         assert_eq!(txn.get_map(super::BOARD_ROOT).unwrap().len(&txn), 4);
-        // A state holding another root is refused at load and at a store.
+        // A state holding another root is refused at a fold, which replays
+        // the board (a load never decodes its base, a store reads no shape).
         let stray = tab(&room, 13);
         ydoc::replay(&stray, &other, &[] as &[Vec<u8>]).unwrap();
         assert!(Model::Board.assert_roots(&stray.transact()).is_err());
@@ -1100,7 +1097,12 @@ mod tests {
         for (name, (room, mut validator)) in rooms {
             let bytes = collected(11, 0, ydoc::MAX_CLOCK + 1);
             let update = Update::decode_v1(&bytes).unwrap();
-            let verdict = match validator.admit(&room, &update, &bytes, false) {
+            let admitted = if name == "board" {
+                validator.admit_board(&room, &update, &bytes).0
+            } else {
+                validator.admit(&room, &update, false)
+            };
+            let verdict = match admitted {
                 Admitted::Accepted => "accepted",
                 Admitted::Unheld => "unheld",
                 Admitted::Limit(..) => "limit",
@@ -1175,7 +1177,7 @@ mod tests {
         let bytes = scattered(&state);
         let update = Update::decode_v1(&bytes).unwrap();
         assert!(matches!(
-            validator.admit(&note, &update, &bytes, false),
+            validator.admit(&note, &update, false),
             Admitted::Accepted
         ));
     }

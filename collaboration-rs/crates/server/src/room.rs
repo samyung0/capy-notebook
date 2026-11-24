@@ -5048,15 +5048,13 @@ impl Room {
             Kindly::Source(_) => None,
         };
         let mut admit = || match &mut self.kind {
-            Kindly::Note(note) => {
-                match note.validator.admit(&doc, &update, bytes, writer.is_none()) {
-                    crate::model::Admitted::Accepted => Verdict::Accept,
-                    crate::model::Admitted::Unheld => Verdict::Unheld,
-                    crate::model::Admitted::Hidden => Verdict::Hidden,
-                    crate::model::Admitted::Limit(code, metrics) => Verdict::Limit(code, metrics),
-                    crate::model::Admitted::Refused(message) => Verdict::Refused(message),
-                }
-            }
+            Kindly::Note(note) => match note.validator.admit(&doc, &update, writer.is_none()) {
+                crate::model::Admitted::Accepted => Verdict::Accept,
+                crate::model::Admitted::Unheld => Verdict::Unheld,
+                crate::model::Admitted::Hidden => Verdict::Hidden,
+                crate::model::Admitted::Limit(code, metrics) => Verdict::Limit(code, metrics),
+                crate::model::Admitted::Refused(message) => Verdict::Refused(message),
+            },
             Kindly::Source(source) => {
                 match sources::admit_update(
                     &doc,
@@ -7466,11 +7464,6 @@ fn validate(
 ) -> Result<(notes::limits::Metrics, Option<notes::limits::LimitCode>), StoreError> {
     let txn = doc.transact();
     model.assert_roots(&txn).map_err(StoreError::Invalid)?;
-    // Admission bounds a board's bytes: a store never refuses one for size,
-    // and the server reads no shape in it.
-    if model == crate::model::Model::Board {
-        return Ok((model.measure(&txn).map_err(StoreError::Invalid)?, None));
-    }
     if let crate::model::Model::Item(item) = model {
         item.check_caps(&txn).map_err(StoreError::Invalid)?;
     }
