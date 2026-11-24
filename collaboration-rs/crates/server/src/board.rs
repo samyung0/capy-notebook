@@ -2,29 +2,32 @@
 //! (Epo 2026-11-24, "Approve all": the bytes-room plan, step 2): the stored
 //! base, the rows stored past it (the tail), the writers' updates since the
 //! last store (recent) and small indexes, about 1.1x the board's state where a
-//! live document holds 12 to 19x. Nothing is integrated: an update is checked
-//! on its decoded structs against the indexes, appended trimmed to what is
-//! new, merged into a row at each store and answered to joiners by byte diffs.
-//! A whole-board read (a diff of the base for a joiner behind it, a replica
-//! for a trial) runs under the board work permit (`work.rs`), which the
-//! caller holds.
+//! live document holds 12 to 19x. Nothing is integrated: an update is read
+//! on its decoded structs against the indexes, trimmed to what is new,
+//! appended, merged into a row at each store and answered to joiners by byte
+//! diffs. A whole-board read (a diff of the base for a joiner behind it, a
+//! replica for a trial) runs under the board work permit (`work.rs`), which
+//! the caller holds.
 //!
-//! The approved rules:
+//! The approved rules (with the review's fixes, Epo 2026-11-24):
 //! * a read-only channel's update changes the board only by a struct past the
 //!   state vector or a deletion past held clocks; one within them is
 //!   acknowledged and ignored, since the delete-set index misses implicit
 //!   deletions until the next fold ([Board::reader_changes]);
-//! * an update past a small edit by its structs alone is tried on a replica
-//!   first ([Board::check]);
+//! * a writer's update past a small edit, read as trimmed to what the room
+//!   lacks, is tried on a replica first ([Board::read]);
 //! * merges take at most 256 updates a call, then 64 merged ones
-//!   ([bytes::merge_chunked]).
+//!   ([bytes::merge_chunked]);
+//! * a joiner takes the base's part first, as an update, and the step 2 last
+//!   ([Board::join]).
 
 use std::borrow::Cow;
 use std::collections::HashMap;
 
 use yrs::block::{ClientID, Item, ItemContent, UpdateParent};
+use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
-use yrs::{Doc, ID, IdSet, ReadTxn, StateVector, Transact, Update, UpdateBlock};
+use yrs::{Any, Doc, ID, IdSet, Map, Out, ReadTxn, StateVector, Transact, Update, UpdateBlock};
 
 use crate::model::BOARD_ROOT;
 
@@ -83,33 +86,76 @@ pub enum BoardError {
     Read(#[from] bytes::Error),
     #[error(transparent)]
     Replay(#[from] ydoc::ReplayError),
+    /// A writer's update the room refuses: malformed, or writing a root
+    /// other than the blocks root.
+    #[error("{0}")]
+    Refused(String),
     /// yrs encoded a diff's delete set otherwise than the update's own.
     #[error("a trimmed update does not end with its delete set")]
     Trim,
+    /// A row older than the newest one [Board::row] made, which holds its
+    /// updates.
+    #[error("a store's row is older than the newest one made")]
+    StaleRow,
+    /// The end of a fold that is not the running one.
+    #[error("a fold ended that is not the running one")]
+    StaleFold,
 }
 
-/// What [Board::check] found of a writer's update.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Check {
+/// What [Board::read] found of a writer's update.
+pub enum Read {
     /// The room cannot place it yet (a gap in a client's clocks, a deletion
     /// past what either side holds, a reference neither holds): dropped, its
     /// writer resyncs (`Admitted::Unheld`). So the room's clocks stay one
     /// state vector.
     Unheld,
-    /// A small edit by its structs: appended at once.
+    /// Nothing the room lacks: acknowledged, nothing appended.
+    Held,
+    /// What it holds that the room lacks, for [Board::append].
+    New(Fresh),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Check {
+    /// A small edit: appended at once.
     Small,
     /// Past a small edit: tried on [Board::replica] under the board work
     /// permit before it is appended.
     Flagged,
 }
 
+/// A writer's update trimmed to what the room lacks ([Board::read]): its
+/// structs past the room's state vector (one straddling it sliced there, as
+/// yrs's diff slices it) and the deletions the index lacks.
+pub struct Fresh {
+    pub check: Check,
+    bytes: Vec<u8>,
+    /// Each writing client's clock past the trimmed structs.
+    ends: StateVector,
+    /// The deletions the index lacks.
+    deleted: IdSet,
+    taken: Taken,
+}
+
+impl Fresh {
+    /// What is appended and relayed, and what a flagged update's trial
+    /// applies to [Board::replica].
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
+
 /// A joiner's answer ([Board::join]), sized by its bytes.
 pub struct Join<'a> {
-    /// Sent first, each as an update: the rows' diffs, the recent updates,
-    /// the marker document's state.
+    /// Sent first, each as an update, in order: the base's part (the base as
+    /// it is for a joiner holding none of it, its diff for one behind it,
+    /// none for one holding it), the rows' diffs, the recent updates, the
+    /// marker document's state. In this order nothing waits on a dependency:
+    /// a 4,000-edit board joined in 25 ms, against 88 ms with the base last.
     pub updates: Vec<Cow<'a, [u8]>>,
     /// Sent last, as the step 2, so a synced joiner holds the whole board:
-    /// the base's part.
+    /// the delete-set index for a joiner holding the base (deletions a fold
+    /// took into it move no clock), else an empty update.
     pub step2: Cow<'a, [u8]>,
 }
 
@@ -134,6 +180,122 @@ pub struct Row {
     count: usize,
     /// What committed rows hold of the marker document once it commits.
     markers: ydoc::Durable,
+    /// Which row [Board::row] made it as: only the newest commits.
+    made: u64,
+}
+
+/// A running fold ([Board::begin_fold]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Fold(u64);
+
+/// A base's indexes, which a load takes instead of decoding the base (T5
+/// stores them with it): its state vector, its whole delete set and its
+/// items' [Origins].
+#[derive(Clone, Debug, Default)]
+pub struct Indexes {
+    pub sv: StateVector,
+    pub deleted: IdSet,
+    pub origins: Origins,
+}
+
+impl Indexes {
+    /// A fold's indexes, read from the document it encodes the base from.
+    pub fn of_doc<T: ReadTxn>(txn: &T) -> Indexes {
+        let snapshot = txn.snapshot();
+        let store = txn.store();
+        let mut taken = Taken::default();
+        for (client, end) in snapshot.state_map.iter() {
+            for (_, item) in store.blocks_in(client, 0..*end) {
+                if let Some(item) = item {
+                    taken.add(&item);
+                }
+            }
+        }
+        let mut origins = Origins::default();
+        origins.take(taken);
+        Indexes {
+            sv: snapshot.state_map,
+            deleted: snapshot.delete_set,
+            origins,
+        }
+    }
+}
+
+/// The held units the one-held-side rule reads ([Board::placed]), compressed
+/// per run as the delete-set index is. T5 stores them with the base's other
+/// indexes; the room's take each appended update's items.
+#[derive(Clone, Debug, Default)]
+pub struct Origins {
+    /// Units a held item names as its origin, except an item's own client's
+    /// previous unit: something was placed right after them.
+    pub named: IdSet,
+    /// Units whose client's next unit names them as its origin: a run goes
+    /// on past them.
+    pub continued: IdSet,
+    /// First units of held items with no origin that no held item with no
+    /// origin names as its right origin: the first item of a sequence or of
+    /// a map key's values.
+    pub starts: IdSet,
+}
+
+impl Origins {
+    fn take(&mut self, taken: Taken) {
+        let Taken {
+            named,
+            continued,
+            heads,
+            fronted,
+        } = taken;
+        self.named.merge_with(units(named));
+        self.continued.merge_with(continued);
+        self.starts.merge_with(heads);
+        self.starts.diff_with(&units(fronted));
+    }
+}
+
+/// What items add to [Origins]: a fold's base, an appended update.
+#[derive(Default)]
+struct Taken {
+    named: Vec<ID>,
+    continued: IdSet,
+    /// First units of the items with no origin.
+    heads: IdSet,
+    /// The right origins of the items with no origin.
+    fronted: Vec<ID>,
+}
+
+impl Taken {
+    fn add(&mut self, item: &Item) {
+        let id = *item.id();
+        let previous = id
+            .clock
+            .checked_sub(1)
+            .map(|clock| ID::new(id.client, clock));
+        match item.origin() {
+            Some(origin) if Some(*origin) == previous => {
+                self.continued.insert(*origin, item.len());
+                return;
+            }
+            Some(origin) => self.named.push(*origin),
+            None => {
+                self.heads.insert(id, 1);
+                self.fronted.extend(item.right_origin().copied());
+            }
+        }
+        if item.len() > 1 {
+            self.continued.insert(id, item.len() - 1);
+        }
+    }
+}
+
+/// Single units as a set, inserted in order.
+fn units(mut ids: Vec<ID>) -> IdSet {
+    ids.sort_unstable_by_key(|id| (id.client, id.clock));
+    let mut set = IdSet::default();
+    for id in ids {
+        set.insert(id, 1);
+    }
+    set
 }
 
 pub struct Board {
@@ -142,13 +304,17 @@ pub struct Board {
     /// The base's state vector: a joiner at or past it holds every struct of
     /// the base.
     base_sv: StateVector,
-    /// While a fold runs, the rows stored before it began (the ones it
-    /// covers), merged.
-    folding: Option<Vec<u8>>,
+    /// While a fold runs: which, and the rows stored before it began (the
+    /// ones it covers), merged.
+    folding: Option<(Fold, Vec<u8>)>,
+    /// How many folds began.
+    folds: u64,
     /// The rows stored past the base, or past a running fold's start, merged.
     tail: Vec<u8>,
     /// The writers' updates since the last committed store, trimmed.
     recent: Vec<Vec<u8>>,
+    /// How many rows [Board::row] made.
+    rows_made: u64,
     /// What base, rows and recent updates hold: a plain state vector, since
     /// unheld updates are dropped.
     sv: StateVector,
@@ -157,6 +323,8 @@ pub struct Board {
     /// concurrent overwrite's loser, content added to a type deleted at the
     /// same time) until a fold's base names them.
     deleted: IdSet,
+    /// The base's and every appended item's origins.
+    origins: Origins,
     /// This life's contributor markers, the only structs the room writes, in
     /// a document of their own under the room's client.
     markers: Doc,
@@ -168,20 +336,23 @@ impl Board {
     /// A board on its stored base and the base's indexes (no decode of the
     /// base). `room_client` writes the markers: one no stored struct or
     /// deletion names.
-    pub fn new(
-        base: Vec<u8>,
-        base_sv: StateVector,
-        base_ds: IdSet,
-        room_client: ClientID,
-    ) -> Board {
+    pub fn new(base: Vec<u8>, indexes: Indexes, room_client: ClientID) -> Board {
+        let Indexes {
+            sv,
+            deleted,
+            origins,
+        } = indexes;
         Board {
             base,
-            sv: base_sv.clone(),
-            base_sv,
+            base_sv: sv.clone(),
+            sv,
             folding: None,
+            folds: 0,
             tail: Vec::new(),
             recent: Vec::new(),
-            deleted: base_ds,
+            rows_made: 0,
+            deleted,
+            origins,
             markers: Doc::with_options(ydoc::doc_options(room_client.get())),
             markers_durable: ydoc::Durable::default(),
         }
@@ -199,13 +370,6 @@ impl Board {
         state
     }
 
-    /// Whether a writer's `update` tells the room anything: a struct past its
-    /// state vector or a deletion outside its delete-set index. Deleting what
-    /// the index misses counts: appended, it costs a few bytes.
-    pub fn changes(&self, update: &Update) -> bool {
-        writes(&self.state_vector(), update) || !self.fresh_deletions(update).is_empty()
-    }
-
     /// Whether a read-only channel's `update` tells the room anything: a
     /// struct past its state vector or a deletion past held clocks. A
     /// deletion within them is acknowledged and ignored: a reader's step 2
@@ -219,45 +383,41 @@ impl Board {
                 .any(|(client, ranges)| ranges.iter().any(|range| range.end > state.get(client)))
     }
 
-    /// A writer's update checked on its structs alone, as `ydoc::inspected`
-    /// checks its shape and reach: the refusal when it is malformed or names
-    /// a root other than the blocks root. A small edit is at most
-    /// [ydoc::SMALL_EDIT] new structs and as many new delete ranges, of one
-    /// writing client, with no item between two held units that are not one
-    /// client's consecutive clocks (its conflict scan could pass a whole
-    /// sequence) and no new type whose parent is implicit (it has no depth).
-    pub fn check(&self, update: &Update) -> Result<Check, String> {
-        ydoc::within_clocks(update).map_err(|error| error.to_string())?;
-        let mut ends: HashMap<ClientID, u32> = HashMap::new();
-        for block in update.blocks() {
-            let (client, clock, len) = span(&block);
-            let end = ends.entry(client).or_default();
-            if clock < *end {
-                return Err(format!(
-                    "struct {clock} of client {client} overlaps or precedes the one before it"
-                ));
-            }
-            *end = clock + len;
-            if let UpdateBlock::Item(item) = block
-                && references(item).any(|id| id.client == client && id.clock >= clock)
-            {
-                return Err(format!(
-                    "struct {clock} of client {client} refers to itself or a later struct of its client"
-                ));
-            }
-        }
+    /// A writer's update (`sent` as it came, decoded) read against the room:
+    /// refused when malformed or writing a root other than the blocks root,
+    /// else unheld, held, or what it holds that the room lacks. That is
+    /// trimmed first (its diff against the state vector, the delete set cut
+    /// to the deletions the index lacks) and checked as trimmed, as peers
+    /// apply it. A small edit is at most [ydoc::SMALL_EDIT] new structs and
+    /// as many fresh delete ranges, covering at most [ydoc::MAX_WORK] units
+    /// (the bound `few_new_deletions` puts on the blocks its ranges cover),
+    /// of one writing client, with no new type whose parent is implicit (it
+    /// has no depth) and every new item placed by [Board::placed].
+    pub fn read(&self, sent: &[u8], update: &Update) -> Result<Read, BoardError> {
+        refuse_malformed(update)?;
         let state = self.state_vector();
         if unheld(&state, update) {
-            return Ok(Check::Unheld);
+            return Ok(Read::Unheld);
         }
+        let deleted = self.fresh_deletions(update);
+        if !writes(&state, update) && deleted.is_empty() {
+            return Ok(Read::Held);
+        }
+        let diffed = bytes::diff(sent, &state)?;
+        let named = update.delete_set().encode_v1();
+        let structs = diffed
+            .strip_suffix(named.as_slice())
+            .ok_or(BoardError::Trim)?;
+        let mut kept = structs.to_vec();
+        kept.extend_from_slice(&deleted.encode_v1());
+        let trimmed = Update::decode_v1(&kept)?;
         let held = |id: &ID| id.clock < state.get(&id.client);
-        let (mut structs, mut writer, mut flagged) = (0, None, false);
-        for block in update.blocks() {
+        let (mut ends, mut taken) = (StateVector::default(), Taken::default());
+        let (mut count, mut writer, mut flagged) = (0, None, false);
+        for block in trimmed.blocks() {
             let (client, end) = ydoc::struct_end(&block);
-            if end <= state.get(&client) {
-                continue;
-            }
-            structs += 1;
+            ends.set_max(client, end);
+            count += 1;
             flagged |= writer.is_some_and(|writer| writer != client);
             writer = Some(client);
             let UpdateBlock::Item(item) = block else {
@@ -265,67 +425,69 @@ impl Board {
             };
             match item.update_parent() {
                 UpdateParent::Root(name) if &**name != BOARD_ROOT => {
-                    return Err("a board update writes only the blocks root".into());
+                    return Err(BoardError::Refused(
+                        "a board update writes only the blocks root".into(),
+                    ));
                 }
                 UpdateParent::Unknown => {
                     flagged |= matches!(item.content(), ItemContent::Type(_));
                 }
                 _ => {}
             }
-            if let (Some(origin), Some(right)) = (item.origin(), item.right_origin()) {
-                let next = right.client == origin.client && right.clock == origin.clock + 1;
-                flagged |= held(origin) && held(right) && !next;
-            }
+            flagged |= !self.placed(item, &held);
+            taken.add(item);
         }
         // T5: the depth index refuses a type past 64 levels here, and the
         // earlier lives' marker clients any struct or deletion naming one.
-        let ranges: usize = self
-            .fresh_deletions(update)
-            .iter()
-            .map(|(_, ranges)| ranges.len())
-            .sum();
-        flagged |= structs > ydoc::SMALL_EDIT || ranges > ydoc::SMALL_EDIT;
-        Ok(if flagged {
-            Check::Flagged
-        } else {
-            Check::Small
-        })
+        let (mut ranges, mut covered) = (0, 0u64);
+        for (_, of) in deleted.iter() {
+            ranges += of.len();
+            covered += of
+                .iter()
+                .map(|range| u64::from(range.end - range.start))
+                .sum::<u64>();
+        }
+        // T5: a fresh range that covers a type is flagged (the type index).
+        flagged |=
+            count > ydoc::SMALL_EDIT || ranges > ydoc::SMALL_EDIT || covered > ydoc::MAX_WORK;
+        Ok(Read::New(Fresh {
+            check: if flagged {
+                Check::Flagged
+            } else {
+                Check::Small
+            },
+            bytes: kept,
+            ends,
+            deleted,
+            taken,
+        }))
     }
 
-    /// Appends a writer's update the room placed ([Board::check]), `sent` as
-    /// it came, trimmed: its diff against the state vector before it, the
-    /// delete set cut to the deletions the index lacks. Implicit deletions
-    /// need nothing: every replica derives them from the structs it receives.
-    /// What peers hear, or none when nothing was new.
-    pub fn append(&mut self, sent: &[u8], update: &Update) -> Result<Option<&[u8]>, BoardError> {
-        let state = self.state_vector();
-        let fresh = self.fresh_deletions(update);
-        if !writes(&state, update) && fresh.is_empty() {
-            return Ok(None);
-        }
-        let diffed = bytes::diff(sent, &state)?;
-        let named = update.delete_set().encode_v1();
-        let structs = diffed
-            .strip_suffix(named.as_slice())
-            .ok_or(BoardError::Trim)?;
-        let mut trimmed = structs.to_vec();
-        trimmed.extend_from_slice(&fresh.encode_v1());
-        for block in update.blocks() {
-            if !matches!(block, UpdateBlock::Skip(_)) {
-                let (client, end) = ydoc::struct_end(&block);
-                self.sv.set_max(client, end);
-            }
-        }
-        self.deleted.merge_with(fresh);
-        self.recent.push(trimmed);
-        Ok(self.recent.last().map(Vec::as_slice))
+    /// Appends what [Board::read] found new, before anything else changes
+    /// the board (the room's queue waits with a flagged update's trial).
+    /// Implicit deletions need nothing: every replica derives them from the
+    /// structs it receives. What peers hear.
+    pub fn append(&mut self, fresh: Fresh) -> &[u8] {
+        let Fresh {
+            bytes,
+            ends,
+            deleted,
+            taken,
+            ..
+        } = fresh;
+        self.sv.merge(ends);
+        self.deleted.merge_with(deleted);
+        self.origins.take(taken);
+        let at = self.recent.len();
+        self.recent.push(bytes);
+        &self.recent[at]
     }
 
     /// The next store's row: the recent updates merged in chunks, with the
-    /// marker document's delta (its live markers deleted in the row, as
-    /// today). The recent updates stay until the row commits, one row at a
-    /// time.
-    pub fn row(&self) -> Result<Row, BoardError> {
+    /// marker document's delta (its live markers deleted in it, as today).
+    /// The recent updates stay until the row commits. Only the newest row
+    /// commits: an older one's updates are all in it.
+    pub fn row(&mut self) -> Result<Row, BoardError> {
         let writers = if self.recent.is_empty() {
             Vec::new()
         } else {
@@ -340,18 +502,24 @@ impl Board {
             (false, true) => writers.clone(),
             (false, false) => bytes::merge(&[writers.as_slice(), markers.as_slice()])?,
         };
+        self.rows_made += 1;
         Ok(Row {
             bytes,
             writers,
             count: self.recent.len(),
             markers: cover,
+            made: self.rows_made,
         })
     }
 
     /// `row` committed: its recent updates join the tail. The tail takes
     /// them without the marker delta, whose deletions of live markers would
-    /// reach joiners before the room clears them.
+    /// reach joiners before the room clears them. A row older than the
+    /// newest made is refused.
     pub fn stored(&mut self, row: Row) -> Result<(), BoardError> {
+        if row.made != self.rows_made {
+            return Err(BoardError::StaleRow);
+        }
         if !row.writers.is_empty() {
             self.tail = if self.tail.is_empty() {
                 row.writers
@@ -365,27 +533,51 @@ impl Board {
     }
 
     /// A fold begins over the rows committed so far; rows stored from now on
-    /// stay in the tail past it. With one running, nothing moves.
-    pub fn begin_fold(&mut self) {
-        if self.folding.is_none() {
-            self.folding = Some(std::mem::take(&mut self.tail));
+    /// stay in the tail past it. None while one runs. T7 calls this before
+    /// the fold reads its rows, which must hold at least these (a row the
+    /// fold reads twice, also in the tail, costs bytes; one it misses is
+    /// lost at the swap).
+    pub fn begin_fold(&mut self) -> Option<Fold> {
+        if self.folding.is_some() {
+            return None;
         }
+        self.folds += 1;
+        let fold = Fold(self.folds);
+        self.folding = Some((fold, std::mem::take(&mut self.tail)));
+        Some(fold)
     }
 
-    /// The fold's new base and its stored indexes replace the base and the
-    /// rows it covered. The index keeps what it held, and takes the
-    /// implicit deletions the new base names.
-    pub fn folded(&mut self, base: Vec<u8>, base_sv: StateVector, base_ds: IdSet) {
+    /// The running fold's new base and its indexes replace the base and the
+    /// rows it covered. The index keeps what it held and takes the implicit
+    /// deletions the new base names; the origins hold the base's items
+    /// already. A live marker the new base deletes (one a committed row hid
+    /// and the room has not cleared since) is written again as a new item,
+    /// since a joiner holding the deleted struct would skip the marker
+    /// document's copy: that update, to relay.
+    pub fn folded(
+        &mut self,
+        fold: Fold,
+        base: Vec<u8>,
+        indexes: Indexes,
+    ) -> Result<Option<Vec<u8>>, BoardError> {
+        if !self.running(fold) {
+            return Err(BoardError::StaleFold);
+        }
+        let rewritten = self.rewrite_markers(&indexes.deleted);
         self.base = base;
         self.folding = None;
-        self.sv.merge(base_sv.clone());
-        self.base_sv = base_sv;
-        self.deleted.merge_with(base_ds);
+        self.sv.merge(indexes.sv.clone());
+        self.base_sv = indexes.sv;
+        self.deleted.merge_with(indexes.deleted);
+        Ok(rewritten)
     }
 
-    /// A fold that failed: the rows it covered go back to the tail.
-    pub fn fold_failed(&mut self) -> Result<(), BoardError> {
-        let Some(folding) = self.folding.take() else {
+    /// The running fold failed: the rows it covered go back to the tail.
+    pub fn fold_failed(&mut self, fold: Fold) -> Result<(), BoardError> {
+        if !self.running(fold) {
+            return Err(BoardError::StaleFold);
+        }
+        let Some((fold, folding)) = self.folding.take() else {
             return Ok(());
         };
         if self.tail.is_empty() {
@@ -394,7 +586,7 @@ impl Board {
             match bytes::merge(&[folding.as_slice(), self.tail.as_slice()]) {
                 Ok(merged) => self.tail = merged,
                 Err(error) => {
-                    self.folding = Some(folding);
+                    self.folding = Some((fold, folding));
                     return Err(error.into());
                 }
             }
@@ -408,15 +600,30 @@ impl Board {
         !self.holds_base(since) && !self.holds_none_of_base(since)
     }
 
-    /// The answer to a joiner at `since`: the rows' diffs (as they are for a
-    /// fresh joiner), the recent updates (a joiner skips what it holds) and
-    /// the marker state, then the base's part: the base as it is when the
-    /// joiner holds none of it, the delete-set index when it holds all of it
-    /// (the index holds every deletion the base names), else a diff of the
-    /// whole base ([Board::behind_base]).
+    /// The answer to a joiner at `since` ([Join]): the base's part first,
+    /// then the rows' diffs (as they are for a fresh joiner), the recent
+    /// updates (a joiner skips what it holds) and the marker state, and the
+    /// step 2 last.
     pub fn join(&self, since: &StateVector) -> Result<Join<'_>, BoardError> {
         let mut updates = Vec::new();
-        for rows in self.folding.iter().chain([&self.tail]) {
+        let step2 = if self.holds_base(since) {
+            let mut deletions = vec![0];
+            deletions.extend(self.deleted.encode_v1());
+            Cow::Owned(deletions)
+        } else {
+            updates.push(if self.holds_none_of_base(since) {
+                Cow::Borrowed(self.base.as_slice())
+            } else {
+                Cow::Owned(bytes::diff(&self.base, since)?)
+            });
+            Cow::Borrowed(EMPTY_UPDATE)
+        };
+        for rows in self
+            .folding
+            .iter()
+            .map(|(_, rows)| rows)
+            .chain([&self.tail])
+        {
             if rows.is_empty() {
                 continue;
             }
@@ -435,15 +642,6 @@ impl Board {
         if !markers.state_vector().is_empty() {
             updates.push(Cow::Owned(markers.encode_state_as_update_v1(since)));
         }
-        let step2 = if self.holds_none_of_base(since) {
-            Cow::Borrowed(self.base.as_slice())
-        } else if self.holds_base(since) {
-            let mut deletions = vec![0];
-            deletions.extend(self.deleted.encode_v1());
-            Cow::Owned(deletions)
-        } else {
-            Cow::Owned(bytes::diff(&self.base, since)?)
-        };
         Ok(Join { updates, step2 })
     }
 
@@ -457,6 +655,7 @@ impl Board {
         let rows: Vec<&[u8]> = self
             .folding
             .iter()
+            .map(|(_, rows)| rows)
             .chain([&self.tail])
             .filter(|rows| !rows.is_empty())
             .chain(&self.recent)
@@ -466,6 +665,12 @@ impl Board {
         let doc = ydoc::scratch_doc();
         ydoc::replay(&doc, &self.base, &rows)?;
         Ok(doc)
+    }
+
+    fn running(&self, fold: Fold) -> bool {
+        self.folding
+            .as_ref()
+            .is_some_and(|(running, _)| *running == fold)
     }
 
     fn holds_base(&self, since: &StateVector) -> bool {
@@ -489,6 +694,93 @@ impl Board {
         }
         fresh
     }
+
+    /// The one-held-side rule (the review of 2026-11-24): whether a new
+    /// item's conflict scan meets at most its own update's items and one
+    /// held item, read from the [Origins] alone. Placed: an item after a held
+    /// unit nothing else was placed after (where that unit's run goes on,
+    /// just before the run's next unit); after an item of its own update,
+    /// before none or another; first in a sequence or a key's values with no
+    /// origin, before the held first item; or with no origin and no right
+    /// origin under a parent its update creates. Anything else naming held
+    /// content is not: a new key of a held map among them, since the room
+    /// cannot tell it from one with held values the scan would walk.
+    fn placed(&self, item: &Item, held: &impl Fn(&ID) -> bool) -> bool {
+        let origins = &self.origins;
+        match (item.origin(), item.right_origin()) {
+            (Some(origin), right) if held(origin) => {
+                !origins.named.contains(origin)
+                    && (!origins.continued.contains(origin)
+                        || right == Some(&ID::new(origin.client, origin.clock + 1)))
+            }
+            (Some(_), right) => right.is_none_or(|right| !held(right)),
+            (None, Some(right)) if held(right) => origins.starts.contains(right),
+            // Its parent is implicit and its scan starts at the sequence's
+            // first item.
+            (None, Some(_)) => false,
+            (None, None) => {
+                matches!(item.update_parent(), UpdateParent::Item(parent) if !held(parent))
+            }
+        }
+    }
+
+    /// Writes again, as new items, the live markers `deleted` names. The
+    /// update to relay, if any.
+    fn rewrite_markers(&self, deleted: &IdSet) -> Option<Vec<u8>> {
+        let (map, hidden) = {
+            let txn = self.markers.transact();
+            let map = txn.get_map(ydoc::CONTRIBUTORS_ROOT)?;
+            let branch: &yrs::branch::Branch = map.as_ref();
+            // The room writes every marker as a map of `Any`.
+            let hidden: Vec<(String, Any)> = branch
+                .map_items()
+                .filter(|(_, item)| !item.is_deleted() && deleted.contains(item.id()))
+                .filter_map(|(key, _)| match map.get(&txn, key) {
+                    Some(Out::Any(value)) => Some((key.to_string(), value)),
+                    _ => None,
+                })
+                .collect();
+            (map, hidden)
+        };
+        if hidden.is_empty() {
+            return None;
+        }
+        let mut txn = self.markers.transact_mut();
+        for (key, value) in hidden {
+            map.insert(&mut txn, key, value);
+        }
+        Some(ydoc::committed_update(txn))
+    }
+}
+
+/// Refuses what no editor sends and the indexes cannot read: a struct or a
+/// deleted range past [ydoc::MAX_CLOCK], a client's delete ranges out of
+/// clock order or overlapping, an item naming itself or a later unit of its
+/// client. yrs's decoder refuses a client's structs that overlap.
+fn refuse_malformed(update: &Update) -> Result<(), BoardError> {
+    ydoc::within_clocks(update).map_err(|error| BoardError::Refused(error.to_string()))?;
+    for (client, ranges) in update.delete_set().iter() {
+        let mut end = 0;
+        for range in ranges.iter() {
+            if range.start < end {
+                return Err(BoardError::Refused(format!(
+                    "the deletions of client {client} overlap or go back in clock order"
+                )));
+            }
+            end = range.end;
+        }
+    }
+    for block in update.blocks() {
+        if let UpdateBlock::Item(item) = block {
+            let ID { client, clock } = *item.id();
+            if references(item).any(|id| id.client == client && id.clock >= clock) {
+                return Err(BoardError::Refused(format!(
+                    "struct {clock} of client {client} refers to itself or a later struct of its client"
+                )));
+            }
+        }
+    }
+    Ok(())
 }
 
 /// A struct's client, first clock and length.
@@ -563,12 +855,13 @@ mod tests {
     use yrs::block::ClientID;
     use yrs::types::ToJson;
     use yrs::updates::decoder::Decode;
+    use yrs::updates::encoder::Encode;
     use yrs::{
-        Any, Array, ArrayPrelim, Doc, IdSet, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector,
-        Text, TextPrelim, TextRef, Transact, TransactionMut, Update,
+        Any, Array, ArrayPrelim, Doc, ID, IdSet, Map, MapPrelim, MapRef, Out, ReadTxn, StateVector,
+        Text, TextPrelim, TextRef, Transact, TransactionMut, Update, UpdateBlock,
     };
 
-    use super::{Board, Check, bytes};
+    use super::{Board, BoardError, Check, EMPTY_UPDATE, Fold, Indexes, Read, bytes};
     use crate::model::{BOARD_ROOT, Model};
 
     /// The room's client: it writes the markers.
@@ -595,13 +888,12 @@ mod tests {
         doc
     }
 
-    /// `updates` as a fold stores them: compacted, with the state's indexes.
-    fn compacted<B: AsRef<[u8]>>(updates: &[B]) -> (Vec<u8>, StateVector, IdSet) {
+    /// `updates` as a fold stores them: compacted, with their indexes.
+    fn compacted<B: AsRef<[u8]>>(updates: &[B]) -> (Vec<u8>, Indexes) {
         let doc = replica(updates);
         let txn = doc.transact();
-        let snapshot = txn.snapshot();
         let state = txn.encode_state_as_update_v1(&StateVector::default());
-        (state, snapshot.state_map, snapshot.delete_set)
+        (state, Indexes::of_doc(&txn))
     }
 
     /// What a document holds: its clocks, its deletions and the content of
@@ -617,6 +909,49 @@ mod tests {
 
     fn pending(doc: &Doc) -> bool {
         ydoc::has_pending(&doc.transact())
+    }
+
+    /// A writer's update as the room reads it.
+    fn read(board: &Board, sent: &[u8]) -> Read {
+        board.read(sent, &decode(sent)).unwrap()
+    }
+
+    /// Whether a writer's update holds anything the room lacks.
+    fn changes(board: &Board, sent: &[u8]) -> bool {
+        !matches!(read(board, sent), Read::Held)
+    }
+
+    /// The check of a writer's update the room can place.
+    fn checked(board: &Board, sent: &[u8]) -> Check {
+        match read(board, sent) {
+            Read::New(fresh) => fresh.check,
+            Read::Unheld => panic!("unheld"),
+            Read::Held => panic!("held"),
+        }
+    }
+
+    /// Why the room refuses a writer's update.
+    fn refusal(board: &Board, sent: &[u8]) -> String {
+        match board.read(sent, &decode(sent)) {
+            Err(BoardError::Refused(why)) => why,
+            Err(other) => panic!("{other}"),
+            Ok(_) => panic!("read"),
+        }
+    }
+
+    /// The first units of the new items of `sent` [Board::placed] leaves
+    /// unplaced.
+    fn unplaced(board: &Board, sent: &[u8]) -> Vec<ID> {
+        let state = board.state_vector();
+        let trimmed = decode(&bytes::diff(sent, &state).unwrap());
+        let held = |id: &ID| id.clock < state.get(&id.client);
+        trimmed
+            .blocks()
+            .filter_map(|block| match block {
+                UpdateBlock::Item(item) if !board.placed(item, &held) => Some(*item.id()),
+                _ => None,
+            })
+            .collect()
     }
 
     /// A board room under test: the board, the rows its stores committed
@@ -636,9 +971,9 @@ mod tests {
         /// A fresh canvas: the first state, with the indexes its seed stores.
         fn new() -> Room {
             let first = first_state();
-            let (base, sv, ds) = compacted(&[&first]);
+            let (base, indexes) = compacted(&[&first]);
             Room {
-                board: Board::new(base.clone(), sv, ds, ClientID::new(ROOM)),
+                board: Board::new(base.clone(), indexes, ClientID::new(ROOM)),
                 stored_base: base,
                 rows: Vec::new(),
                 reference: replica(&[&first]),
@@ -650,16 +985,14 @@ mod tests {
         /// A writer's update as the room admits it: none when unheld, else
         /// whether it was appended (and relayed to the peer).
         fn offer(&mut self, sent: &[u8]) -> Option<bool> {
-            let update = decode(sent);
-            if self.board.check(&update).unwrap() == Check::Unheld {
-                return None;
+            match read(&self.board, sent) {
+                Read::Unheld => None,
+                Read::Held => Some(false),
+                Read::New(fresh) => {
+                    apply(&self.peer, self.board.append(fresh));
+                    Some(true)
+                }
             }
-            if !self.board.changes(&update) {
-                return Some(false);
-            }
-            let relayed = self.board.append(sent, &update).unwrap().unwrap();
-            apply(&self.peer, relayed);
-            Some(true)
         }
 
         /// `sent` reaches the reference and the room. One the room cannot
@@ -689,31 +1022,41 @@ mod tests {
             }
         }
 
+        /// An update the room writes (a marker's), relayed to everyone.
+        fn relay(&self, update: &[u8]) {
+            apply(&self.reference, update);
+            apply(&self.peer, update);
+        }
+
         fn store(&mut self) {
             let row = self.board.row().unwrap();
             self.rows.push(row.bytes.clone());
             self.board.stored(row).unwrap();
         }
 
-        /// A fold begins over the rows committed so far: how many.
-        fn begin_fold(&mut self) -> usize {
-            self.board.begin_fold();
-            self.rows.len()
+        /// A fold begins over the rows committed so far: which, and how many
+        /// rows it covers.
+        fn begin_fold(&mut self) -> (Fold, usize) {
+            (self.board.begin_fold().unwrap(), self.rows.len())
         }
 
         /// The fold of the stored base and its first `through` rows ends, as
-        /// `note_store::fold` stores it.
-        fn end_fold(&mut self, through: usize) {
+        /// `note_store::fold` stores it; what the room rewrote is relayed.
+        fn end_fold(&mut self, fold: Fold, through: usize) -> Option<Vec<u8>> {
             let mut parts = vec![self.stored_base.clone()];
             parts.extend(self.rows.drain(..through));
-            let (base, sv, ds) = compacted(&parts);
+            let (base, indexes) = compacted(&parts);
             self.stored_base = base.clone();
-            self.board.folded(base, sv, ds);
+            let rewritten = self.board.folded(fold, base, indexes).unwrap();
+            if let Some(update) = &rewritten {
+                self.relay(update);
+            }
+            rewritten
         }
 
-        fn fold(&mut self) {
-            let through = self.begin_fold();
-            self.end_fold(through);
+        fn fold(&mut self) -> Option<Vec<u8>> {
+            let (fold, through) = self.begin_fold();
+            self.end_fold(fold, through)
         }
 
         /// A joiner holding nothing, synced by the room's answer.
@@ -723,22 +1066,40 @@ mod tests {
             doc
         }
 
-        /// `doc` rejoins: the room's answer to its state vector, the step 2
-        /// last.
+        /// `doc` rejoins: the room's answer to its state vector, in order,
+        /// none of it waiting on a dependency, the step 2 last.
         fn catch_up(&self, doc: &Doc) {
             let since = doc.transact().state_vector();
             let answer = self.board.join(&since).unwrap();
             assert!(answer.size() > 0);
             for update in answer.updates.iter().chain([&answer.step2]) {
                 apply(doc, update);
+                assert!(!pending(doc), "a part of the answer waits");
             }
         }
 
         /// A writer's step 2 from `doc`: all it holds past the room's state
         /// vector, its whole delete set included.
-        fn step2(&self, doc: &Doc) -> Update {
-            let since = self.board.state_vector();
-            decode(&doc.transact().encode_state_as_update_v1(&since))
+        fn step2(&self, doc: &Doc) -> Vec<u8> {
+            doc.transact()
+                .encode_state_as_update_v1(&self.board.state_vector())
+        }
+
+        /// The room writes the marker of `key`.
+        fn mark(&self, key: &str) -> Vec<u8> {
+            let markers = self
+                .board
+                .markers()
+                .get_or_insert_map(ydoc::CONTRIBUTORS_ROOT);
+            let mut txn = self.board.markers().transact_mut();
+            let value = HashMap::from([
+                ("access".to_owned(), Any::from("write")),
+                ("nonce".to_owned(), Any::from(format!("{key}-n1"))),
+            ]);
+            markers.insert(&mut txn, key, Any::from(value));
+            let marked = ydoc::committed_update(txn);
+            self.relay(&marked);
+            marked
         }
     }
 
@@ -800,8 +1161,30 @@ mod tests {
         }
     }
 
+    fn list<T: ReadTxn>(txn: &T, blocks: &MapRef, id: &str) -> yrs::ArrayRef {
+        match block(txn, blocks, id).get(txn, "prop:list") {
+            Some(Out::YArray(list)) => list,
+            other => panic!("{id} list: {other:?}"),
+        }
+    }
+
+    /// Typing "!" at `at` in block x's text.
+    fn typing(at: u32) -> impl Fn(&mut TransactionMut, &MapRef) {
+        move |txn, blocks| {
+            text(txn, blocks, "x", "prop:text").insert(txn, at, "!");
+        }
+    }
+
+    /// Block x dragged to `to`.
+    fn drag(to: &'static str) -> impl Fn(&mut TransactionMut, &MapRef) {
+        move |txn, blocks| {
+            block(txn, blocks, "x").insert(txn, "prop:xywh", to);
+        }
+    }
+
     /// One edit as the editor makes one: a block added, dragged or deleted,
-    /// text typed or erased, an element added. Empty when nothing changed.
+    /// text typed or erased, an element added, a list item inserted or
+    /// removed. Empty when nothing changed.
     fn edit(tab: &Tab, rng: &mut Rng, n: usize) -> Vec<u8> {
         let client = tab.doc.client_id();
         edited(tab, |txn, blocks| {
@@ -811,7 +1194,7 @@ mod tests {
                 .map(str::to_owned)
                 .collect();
             ids.sort();
-            let kind = if ids.is_empty() { 0 } else { rng.below(10) };
+            let kind = if ids.is_empty() { 0 } else { rng.below(12) };
             let id = (!ids.is_empty()).then(|| ids[rng.below(ids.len())].clone());
             match (id, kind) {
                 (Some(id), 2 | 3) => {
@@ -840,11 +1223,26 @@ mod tests {
                 (Some(id), 9) if ids.len() > 4 => {
                     blocks.remove(txn, &id);
                 }
+                (Some(id), 10) => {
+                    let list = list(txn, blocks, &id);
+                    let at = rng.below(list.len(txn) as usize + 1) as u32;
+                    list.insert(txn, at, format!("i{n}"));
+                }
+                (Some(id), 11) => {
+                    let list = list(txn, blocks, &id);
+                    let len = list.len(txn) as usize;
+                    if len > 0 {
+                        list.remove(txn, rng.below(len) as u32);
+                    }
+                }
                 _ => {
                     let block = blocks.insert(txn, format!("b{client}-{n}"), MapPrelim::default());
                     block.insert(txn, "sys:flavour", "affine:note");
                     block.insert(txn, "prop:text", TextPrelim::new("note"));
                     block.insert(txn, "prop:elements", MapPrelim::default());
+                    block
+                        .insert(txn, "prop:list", ArrayPrelim::default())
+                        .push_back(txn, "i");
                 }
             }
         })
@@ -1010,6 +1408,29 @@ mod tests {
         }
     }
 
+    /// A fresh joiner takes the base first, then the rows and recent
+    /// updates, none of them waiting on a dependency (`catch_up` checks
+    /// after each), and an empty step 2 last.
+    #[test]
+    fn a_joiner_takes_the_base_first_and_the_step2_last() {
+        let updates = session(3, 120, 21);
+        let mut room = Room::new();
+        for (at, sent) in updates.iter().enumerate() {
+            room.deliver(sent);
+            if at == 60 {
+                room.store();
+                room.fold();
+            }
+            if at % 25 == 13 {
+                room.store();
+            }
+        }
+        let answer = room.board.join(&StateVector::default()).unwrap();
+        assert!(*answer.updates[0] == *room.board.base);
+        assert!(answer.updates.len() > 2 && *answer.step2 == *EMPTY_UPDATE);
+        assert!(held(&room.join()) == held(&room.reference));
+    }
+
     /// A joiner that holds every struct of the base but not a deletion a
     /// fold took into it (a deletion moves no clock) takes it from the
     /// delete-set index, with no diff of the base.
@@ -1075,6 +1496,50 @@ mod tests {
         }
     }
 
+    /// A struct that starts below the held clock and ends past it (a tab
+    /// typed on after the room took the start of its run) is read from the
+    /// held clock, after the unit before it: a small edit, appended and
+    /// relayed from there.
+    #[test]
+    fn a_struct_straddling_the_held_clock_is_read_from_it() {
+        let mut room = Room::new();
+        let writer = synced(&room, 50);
+        room.deliver(&edited(&writer, |txn, blocks| {
+            blocks.insert(txn, "x", MapPrelim::default()).insert(
+                txn,
+                "prop:text",
+                TextPrelim::new("hello"),
+            );
+        }));
+        edited(&writer, typing(5));
+        let sent = writer
+            .doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        let client = ClientID::new(50);
+        let at = room.board.state_vector().get(&client);
+        assert!(decode(&sent).blocks().any(|block| {
+            let (of, clock, len) = super::span(&block);
+            of == client && clock < at && clock + len > at
+        }));
+        apply(&room.reference, &sent);
+        let Read::New(fresh) = read(&room.board, &sent) else {
+            panic!("nothing new");
+        };
+        assert_eq!(fresh.check, Check::Small);
+        let relayed = room.board.append(fresh).to_vec();
+        apply(&room.peer, &relayed);
+        let relayed = decode(&relayed);
+        let Some(UpdateBlock::Item(item)) = relayed.blocks().next() else {
+            panic!("no item");
+        };
+        assert!(*item.id() == ID::new(client, at));
+        assert!(item.origin() == Some(&ID::new(client, at - 1)));
+        for doc in [&room.join(), &room.peer] {
+            assert!(held(doc) == held(&room.reference));
+        }
+    }
+
     /// A merge in chunks (256, then 64) holds what its updates hold.
     #[test]
     fn a_chunked_merge_holds_what_its_updates_hold() {
@@ -1098,13 +1563,13 @@ mod tests {
             room.deliver(sent);
         }
         room.store();
-        let through = room.begin_fold();
+        let (fold, through) = room.begin_fold();
         for sent in &updates[60..100] {
             room.deliver(sent);
         }
         room.store();
         let early = room.join();
-        room.end_fold(through);
+        room.end_fold(fold, through);
         assert!(room.board.folding.is_none() && !room.board.tail.is_empty());
         let mut first_60 = vec![first_state()];
         first_60.extend_from_slice(&updates[..60]);
@@ -1119,12 +1584,12 @@ mod tests {
             assert!(held(doc) == held(&room.reference));
         }
         room.store();
-        room.board.begin_fold();
+        let (fold, _) = room.begin_fold();
         for sent in &updates[130..] {
             room.deliver(sent);
         }
         room.store();
-        room.board.fold_failed().unwrap();
+        room.board.fold_failed(fold).unwrap();
         assert!(room.board.folding.is_none());
         let replica = room.board.replica().unwrap();
         for doc in [&room.join(), &replica] {
@@ -1132,10 +1597,53 @@ mod tests {
         }
     }
 
-    /// The approved flag rule, on structs alone: a small edit passes, and
-    /// more than 16 new structs or delete ranges, two writing clients, an
-    /// insert between held units of two clients and a new type with an
-    /// implicit parent are tried first. Another root is refused.
+    /// Only the newest row commits (an older one's updates are all in it),
+    /// and only the running fold ends: a late result of a fold that failed
+    /// does not take the running fold's rows with it.
+    #[test]
+    fn only_the_newest_row_commits_and_only_the_running_fold_ends() {
+        let updates = session(2, 90, 17);
+        let mut room = Room::new();
+        for sent in &updates[..30] {
+            room.deliver(sent);
+        }
+        let older = room.board.row().unwrap();
+        for sent in &updates[30..60] {
+            room.deliver(sent);
+        }
+        room.store();
+        assert!(matches!(
+            room.board.stored(older),
+            Err(BoardError::StaleRow)
+        ));
+        assert!(room.board.recent.is_empty());
+        let (failed, _) = room.begin_fold();
+        assert!(room.board.begin_fold().is_none());
+        room.board.fold_failed(failed).unwrap();
+        for sent in &updates[60..] {
+            room.deliver(sent);
+        }
+        room.store();
+        let (running, through) = room.begin_fold();
+        let (late, indexes) = compacted(&[&room.stored_base]);
+        assert!(matches!(
+            room.board.folded(failed, late, indexes),
+            Err(BoardError::StaleFold)
+        ));
+        assert!(matches!(
+            room.board.fold_failed(failed),
+            Err(BoardError::StaleFold)
+        ));
+        room.end_fold(running, through);
+        let replica = room.board.replica().unwrap();
+        for doc in [&room.join(), &replica] {
+            assert!(held(doc) == held(&room.reference));
+        }
+    }
+
+    /// The approved flag rule's counts: more than 16 new structs or delete
+    /// ranges, or two writing clients, are tried first, as is a new type
+    /// whose parent is implicit (it has no depth). Another root is refused.
     #[test]
     fn past_a_small_edit_by_its_structs_an_update_is_flagged() {
         let mut room = Room::new();
@@ -1146,36 +1654,25 @@ mod tests {
             x.insert(txn, "prop:long", TextPrelim::new("y".repeat(40)));
             x.insert(txn, "prop:list", ArrayPrelim::default())
                 .push_back(txn, 1);
-        }));
-        let second = synced(&room, 12);
-        room.deliver(&edited(&second, |txn, blocks| {
-            text(txn, blocks, "x", "prop:text").insert(txn, 5, " world");
+            for key in 0..17 {
+                x.insert(txn, format!("k{key}"), "v");
+            }
         }));
         let mut client = 20;
         let mut check = |edit: &dyn Fn(&mut TransactionMut, &MapRef)| {
             client += 1;
-            let update = edited(&synced(&room, client), edit);
-            room.board.check(&decode(&update))
+            checked(&room.board, &edited(&synced(&room, client), edit))
         };
-        let typing = |at: u32| {
-            move |txn: &mut TransactionMut, blocks: &MapRef| {
-                text(txn, blocks, "x", "prop:text").insert(txn, at, "!");
-            }
-        };
-        // At the end, inside one client's run, between two clients' runs.
-        assert_eq!(check(&typing(11)), Ok(Check::Small));
-        assert_eq!(check(&typing(2)), Ok(Check::Small));
-        assert_eq!(check(&typing(5)), Ok(Check::Flagged));
         let keys = |n: u32| {
             move |txn: &mut TransactionMut, blocks: &MapRef| {
                 let x = block(txn, blocks, "x");
                 for key in 0..n {
-                    x.insert(txn, format!("k{key}"), "v");
+                    x.insert(txn, format!("k{key}"), "w");
                 }
             }
         };
-        assert_eq!(check(&keys(16)), Ok(Check::Small));
-        assert_eq!(check(&keys(17)), Ok(Check::Flagged));
+        assert_eq!(check(&keys(16)), Check::Small);
+        assert_eq!(check(&keys(17)), Check::Flagged);
         let erasing = |n: u32| {
             move |txn: &mut TransactionMut, blocks: &MapRef| {
                 let long = text(txn, blocks, "x", "prop:long");
@@ -1184,33 +1681,194 @@ mod tests {
                 }
             }
         };
-        assert_eq!(check(&erasing(16)), Ok(Check::Small));
-        assert_eq!(check(&erasing(17)), Ok(Check::Flagged));
-        // A map under a new key names its parent; one pushed after a list
-        // element does not.
+        assert_eq!(check(&erasing(16)), Check::Small);
+        assert_eq!(check(&erasing(17)), Check::Flagged);
+        // After a held list item: a value is placed, a map has no depth.
         assert_eq!(
             check(&|txn, blocks| {
-                block(txn, blocks, "x").insert(txn, "inner", MapPrelim::default());
+                list(txn, blocks, "x").push_back(txn, 2);
             }),
-            Ok(Check::Small)
+            Check::Small
         );
         assert_eq!(
             check(&|txn, blocks| {
-                if let Some(Out::YArray(list)) = block(txn, blocks, "x").get(txn, "prop:list") {
-                    list.push_back(txn, MapPrelim::default());
-                }
+                list(txn, blocks, "x").push_back(txn, MapPrelim::default());
             }),
-            Ok(Check::Flagged)
+            Check::Flagged
         );
         let (a, b) = (synced(&room, 31), synced(&room, 32));
-        let two = bytes::merge(&[edited(&a, typing(11)), edited(&b, typing(0))]).unwrap();
-        assert_eq!(room.board.check(&decode(&two)), Ok(Check::Flagged));
+        let two = bytes::merge(&[edited(&a, typing(5)), edited(&b, typing(0))]).unwrap();
+        assert_eq!(checked(&room.board, &two), Check::Flagged);
         let other = synced(&room, 33);
         let meta = other.doc.get_or_insert_map("meta");
         let mut txn = other.doc.transact_mut();
         meta.insert(&mut txn, "k", "v");
         let written = ydoc::committed_update(txn);
-        assert!(room.board.check(&decode(&written)).is_err());
+        assert!(refusal(&room.board, &written).contains("blocks root"));
+    }
+
+    /// Fresh deletions count by the units they cover: one range past
+    /// [ydoc::MAX_WORK] units is tried first.
+    #[test]
+    fn fresh_deletions_count_by_the_units_they_cover() {
+        let mut room = Room::new();
+        let max = usize::try_from(ydoc::MAX_WORK).unwrap();
+        let first = synced(&room, 11);
+        room.deliver(&edited(&first, |txn, blocks| {
+            blocks.insert(txn, "x", MapPrelim::default()).insert(
+                txn,
+                "prop:long",
+                TextPrelim::new("y".repeat(max + 1)),
+            );
+        }));
+        let eraser = synced(&room, 12);
+        let erasing = |len: usize| {
+            edited(&eraser, |txn, blocks| {
+                text(txn, blocks, "x", "prop:long").remove_range(txn, 0, len as u32);
+            })
+        };
+        let (most, more) = (erasing(max), erasing(1));
+        assert_eq!(checked(&room.board, &most), Check::Small);
+        let all = bytes::merge(&[most, more]).unwrap();
+        let ranges: usize = decode(&all)
+            .delete_set()
+            .iter()
+            .map(|(_, ranges)| ranges.len())
+            .sum();
+        assert_eq!(ranges, 1);
+        assert_eq!(checked(&room.board, &all), Check::Flagged);
+    }
+
+    /// The one-held-side rule places these: typing at the end of a text,
+    /// inside a run and at its start, dragging a block from the value it
+    /// holds, and the keys and text of a new block (the block's own entry,
+    /// a new key of the held blocks root, is not placed).
+    #[test]
+    fn an_insert_its_scan_passes_quickly_is_placed() {
+        let mut room = Room::new();
+        let first = synced(&room, 11);
+        room.deliver(&edited(&first, |txn, blocks| {
+            let x = blocks.insert(txn, "x", MapPrelim::default());
+            x.insert(txn, "prop:text", TextPrelim::new("hello"));
+            x.insert(txn, "prop:xywh", "v0");
+        }));
+        let mut client = 20;
+        let mut check = |edit: &dyn Fn(&mut TransactionMut, &MapRef)| {
+            client += 1;
+            checked(&room.board, &edited(&synced(&room, client), edit))
+        };
+        for at in [5, 2, 0] {
+            assert_eq!(check(&typing(at)), Check::Small, "typing at {at}");
+        }
+        assert_eq!(check(&drag("v1")), Check::Small);
+        let adding = synced(&room, 40);
+        let added = edited(&adding, |txn, blocks| {
+            let block = blocks.insert(txn, "b40", MapPrelim::default());
+            block.insert(txn, "sys:flavour", "affine:note");
+            block.insert(txn, "prop:text", TextPrelim::new("note"));
+            block.insert(txn, "prop:xywh", "[0,0,200,80]");
+        });
+        assert_eq!(
+            unplaced(&room.board, &added),
+            [ID::new(ClientID::new(40), 0)]
+        );
+        assert_eq!(checked(&room.board, &added), Check::Flagged);
+    }
+
+    /// The one-held-side rule leaves these to a trial, each an insert whose
+    /// conflict scan could walk held items: a map set from a value
+    /// overwritten since (a stale drag, or one crafted deep in the key's
+    /// values), a new key of a held block (which the room cannot tell from
+    /// a key with values to walk), typing between two units of a run others
+    /// typed between, after a unit its writer typed on from, or at a start
+    /// someone typed before, and a struct the room holds the start of, read
+    /// from its first new unit, after one others typed after.
+    #[test]
+    fn an_insert_its_scan_could_walk_held_items_is_flagged() {
+        let mut room = Room::new();
+        let first = synced(&room, 11);
+        room.deliver(&edited(&first, |txn, blocks| {
+            let x = blocks.insert(txn, "x", MapPrelim::default());
+            x.insert(txn, "prop:text", TextPrelim::new("hello"));
+            x.insert(txn, "prop:xywh", "v0");
+            x.insert(txn, "a", "a0");
+        }));
+        let (stale, early) = (synced(&room, 12), synced(&room, 13));
+        for n in 1..=3 {
+            room.deliver(&edited(&first, |txn, blocks| {
+                let x = block(txn, blocks, "x");
+                x.insert(txn, "prop:xywh", format!("v{n}"));
+                x.insert(txn, "a", format!("a{n}"));
+            }));
+        }
+        assert_eq!(
+            checked(&room.board, &edited(&stale, drag("w"))),
+            Check::Flagged
+        );
+        let fresh_key = edited(&synced(&room, 14), |txn, blocks| {
+            block(txn, blocks, "x").insert(txn, "prop:color", "red");
+        });
+        assert_eq!(checked(&room.board, &fresh_key), Check::Flagged);
+        // Others type between "h" and "e"; a tab that missed it types there.
+        let between = synced(&room, 15);
+        room.deliver(&edited(&between, |txn, blocks| {
+            text(txn, blocks, "x", "prop:text").insert(txn, 1, "zzz");
+        }));
+        assert_eq!(
+            checked(&room.board, &edited(&early, typing(1))),
+            Check::Flagged
+        );
+        // A writer goes on typing at the end of its run; a tab that heard
+        // only the run's start types at its end too.
+        let at_end = |txn: &mut TransactionMut, blocks: &MapRef| {
+            let text = text(txn, blocks, "x", "prop:text");
+            let end = text.len(txn);
+            text.insert(txn, end, "ab");
+        };
+        let writer = synced(&room, 17);
+        room.deliver(&edited(&writer, at_end));
+        let behind = synced(&room, 18);
+        room.deliver(&edited(&writer, at_end));
+        assert_eq!(
+            checked(&room.board, &edited(&behind, at_end)),
+            Check::Flagged
+        );
+        // Someone types at the start; a tab that missed it types there too.
+        let (starter, opening) = (synced(&room, 19), synced(&room, 20));
+        room.deliver(&edited(&starter, typing(0)));
+        assert_eq!(
+            checked(&room.board, &edited(&opening, typing(0))),
+            Check::Flagged
+        );
+        // A types "p", others type after it, and A, not hearing them, types
+        // "q" after its "p": one struct, from a held unit.
+        let a = synced(&room, 50);
+        room.deliver(&edited(&a, typing(0)));
+        let b = synced(&room, 16);
+        for at in 1..4 {
+            room.deliver(&edited(&b, typing(at)));
+        }
+        edited(&a, typing(1));
+        let sent = a
+            .doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        let squashed = ID::new(ClientID::new(50), 0);
+        assert!(decode(&sent).blocks().any(|block| match block {
+            UpdateBlock::Item(item) => *item.id() == squashed && item.len() == 2,
+            _ => false,
+        }));
+        let Read::New(fresh) = read(&room.board, &sent) else {
+            panic!("nothing new");
+        };
+        assert_eq!(fresh.check, Check::Flagged);
+        // The room's trial: the trimmed update on a replica, then appended.
+        apply(&room.board.replica().unwrap(), fresh.bytes());
+        apply(&room.reference, &sent);
+        apply(&room.peer, room.board.append(fresh));
+        for doc in [&room.join(), &room.peer] {
+            assert!(held(doc) == held(&room.reference));
+        }
     }
 
     /// Two tabs write one key at once: yrs deletes the loser where the
@@ -1227,30 +1885,21 @@ mod tests {
                 .insert(txn, "prop:xywh", "v0");
         }));
         let (a, b) = (synced(&room, 12), synced(&room, 13));
-        let drag = |to: &'static str| {
-            move |txn: &mut TransactionMut, blocks: &MapRef| {
-                block(txn, blocks, "x").insert(txn, "prop:xywh", to);
-            }
-        };
         let (from_a, from_b) = (edited(&a, drag("a")), edited(&b, drag("b")));
         room.deliver(&from_a);
         room.deliver(&from_b);
         let reader = room.join();
         let step2 = room.step2(&reader);
-        assert!(room.board.changes(&step2));
-        assert!(!room.board.reader_changes(&step2));
+        assert!(changes(&room.board, &step2));
+        assert!(!room.board.reader_changes(&decode(&step2)));
         // A hears B, and its next step 2 names the loser.
         apply(&a.doc, &from_b);
-        let resent = a
-            .doc
-            .transact()
-            .encode_state_as_update_v1(&room.board.state_vector());
+        let resent = room.step2(&a.doc);
         room.deliver(&resent);
-        let resent = decode(&resent);
         let named = decode(room.board.recent.last().unwrap());
         assert_eq!(named.blocks().count(), 0);
         assert!(!named.delete_set().is_empty());
-        assert!(!room.board.changes(&resent) && !room.board.changes(&step2));
+        assert!(!changes(&room.board, &resent) && !changes(&room.board, &step2));
         let replica = room.board.replica().unwrap();
         for doc in [&room.join(), &reader, &room.peer, &replica] {
             assert!(held(doc) == held(&room.reference));
@@ -1278,10 +1927,7 @@ mod tests {
             let deleting = edited(&a, |txn, blocks| {
                 blocks.remove(txn, "x");
             });
-            let typing = edited(&b, |txn, blocks| {
-                text(txn, blocks, "x", "prop:text").insert(txn, 5, "!");
-            });
-            let mut both = [deleting, typing];
+            let mut both = [deleting, edited(&b, typing(5))];
             if typing_first {
                 both.reverse();
             }
@@ -1294,8 +1940,8 @@ mod tests {
             }
             let reader = room.join();
             let step2 = room.step2(&reader);
-            assert!(room.board.changes(&step2), "typing first: {typing_first}");
-            assert!(!room.board.reader_changes(&step2));
+            assert!(changes(&room.board, &step2), "typing first: {typing_first}");
+            assert!(!room.board.reader_changes(&decode(&step2)));
             room.catch_up(&early);
             let replica = room.board.replica().unwrap();
             for doc in [&early, &reader, &room.join(), &room.peer, &replica] {
@@ -1306,9 +1952,38 @@ mod tests {
             }
             room.store();
             room.fold();
-            assert!(!room.board.changes(&step2));
+            assert!(!changes(&room.board, &step2));
             assert!(held(&room.join()) == held(&room.reference));
         }
+    }
+
+    /// What no editor sends is refused: an item naming itself (the bytes of
+    /// one `true` at client 77's clock 0, its origin that same unit) and a
+    /// client's delete ranges out of order or overlapping. yrs's decoder
+    /// refuses a client's structs that overlap. A deletion past held clocks
+    /// waits for a resync, and a reader's changes the board.
+    #[test]
+    fn a_malformed_update_is_refused_and_an_unplaceable_one_waits() {
+        let room = Room::new();
+        let itself = [1, 1, 77, 0, 0x88, 77, 0, 1, 120, 0];
+        assert!(refusal(&room.board, &itself).contains("refers to itself"));
+        for ranges in [[5, 3, 0, 2], [0, 5, 3, 4]] {
+            let mut deletions = vec![0, 1, 11, 2];
+            deletions.extend(ranges);
+            assert!(refusal(&room.board, &deletions).contains("overlap"));
+        }
+        let section = [1, 77, 0, 0x28, 1, 1, b'b', 1, b'k', 1, 120];
+        let mut overlapping = vec![2];
+        overlapping.extend(section);
+        overlapping.extend(section);
+        overlapping.push(0);
+        assert!(Update::decode_v1(&overlapping).is_err());
+        let mut past = IdSet::default();
+        past.insert(ID::new(ClientID::new(11), 0), 1000);
+        let mut deleting = vec![0];
+        deleting.extend(past.encode_v1());
+        assert!(matches!(read(&room.board, &deleting), Read::Unheld));
+        assert!(room.board.reader_changes(&decode(&deleting)));
     }
 
     /// A store's row is the recent updates and the marker document's delta
@@ -1319,20 +1994,7 @@ mod tests {
     #[test]
     fn a_row_holds_the_recent_updates_with_live_markers_hidden() {
         let mut room = Room::new();
-        let markers = room
-            .board
-            .markers()
-            .get_or_insert_map(ydoc::CONTRIBUTORS_ROOT);
-        let marked = {
-            let mut txn = room.board.markers().transact_mut();
-            let value = HashMap::from([
-                ("access".to_owned(), Any::from("write")),
-                ("nonce".to_owned(), Any::from("n1")),
-            ]);
-            markers.insert(&mut txn, "writer", Any::from(value));
-            ydoc::committed_update(txn)
-        };
-        apply(&room.reference, &marked);
+        room.mark("writer");
         // One tab: no concurrent edit leaves a deletion the index lacks.
         for sent in &session(1, 30, 11) {
             room.deliver(sent);
@@ -1347,18 +2009,52 @@ mod tests {
         assert!(room.board.recent.is_empty() && !room.board.tail.is_empty());
         assert!(held(&room.join()) == held(&room.reference));
         let cleared = {
+            let markers = room
+                .board
+                .markers()
+                .get_or_insert_map(ydoc::CONTRIBUTORS_ROOT);
             let mut txn = room.board.markers().transact_mut();
             markers.remove(&mut txn, "writer");
             ydoc::committed_update(txn)
         };
-        apply(&room.reference, &cleared);
-        let writer = room.join();
-        let step2 = room.step2(&writer);
-        assert!(step2.delete_set().get(&ClientID::new(ROOM)).is_some());
-        assert!(!room.board.changes(&step2));
+        room.relay(&cleared);
+        let step2 = room.step2(&room.join());
+        assert!(
+            decode(&step2)
+                .delete_set()
+                .get(&ClientID::new(ROOM))
+                .is_some()
+        );
+        assert!(!changes(&room.board, &step2));
         room.store();
         let mut stored = vec![room.stored_base.clone()];
         stored.extend(room.rows.iter().cloned());
         assert!(held(&replica(&stored)) == held(&room.reference));
+    }
+
+    /// A marker still live when a fold's base holds it deleted (a committed
+    /// row hid it and the room has not cleared it) is written again: fresh
+    /// joiners and ones holding the base read it live, and a writer's step 2
+    /// deletes no live marker, so the marker check admits it.
+    #[test]
+    fn a_live_marker_survives_a_fold() {
+        let mut room = Room::new();
+        room.mark("writer");
+        for sent in &session(1, 30, 11) {
+            room.deliver(sent);
+        }
+        room.store();
+        let holding = room.join();
+        assert!(room.fold().is_some());
+        assert!(room.board.holds_base(&holding.transact().state_vector()));
+        room.catch_up(&holding);
+        let fresh = room.join();
+        let replica = room.board.replica().unwrap();
+        for doc in [&fresh, &holding, &room.peer, &replica] {
+            assert!(held(doc) == held(&room.reference));
+        }
+        let live = ydoc::live_markers(&room.board.markers().transact());
+        let step2 = decode(&room.step2(&fresh));
+        assert!(!live.is_empty() && live.iter().all(|id| !step2.delete_set().contains(id)));
     }
 }
