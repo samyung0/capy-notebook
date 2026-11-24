@@ -45,17 +45,20 @@ export function refusesAdds(store: Store) {
  * board is full is refused, its size checked first (`refusesAdds`): the
  * cap's line says why, `select` puts select back and nothing of the press
  * reaches a tool. Only a press checks, never the gate coming on under a tool
- * (a peer's drag would encode at each crossing). A double click checks the
- * size first, so a board deletions freed places its double-click note (the
- * flag `setRoomSize` sets at once). The hooks are the tool controller's
- * (`BaseTool.addHook`), which hear only presses that reach the canvas, never
- * the toolbar's or the menu's, and run before any tool's handler; BlockSuite
- * counts a double click at the second press's pointerup, before the DOM's
- * `dblclick`. */
+ * (a peer's moves would encode at each crossing). A double click on empty
+ * canvas (nothing `hit`) adds a note, or with the note off, as on a full
+ * board, a canvas text label: on a full board it is refused the same way,
+ * its size checked first, so a board deletions freed places its note (the
+ * flag `setRoomSize` sets at once); one on an element edits it and goes on.
+ * The hooks are the tool controller's (`BaseTool.addHook`), which hear only
+ * presses that reach the canvas, never the toolbar's or the menu's, and run
+ * before any tool's handler; BlockSuite counts a double click at the second
+ * press's pointerup, before the DOM's `dblclick`. */
 export function gatePresses(
   store: Store,
   tool: Pick<BaseTool, 'addHook'>,
   adds: () => boolean,
+  hit: (event: PointerEventState) => boolean,
   select: () => void
 ) {
   let refused = false;
@@ -75,8 +78,8 @@ export function gatePresses(
     'dragEnd',
   ] as const)
     tool.addHook(name, () => (refused ? false : undefined));
-  tool.addHook('doubleClick', () => {
+  tool.addHook('doubleClick', (event: PointerEventState) => {
     if (refused) return false;
-    if (full.has(store)) checkBoardSize(store);
+    if (full.has(store) && !hit(event) && refusesAdds(store)) return false;
   });
 }

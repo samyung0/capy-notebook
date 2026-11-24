@@ -842,9 +842,10 @@ export function mountDrawingBoard(
   // content: select, the eraser, delete and moving stay; a tool that adds, a
   // paste, a drop, ⌘D and Duplicate (`duplicates`), an Alt-drag's copy, a
   // mind map's Tab or Enter child, a shape's auto-complete +, a double
-  // click's note, a piece, a picture, an image and a formula are refused with
-  // the cap's line (boardFull.ts). Typing in what is there and Undo are not
-  // stopped; a refusal by the room still goes to the copy-only recovery.
+  // click's note or label, a piece, a picture, a link or quiz card, an image
+  // and a formula are refused with the cap's line (boardFull.ts). Typing in
+  // what is there and Undo are not stopped; a refusal by the room still goes
+  // to the copy-only recovery.
   let full = false;
   const ADDS_NOTHING = new Set([
     DefaultTool.toolName,
@@ -867,6 +868,7 @@ export function mountDrawingBoard(
     store,
     gfx.tool.get(DefaultTool),
     () => !(readOnly || ADDS_NOTHING.has(gfx.tool.currentToolName$.peek())),
+    ({ x, y }) => !!gfx.getElementByPoint(...gfx.viewport.toModelCoord(x, y)),
     () => gfx.tool.setTool(DefaultTool)
   );
   /** A mind map's node alone is selected: Tab and Enter add its child or

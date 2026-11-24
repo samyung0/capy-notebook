@@ -72,7 +72,13 @@ it('checks a full board at a press with a tool that adds, and refuses the press 
     adds = false;
   });
   const { heard, preventDefault, tool } = controller();
-  gatePresses(store, tool, () => adds, select);
+  gatePresses(
+    store,
+    tool,
+    () => adds,
+    () => false,
+    select
+  );
   expect(heard('pointerDown')).toBe(false);
   expect(check).toHaveBeenCalledOnce();
   expect(userToast).toHaveBeenCalledOnce();
@@ -92,19 +98,41 @@ it('checks a full board at a press with a tool that adds, and refuses the press 
   expect(userToast).toHaveBeenCalledOnce();
 });
 
-// Review 4 finding 3: a double click on a full board checks its size before
-// the double-click note is decided (its flag follows the size at once), and
-// one under the cap checks nothing.
-it('checks a full board at a double click, and a board under its cap not', () => {
+// Review 4 finding 3, review 5 finding 3: a double click on empty canvas
+// adds a note, or with the note off (a full board) a canvas text label. On
+// a full board it checks the size first and, still full, is refused with
+// the cap's line before either is decided; on an element (editing it) it
+// goes on; once deletions freed the board it is the tool's, whose note
+// flag followed the size at once. Fails if a full board's double click
+// adds a label, or acts on the size as it stood.
+it("refuses a full board's double click on empty canvas, its size checked first, and not one on an element", () => {
   const store = {} as Store;
-  const check = vi.fn(() => setBoardFull(store, false));
+  let exact = 'full';
+  const check = vi.fn(() => setBoardFull(store, exact === 'full'));
   setBoardCheck(store, check);
   setBoardFull(store, true);
+  let element = false;
   const { heard, tool } = controller();
-  gatePresses(store, tool, () => false, vi.fn());
+  gatePresses(
+    store,
+    tool,
+    () => false,
+    () => element,
+    vi.fn()
+  );
   expect(heard('pointerDown')).toBe(true);
-  expect(heard('doubleClick')).toBe(true);
+  expect(heard('doubleClick')).toBe(false);
   expect(check).toHaveBeenCalledOnce();
+  expect(userToast).toHaveBeenCalledOnce();
+  element = true;
   expect(heard('doubleClick')).toBe(true);
-  expect(check).toHaveBeenCalledOnce();
+  expect(userToast).toHaveBeenCalledOnce();
+  element = false;
+  exact = 'freed';
+  expect(heard('doubleClick')).toBe(true);
+  expect(check).toHaveBeenCalledTimes(2);
+  expect(userToast).toHaveBeenCalledOnce();
+  // Under the cap a double click checks nothing.
+  expect(heard('doubleClick')).toBe(true);
+  expect(check).toHaveBeenCalledTimes(2);
 });

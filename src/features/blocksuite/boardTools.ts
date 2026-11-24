@@ -3205,7 +3205,9 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
 
   /** The New tile: the workspace makes one, the card lands, its editor opens (also
    * when the panel closed while the create was in flight: nothing made is left
-   * unplaced and unsaid). A full board makes none it would refuse to place. */
+   * unplaced and unsaid). A full board makes none it would refuse to place; one
+   * a peer filled while the create was in flight refuses the card with the cap's
+   * line, and the one made still opens, kept in the workspace's list. */
   private async createMaterial(kind: CardMaterialKind) {
     const workspace = workspaceOf(this.edgeless.std);
     if (!workspace || this.creating || refusesAdds(this.gfx.doc)) return;
