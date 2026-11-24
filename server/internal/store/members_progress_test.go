@@ -359,7 +359,7 @@ func TestStillMissingWaitsForGrades(t *testing.T) {
 	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{"p2": "diffusion"}, now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	missed := func() []MissedQuestion {
+	missed := func() []StudyQuestion {
 		t.Helper()
 		got, err := f.s.WorkspaceMemberProfile(ctx, f.user, f.ws.ID, f.viewer, now.Add(time.Minute))
 		if err != nil {

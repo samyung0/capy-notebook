@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
 // A drawing answer's stored objects (migration 0156): the board the member
@@ -58,24 +59,64 @@ func scanDrawing(row pgx.Row) (Drawing, error) {
 }
 
 // drawingPartIn says whether questions (a JSON array of questions) hold partID
-// as a drawing part.
+// as a canvas part its drawing is stored under: one on its own canvas, or the
+// first of the parts answering in one canvas above, whose drawing answers
+// them all (questions.DrawingParts). The others sharing it take none.
 func drawingPartIn(raw []byte, partID string) bool {
 	var qs []map[string]any
 	if json.Unmarshal(raw, &qs) != nil {
 		return false
 	}
 	for _, q := range qs {
-		parts, _ := q["parts"].([]any)
-		for _, rp := range parts {
-			p, _ := rp.(map[string]any)
-			if p["id"] != partID {
-				continue
-			}
-			a, _ := p["answer"].(map[string]any)
-			return a["type"] == "drawing"
+		if owner, ok := questions.DrawingParts(q)[partID]; ok {
+			return owner == partID
 		}
 	}
 	return false
+}
+
+// waitsOnAI says whether a graded part still waits on the AI's marking: Not
+// marked, with no AI mark yet.
+func waitsOnAI(p map[string]any) bool {
+	pending, _ := p["pending"].(bool)
+	_, marked := p["aiAwards"]
+	return pending && !marked
+}
+
+// doneDrawings are the drawing parts (questions.DrawingParts) answering
+// partIDs, whose marking has just landed, that no part of graded still waits
+// on: a drawing answering in a canvas above keeps its marking image until
+// every part it answers has had its marking.
+func doneDrawings(graded []map[string]any, partIDs []string) []string {
+	marked := make(map[string]bool, len(partIDs))
+	for _, id := range partIDs {
+		marked[id] = true
+	}
+	var out []string
+	for _, q := range graded {
+		owners := questions.DrawingParts(q)
+		touched, waiting := map[string]bool{}, map[string]bool{}
+		parts, _ := q["parts"].([]any)
+		for _, raw := range parts {
+			p, _ := raw.(map[string]any)
+			id, _ := p["id"].(string)
+			owner, ok := owners[id]
+			if !ok {
+				continue
+			}
+			if marked[id] {
+				touched[owner] = true
+			} else if waitsOnAI(p) {
+				waiting[owner] = true
+			}
+		}
+		for owner := range touched {
+			if !waiting[owner] {
+				out = append(out, owner)
+			}
+		}
+	}
+	return out
 }
 
 // drawingAttempt is a member's running assignment attempt as a drawing reads it.
@@ -96,17 +137,17 @@ func (s *Store) inDrawingAttempt(ctx context.Context, userID, attemptID string, 
 	defer tx.Rollback(ctx)
 	var r attemptRow
 	var d drawingAttempt
-	err = tx.QueryRow(ctx, `SELECT COALESCE(a.workspace_id, ''), a.own, a.created_by, t.submitted_at, t.deadline_at, a.closed_at, a.no_late, a.due_at, a.questions, a.marking
+	err = tx.QueryRow(ctx, `SELECT a.workspace_id, t.submitted_at, t.deadline_at, a.closed_at, a.no_late, a.due_at, a.questions, a.marking
 		FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 		WHERE t.id=$1 AND t.user_id=$2 FOR UPDATE OF t`, attemptID, userID).
-		Scan(&r.wsID, &r.own, &r.maker, &r.submitted, &r.deadline, &r.closedAt, &r.noLate, &r.dueAt, &d.frozen, &d.marking)
+		Scan(&r.wsID, &r.submitted, &r.deadline, &r.closedAt, &r.noLate, &r.dueAt, &d.frozen, &d.marking)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if _, err := s.staffOf(ctx, tx, userID, r.task()); err != nil {
+	if _, err := s.assignmentStaff(ctx, tx, userID, r.wsID); err != nil {
 		return err
 	}
 	if r.submitted != nil {
@@ -282,17 +323,32 @@ func attemptDrawingsTx(ctx context.Context, q rowsQueryer, attemptID string) (ma
 	return out, rows.Err()
 }
 
-// DropDrawingImages forgets the marking images of an attempt's parts once
-// their AI marking has landed (Epo 2026-11-06): nothing marks them again, and
-// the board stays.
+// DropDrawingImages forgets the marking images of the drawings answering an
+// attempt's parts once their AI marking has landed and is stored (Epo
+// 2026-11-06): nothing marks them again, and the board stays. A drawing
+// answering several parts in one canvas keeps its image while any of them
+// still waits (doneDrawings).
 func (s *Store) DropDrawingImages(ctx context.Context, attemptID string, partIDs []string) error {
-	return dropDrawingImagesTx(ctx, s.pool, attemptID, partIDs)
+	if len(partIDs) == 0 {
+		return nil
+	}
+	var raw []byte
+	if err := s.pool.QueryRow(ctx, `SELECT questions FROM attempts WHERE id=$1`, attemptID).Scan(&raw); err != nil {
+		return err
+	}
+	graded, err := decodeFrozen(raw)
+	if err != nil {
+		return err
+	}
+	return dropDrawingImagesTx(ctx, s.pool, attemptID, doneDrawings(graded, partIDs))
 }
 
 type execer interface {
 	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
 }
 
+// dropDrawingImagesTx forgets the marking images of the drawings stored under
+// partIDs (drawing parts).
 func dropDrawingImagesTx(ctx context.Context, q execer, attemptID string, partIDs []string) error {
 	if len(partIDs) == 0 {
 		return nil
@@ -327,6 +383,87 @@ func withDrawingAnswers(answers map[string]any, drawings map[string]Drawing) map
 		out[part] = map[string]any{"drawing": d.ID}
 	}
 	return out
+}
+
+// drawingTargets maps each drawing part of the questions before to the part
+// its drawing goes under after (Epo 2026-11-24): the drawing part of its
+// canvas there, the first part answering in it. A canvas is named by its
+// question and where it sits (questions.DrawingCanvases), a group's an edit
+// handed to its sub-part by that part's (questions.UngroupedCanvases); one no
+// part answers in any more has no target, and its drawing is dropped.
+func drawingTargets(before, after []map[string]any) map[string]string {
+	leads := map[string]string{}
+	for _, q := range after {
+		id, _ := q["id"].(string)
+		for part, canvas := range questions.DrawingCanvases(q) {
+			leads[id+"\x00"+canvas] = part
+		}
+	}
+	now := map[string]map[string]any{}
+	for _, q := range after {
+		id, _ := q["id"].(string)
+		now[id] = q
+	}
+	out := map[string]string{}
+	for _, q := range before {
+		id, _ := q["id"].(string)
+		renamed := map[string]string{}
+		if next, ok := now[id]; ok {
+			renamed = questions.UngroupedCanvases(q, next)
+		}
+		for part, canvas := range questions.DrawingCanvases(q) {
+			if to, ok := renamed[canvas]; ok {
+				canvas = to
+			}
+			if lead, ok := leads[id+"\x00"+canvas]; ok {
+				out[part] = lead
+			}
+		}
+	}
+	return out
+}
+
+// moveDrawingsTx moves a running attempt's drawings to their targets
+// (drawingTargets) and deletes the ones with none, which ends their charge,
+// answering the drawings it holds then by part. A move only renames the row's
+// part, so its bytes stay counted once.
+func moveDrawingsTx(ctx context.Context, tx pgx.Tx, attemptID string, targets map[string]string) (map[string]Drawing, error) {
+	stored, err := attemptDrawingsTx(ctx, tx, attemptID)
+	if err != nil {
+		return nil, err
+	}
+	held := make(map[string]Drawing, len(stored))
+	var dropped, moved, to []string
+	for part, d := range stored {
+		target, ok := targets[part]
+		switch {
+		case !ok:
+			dropped = append(dropped, d.ID)
+			continue
+		case target != part:
+			moved, to = append(moved, d.ID), append(to, target)
+			d.PartID = target
+		}
+		held[d.PartID] = d
+	}
+	// The dropped first: a part may take a drawing while holding one whose
+	// canvas it no longer answers in.
+	if len(dropped) > 0 {
+		if _, err := tx.Exec(ctx, `DELETE FROM drawings WHERE id = ANY($1)`, dropped); err != nil {
+			return nil, err
+		}
+	}
+	if len(moved) > 0 {
+		// Each steps aside under its own id first, as two may swap parts.
+		if _, err := tx.Exec(ctx, `UPDATE drawings SET part_id=id WHERE id = ANY($1)`, moved); err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(ctx, `UPDATE drawings d SET part_id=m.part, updated_at=now()
+			FROM unnest($1::text[], $2::text[]) AS m(id, part) WHERE d.id=m.id`, moved, to); err != nil {
+			return nil, err
+		}
+	}
+	return held, nil
 }
 
 // isDrawingAnswer says whether an answer value names a stored drawing.
@@ -374,10 +511,10 @@ func (s *Store) ReadableDrawing(ctx context.Context, userID, drawingID string) (
 	if d.UserID == userID {
 		return d, nil
 	}
-	// A practice drawing, and a task's (whose maker drew it), are their drawer's alone.
+	// A practice drawing is its drawer's alone.
 	var wsID *string
 	if err := s.pool.QueryRow(ctx, `SELECT a.workspace_id FROM attempts t
-		JOIN assignments a ON a.id=t.assignment_id AND NOT a.own WHERE t.id=$1`, d.AttemptID).Scan(&wsID); err != nil && !isNoRows(err) {
+		JOIN assignments a ON a.id=t.assignment_id WHERE t.id=$1`, d.AttemptID).Scan(&wsID); err != nil && !isNoRows(err) {
 		return Drawing{}, err
 	}
 	if wsID == nil {
@@ -388,6 +525,18 @@ func (s *Store) ReadableDrawing(ctx context.Context, userID, drawingID string) (
 		return Drawing{}, ErrNotFound
 	}
 	return d, nil
+}
+
+// sharedUnmarkedSQL holds while a drawing answering in a canvas above (its
+// part's answer is shared) still has a part to mark: any shared canvas part
+// of its question (q, the part p) not marked yet. The parts sharing one
+// canvas are marked on one drawing (Epo 2026-11-23); a question with a
+// shared group canvas and a shared stem canvas waits on both.
+func sharedUnmarkedSQL(q, p string) string {
+	return `(COALESCE((` + p + `->'answer'->>'shared')::boolean, false) AND EXISTS (
+		SELECT 1 FROM jsonb_array_elements(` + q + `->'parts') s
+		WHERE COALESCE((s->'answer'->>'shared')::boolean, false)
+			AND (NOT s ? 'awarded' OR COALESCE((s->>'pending')::boolean, false))))`
 }
 
 // dropLeaverMarkedDrawingsTx deletes, as a member leaves or is removed, their
@@ -401,19 +550,22 @@ func dropLeaverMarkedDrawingsTx(ctx context.Context, tx pgx.Tx, wsID, userID str
 			AND EXISTS (SELECT 1 FROM jsonb_array_elements(t.questions) q,
 				jsonb_array_elements(q->'parts') p
 				WHERE p->>'id' = d.part_id AND p ? 'awarded'
-					AND COALESCE((p->>'pending')::boolean, false) = false)`, wsID, userID)
+					AND COALESCE((p->>'pending')::boolean, false) = false
+					AND NOT `+sharedUnmarkedSQL("q", "p")+`)`, wsID, userID)
 	return err
 }
 
 // markedDrawingSQL finds, for a drawing d of attempt t, the question and part
-// it answers, only once that part is marked (graded, not waiting on anyone)
-// and, for an assignment, once it has closed with its grades out, so staff can
-// still revise marks while it runs (Epo 2026-11-08).
-const markedDrawingSQL = `SELECT q.n AS question, p.n AS part, jsonb_array_length(q.v->'parts') AS parts
+// it answers, only once that part is marked (graded, not waiting on anyone),
+// every part a shared drawing answers too, and, for an assignment, once it
+// has closed with its grades out, so staff can still revise marks while it
+// runs (Epo 2026-11-08).
+var markedDrawingSQL = `SELECT q.n AS question, p.n AS part, jsonb_array_length(q.v->'parts') AS parts
 	FROM jsonb_array_elements(COALESCE(t.questions, '[]'::jsonb)) WITH ORDINALITY q(v, n),
 		jsonb_array_elements(q.v->'parts') WITH ORDINALITY p(v, n)
 	WHERE p.v->>'id' = d.part_id AND p.v ? 'awarded'
 		AND COALESCE((p.v->>'pending')::boolean, false) = false
+		AND NOT ` + sharedUnmarkedSQL("q.v", "p.v") + `
 		AND (t.assignment_id IS NULL OR EXISTS (SELECT 1 FROM assignments a WHERE a.id = t.assignment_id
 			AND (a.closed_at IS NOT NULL OR (a.no_late AND a.due_at <= now()))
 			AND (a.grades_shown = 'automatic' OR a.grades_released_at IS NOT NULL)))

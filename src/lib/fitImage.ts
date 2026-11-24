@@ -8,9 +8,6 @@ import { IMAGE_MAX_SIDE } from '@/api/limits.generated';
 /** Bank figures' flat cap (server/internal/bank/assets.go); editor images take
  * the uploader's plan cap from the material (`imageMaxBytes`). */
 export const BANK_IMAGE_MAX_BYTES = 4 * 1024 * 1024;
-/** The image types the server stores as editor images (no SVG). */
-export const IMAGE_ACCEPT =
-  'image/png,image/jpeg,image/webp,image/gif,image/avif';
 /** JPEG and WebP quality of the first encode (Epo 2026-10-20). */
 const QUALITY = 0.85;
 /** Over the cap: the long side a lossy image is drawn at for its falling
@@ -23,15 +20,24 @@ const PNG_SIDES = [2000, 1400, 1000];
  * an Office file. */
 const FLAT_COLOURS = 256;
 const EXTENSION = /\.[^.]*$/;
-/** The image types the server stores as editor images, by the extension its
- * reservation wants (server/internal/httpapi/editor_assets.go). */
+/** The image types the server stores as editor images and bank figures, by
+ * the extension its reservation wants (server/internal/httpapi/editor_assets.go). */
 export const IMAGE_EXTENSIONS: Record<string, string> = {
-  'image/avif': 'avif',
   'image/gif': 'gif',
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
 };
+/** The image types a person may add as an editor image or a bank figure, by
+ * the extension such a file has: the stored ones and AVIF, which fitImage
+ * always re-encodes (Epo 2026-11-23: the gateway decodes no AVIF, and the AI
+ * grader takes PNG, JPEG or WebP). */
+export const PICKED_IMAGE_EXTENSIONS: Record<string, string> = {
+  ...IMAGE_EXTENSIONS,
+  'image/avif': 'avif',
+};
+/** What an editor image's or bank figure's file picker offers (no SVG). */
+export const IMAGE_ACCEPT = Object.keys(PICKED_IMAGE_EXTENSIONS).join(',');
 /** The image types older Word, PowerPoint, LibreOffice and Google Docs
  * imports open inside DOCX/PPTX; an Office file gets every other type
  * re-encoded (Epo 2026-10-13). */
@@ -86,9 +92,10 @@ export class ImageTooManyPixelsError extends Error {
   }
 }
 
-/** A source's image type by its first bytes when it is one the server
- * measures and keeps (Q344): PNG, JPEG, GIF or WebP. A source of any other
- * format is re-saved even within the pixel limit. */
+/** An image's type by its first bytes when it is one the server measures and
+ * keeps as a source (Q344) and stores as an editor image or bank figure: PNG,
+ * JPEG, GIF or WebP. Any other format is re-saved, a source even within the
+ * pixel limit and an editor image (an AVIF) whatever its size. */
 function sourceType(head: Uint8Array) {
   const at = (offset: number, ...values: number[]) =>
     values.every((value, i) => head[offset + i] === value);
@@ -179,7 +186,9 @@ async function decodeLazily(file: File) {
  * transparent, where the browser has no WebP encoder) and, for an `office`
  * file (DOCX/PPTX/XLSX), JPEG for a photo and PNG for a transparent image or
  * a flat graphic, never WebP. The original is kept when it needs no resize,
- * fits `maxBytes`, is a type its target takes and the result is not smaller.
+ * fits `maxBytes`, is a type its target takes (for a note, by its bytes) and
+ * the result is not smaller, so an AVIF, which nothing stores, is always
+ * re-encoded (Epo 2026-11-23).
  * A result over `maxBytes` is shrunk: a lossy one at SHRINK_SIDE with falling
  * quality, a transparent PNG at PNG_SIDES. An animated GIF is kept within the
  * side and the cap and refused past either, since a canvas keeps one frame.
@@ -216,12 +225,11 @@ export async function fitImage(
       : fitSize(bitmap.width, bitmap.height, IMAGE_MAX_SIDE);
     const resized =
       target.width !== bitmap.width || target.height !== bitmap.height;
-    if (
-      maxPixels &&
-      !resized &&
-      sourceType(new Uint8Array(await file.slice(0, 12).arrayBuffer()))
-    )
-      return file;
+    // By its bytes, whatever its name: an AVIF named .webp is still AVIF.
+    const storable = sourceType(
+      new Uint8Array(await file.slice(0, 12).arrayBuffer())
+    );
+    if (maxPixels && !resized && storable) return file;
     if (
       file.type === 'image/gif' &&
       isAnimatedGif(new Uint8Array(await file.arrayBuffer()))
@@ -267,7 +275,7 @@ export async function fitImage(
       ? file.type === 'image/png'
       : office
         ? OFFICE_TYPES.has(file.type)
-        : file.type in IMAGE_EXTENSIONS;
+        : storable === file.type;
     if (!resized && keeps && file.size <= maxBytes && blob.size >= file.size)
       return file;
     const named = (result: Blob) =>

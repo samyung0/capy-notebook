@@ -124,7 +124,10 @@ class FormulaElementView extends GfxElementModelView<FormulaElementModel> {
 
   override onCreated() {
     super.onCreated();
-    this.on('dblclick', () => openEditor(this.gfx, this.model));
+    // A locked card opens for no editing, as BlockSuite's own elements do.
+    this.on('dblclick', () => {
+      if (!this.model.isLocked()) openEditor(this.gfx, this.model);
+    });
   }
 }
 

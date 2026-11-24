@@ -13,6 +13,7 @@ import type {
   ReviewReason,
   ReviewSessionRef,
   ReviewSuggestion,
+  StudyQuestion,
   StudySummary,
   SummaryTopic,
 } from '@/api/types';
@@ -692,6 +693,93 @@ function studyTopics(wsId: string): SummaryTopic[] {
   }));
 }
 
+/** Each question's latest result for the topic questions pages, seeded in a
+ * spread across the workspace and moved by a check. */
+const questionChecks = new Map<
+  string,
+  Pick<StudyQuestion, 'at' | 'misses' | 'result'>
+>();
+const SEEDED: StudyQuestion['result'][] = [
+  'wrong',
+  'right',
+  'unattempted',
+  'partial',
+];
+
+function checkOf(key: string, i: number) {
+  const seen = questionChecks.get(key);
+  if (seen) return seen;
+  const result = SEEDED[i % SEEDED.length];
+  if (result === 'unattempted') return { misses: 0, result };
+  return {
+    at: daysAgo(1 + (i % 5)),
+    misses: result === 'right' ? 0 : 1 + (i % 2),
+    result,
+  };
+}
+
+const promptOf = (q: Question) =>
+  [...q.stem, ...q.parts.flatMap((p) => p.blocks)]
+    .map((b) => (b.type === 'text' ? b.text.trim() : ''))
+    .find(Boolean) ?? '';
+
+/** GET …/study/questions: a topic's questions (`topic`, `others`) or
+ * Frequently wrong's, with content to practise. A member's read for staff is
+ * members.ts's. */
+function studyQuestions(
+  wsId: string,
+  list: string,
+  topicId: string | null
+): StudyQuestion[] | null {
+  const topics = db.topics.filter((t) => t.workspaceId === wsId);
+  if (list === 'topic' && !topics.some((t) => t.id === topicId)) return null;
+  const out: StudyQuestion[] = [];
+  let i = 0;
+  for (const mt of db.materials) {
+    if (mt.workspaceId !== wsId || mt.kind !== 'quiz') continue;
+    for (const question of db.quizFromMaterial(mt).questions) {
+      const key = `${mt.id}/${question.id}`;
+      const check = checkOf(key, i++);
+      const topic = topics.find((t) => t.id === mt.topicId);
+      if (list === 'topic' && mt.topicId !== topicId) continue;
+      if (list === 'others' && topic) continue;
+      if (
+        list === 'wrong' &&
+        (check.result === 'right' || check.result === 'unattempted')
+      )
+        continue;
+      out.push({
+        ...check,
+        group: topic ? 'topic' : 'others',
+        materialId: mt.id,
+        materialTitle: mt.title,
+        question: learnerView(question),
+        questionId: question.id,
+        text: promptOf(question),
+        topicId: topic?.id,
+        topicName: topic?.name,
+      });
+    }
+  }
+  if (list === 'wrong') out.sort((a, b) => b.misses - a.misses);
+  return out;
+}
+
+function questionsResponse(
+  params: Record<string, string | readonly string[] | undefined>,
+  request: Request
+) {
+  const search = new URL(request.url).searchParams;
+  const list = studyQuestions(
+    String(params.id),
+    search.get('list') ?? '',
+    search.get('topicId')
+  );
+  return list
+    ? HttpResponse.json({ questions: list })
+    : new HttpResponse(null, { status: 404 });
+}
+
 const SHOWCASE_PAST: PastReview[] = [
   {
     answered: 18,
@@ -1235,6 +1323,9 @@ export const studyHandlers = [
   http.get('/api/learning/overview', () =>
     HttpResponse.json(learningOverview())
   ),
+  http.get('/api/workspaces/:id/study/questions', ({ params, request }) =>
+    questionsResponse(params, request)
+  ),
   http.get('/api/workspaces/:id/study/topics', ({ params }) =>
     HttpResponse.json({ topics: studyTopics(String(params.id)) })
   ),
@@ -1376,6 +1467,12 @@ export const studyHandlers = [
     const graded = gradeQuestions([question], body.answers);
     const score = graded.max > 0 ? graded.awarded / graded.max : 0;
     rate(body.materialId, body.itemId, score < 0.5);
+    const before = questionChecks.get(`${body.materialId}/${body.itemId}`);
+    questionChecks.set(`${body.materialId}/${body.itemId}`, {
+      at: new Date().toISOString(),
+      misses: (before?.misses ?? 0) + (score < 1 ? 1 : 0),
+      result: score >= 1 ? 'right' : score > 0 ? 'partial' : 'wrong',
+    });
     if (body.session)
       answer(body.session, body.materialId, body.itemId, {
         answers: body.answers,

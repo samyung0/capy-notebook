@@ -87,10 +87,12 @@ it("keeps a task draft's Publish on Settings", async () => {
   expect(host.textContent).toContain(m.assignment_publish());
 });
 
-// Epo 2026-11-14: a class's Assignment takes Points, and graded, Show grades.
-it('gives a graded Assignment its Points and Show grades, a task neither', async () => {
+// Epo 2026-11-14: a class's Assignment takes Points, and graded, Show grades;
+// only one taking uploads (2026-11-21).
+it('gives an Assignment taking uploads its Points and Show grades, one without neither', async () => {
   const unmarked = {
     ...assignment({ assignees: [], showGrades: 'automatic' }),
+    allowUploads: true,
     kind: 'unmarked',
     points: 20,
   } as Assignment;
@@ -99,7 +101,11 @@ it('gives a graded Assignment its Points and Show grades, a task neither', async
   expect(host.querySelector<HTMLInputElement>(points)?.value).toBe('20');
   expect(host.textContent).toContain(m.assignment_field_grades());
   act(() => root.unmount());
-  await show({ ...unmarked, own: true, points: undefined } as Assignment);
+  await show({
+    ...unmarked,
+    allowUploads: false,
+    points: undefined,
+  } as Assignment);
   expect(host.querySelector(points)).toBeNull();
   expect(host.textContent).not.toContain(m.assignment_field_grades());
 });

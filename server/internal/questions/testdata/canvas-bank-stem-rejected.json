@@ -1,0 +1,45 @@
+{
+  "name": "canvas-bank-stem-rejected",
+  "valid": false,
+  "policy": {
+    "bank": true
+  },
+  "question": {
+    "id": "q1",
+    "layout": "paper",
+    "labels": "letters",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Look at the canvas."
+      },
+      {
+        "type": "canvas",
+        "board": "asset_board_1",
+        "image": "asset_image_1"
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Is the triangle right-angled?"
+          }
+        ],
+        "answer": {
+          "type": "boolean",
+          "correct": true
+        },
+        "marks": 1,
+        "solution": [
+          {
+            "type": "text",
+            "text": "Its sides are 3, 4 and 5."
+          }
+        ]
+      }
+    ]
+  }
+}

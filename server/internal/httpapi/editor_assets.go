@@ -24,13 +24,16 @@ import (
 )
 
 // editorAssetRules lists, per purpose, each allowed extension's content types.
-// A note's media are images and audio only (Epo 2026-10-15).
+// A note's media are images and audio only (Epo 2026-10-15). No AVIF: Go
+// decodes none and the AI grader takes PNG, JPEG or WebP, so the browser
+// re-encodes it first (src/lib/fitImage.ts, Epo 2026-11-23).
 var editorAssetRules = map[string]map[string][]string{
 	"image": {
 		".png": {"image/png"}, ".jpg": {"image/jpeg"}, ".jpeg": {"image/jpeg"},
-		".gif": {"image/gif"}, ".webp": {"image/webp"}, ".avif": {"image/avif"},
+		".gif": {"image/gif"}, ".webp": {"image/webp"},
 	},
-	// A drawn sample answer's board, gzipped (Q3): the quiz's own asset.
+	// A quiz's drawn board, gzipped: a drawn sample answer's (Q3) or a canvas
+	// block's (Epo 2026-11-23), the quiz's own asset.
 	"board": {".gz": {"application/gzip"}},
 	"audio": {
 		".mp3": {"audio/mpeg"}, ".wav": {"audio/wav", "audio/x-wav"},
@@ -168,8 +171,8 @@ func (a *api) checkEditorAsset(in reserveEditorAssetRequest, scope editorAssetSc
 	if err != nil {
 		return "", "", "", err
 	}
-	// A canvas's board lives in its room (Epo 2026-11-18); the one board asset
-	// is a quiz's drawn sample answer.
+	// A canvas's board lives in its room (Epo 2026-11-18); a board asset is a
+	// quiz's: a drawn canvas block's or a drawn sample answer's.
 	if in.Purpose == "board" && scope.kind == store.MaterialCanvas {
 		return "", "", "", huma.Error400BadRequest("a canvas takes no board asset")
 	}
@@ -284,10 +287,23 @@ func editorAssetObjectKey(assetID, ext string) string {
 
 func (a *api) resolveEditorAsset(w http.ResponseWriter, r *http.Request) {
 	asset, err := a.s.GetEditorAsset(r.Context(), chi.URLParam(r, "assetId"))
-	// A trashed asset stays hidden until its material's save restores it.
-	if err != nil || asset.Status != "ready" || asset.Trashed {
+	if err != nil || asset.Status != "ready" {
 		a.fail(w, store.ErrNotFound)
 		return
+	}
+	// A trashed asset stays hidden until its material's save restores it, but
+	// for the editors of the quiz it belongs to, until it is purged (Epo
+	// 2026-11-24): a canvas their tab kept comes back after a reload.
+	if asset.Trashed {
+		editor, err := a.s.EditsAssetQuiz(r.Context(), uid(r), asset)
+		if err != nil {
+			a.fail(w, err)
+			return
+		}
+		if !editor {
+			a.fail(w, store.ErrNotFound)
+			return
+		}
 	}
 	readable, err := a.s.EditorAssetReadable(r.Context(), uid(r), asset)
 	// A material opened from the Trash shows its images and audio.
@@ -347,9 +363,6 @@ func editorAssetSignatureAllowed(purpose, ext string, data []byte) bool {
 		return has([]byte("GIF87a")) || has([]byte("GIF89a"))
 	case ".webp":
 		return len(data) >= 12 && has([]byte("RIFF")) && string(data[8:12]) == "WEBP"
-	case ".avif":
-		return isISOBaseMedia && (bytes.Contains(data[8:min(len(data), 32)], []byte("avif")) ||
-			bytes.Contains(data[8:min(len(data), 32)], []byte("avis")))
 	case ".gz":
 		return has([]byte{0x1f, 0x8b})
 	case ".mp3":

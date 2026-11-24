@@ -45,6 +45,7 @@ import {
   type PracticeStart,
   TopicPractice,
 } from './TopicPractice';
+import { FrequentlyWrongSection } from './TopicQuestions';
 import { TopicsSection, weakestTopicId } from './TopicsSection';
 
 /** Practice (Epo 2026-11-03, boards P1 and P2; who sees what, board U3; its own
@@ -195,8 +196,10 @@ function PracticeList({
               />
             </section>
           )}
-          {/* Whoever practises: their own standing per topic. */}
+          {/* Whoever practises: their own standing per topic, then the
+              questions they miss most (Epo 2026-11-22). */}
           {!staff && <TopicsSection workspaceId={workspaceId} />}
+          {!staff && <FrequentlyWrongSection workspaceId={workspaceId} />}
           <AllPractice
             canEdit={canEdit}
             data={data}

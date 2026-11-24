@@ -6,7 +6,7 @@ import { expect, type Locator, type Page, test } from '@playwright/test';
  * card, and the image for marking.
  */
 
-type Stats = { canvas: string[]; marks: number; span: number };
+type Stats = { canvas: string[]; marks: number };
 const STROKE_PATH = /<path d="([^"]*)" stroke="#e03131"/;
 const WHOLE_PIXELS = /^M[\d LM]+$/;
 const stats = (page: Page) =>
@@ -206,6 +206,17 @@ const toImage = (page: Page) =>
   });
 const save = (page: Page) =>
   page.evaluate('window.__board.save().doc') as Promise<string>;
+/** The marking image's width and height in pixels. */
+const imageSize = async (page: Page) =>
+  page.evaluate(
+    async (url) => {
+      const image = new Image();
+      image.src = url;
+      await image.decode();
+      return [image.width, image.height];
+    },
+    await toImage(page)
+  );
 
 test('draws over the card and reopens from what it saved', async ({ page }) => {
   test.slow();
@@ -1324,10 +1335,11 @@ test('the image stacks as the screen does, and many formulas settle', async ({
   const prelude = `const root = document.querySelector('affine-edgeless-root');
     const gfx = root.gfx;`;
 
+  // Under where the note lands, which is one line tall once it settles.
   await add(`{ ${prelude}
     gfx.surface.addElement({ type: 'shape', shapeType: 'rect', filled: true,
       fillColor: '#000000', strokeColor: '#000000',
-      xywh: '[1000,0,300,200]' }); }`);
+      xywh: '[1000,0,300,30]' }); }`);
   const seen = await inkIn(page, await toImage(page));
   await add(`{ ${prelude}
     const note = gfx.doc.addBlock('affine:note', { xywh: '[980,-20,340,240]',
@@ -1446,8 +1458,8 @@ test('the answer area is fitted, keeps its screen size, and stays out of the ima
     "document.querySelector('affine-edgeless-root').gfx.viewport.setZoom(2)"
   );
   await expect.poll(async () => (await boxes()).chip.height).toBeCloseTo(20, 0);
-  // Only on screen: an empty board's span is the 820 × 520 default with its margin.
-  expect((await stats(page)).span).toBe(836);
+  // Only on screen: the marking image is the area, and its line isn't in it.
+  expect(await imageSize(page)).toEqual([1568, 980]);
   await page.evaluate(
     "window.__mount({ answerArea: { label: 'Answer area' }, readOnly: true })"
   );
@@ -1455,14 +1467,164 @@ test('the answer area is fitted, keeps its screen size, and stays out of the ima
   await expect(chip).toHaveCount(0);
 });
 
+// A Canvas part (Epo 2026-11-23): the teacher's area moves alone, and the
+// student's copy of the teacher's board keeps the question's parts as they are.
+test("a teacher's area moves by its label, and a student's copy keeps the question as it is", async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  const root = "document.querySelector('affine-edgeless-root')";
+  const areaAt = () =>
+    page.evaluate(() => {
+      const rect = document.querySelector('.capy-answer-box rect') as Element;
+      return [rect.getAttribute('x'), rect.getAttribute('y')];
+    });
+  await page.evaluate(
+    "window.__mount({ answerArea: { label: 'Answer area', movable: true } })"
+  );
+  await page.evaluate(`{ const gfx = ${root}.gfx;
+    gfx.surface.addElement({ type: 'shape', shapeType: 'rect', filled: true,
+      fillColor: '#1971c2', xywh: '[300,300,300,200]' }); }`);
+  const chip = await page.locator('.capy-answer-area').boundingBox();
+  if (!chip) throw new Error('no label');
+  await page.mouse.move(chip.x + 10, chip.y + 10);
+  await page.mouse.down();
+  await page.mouse.move(chip.x + 110, chip.y + 60, { steps: 8 });
+  await page.mouse.up();
+  const [x, y] = (await areaAt()).map(Number);
+  expect(x).toBeGreaterThan(50);
+  expect(y).toBeGreaterThan(20);
+  // The area moved alone, in one step to undo.
+  expect(await page.evaluate(`${root}.gfx.layer.canvasElements[0].xywh`)).toBe(
+    '[300,300,300,200]'
+  );
+  await page.keyboard.press('ControlOrMeta+z');
+  expect(await areaAt()).toEqual(['0', '0']);
+  await page.keyboard.press('ControlOrMeta+Shift+z');
+  expect(await areaAt()).toEqual([String(x), String(y)]);
+  const question = await save(page);
+
+  await page.evaluate(
+    `window.__mount({ answerArea: { label: 'Answer area' },
+      question: { board: ${JSON.stringify(question)}, tip: 'Part of the question' } })`
+  );
+  expect(await areaAt()).toEqual([String(x), String(y)]);
+  // Nothing of the student's yet: an empty answer.
+  expect(await canvas(page)).toEqual([]);
+  const shape = await page.evaluate(() => {
+    const host = document.querySelector('affine-edgeless-root') as unknown as {
+      getBoundingClientRect(): DOMRect;
+      gfx: { viewport: { toViewCoord(x: number, y: number): number[] } };
+    };
+    const rect = host.getBoundingClientRect();
+    const [vx, vy] = host.gfx.viewport.toViewCoord(450, 400);
+    return [rect.left + vx, rect.top + vy] as [number, number];
+  });
+  // A hover says what it is; a drag from it moves nothing and selects nothing.
+  await page.mouse.move(...shape);
+  await expect(page.locator('.capy-question-tip')).toHaveText(
+    'Part of the question'
+  );
+  await expect(page.locator('.capy-question-tip')).toBeVisible();
+  await page.mouse.down();
+  await page.mouse.move(shape[0] + 120, shape[1] + 80, { steps: 6 });
+  await page.mouse.up();
+  const selected = () =>
+    page.evaluate(`[...${root}.gfx.selection.selectedIds]`);
+  expect(await selected()).toEqual([]);
+  // The student's own stroke: Select all takes it alone, and Delete removes it.
+  const stroke = await page.evaluate(`${root}.gfx.surface.addElement({
+    type: 'brush', points: [[0, 0], [100, 40]], xywh: '[350,350,100,40]' })`);
+  await page.keyboard.press('ControlOrMeta+a');
+  expect(await selected()).toEqual([stroke]);
+  await page.keyboard.press('Delete');
+  expect(await canvas(page)).toEqual([]);
+  // The eraser across it leaves it.
+  await page.locator('edgeless-eraser-tool-button').first().click();
+  await page.mouse.move(shape[0] - 100, shape[1]);
+  await page.mouse.down();
+  await page.mouse.move(shape[0] + 100, shape[1], { steps: 8 });
+  await page.mouse.up();
+  expect(await page.evaluate(`${root}.gfx.gfxElements.length`)).toBe(1);
+  // Reopened from the saved answer, it is still part of the question.
+  const answer = await save(page);
+  await page.evaluate(
+    `window.__mount({ answerArea: { label: 'Answer area' },
+      saved: ${JSON.stringify(answer)},
+      question: { board: ${JSON.stringify(question)}, tip: 'Part of the question' } })`
+  );
+  expect(
+    await page.evaluate(`${root}.gfx.gfxElements.map((e) => e.isLocked())`)
+  ).toEqual([true]);
+});
+
+test("the marking image fades a question's parts under the student's work", async ({
+  page,
+}) => {
+  test.slow();
+  await openBoard(page);
+  const add = (fill: string, xywh: string) =>
+    page.evaluate(`document.querySelector('affine-edgeless-root').gfx.surface
+      .addElement({ type: 'shape', shapeType: 'rect', filled: true,
+        fillColor: '${fill}', strokeColor: '${fill}', xywh: '${xywh}' })`);
+  // The colour at a board point of the marking image, framing the area at (0, 0).
+  const colourAt = async (x: number, y: number) =>
+    page.evaluate(
+      async ([url, at]) => {
+        const image = new Image();
+        image.src = url;
+        await image.decode();
+        const output = document.createElement('canvas');
+        output.width = image.width;
+        output.height = image.height;
+        const ctx = output.getContext('2d');
+        if (!ctx) throw new Error('no context');
+        ctx.drawImage(image, 0, 0);
+        const scale = image.width / 1920;
+        const data = ctx.getImageData(at[0] * scale, at[1] * scale, 1, 1).data;
+        return [data[0], data[1], data[2]];
+      },
+      [await toImage(page), [x, y]] as const
+    );
+  // Within the lossy encode's error, on every channel.
+  const near = (colour: number[], want: number[]) =>
+    expect(
+      Math.max(...colour.map((c, i) => Math.abs(c - want[i])))
+    ).toBeLessThan(10);
+  const blue = [0x19, 0x71, 0xc2];
+  const red = [0xe0, 0x31, 0x31];
+  await page.evaluate(
+    "window.__mount({ answerArea: { label: 'Answer area' } })"
+  );
+  await add('#1971c2', '[300,300,300,200]');
+  // A teacher's own board is drawn at full strength.
+  near(await colourAt(380, 400), blue);
+  const question = await save(page);
+
+  await page.evaluate(
+    `window.__mount({ answerArea: { label: 'Answer area' },
+      question: { board: ${JSON.stringify(question)}, tip: 'Part of the question' } })`
+  );
+  await add('#e03131', '[500,350,300,200]');
+  // The question at a quarter of its strength over white, the student's over it.
+  near(
+    await colourAt(380, 400),
+    blue.map((c) => 255 - 0.25 * (255 - c))
+  );
+  near(await colourAt(550, 425), red);
+  near(await colourAt(700, 450), red);
+});
+
 test('a note scrolled out of view still reaches the image', async ({
   page,
 }) => {
   test.slow();
   await openBoard(page);
-  // A dark note far to the right: BlockSuite hides a block out of view at no size.
+  // A dark note in the answer area's far corner, out of the first view:
+  // BlockSuite hides a block out of view at no size.
   await page.evaluate(`{ const gfx = document.querySelector('affine-edgeless-root').gfx;
-    const note = gfx.doc.addBlock('affine:note', { xywh: '[4000,0,400,300]',
+    const note = gfx.doc.addBlock('affine:note', { xywh: '[1500,880,400,300]',
       background: '#000000', index: gfx.layer.generateIndex() }, gfx.doc.root.id);
     gfx.doc.addBlock('affine:paragraph', {}, note); }`);
   expect(
@@ -1894,25 +2056,9 @@ test.describe('with a finger', () => {
         xywh: '[3000,3000,200,200]',
       });
     });
-    const [long, short] = await page.evaluate(
-      async (url) => {
-        const image = new Image();
-        image.src = url;
-        await image.decode();
-        return [
-          Math.max(image.width, image.height),
-          Math.min(image.width, image.height),
-        ];
-      },
-      await toImage(page)
-    );
-    expect(long).toBeLessThanOrEqual(1568);
-    // The far shape is drawn nearer, so the rest isn't squashed.
-    expect(short).toBeGreaterThan(long / 4);
-    // span is that drawn-nearer side in board units, not the 3,200 the board covers.
-    const { span } = await stats(page);
-    expect(span).toBeGreaterThan(820);
-    expect(span).toBeLessThan(3000);
+    // The image is the answer area alone (Epo 2026-11-23), and Done asks first.
+    expect(await imageSize(page)).toEqual([1568, 980]);
+    expect(await page.evaluate('window.__board.outside()')).toBe(true);
   });
 });
 

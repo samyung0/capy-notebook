@@ -1,6 +1,7 @@
 import {
   type ReactNode,
   useEffect,
+  useId,
   useLayoutEffect,
   useRef,
   useState,
@@ -12,19 +13,41 @@ import { useIsPhone } from '@/components/ui/Dialog';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/Select';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import {
   ToolbarPopoverContent,
   ToolbarPopoverGroup,
 } from '@/components/ui/ToolbarPopover';
+import { ButtonTooltip } from '@/components/ui/Tooltip';
+import { userToast } from '@/components/ui/userToast';
 import { boardCode, useCodeFailed } from '@/features/materials/blockCode';
 import { CannotShow } from '@/features/materials/CannotShow';
+import {
+  CanvasField,
+  canvasLoads,
+} from '@/features/quizzes/drawing/CanvasField';
+import {
+  CanvasPreview,
+  canvasBoard,
+} from '@/features/quizzes/drawing/CanvasFrame';
+import {
+  sharingLabels,
+  sharingParts,
+} from '@/features/quizzes/drawing/canvasParts';
+import type { PinnedQuestion } from '@/features/quizzes/drawing/DrawingBoardScreen';
 import {
   DrawnSampleField,
   type UploadDrawnSample,
 } from '@/features/quizzes/drawing/DrawnSample';
 import { pinnedQuestion } from '@/features/quizzes/drawing/pinnedQuestion';
-import { m } from '@/i18n';
+import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { IMAGE_ACCEPT } from '@/lib/fitImage';
@@ -44,6 +67,7 @@ import {
 } from './editorFields';
 import type { FigureBinding } from './figureBinding';
 import {
+  addPart as addPartTo,
   addSubPart,
   canMoveItem,
   canRemoveGroup,
@@ -57,18 +81,25 @@ import {
   removePart,
   splitPart,
   ungroup,
+  ungroupCanvasIssue,
+  withKeptPart,
 } from './groups';
 import { IssueSummary } from './IssueViews';
 import { mathTextToValue, valueToMathText } from './mathTextValue';
+import { stripMarks } from './parseMarkedText';
 import { type BlockSection, QuestionBlockView } from './QuestionView';
 import {
   type AddableBlock,
+  answerAbove,
+  answerOwn,
   bindFigure,
   changeBlocks,
   type FigureRoom,
   findBlock,
+  isBlankPart,
   newPart,
   newQuestionBlock,
+  sampleWithinCap,
   saveFigure,
   sectionBlocks,
   withAnswer,
@@ -77,10 +108,30 @@ import { hasSample } from './SampleBlock';
 import { clickPoint, TextEditor } from './TextEditor';
 import { TextView } from './TextView';
 import {
+  forgetCanvas,
+  forgetGoneParts,
+  forgetPart,
+  giveMemory,
+  heldSample,
+  holdSample,
+  type KeptCanvas,
+  keepAnswer,
+  keepCanvas,
+  keepPart,
+  keptAnswer,
+  keptCanvas,
+  keptPart,
+} from './typeMemory';
+import {
+  type AnswerCanvas,
+  type CanvasBlock,
+  canvasCount,
+  type DrawnSample,
   GAP_MARKER,
   gapListsByBlock,
   gapNumbers,
   modelMarked,
+  partAnswerCanvas,
   type Question,
   type QuestionBlock,
   type QuestionPart,
@@ -88,6 +139,7 @@ import {
   withGapsBlocks,
   withGapsText,
 } from './types';
+import { PART_CANVASES_MAX, questionCanvases } from './validation';
 
 const marksLabel = (count: number) =>
   count === 1 ? m.question_ui_one_mark() : m.question_ui_marks({ count });
@@ -133,11 +185,35 @@ async function uploadImage(
 }
 
 const insertIcons: Record<AddableBlock, IconName> = {
+  canvas: 'shape',
   chart: 'chart',
   graph: 'graph',
   image: 'image',
   table: 'table',
   text: 'text',
+};
+
+/** A block list's canvases in the open card (Epo 2026-11-23): the stem's,
+ * a group's or a part's text. */
+type CanvasOptions = {
+  /** Under its first canvas: what goes in it. */
+  hint?: string;
+  /** Its first canvas is a Canvas part's own, its question: no Remove. */
+  keep?: boolean;
+  /** Why its first canvas's Remove is off: the parts that answer in it, "(a)
+   * and (b) answer in it" (Epo 2026-11-24). */
+  answered?: string;
+  /** Just before its first canvas: a Canvas part's Answer in. */
+  before?: ReactNode;
+  /** Why Insert's Canvas is off (a bank, the question's cap, the list's
+   * one); none while it may take one. */
+  off?: string;
+  /** A quiz's: each canvas is drawn on its board from its card. */
+  edit?: {
+    pinned: PinnedQuestion;
+    save: (figure: Figure, block: CanvasBlock) => void;
+    upload: UploadDrawnSample;
+  };
 };
 
 /** A figure the card shows and its dialog edits. */
@@ -168,6 +244,7 @@ function BlocksColumn({
   asideTarget,
   autoFocus,
   blocks,
+  canvas,
   gaps,
   imageButton,
   inline,
@@ -188,6 +265,9 @@ function BlocksColumn({
   /** Its first text opens in its editor (a card or solution just opened). */
   autoFocus?: boolean;
   blocks: QuestionBlock[];
+  /** The stem's, a group's or a part's text: Insert offers Canvas, and its
+   * canvases show as their cards (`CanvasOptions`). */
+  canvas?: CanvasOptions;
   /** A gaps part's text: its blanks' answers change with it. */
   gaps?: { onChange: (part: QuestionPart) => void; part: QuestionPart };
   /** Add image beside `aside` (a lone part's, board Main). */
@@ -221,6 +301,7 @@ function BlocksColumn({
   } | null>(null);
   const [error, setError] = useState('');
   const box = useRef<HTMLDivElement>(null);
+  const wide = useRef<HTMLDivElement>(null);
   const file = useRef<HTMLInputElement>(null);
   // The image the file picker replaces; none adds one.
   const replaceAt = useRef<number | null>(null);
@@ -259,7 +340,12 @@ function BlocksColumn({
     const press = (event: PointerEvent) => {
       const target = event.target;
       outside = false;
-      if (!(target instanceof Element) || box.current?.contains(target)) return;
+      if (
+        !(target instanceof Element) ||
+        box.current?.contains(target) ||
+        wide.current?.contains(target)
+      )
+        return;
       // A formula's keyboard and popovers, and another dialog over this one,
       // sit outside the column.
       const dialog = target.closest('[role="dialog"]');
@@ -302,9 +388,10 @@ function BlocksColumn({
       return;
     }
     const block = newQuestionBlock(type);
-    if (type === 'text') {
+    // A canvas goes in empty, drawn from its card.
+    if (type === 'text' || type === 'canvas') {
       grow([...blocks.slice(0, at), block, ...blocks.slice(at)]);
-      edit(at, null);
+      if (type === 'text') edit(at, null);
       return;
     }
     onFigure({
@@ -317,7 +404,11 @@ function BlocksColumn({
   };
   // Insert's choices, the new block going in at `at`.
   const insertMenu = (at: number) => (
-    <ToolbarPopoverContent align="start" className="w-44">
+    // Wide enough for why Canvas is off on one or two lines (E3).
+    <ToolbarPopoverContent
+      align="start"
+      className={cn('w-44', canvas?.off && 'w-72')}
+    >
       {(
         [
           'text',
@@ -334,6 +425,17 @@ function BlocksColumn({
           onClick={() => insert(type, at)}
         />
       ))}
+      {canvas && (
+        <MenuItem
+          // Why it is off wraps under its label.
+          className={cn(canvas.off && 'whitespace-normal')}
+          disabled={!!canvas.off || !canvas.edit}
+          hint={canvas.off}
+          icon={<Icon name={insertIcons.canvas} />}
+          label={blockLabels.canvas()}
+          onClick={() => insert('canvas', at)}
+        />
+      )}
     </ToolbarPopoverContent>
   );
   // Each block's blanks' answers in a gaps part, else none.
@@ -513,87 +615,155 @@ function BlocksColumn({
       </button>
     );
   };
-  const figure = (block: QuestionBlock, i: number) => (
-    <div className="group/figure relative py-1">
-      {block.type === 'image' ? (
-        // As the closed card draws it; Replace is in its hover tools.
-        'url' in block.image && !block.image.url ? (
-          <Button
-            disabled={!uploadAsset || !!uploading}
-            onClick={() => pickReplacement(i)}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            {m.quiz_editor_choose_image()}
-          </Button>
-        ) : (
-          <div
-            className={cn(
-              uploading?.replace && uploading.at === i && 'opacity-50'
-            )}
-          >
-            <QuestionBlockView block={block} />
-          </div>
-        )
-      ) : (
-        <button
-          aria-label={m.question_ui_edit_block({
-            type: blockLabels[block.type](),
-          })}
-          className="block w-full cursor-pointer rounded-md text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action"
-          onClick={() =>
-            onFigure({ before: blocks[i - 1], block, index: i, section })
-          }
-          type="button"
-        >
-          <QuestionBlockView block={block} />
-        </button>
+  /** A figure's tools: Insert below, Replace (an image), Move up, Move down
+   * and Remove, off with why (`removeOff`); `under` its block in a row of
+   * their own (a canvas, whose corner holds its Edit canvas), else at its top
+   * right on hover. */
+  const figureTools = (
+    block: QuestionBlock,
+    i: number,
+    {
+      removable = true,
+      removeOff,
+      under = false,
+    }: { removable?: boolean; removeOff?: string; under?: boolean } = {}
+  ) => (
+    <div
+      className={cn(
+        'flex rounded-button bg-overlay shadow-pop md:opacity-0 md:group-hover/figure:opacity-100 md:focus-within:opacity-100',
+        under
+          ? 'ml-auto w-fit'
+          : 'absolute top-1 right-0 max-md:static max-md:mt-1 max-md:ml-auto max-md:w-fit'
       )}
-      <div className="absolute top-1 right-0 flex rounded-button bg-overlay shadow-pop max-md:static max-md:mt-1 max-md:ml-auto max-md:w-fit md:opacity-0 md:group-hover/figure:opacity-100 md:focus-within:opacity-100">
-        {/* A block under it, as the open text's + adds one under the text
-            (Epo 2026-11-16). */}
-        <Popover>
-          <PopoverTrigger asChild>
-            <ToolbarButton disabled={full} label={m.question_ui_insert_below()}>
-              <Icon name="plus" />
-            </ToolbarButton>
-          </PopoverTrigger>
-          {insertMenu(i + 1)}
-        </Popover>
-        {block.type === 'image' && uploadAsset && (
-          <ToolbarButton
-            disabled={!!uploading}
-            label={m.question_ui_replace()}
-            onClick={() => pickReplacement(i)}
-          >
-            <Icon name="upload" />
+    >
+      {/* A block under it, as the open text's + adds one under the text
+          (Epo 2026-11-16). */}
+      <Popover>
+        <PopoverTrigger asChild>
+          <ToolbarButton disabled={full} label={m.question_ui_insert_below()}>
+            <Icon name="plus" />
           </ToolbarButton>
-        )}
+        </PopoverTrigger>
+        {insertMenu(i + 1)}
+      </Popover>
+      {block.type === 'image' && uploadAsset && (
         <ToolbarButton
-          disabled={i === 0}
-          label={m.question_ui_move_up()}
-          onClick={() => move(i, i - 1)}
+          disabled={!!uploading}
+          label={m.question_ui_replace()}
+          onClick={() => pickReplacement(i)}
         >
-          <Icon name="arrowUp" />
+          <Icon name="upload" />
         </ToolbarButton>
+      )}
+      <ToolbarButton
+        disabled={i === 0}
+        label={m.question_ui_move_up()}
+        onClick={() => move(i, i - 1)}
+      >
+        <Icon name="arrowUp" />
+      </ToolbarButton>
+      <ToolbarButton
+        disabled={i === blocks.length - 1}
+        label={m.question_ui_move_down()}
+        onClick={() => move(i, i + 1)}
+      >
+        <Icon name="arrowDown" />
+      </ToolbarButton>
+      {removable && (
         <ToolbarButton
-          disabled={i === blocks.length - 1}
-          label={m.question_ui_move_down()}
-          onClick={() => move(i, i + 1)}
-        >
-          <Icon name="arrowDown" />
-        </ToolbarButton>
-        <ToolbarButton
-          label={m.question_ui_remove_block()}
+          disabled={!!removeOff}
+          label={removeOff ?? m.question_ui_remove_block()}
           onClick={() => remove(i)}
           variant="danger-light"
         >
           <Icon name="trash" />
         </ToolbarButton>
-      </div>
+      )}
     </div>
   );
+  // A canvas (Epo 2026-11-23): its card, a quiz's drawn on its board, its
+  // tools in the row under it.
+  const canvasFigure = (block: CanvasBlock, i: number) => {
+    const first = blocks.findIndex((item) => item.type === 'canvas') === i;
+    // A Canvas part's own canvas, its first, is its question and stays; a
+    // stem's or group's that parts answer in stays while they do.
+    const tools = figureTools(block, i, {
+      removable: !(first && canvas?.keep),
+      removeOff: first ? canvas?.answered : undefined,
+      under: true,
+    });
+    const edit = canvas?.edit;
+    return (
+      <div className="group/figure py-1">
+        {first && canvas?.before && (
+          <div className="mb-2.5">{canvas.before}</div>
+        )}
+        {edit ? (
+          <CanvasField
+            block={block}
+            hint={first ? canvas?.hint : undefined}
+            onChange={(next) =>
+              edit.save(
+                { before: blocks[i - 1], block, index: i, section },
+                next
+              )
+            }
+            pinned={edit.pinned}
+            tools={tools}
+            upload={edit.upload}
+          />
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <CanvasPreview block={block} />
+            {tools}
+          </div>
+        )}
+      </div>
+    );
+  };
+  const figure = (block: QuestionBlock, i: number) =>
+    block.type === 'canvas' ? (
+      canvasFigure(block, i)
+    ) : (
+      <div className="group/figure relative py-1">
+        {block.type === 'image' ? (
+          // As the closed card draws it; Replace is in its hover tools.
+          'url' in block.image && !block.image.url ? (
+            <Button
+              disabled={!uploadAsset || !!uploading}
+              onClick={() => pickReplacement(i)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {m.quiz_editor_choose_image()}
+            </Button>
+          ) : (
+            <div
+              className={cn(
+                uploading?.replace && uploading.at === i && 'opacity-50'
+              )}
+            >
+              <QuestionBlockView block={block} />
+            </div>
+          )
+        ) : (
+          <button
+            aria-label={m.question_ui_edit_block({
+              type: blockLabels[block.type](),
+            })}
+            className="block w-full cursor-pointer rounded-md text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action"
+            onClick={() =>
+              onFigure({ before: blocks[i - 1], block, index: i, section })
+            }
+            type="button"
+          >
+            <QuestionBlockView block={block} />
+          </button>
+        )}
+        {figureTools(block, i)}
+      </div>
+    );
   // The open text's formula tools and Insert, right under it.
   const toolbar = (
     <div
@@ -623,7 +793,22 @@ function BlocksColumn({
       />
     </div>
   );
-  return (
+  const rows = (from: number, to: number) =>
+    blocks.slice(from, to).map((block, j) => {
+      const i = from + j;
+      return (
+        <div key={i}>
+          {block.type === 'text' ? textBlock(block, i) : figure(block, i)}
+          {open && editing === i && toolbar}
+        </div>
+      );
+    });
+  // A Canvas part's own canvas, with its Answer in, and what follows it run
+  // the card's width under the type (E3).
+  const wideAt = canvas?.before
+    ? blocks.findIndex((block) => block.type === 'canvas')
+    : -1;
+  const row = (
     <div className="flex @min-[36rem]:flex-row flex-col @min-[36rem]:items-start gap-4">
       <div className="flex min-w-0 flex-1 gap-3" ref={box}>
         {/* At least 24px, so with its gap the text starts 36px in, where a
@@ -632,12 +817,7 @@ function BlocksColumn({
           <span className="min-w-6 shrink-0 pt-2 font-bold">{lead}</span>
         )}
         <div className="min-w-0 flex-1">
-          {blocks.map((block, i) => (
-            <div key={i}>
-              {block.type === 'text' ? textBlock(block, i) : figure(block, i)}
-              {open && editing === i && toolbar}
-            </div>
-          ))}
+          {rows(0, wideAt < 0 ? blocks.length : wideAt)}
           {blocks.length === 0 && (
             <button
               className="block w-full cursor-text border-line border-b py-2 text-left text-fg-muted outline-none hover:border-line-strong focus-visible:border-action-accent"
@@ -731,6 +911,51 @@ function BlocksColumn({
         )}
     </div>
   );
+  if (wideAt < 0) return row;
+  return (
+    <div className="flex flex-col gap-2">
+      {row}
+      <div className={cn(lead && '@min-[36rem]:pl-9')} ref={wide}>
+        {rows(wideAt, blocks.length)}
+      </div>
+    </div>
+  );
+}
+
+/** The board asset of the canvas a Canvas part answers in: a new drawn
+ * sample's start; none for none or an empty one. */
+const answerCanvasBoard = (question: Question, part: QuestionPart) => {
+  const at = partAnswerCanvas(question, part);
+  return at ? canvasBoard(at.block) : undefined;
+};
+
+/** A Canvas part's answer with its drawn sample set, or gone for none;
+ * where it answers stays. */
+function withSample(
+  answer: Extract<QuestionPart['answer'], { type: 'canvas' }>,
+  sample: DrawnSample | undefined
+): QuestionPart['answer'] {
+  const { sample: _, ...rest } = answer;
+  return sample ? { ...rest, sample } : rest;
+}
+
+/** The canvas a Canvas part would answer in above it (Same canvas, Epo
+ * 2026-11-23): its group's, else the stem's; none when neither holds one. */
+const canvasAbove = (question: Question, part: QuestionPart) =>
+  part.answer.type === 'canvas'
+    ? partAnswerCanvas(question, {
+        ...part,
+        answer: { ...part.answer, shared: true },
+      })
+    : null;
+
+/** Where a Canvas part answers, in its folded line (E2, E3): "same canvas"
+ * in the one above, "new canvas" in its own while one above could take it,
+ * else nothing. */
+function canvasWhere(question: Question, part: QuestionPart) {
+  if (part.answer.type !== 'canvas') return;
+  if (part.answer.shared) return m.question_canvas_line_same();
+  return canvasAbove(question, part) ? m.question_canvas_line_new() : undefined;
 }
 
 /** A closed part's answer in one line: its options with the correct ones
@@ -759,14 +984,20 @@ function answerLine(part: QuestionPart): string {
         .map((list, i) => `(${i + 1}) ${list.filter(Boolean).join(' / ')}`)
         .join(' · ');
     case 'open':
-    case 'drawing':
+    case 'canvas':
       return (part.markscheme ?? []).map((item) => item.text).join(' · ');
   }
 }
 
 /** A part of several in a line (board Parts): its label, first words, type
- * and marks, its key in short under them. */
-function partLine(part: QuestionPart, label: string, keysPending?: boolean) {
+ * (a Canvas part's with where it answers) and marks, its key in short under
+ * them. */
+function partLine(
+  question: Question,
+  part: QuestionPart,
+  label: string,
+  keysPending?: boolean
+) {
   return (
     <>
       <span className="flex items-start gap-3">
@@ -781,9 +1012,16 @@ function partLine(part: QuestionPart, label: string, keysPending?: boolean) {
             </span>
           )}
         </span>
-        {/* As wide as the open part's type menu, so its text wraps the same. */}
-        <span className="@min-[36rem]:ml-1 @min-[36rem]:w-45 shrink-0 truncate whitespace-nowrap pt-px @min-[36rem]:text-right text-[13px] text-fg-muted">
-          {`${answerLabels[part.answer.type]()} · ${marksLabel(part.marks)}`}
+        {/* At least as wide as the open part's type menu, so its text wraps
+            the same; a Canvas part's place ("same canvas") reads whole. */}
+        <span className="@min-[36rem]:ml-1 @min-[36rem]:min-w-45 shrink-0 truncate whitespace-nowrap pt-px @min-[36rem]:text-right text-[13px] text-fg-muted">
+          {[
+            answerLabels[part.answer.type](),
+            canvasWhere(question, part),
+            marksLabel(part.marks),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </span>
       </span>
       {/* Its room kept while the keys come (Epo 2026-11-15): a choice part
@@ -834,7 +1072,12 @@ function BlocksView({
       </div>
     ) : (
       <div className="py-1" key={i}>
-        <QuestionBlockView block={block} />
+        {/* As the open card draws it, so opening only adds controls. */}
+        {block.type === 'canvas' ? (
+          <CanvasPreview block={block} />
+        ) : (
+          <QuestionBlockView block={block} />
+        )}
       </div>
     )
   );
@@ -928,7 +1171,7 @@ export function QuestionCardView({
                 data-part-id={item.part.id}
                 key={item.part.id}
               >
-                {partLine(item.part, item.label, keysPending)}
+                {partLine(question, item.part, item.label, keysPending)}
               </div>
             ) : (
               <div className="pt-3.5" key={item.group.id}>
@@ -956,7 +1199,7 @@ export function QuestionCardView({
                       data-part-id={sub.part.id}
                       key={sub.part.id}
                     >
-                      {partLine(sub.part, sub.label, keysPending)}
+                      {partLine(question, sub.part, sub.label, keysPending)}
                     </div>
                   ))}
                 </div>
@@ -964,6 +1207,81 @@ export function QuestionCardView({
             )
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * A Canvas part's Answer in (Epo 2026-11-23, E2 option B), shown while a
+ * canvas above could take it: Same canvas answers there, New canvas on its
+ * own. On Same, a line says where, and the tip when other parts answer in
+ * that canvas too.
+ */
+function CanvasAnswerIn({
+  answers,
+  crowded,
+  newOff,
+  onChange,
+  own,
+  shared,
+  where,
+}: {
+  /** On Same: "Students answer (a) in the question's canvas, above." */
+  answers: string;
+  /** Two or more parts answer in that canvas. */
+  crowded: boolean;
+  /** Why New canvas is off: the question at its canvas cap. */
+  newOff?: string;
+  onChange: (shared: boolean) => void;
+  /** New canvas's line: "A canvas of (a)'s own". */
+  own: string;
+  shared: boolean;
+  /** Same canvas's line: "The question's canvas, above". */
+  where: string;
+}) {
+  const id = useId();
+  const option = (label: string, line: string) => (
+    <span className="flex flex-col">
+      <span>{label}</span>
+      <span className="t-meta font-normal text-fg-muted">{line}</span>
+    </span>
+  );
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex items-center gap-3">
+        <label className="t-meta text-fg-muted" htmlFor={id}>
+          {m.question_canvas_answer_in()}
+        </label>
+        <Select
+          onValueChange={(value) => onChange(value === 'same')}
+          value={shared ? 'same' : 'new'}
+        >
+          <SelectTrigger className="w-42.5" id={id}>
+            <SelectValue>
+              {shared ? m.question_canvas_same() : m.question_canvas_new()}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent align="start" className="max-w-[calc(100vw-2rem)]">
+            <SelectItem textValue={m.question_canvas_same()} value="same">
+              {option(m.question_canvas_same(), where)}
+            </SelectItem>
+            <SelectItem
+              disabled={!!newOff}
+              textValue={m.question_canvas_new()}
+              value="new"
+            >
+              {option(m.question_canvas_new(), newOff ?? own)}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      {shared && <p className="t-meta text-fg-muted">{answers}</p>}
+      {shared && crowded && (
+        <p className="t-meta flex items-start gap-2 text-tint-accent-1-fg">
+          <Icon className="mt-px size-4 shrink-0" name="info" />
+          {m.question_canvas_shared_tip()}
+        </p>
       )}
     </div>
   );
@@ -993,19 +1311,25 @@ export interface QuestionCardProps {
   openPart?: string;
   policy?: 'quiz' | 'bank';
   question: Question;
+  /** The quiz it is in: a part's type switched back restores what it held
+   * then in this tab (`typeMemory.ts`). */
+  quizId?: string;
   /** The footer's Topic; a phone puts it on its own row above the footer. */
   topic?: ReactNode;
   uploadAsset?: UploadQuestionAsset;
-  /** A quiz's drawn sample answers (Q3); the bank has none. */
+  /** A quiz's drawn boards: its canvases and drawn sample answers (Q3); the
+   * bank has none. */
   uploadSample?: UploadDrawnSample;
-  write: (question: Question) => void;
+  /** Writes the question: false when it did not go (a live quiz's write past
+   * a cap, `editQuestion`). */
+  write: (question: Question) => boolean;
 }
 
 /**
  * The open question card (Epo 2026-11-15, boards Main, Types1, Types2,
  * Matching, Parts): the question's text with its formula tools under it, Add
  * image and the answer type at its right; the answer below with the correct
- * one marked beside it; a long answer's or drawing's marking points and
+ * one marked beside it; a long answer's or canvas part's marking points and
  * Sample answer; the Solution; a footer with Sample answer, Solution, Topic, Marks, the
  * caller's actions and ⋮. A question of parts shows them in the one card,
  * the open part with its own type, answer, marks and ⋮ in its line's place,
@@ -1025,6 +1349,7 @@ export function QuestionCard({
   openPart: firstPart,
   policy = 'quiz',
   question,
+  quizId,
   topic,
   uploadAsset,
   uploadSample,
@@ -1032,6 +1357,10 @@ export function QuestionCard({
 }: QuestionCardProps) {
   const phone = useIsPhone();
   const bank = policy === 'bank';
+  // A quiz draws canvases; every bank editor (the shared bank, My bank and
+  // class banks, none uploading boards) offers Canvas greyed out, as banks
+  // hold none yet (Epo 2026-11-23).
+  const canvases = !bank && !!uploadSample;
   const lone = isLonePart(question);
   // The number row's end, where a lone question's answer type goes.
   const [head, setHead] = useState<HTMLSpanElement | null>(null);
@@ -1078,6 +1407,31 @@ export function QuestionCard({
     });
     if (bound) setFigure({ ...opened, ...bound, isNew: false });
   };
+  /** A figure's block saved where it lives: a live quiz's room entry (one a
+   * co-editor removed meanwhile goes back in its place), else found in the
+   * question as it stands. */
+  const saveFigureBlock = (figure: Figure, block: QuestionBlock) => {
+    if (figures) {
+      const entry = figure.isNew ? undefined : figures.key(figure.block);
+      const at = entry && {
+        entry,
+        question: question.id,
+        section: figure.section,
+      };
+      if (at && figures.replace(at, block)) return;
+      figures.insert(
+        {
+          after: figure.before && figures.key(figure.before),
+          index: figure.index,
+          question: question.id,
+          section: figure.section,
+        },
+        block
+      );
+      return;
+    }
+    writeBlocks(figure.section, (blocks) => saveFigure(blocks, figure, block));
+  };
   const shownPart = question.parts.find((part) => part.id === openPart);
   const partsFull =
     question.parts.length >=
@@ -1089,11 +1443,232 @@ export function QuestionCard({
     });
   const setBlocks = (section: BlockSection) => (blocks: QuestionBlock[]) =>
     write(changeBlocks(question, section, blocks));
+  // Add part on a lone question (Epo 2026-11-23, E1) and Add sub-part (Epo
+  // 2026-11-24): the part's blocks go above and both parts start blank, what
+  // it held kept for the tab once the write goes; one write, so Undo brings
+  // it all back.
+  const writeSplit = ({
+    kept,
+    question: next,
+  }: ReturnType<typeof addPartTo>) => {
+    if (write(next) && kept && quizId) keepPart(quizId, question.id, kept);
+  };
   const addPart = () => {
     const part = newPart();
-    write({ ...question, parts: [...question.parts, part] });
+    writeSplit(addPartTo(question, part, newPart()));
     setOpenPart(part.id);
   };
+  // A part left alone where Add part or Add sub-part split (`left`, by the
+  // removal or Ungroup that leaves it) takes back what they kept, when they
+  // made it and it is still blank as it read before (Ungroup puts the group's
+  // text on top of it), with the blanked part's own memory, a drawn sample
+  // past the canvas cap staying held for the tab as on a type switch (Epo
+  // 2026-11-24). The tab's memory changes only once the write lands.
+  const writeBack = (next: Question, left: string | undefined) => {
+    const kept = quizId && left ? keptPart(quizId, question.id, left) : null;
+    const before = question.parts.find((part) => part.id === left);
+    const back = !!(kept && before && isBlankPart(before));
+    const { held, question: written } =
+      kept && left && back
+        ? sampleWithinCap(withKeptPart(next, left, kept), left)
+        : { held: undefined, question: next };
+    if (!(write(written) && quizId && left && kept)) return;
+    forgetPart(quizId, question.id, left);
+    if (!back) return;
+    if (kept.own) giveMemory(quizId, left, kept.own);
+    // The sample it took back is its newest: one held before goes.
+    if (kept.answer.type === 'canvas' && kept.answer.sample)
+      holdSample(quizId, left, held);
+  };
+  // Undo of Add part brings back the part it blanked: what was kept for the
+  // parts it made, gone now, goes (Epo 2026-11-24).
+  const partIds = question.parts.map((part) => part.id).join(' ');
+  useEffect(() => {
+    if (quizId) forgetGoneParts(quizId, question.id, partIds.split(' '));
+  }, [partIds, question.id, quizId]);
+  // Canvases (Epo 2026-11-23): at most QUESTION_CANVASES_MAX, drawn samples
+  // included, the editor stopping there.
+  const canvasCap = m.question_canvas_cap({
+    max: limits.QUESTION_CANVASES_MAX,
+  });
+  const atCanvasCap =
+    questionCanvases(question) >= limits.QUESTION_CANVASES_MAX;
+  /** A block list's canvas options: its hint, and Insert's Canvas off for a
+   * bank, at the cap, or once the list holds its one (`hasOne`). */
+  const canvasOptions = (
+    blocks: QuestionBlock[],
+    hasOne: string,
+    pinned: () => PinnedQuestion,
+    options: Pick<CanvasOptions, 'answered' | 'before' | 'hint' | 'keep'> = {}
+  ): CanvasOptions => {
+    if (!(canvases && uploadSample))
+      return { off: m.question_validation_bank_canvas() };
+    return {
+      ...options,
+      edit: { pinned: pinned(), save: saveFigureBlock, upload: uploadSample },
+      off: atCanvasCap
+        ? canvasCap
+        : canvasCount(blocks) >= PART_CANVASES_MAX
+          ? hasOne
+          : undefined,
+    };
+  };
+  /** The stem's or a group's canvas as its board pins the question: the
+   * text and figures above it, its canvas left to the board. */
+  const pinnedAbove = (
+    blocks: QuestionBlock[],
+    label: string,
+    marks: number
+  ): PinnedQuestion => {
+    const shown = blocks.filter((block) => block.type !== 'canvas');
+    const text = shown.find((block) => block.type === 'text');
+    const title =
+      number === undefined
+        ? m.drawing_answer_question()
+        : m.quiz_editor_question({ number });
+    return {
+      body: (
+        <div className="flex flex-col gap-2 text-fg-secondary">
+          {shown.map((block, i) => (
+            <QuestionBlockView block={block} key={i} />
+          ))}
+        </div>
+      ),
+      marks: marksLabel(marks),
+      short: [number, label].filter(Boolean).join(' '),
+      summary: text?.type === 'text' ? stripMarks(text.text) : '',
+      title: label ? `${title} ${label}` : title,
+    };
+  };
+  /** The parts answering in the first canvas of the stem's or a group's
+   * blocks, named as the attempt's hint names them (`sharingLabels`): its
+   * Remove is off while they do (Epo 2026-11-24). */
+  const answeredIn = (blocks: QuestionBlock[], section: BlockSection) => {
+    const index = blocks.findIndex((block) => block.type === 'canvas');
+    const parts = index < 0 ? [] : sharingParts(question, section, index);
+    if (parts.length === 0) return;
+    if (lone) return m.question_canvas_answered_lone();
+    const names = sharingLabels(question, parts, section);
+    return names.length === 1
+      ? m.question_canvas_answered_part({ part: names[0] })
+      : m.question_canvas_answered_parts({
+          parts: new Intl.ListFormat(getLocale(), {
+            type: 'conjunction',
+          }).format(names),
+        });
+  };
+  // Each part's label, and its group's for a sub-part.
+  const labels = new Map<string, { group?: string; label: string }>();
+  for (const item of questionItems(question))
+    if (item.kind === 'part') labels.set(item.part.id, { label: item.label });
+    else
+      for (const sub of item.parts)
+        labels.set(sub.part.id, { group: item.label, label: sub.label });
+  // How many parts answer in each canvas, by where it sits.
+  const placeKey = ({ place }: AnswerCanvas) =>
+    place.section === 'stem'
+      ? 'stem'
+      : place.section === 'group'
+        ? `group:${place.groupId}`
+        : `part:${place.partId}`;
+  const answered = new Map<string, number>();
+  for (const part of question.parts) {
+    const at = partAnswerCanvas(question, part);
+    if (at) answered.set(placeKey(at), (answered.get(placeKey(at)) ?? 0) + 1);
+  }
+  // Same canvas: the part's own canvas goes into the tab's memory once the
+  // write lands.
+  const answerSame = (part: QuestionPart) => {
+    const { kept, part: next } = answerAbove(part);
+    if (changePart(next) && kept && quizId) keepCanvas(quizId, part.id, kept);
+  };
+  // A canvas of its own for a Canvas part (New canvas, or a canvas answer
+  // with none above it now): a canvas the part holds becomes its own, what
+  // Same took staying in the tab's memory; else the canvas Same took back,
+  // else an empty one. A kept one whose board or picture no longer loads (the
+  // server purges a quiz's unused assets a day after trashing them) is an
+  // empty one, and says so. `turn` gives the part as it reads then, answering
+  // on its own canvas (`answerOwn`), or none when it was switched again. The
+  // kept canvas leaves the tab's memory once the write lands; true then.
+  const answerOnOwn = async (
+    part: QuestionPart,
+    turn: (held: QuestionPart, kept?: KeptCanvas) => QuestionPart | undefined
+  ) => {
+    const holds = latest.current.parts.some(
+      (item) => item.id === part.id && canvasCount(item.blocks) > 0
+    );
+    const kept = quizId && !holds ? keptCanvas(quizId, part.id) : null;
+    const loads = !kept || (await canvasLoads(kept.block));
+    if (!loads)
+      userToast({ title: m.question_canvas_gone(), variant: 'warning' });
+    const now = latest.current;
+    const held = now.parts.find((item) => item.id === part.id);
+    // Gone, or switched again, meanwhile.
+    const restored = held && turn(held, (loads && kept) || undefined);
+    if (!restored) return false;
+    const next = {
+      ...now,
+      parts: now.parts.map((item) => (item.id === part.id ? restored : item)),
+    };
+    if (!writing.current(next)) return false;
+    latest.current = next;
+    // Back in its place, or an empty one in place of one that can't load.
+    if (quizId && kept && (!loads || restored.blocks.includes(kept.block)))
+      forgetCanvas(quizId, part.id);
+    return true;
+  };
+  const answerNew = (part: QuestionPart) =>
+    answerOnOwn(part, (held, kept) =>
+      held.answer.type === 'canvas' && held.answer.shared
+        ? answerOwn(held, kept)
+        : undefined
+    );
+  /** A Canvas part's Answer in, while a canvas above could take it. */
+  const answerIn = (part: QuestionPart) => {
+    const above = canvasAbove(question, part);
+    if (!(canvases && above && part.answer.type === 'canvas')) return null;
+    const shared = !!part.answer.shared;
+    const { group, label } = labels.get(part.id) ?? { label: '' };
+    const inGroup = above.place.section === 'group' && group;
+    const at = partAnswerCanvas(question, part);
+    return (
+      <CanvasAnswerIn
+        answers={
+          inGroup
+            ? m.question_canvas_answers_group({ group, part: label })
+            : lone
+              ? m.question_canvas_answers_lone()
+              : m.question_canvas_answers_question({ part: label })
+        }
+        crowded={!!at && (answered.get(placeKey(at)) ?? 0) >= 2}
+        // Off only where New would add a canvas: one the part holds becomes
+        // its own (Epo 2026-11-24).
+        newOff={
+          shared && atCanvasCap && !canvasCount(part.blocks)
+            ? canvasCap
+            : undefined
+        }
+        onChange={(same) => (same ? answerSame(part) : answerNew(part))}
+        own={
+          lone
+            ? m.question_canvas_new_lone()
+            : m.question_canvas_new_part({ part: label })
+        }
+        shared={shared}
+        where={
+          inGroup
+            ? m.question_canvas_same_group({ group })
+            : m.question_canvas_same_question()
+        }
+      />
+    );
+  };
+  /** A Canvas part answering on its own canvas has its Answer in just above
+   * that canvas (E3); otherwise it heads the answer. */
+  const ownCanvas = (part: QuestionPart) =>
+    part.answer.type === 'canvas' &&
+    !part.answer.shared &&
+    part.blocks.some((block) => block.type === 'canvas');
   const addSolution = (part: QuestionPart) => {
     changePart({ ...part, solution: [newQuestionBlock('text')] });
     setSolutionFor(part.id);
@@ -1103,7 +1678,10 @@ export function QuestionCard({
     !hasSample(part) &&
     sampleFor !== part.id &&
     (part.answer.type === 'open' ||
-      (part.answer.type === 'drawing' && !!uploadSample));
+      (part.answer.type === 'canvas' && !!uploadSample));
+  // A drawn sample is one of the question's canvases.
+  const sampleOff = (part: QuestionPart) =>
+    part.answer.type === 'canvas' && atCanvasCap ? canvasCap : undefined;
   const canAddSolution = (part: QuestionPart) =>
     !keysPending && part.solution.length === 0;
   // The footer's Sample answer and Solution, each its own section
@@ -1111,14 +1689,15 @@ export function QuestionCard({
   const solutionButtons = (part: QuestionPart) => (
     <>
       {canAddSample(part) &&
-        (part.answer.type === 'drawing' && boardFailed ? (
+        (part.answer.type === 'canvas' && boardFailed ? (
           <CannotShow className="px-2.5" />
         ) : (
           footerButton(
-            part.answer.type === 'drawing'
+            part.answer.type === 'canvas'
               ? m.drawing_sample_draw()
               : m.question_ui_sample_answer_heading(),
-            () => setSampleFor(part.id)
+            () => setSampleFor(part.id),
+            sampleOff(part)
           )
         ))}
       {canAddSolution(part) &&
@@ -1141,19 +1720,23 @@ export function QuestionCard({
     );
   };
   // Borderless (Epo 2026-11-16), the row pulled left by their padding so
-  // the first one's icon lines up with the text above.
-  const footerButton = (label: string, onClick: () => void) => (
-    <Button
-      className="px-2.5"
-      iconLeft="plus"
-      onClick={onClick}
-      size="sm"
-      type="button"
-      variant="ghost-hover"
-    >
-      {label}
-    </Button>
-  );
+  // the first one's icon lines up with the text above; off, why on hover.
+  const footerButton = (label: string, onClick: () => void, off?: string) => {
+    const button = (
+      <Button
+        className="px-2.5"
+        disabled={!!off}
+        iconLeft="plus"
+        onClick={onClick}
+        size="sm"
+        type="button"
+        variant="ghost-hover"
+      >
+        {label}
+      </Button>
+    );
+    return off ? <ButtonTooltip label={off}>{button}</ButtonTooltip> : button;
+  };
   const marksControl = (part: QuestionPart) => (
     <span className="flex items-center gap-2">
       {/* A long answer's marks are its marking points' total: one line with
@@ -1195,7 +1778,7 @@ export function QuestionCard({
       );
     const adding = sampleFor === part.id;
     // Its own section after the marking scheme (Epo 2026-11-15): a long
-    // answer's written sample or a drawing's drawn one, which marking reads
+    // answer's written sample or a canvas part's drawn one, which marking reads
     // from the answer.
     const sample =
       answer.type === 'open' && (answer.accepted[0] || adding) ? (
@@ -1214,33 +1797,41 @@ export function QuestionCard({
           section={{ partId: part.id }}
           textOnly
         />
-      ) : answer.type === 'drawing' &&
+      ) : answer.type === 'canvas' &&
         uploadSample &&
         (answer.sample || adding) ? (
         <DrawnSampleField
-          onChange={(drawn) =>
-            changePart({
-              ...part,
-              answer: { type: 'drawing', ...(drawn && { sample: drawn }) },
-            })
-          }
+          onChange={(drawn) => {
+            // A sample drawn or replaced: one held before goes.
+            if (
+              changePart({ ...part, answer: withSample(answer, drawn) }) &&
+              quizId
+            )
+              holdSample(quizId, part.id, undefined);
+          }}
           onOpenChange={(open) => !open && setSampleFor(null)}
           open={adding || undefined}
           pinned={pinnedQuestion(question, part, number)}
+          // A new sample starts from the canvas the part answers in, as it
+          // is now.
+          question={answerCanvasBoard(question, part)}
           sample={answer.sample}
           upload={uploadSample}
         />
       ) : null;
     const removeSample = () => {
       setSampleFor(null);
-      setAnswer(
-        answer.type === 'open'
-          ? { ...answer, accepted: [] }
-          : { type: 'drawing' }
-      );
+      if (answer.type === 'open') setAnswer({ ...answer, accepted: [] });
+      if (
+        answer.type === 'canvas' &&
+        setAnswer(withSample(answer, undefined)) &&
+        quizId
+      )
+        holdSample(quizId, part.id, undefined);
     };
     return (
       <div className="flex flex-col gap-4.5">
+        {!ownCanvas(part) && answerIn(part)}
         <AnswerEditor answer={answer} onChange={setAnswer} />
         {modelMarked(answer.type) && (
           <MarkSchemeRows
@@ -1314,16 +1905,102 @@ export function QuestionCard({
     );
   };
 
+  // Switching to Canvas would add a canvas: the part holds none to answer on.
+  const addsCanvas = (part: QuestionPart) =>
+    atCanvasCap && !canvasCount(part.blocks);
+  // Turned into a Canvas part, fresh or restored (Epo 2026-11-24): on a
+  // canvas of its own (New canvas: the one it holds, else the one Same took,
+  // else an empty one), or, where that would add one at the question's canvas
+  // cap, in the canvas above (Same; with none above Canvas is off). A drawn
+  // sample past the cap stays held for the tab, one held coming back once it
+  // fits. `restore` turns the part with what it kept for the type. True once
+  // the write lands.
+  const toCanvas = async (
+    part: QuestionPart,
+    answer: Extract<QuestionPart['answer'], { type: 'canvas' }>,
+    restore: (item: QuestionPart, to: QuestionPart['answer']) => QuestionPart
+  ) => {
+    const { sample: own, shared: _, ...rest } = answer;
+    const above = { ...rest, shared: true as const };
+    const held = quizId ? heldSample(quizId, part.id) : null;
+    const sample = own ?? held ?? undefined;
+    // With its sample, unless that takes the question past the cap (`hold`).
+    const sampled = (now: Question, item: QuestionPart) => {
+      if (!sample || item.answer.type !== 'canvas') return { part: item };
+      const drawn = { ...item, answer: { ...item.answer, sample } };
+      const { held: hold } = sampleWithinCap(
+        {
+          ...now,
+          parts: now.parts.map((each) => (each.id === item.id ? drawn : each)),
+        },
+        item.id
+      );
+      return { hold, part: hold ? item : drawn };
+    };
+    // Once the write lands: the sample held now, else none, as it is back.
+    const settle = (hold: DrawnSample | undefined) => {
+      if (quizId && sample) holdSample(quizId, part.id, hold);
+      return true;
+    };
+    if (addsCanvas(part)) {
+      const { hold, part: next } = sampled(question, restore(part, above));
+      return changePart(next) && settle(hold);
+    }
+    let hold: DrawnSample | undefined;
+    const landed = await answerOnOwn(part, (item, canvas) => {
+      if (item.answer.type !== part.answer.type) return;
+      const turned = sampled(
+        latest.current,
+        answerOwn(restore(item, above), canvas)
+      );
+      hold = turned.hold;
+      return turned.part;
+    });
+    return landed && settle(hold);
+  };
+  // Another type keeps what this one held for the tab, and a type held
+  // before takes its answer and marking scheme back (Epo 2026-11-23).
   const typeSelect = (part: QuestionPart) => (
     <AnswerTypeSelect
+      canvasOff={
+        canvases
+          ? part.answer.type !== 'canvas' &&
+            addsCanvas(part) &&
+            !canvasAbove(question, { ...part, answer: { type: 'canvas' } })
+            ? canvasCap
+            : undefined
+          : m.question_validation_bank_canvas()
+      }
       className={lone ? 'w-52.5 min-w-0' : '@min-[36rem]:w-45 w-full'}
-      onChange={(kind) => {
+      onChange={async (kind) => {
         const next = answerOfKind(part.answer, kind);
-        changePart(
-          next.type === part.answer.type
-            ? { ...part, answer: next }
-            : withAnswer(part, next)
-        );
+        if (next.type === part.answer.type)
+          return changePart({ ...part, answer: next });
+        const kept = quizId ? keptAnswer(quizId, part.id, next.type) : null;
+        // Choices come back as single or multiple, as picked.
+        const answer = kept
+          ? kept.answer.type === 'mcq'
+            ? answerOfKind(kept.answer, kind)
+            : kept.answer
+          : next;
+        const scheme = kept?.markscheme;
+        const restore = (item: QuestionPart, to: QuestionPart['answer']) =>
+          withAnswer(
+            scheme
+              ? {
+                  ...item,
+                  marks: scheme.reduce((sum, mark) => sum + mark.marks, 0),
+                  markscheme: scheme,
+                }
+              : item,
+            to
+          );
+        const landed =
+          answer.type === 'canvas'
+            ? await toCanvas(part, answer, restore)
+            : changePart(restore(part, answer));
+        // The type it leaves is kept once the write lands.
+        if (landed && quizId) keepAnswer(quizId, part);
       }}
       value={answerKind(part.answer)}
     />
@@ -1335,6 +2012,19 @@ export function QuestionCard({
       asideTarget={lone ? head : undefined}
       autoFocus={focus}
       blocks={part.blocks}
+      canvas={canvasOptions(
+        part.blocks,
+        m.question_canvas_part_has_one(),
+        () => pinnedQuestion(question, part, number),
+        // A Canvas part's own canvas is its question, its Answer in above it.
+        ownCanvas(part)
+          ? {
+              before: answerIn(part),
+              hint: m.question_canvas_hint_teacher(),
+              keep: true,
+            }
+          : {}
+      )}
       gaps={
         part.answer.type === 'gaps' ? { onChange: changePart, part } : undefined
       }
@@ -1359,10 +2049,29 @@ export function QuestionCard({
           onClick={() => setOpenPart(part.id)}
           type="button"
         >
-          {partLine(part, label, keysPending)}
+          {partLine(question, part, label, keysPending)}
         </button>
       );
     const ref: ItemRef = { part: part.id };
+    // Removing a sub-part that leaves one ungroups it, the group's text going
+    // to the one left: off while that one holds a canvas beside the group's
+    // (Epo 2026-11-24).
+    const siblings = question.parts.filter(
+      (item) => item.group === part.group && item.id !== part.id
+    );
+    const rest = {
+      ...question,
+      parts: question.parts.filter((item) => item.id !== part.id),
+    };
+    const removeOff =
+      part.group !== undefined &&
+      siblings.length === 1 &&
+      canUngroup(rest, part.group) &&
+      ungroupCanvasIssue(rest, part.group) === 'canvas'
+        ? m.question_canvas_ungroup_has_one({
+            part: labels.get(siblings[0].id)?.label ?? '',
+          })
+        : undefined;
     return (
       <div
         // Its label and text where its line had them: 6px and its text's own
@@ -1407,8 +2116,14 @@ export function QuestionCard({
                     label={m.question_ui_add_sub_part()}
                     onClick={() => {
                       const next = newPart();
-                      write(
-                        splitPart(question, part.id, crypto.randomUUID(), next)
+                      writeSplit(
+                        splitPart(
+                          question,
+                          part.id,
+                          crypto.randomUUID(),
+                          newPart(),
+                          next
+                        )
                       );
                       setOpenPart(next.id);
                     }}
@@ -1416,7 +2131,9 @@ export function QuestionCard({
                 )}
                 {shuffleItem(part)}
                 <MenuItem
-                  disabled={!canRemovePart(question, part.id)}
+                  className={cn(removeOff && 'whitespace-normal')}
+                  disabled={!canRemovePart(question, part.id) || !!removeOff}
+                  hint={removeOff}
                   icon={<Icon name="trash" />}
                   label={
                     part.group === undefined
@@ -1424,7 +2141,19 @@ export function QuestionCard({
                       : m.question_ui_remove_sub_part()
                   }
                   onClick={() => {
-                    write(removePart(question, part.id));
+                    const next = removePart(question, part.id);
+                    // Left alone: the question's one part, or a group's
+                    // one sub-part (ungrouped by then, where it fits).
+                    writeBack(
+                      next,
+                      part.group === undefined
+                        ? isLonePart(next)
+                          ? next.parts[0].id
+                          : undefined
+                        : siblings.length === 1
+                          ? siblings[0].id
+                          : undefined
+                    );
                     setOpenPart(undefined);
                   }}
                 />
@@ -1442,6 +2171,15 @@ export function QuestionCard({
     parts: { label: string; part: QuestionPart }[]
   ) => {
     const ref: ItemRef = { group: group.id };
+    // Ungroup gives the group's canvas to its first sub-part: off while that
+    // holds one of its own, or while others answer in it (Epo 2026-11-24).
+    const issue = ungroupCanvasIssue(question, group.id);
+    const ungroupOff =
+      issue === 'canvas'
+        ? m.question_canvas_ungroup_has_one({ part: parts[0]?.label ?? '' })
+        : issue === 'answered'
+          ? answeredIn(group.blocks, { groupId: group.id })
+          : undefined;
     const addSub = () => {
       const part = newPart();
       write(addSubPart(question, group.id, part));
@@ -1474,19 +2212,44 @@ export function QuestionCard({
                   onClick={addSub}
                 />
                 <MenuItem
-                  disabled={!canUngroup(question, group.id)}
+                  className={cn(ungroupOff && 'whitespace-normal')}
+                  disabled={!canUngroup(question, group.id) || !!ungroupOff}
+                  hint={ungroupOff}
                   label={m.question_ui_ungroup()}
-                  onClick={() => write(ungroup(question, group.id))}
+                  // Its first sub-part takes the group's text back.
+                  onClick={() =>
+                    writeBack(ungroup(question, group.id), parts[0]?.part.id)
+                  }
                 />
                 <MenuItem
                   disabled={!canRemoveGroup(question, group.id)}
                   label={m.question_ui_remove()}
-                  onClick={() => write(removeGroup(question, group.id))}
+                  onClick={() => {
+                    const next = removeGroup(question, group.id);
+                    writeBack(
+                      next,
+                      isLonePart(next) ? next.parts[0].id : undefined
+                    );
+                  }}
                 />
               </ToolbarPopoverContent>
             </Popover>
           }
           blocks={group.blocks}
+          canvas={canvasOptions(
+            group.blocks,
+            m.question_canvas_part_has_one(),
+            () =>
+              pinnedAbove(
+                [...question.stem, ...group.blocks],
+                label,
+                parts.reduce((sum, { part }) => sum + part.marks, 0)
+              ),
+            {
+              answered: answeredIn(group.blocks, { groupId: group.id }),
+              hint: m.question_canvas_hint_question(),
+            }
+          )}
           lead={label}
           onChange={setBlocks({ groupId: group.id })}
           onFigure={openFigure}
@@ -1521,6 +2284,16 @@ export function QuestionCard({
   const headInStem =
     lone && first.blocks.length === 0 && question.stem.length > 0;
   const showStem = !lone || (!headInStem && question.stem.length > 0);
+  // The stem's canvas, the question's, which its parts may answer in.
+  const stemCanvas = canvasOptions(
+    question.stem,
+    m.question_canvas_text_has_one(),
+    () => pinnedAbove(question.stem, '', questionMarks(question)),
+    {
+      answered: answeredIn(question.stem, {}),
+      hint: m.question_canvas_hint_question(),
+    }
+  );
   const addPartButton = (
     <Button
       className="px-2.5"
@@ -1550,12 +2323,21 @@ export function QuestionCard({
         {/* Kept mounted as the question gains parts: the portal into it
             unmounts after it. */}
         <span className="ml-auto flex min-w-0 items-center gap-1" ref={setHead}>
-          {!lone && (
+          {(atCanvasCap || !lone) && (
             <span className="t-meta text-fg-muted">
-              {m.question_ui_marks_in_parts({
-                count: question.parts.length,
-                marks: marksLabel(questionMarks(question)),
-              })}
+              {[
+                atCanvasCap &&
+                  m.question_canvas_full({
+                    max: limits.QUESTION_CANVASES_MAX,
+                  }),
+                !lone &&
+                  m.question_ui_marks_in_parts({
+                    count: question.parts.length,
+                    marks: marksLabel(questionMarks(question)),
+                  }),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
             </span>
           )}
         </span>
@@ -1564,6 +2346,7 @@ export function QuestionCard({
         <div className={cn(!lone && 'pb-3.5')}>
           <BlocksColumn
             blocks={question.stem}
+            canvas={stemCanvas}
             onChange={setBlocks({})}
             onFigure={openFigure}
             placeholder={m.question_ui_question_placeholder()}
@@ -1580,6 +2363,7 @@ export function QuestionCard({
               asideTarget={head}
               autoFocus={autoFocus}
               blocks={question.stem}
+              canvas={stemCanvas}
               imageButton
               onChange={setBlocks({})}
               onFigure={openFigure}
@@ -1634,7 +2418,11 @@ export function QuestionCard({
               )}
               {phone && lone && canAddSample(first) && (
                 <MenuItem
-                  disabled={first.answer.type === 'drawing' && boardFailed}
+                  disabled={
+                    (first.answer.type === 'canvas' && boardFailed) ||
+                    !!sampleOff(first)
+                  }
+                  hint={sampleOff(first)}
                   icon={<Icon name="plus" />}
                   label={m.question_ui_sample_answer_heading()}
                   onClick={() => setSampleFor(first.id)}
@@ -1714,33 +2502,8 @@ export function QuestionCard({
                     return at < 0 ? blocks : blocks.filter((_, i) => i !== at);
                   });
                 },
-                onSave: (block: QuestionBlock) => {
-                  if (figures) {
-                    const entry = figure.isNew
-                      ? undefined
-                      : figures.key(figure.block);
-                    const at = entry && {
-                      entry,
-                      question: question.id,
-                      section: figure.section,
-                    };
-                    // One a co-editor removed meanwhile goes back in its place.
-                    if (at && figures.replace(at, block)) return;
-                    figures.insert(
-                      {
-                        after: figure.before && figures.key(figure.before),
-                        index: figure.index,
-                        question: question.id,
-                        section: figure.section,
-                      },
-                      block
-                    );
-                    return;
-                  }
-                  writeBlocks(figure.section, (blocks) =>
-                    saveFigure(blocks, figure, block)
-                  );
-                },
+                onSave: (block: QuestionBlock) =>
+                  saveFigureBlock(figure, block),
               })}
         />
       )}

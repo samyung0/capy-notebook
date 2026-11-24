@@ -722,6 +722,24 @@ fn a_writer_trimming_an_over_cap_text_while_moving_entries_is_taken() {
     );
 }
 
+/// A part's one canvas (Epo 2026-11-23) is a counted cap on server writes
+/// too: a writer adding a second is refused, and two a merge left stay
+/// through a writer's edit elsewhere. Fails if canvases skip `check_written`.
+#[test]
+fn a_writer_adds_no_second_canvas_and_keeps_two_a_merge_left() {
+    let canvases = |count: usize| {
+        let mut held = question(json!([]), 1);
+        let blocks = held["parts"][0]["blocks"].as_array_mut().unwrap();
+        blocks.extend((0..count).map(|_| json!({ "type": "canvas" })));
+        held
+    };
+    let grown = written(&canvases(1), &canvases(2));
+    assert_eq!(grown, Err("a section's canvases holds at most 1".into()));
+    let mut edited = canvases(2);
+    edited["stem"] = json!([{ "type": "text", "text": "Look closely." }]);
+    written(&canvases(2), &edited).unwrap();
+}
+
 /// A part whose marking items two editors' adds took past twice the cap
 /// reads as their total (45); a writer sending the question back with an edit
 /// elsewhere writes its own marks at most 40, so the room admits the edit and

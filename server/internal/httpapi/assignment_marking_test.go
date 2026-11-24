@@ -130,6 +130,34 @@ func TestAssignmentSubmitMarksOnceInTheBackground(t *testing.T) {
 	}
 }
 
+// Regrade with AI grades one approved answer again on the teacher's credits,
+// whoever paid for the submission's (Epo 2026-11-23).
+func TestRegradeRunsOnTheTeachersCredits(t *testing.T) {
+	h, st, calls := openGradingAPI(t, "full")
+	id := markingAssignment(t, h)
+	attempt := startAndSubmit(t, h, id, map[string]any{"q1:part:1": "Because of reasons."})
+	waitForAIMark(t, h, id)
+	if rec := doReq(t, h, http.MethodPost, "/api/assignments/"+id+"/approve-ai-marks", "u_owner", map[string]any{"questionId": "q1"}); rec.Code != http.StatusOK {
+		t.Fatalf("approve: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	before := settledCalls(calls)
+	if rec := doReq(t, h, http.MethodPost, "/api/assignment-attempts/"+attempt+"/regrade", "u_owner", map[string]any{"questionId": "q1"}); rec.Code != http.StatusOK {
+		t.Fatalf("regrade: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	waitForAIMark(t, h, id)
+	if made := settledCalls(calls); made != before+1 {
+		t.Fatalf("model calls = %d, want %d", made, before+1)
+	}
+	var payer string
+	if err := st.Pool().QueryRow(context.Background(), `SELECT actor_user_id FROM provider_sessions
+		WHERE surface='quiz' AND workspace_id='ws_e2e_private' ORDER BY created_at DESC LIMIT 1`).Scan(&payer); err != nil {
+		t.Fatal(err)
+	}
+	if payer != "u_owner" {
+		t.Fatalf("the regrade was paid by %s", payer)
+	}
+}
+
 func startAndSubmit(t *testing.T, h http.Handler, id string, answers map[string]any) string {
 	t.Helper()
 	run := doReq(t, h, http.MethodPost, "/api/assignments/"+id+"/start", "u_viewer", map[string]any{})
@@ -146,12 +174,44 @@ func startAndSubmit(t *testing.T, h http.Handler, id string, answers map[string]
 }
 
 // An attempt's time running out keeps the marks already paid for: what is left
-// stays Not marked for Mark with AI.
+// stays Not marked for Mark with AI. Its first four parts share a call; the
+// fifth, whose call never answers, is left.
 func TestMarkingKeepsPaidMarksWhenItsTimeRunsOut(t *testing.T) {
 	httpapi.SetMarkingAttemptTimeout(t, 400*time.Millisecond)
-	h, _, _ := openGradingAPI(t, "slow-second")
-	id := markingAssignment(t, h, "First part.", "Second part.")
-	attempt := startAndSubmit(t, h, id, map[string]any{"q1:part:1": "One.", "q1:part:2": "Two."})
+	h, _, _ := openGradingAPI(t, "slow-part")
+	id := markingAssignment(t, h, "One.", "Two.", "Three.", "Four.", "Slow part.")
+	attempt := startAndSubmit(t, h, id, fiveAnswers())
+	parts := waitForMarks(t, h, attempt, "q1:part:1")
+	if parts["q1:part:5"]["aiAwards"] != nil || parts["q1:part:5"]["pending"] != true {
+		t.Fatalf("the part with no answer = %+v", parts["q1:part:5"])
+	}
+}
+
+// An assignment's typed parts are graded four to a call (Epo 2026-11-23).
+func TestMarkingGradesFourPartsACall(t *testing.T) {
+	h, _, calls := openGradingAPI(t, "full")
+	id := markingAssignment(t, h, "One.", "Two.", "Three.", "Four.", "Five.")
+	attempt := startAndSubmit(t, h, id, fiveAnswers())
+	parts := waitForMarks(t, h, attempt, "q1:part:1", "q1:part:5")
+	if parts["q1:part:3"]["aiAwards"] == nil {
+		t.Fatalf("a part was left: %+v", parts["q1:part:3"])
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("five parts took %d calls, want 2", got)
+	}
+}
+
+func fiveAnswers() map[string]any {
+	answers := map[string]any{}
+	for i := 1; i <= 5; i++ {
+		answers[fmt.Sprintf("q1:part:%d", i)] = "An answer."
+	}
+	return answers
+}
+
+// waitForMarks polls the attempt until the AI has marked every part named.
+func waitForMarks(t *testing.T, h http.Handler, attempt string, ids ...string) map[string]map[string]any {
+	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		rec := doReq(t, h, http.MethodGet, "/api/assignment-attempts/"+attempt, "u_owner", nil)
@@ -160,14 +220,15 @@ func TestMarkingKeepsPaidMarksWhenItsTimeRunsOut(t *testing.T) {
 		}
 		_ = json.Unmarshal(rec.Body.Bytes(), &got)
 		parts := gradedParts(t, got.Questions)
-		if parts["q1:part:1"]["aiAwards"] != nil {
-			if parts["q1:part:2"]["aiAwards"] != nil || parts["q1:part:2"]["pending"] != true {
-				t.Fatalf("the part with no answer = %+v", parts["q1:part:2"])
-			}
-			return
+		marked := true
+		for _, id := range ids {
+			marked = marked && parts[id]["aiAwards"] != nil
+		}
+		if marked {
+			return parts
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("the paid mark was lost: %s", rec.Body.String())
+			t.Fatalf("the marks never came: %s", rec.Body.String())
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -192,7 +253,7 @@ func TestSubmitWithNoPipelineStaysNotMarked(t *testing.T) {
 
 // A failed grade leaves the answer waiting with Grade Error on the owner's row,
 // counted as not graded among the answers waiting (mock T3); Mark with AI still
-// runs, each attempt on its member's credits, and a frozen caller is refused.
+// runs, on the caller's credits, and a frozen caller is refused.
 func TestFailedGradeShowsGradeError(t *testing.T) {
 	h, st, _ := openGradingAPI(t, "fail")
 	id := markingAssignment(t, h)

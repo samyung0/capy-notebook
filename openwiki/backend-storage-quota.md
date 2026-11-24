@@ -178,8 +178,7 @@ bank's copies do.
 An assignment's frozen copy (Epo 2026-11-05) is charged to whoever published it,
 not whoever drafted it. Its images are new `editor_assets` rows of the workspace
 with no material and an `assignment_id`, checked by `gateStorageTx` as a clone's
-are; a task someone set themself (`assignments.own`) keeps its copies with no
-workspace either, charged to its maker like the rest of it. Its question JSON is `assignments.frozen_bytes`, measured as a material's
+are. Its question JSON is `assignments.frozen_bytes`, measured as a material's
 content is and checked by the same gate, so publishing past the limit is refused
 as any creation is, images or not; a trigger moves the charge through the deltas
 (migration `0149_assignment_storage.sql`). Only a graded quiz from a file edits a
@@ -318,15 +317,28 @@ objects for the reaper.
   `storage_quota_exceeded`, no credits spent. Objects written before a refusal
   that raced past the check are left to the report-only sweep, which covers
   `drawings/`.
-- **The marking image.** Kept only until its part is marked: the AI's marking
+- **One drawing per shared canvas.** The parts answering in one stem's or
+  group's canvas share one drawing (Epo 2026-11-23), one row stored under the
+  first of them (`questions.DrawingParts`), so its board, image and pictures
+  are counted and charged once; a drawing sent under another of them is
+  refused before anything is written. A republish that gives its canvas
+  another first part only renames the row's `part_id` (`moveDrawingsTx`, Epo
+  2026-11-24), which no storage or blob trigger watches, so the charge is
+  unchanged; a drawing whose canvas no part answers in any more is deleted,
+  which ends its charge and queues its objects for the reaper.
+- **The marking image.** Kept only until its part is marked (a shared
+  drawing's, until every part it answers is: `doneDrawings`): the AI's marking
   landing (practice Check again, Mark with AI), a part marked by hand, or the
   assignment switched to manual grading drops it. Under manual grading none is
   made or written; a drawing saved so has no image, and Mark with AI leaves it
   to staff (it reads as Mark by hand in Approve, Q695).
-- **Caps.** A board is at most `DrawingBoardBytes` (250 KiB) before gzip, an
-  image at most `DrawingImageBytes` (300 KiB) and 1,568 px on its longer side.
-  A drawn sample answer's board is a quiz `board` editor asset under the same
-  board cap (`editor_assets_size_check`, migration 0158).
+- **Caps.** A board is at most `DrawingBoardBytes` (400 KiB, Epo 2026-11-23;
+  250 KiB before) before gzip, an image at most `DrawingImageBytes` (300 KiB)
+  and 1,568 px on its longer side. A student's canvas answer is a copy of the
+  part's canvas, so the teacher's canvas counts in the same 400 KiB; the image
+  is the same size either way. A canvas block's board and a drawn sample
+  answer's board are quiz `board` editor assets under the same board cap
+  (`editor_assets_size_check`, migrations 0158 and 0192).
 - **Pictures on the board (Epo 2026-11-09, migration 0166).** A picture pasted
   on an answer board goes up with the board at Done or Check, at most
   `BoardPictures` (10) of `BoardPictureBytes` (1 MiB) each, WebP, JPEG, PNG or
@@ -428,8 +440,9 @@ workspace or not (who holds it:
   ([authorization](authorization-permissions-lifecycles.md#workspace-canvases)).
 - **Board assets.** A canvas takes none (`checkEditorAsset` answers 400).
   Migration 0181 put `editor_assets_size_check` back to 256,000 bytes for a
-  `board` asset, which is a quiz's drawn sample answer alone again
-  (`fieldlimits.DrawingBoardBytes`, 250 KiB).
+  `board` asset, a quiz's drawn sample answer alone again; 0192 raised it to
+  409,600 (`fieldlimits.DrawingBoardBytes`, 400 KiB), a quiz canvas block's
+  board being one too.
 - The canvas goes with the membership (`dropLeaverCanvasTx`; provisional for
   a shared canvas, see authorization) and with the workspace (cascade), its
   assets and Yjs rows with it.
@@ -1022,8 +1035,21 @@ header (Server checks below).
   colours on a nearest-neighbour sample at the output size), never WebP.
 - The original is kept when it needs no resize (both sides compared), fits
   the image cap, is a type its target takes (PNG, JPEG or GIF in an Office
-  file; PNG, JPEG, WebP, GIF or AVIF as an editor image) and the encode is not
-  smaller.
+  file; PNG, JPEG, WebP or GIF by its bytes, whatever its name, as an editor
+  image or bank figure) and the encode is not smaller.
+- No image is stored as AVIF (Epo 2026-11-23): the gateway's Go decoders read
+  PNG, JPEG, GIF and WebP only, and question images go to the AI grader, which
+  takes PNG, JPEG or WebP. A person may still pick, paste or drop an AVIF
+  (`IMAGE_ACCEPT` and `PICKED_IMAGE_EXTENSIONS` in `src/lib/fitImage.ts` offer
+  it); every editor image and bank figure path ends in `fitImage` (through
+  `uploadEditorAsset`, `uploadBankAsset` or an answer board's `shrink`), which
+  re-encodes it as WebP (JPEG or PNG without a WebP encoder) whatever its
+  size. That covers notes (picked, dropped, pasted files, pasted or imported
+  URL images, `.docx` pictures), quiz and flashcard images, drawn sample
+  answers, the workspace canvas and answer boards, and bank figures; an Office
+  editor's `prepareImage` re-encodes it as JPEG or PNG. The editor-asset
+  reservation and `imagecheck.CheckEditorImage` refuse AVIF, so a path that
+  missed the browser step fails instead of storing one.
 - A result over the cap is shrunk further: a lossy one at 2,000 px with the
   quality falling from 0.85 to 0.4 (an opaque PNG turns into JPEG), a
   transparent PNG at 2,000, 1,400 then 1,000 px. When nothing fits, the image
@@ -1192,7 +1218,7 @@ follow-up). A `[Content_Types].xml` with a namespace prefix (ElementTree's
 
 | Upload or import | Refused when                                                                                                                                      | Code                                                                                         |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Editor image     | not PNG, JPEG, WebP, GIF or AVIF by its bytes, its header gives no size, or over 2,400 px on either side                                        | `image_unreadable`, `image_too_large`                                                        |
+| Editor image     | not PNG, JPEG, WebP or GIF by its bytes (an AVIF too, which the browser re-encodes), its header gives no size, or over 2,400 px on either side | `image_unreadable`, `image_too_large`                                                        |
 | Office file      | not a zip, over 4,096 entries, not one contiguous archive (above), a relationships part over 4 MiB by its declared size (Q367), a part that does not read, or past 256 MiB inflated in all | `office_unreadable`                                                                          |
 | Office file      | an EMF or WMF part (by name or signature); an SVG part; a picture part that is not PNG, JPEG or GIF by its bytes, or whose header gives no size   | `office_vector_image`, `office_image_unsupported`                                            |
 | Office file      | any part whose bytes are WebP, AVIF, HEIF, BMP, TIFF, ICO or CUR, JPEG XR or JPEG 2000                                                            | `office_image_unsupported`                                                                   |

@@ -2,12 +2,12 @@ import { expect, it } from 'vitest';
 import type { Assignment } from '@/api/types';
 import { m } from '@/i18n';
 import {
+  averageTone,
   closeOutcomes,
   dateLabel,
   dayTimeLabel,
   dueText,
   latePolicy,
-  questionRowName,
   timeLabel,
 } from './assignmentText';
 
@@ -90,22 +90,10 @@ it('keeps the late penalty only on what is graded', () => {
   expect(latePolicy({ ...policy, kind: 'unmarked' }).latePenaltyPct).toBe(0);
 });
 
-// Epo 2026-11-19: a number-labelled part reads Q19 (2), as a lettered one does.
-it("names a part's row with its label in brackets", () => {
-  const parts = [
-    { id: 'p1' },
-    { group: 'g', id: 'p2' },
-    { group: 'g', id: 'p3' },
-  ];
-  const groups = [{ blocks: [], id: 'g' }];
-  expect(questionRowName(19, { labels: 'numbers', parts }, 'p1')).toBe(
-    'Q19 (1)'
-  );
-  expect(questionRowName(19, { groups, labels: 'numbers', parts }, 'p3')).toBe(
-    'Q19 (2)(ii)'
-  );
-  expect(questionRowName(18, { groups, labels: 'letters', parts }, 'p2')).toBe(
-    'Q18 (b)(i)'
-  );
-  expect(questionRowName(3)).toBe('Q3');
+// Epo 2026-11-22: a report's averages tinted by the topic labels' thresholds.
+it("tints an average by its band, none before it's marked", () => {
+  expect(averageTone(0.7)).toBe('success');
+  expect(averageTone(0.65)).toBe('warning');
+  expect(averageTone(0.59)).toBe('error');
+  expect(averageTone(undefined)).toBeUndefined();
 });

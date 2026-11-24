@@ -742,22 +742,56 @@ const BLOCKS: Record<string, Table> = {
   }),
 };
 
+/** The props the board catalog gives only some boards' blocks (its `props`), each
+ * value's rule. */
+const BOARD_PROPS: Record<(typeof BOARD_CATALOG.props)[number]['name'], Field> =
+  {
+    // A question's answer area's top left, [x, y] (boardArea.ts).
+    area: opt(plain(isPair)),
+  };
+
+const tables = new Map<BoardKind, Record<string, Table>>();
+/** Each flavour's keys on `board`: its own, and the props the catalog gives it
+ * there. */
+function blockTables(board: BoardKind) {
+  let found = tables.get(board);
+  if (found) return found;
+  found = { ...BLOCKS };
+  for (const { boards, flavour, name } of BOARD_CATALOG.props) {
+    if (!(boards as readonly string[]).includes(board)) continue;
+    const { fields, whole } = found[flavour];
+    found[flavour] = table(
+      { ...fields, [`prop:${name}`]: BOARD_PROPS[name] },
+      whole
+    );
+  }
+  tables.set(board, found);
+  return found;
+}
+
+/** Whether a flavour's blocks take BlockSuite's lock (`lockedBySelf`): the ones
+ * that stand on the canvas. */
+export const takesLock = (flavour: string) =>
+  Object.hasOwn(BLOCKS, flavour) &&
+  Object.hasOwn(BLOCKS[flavour].fields, 'prop:lockedBySelf');
+
 /** A stored block under its key `id`, as the board's rules take it, one block at
  * a time (where it sits is `childFits`'): a flavour the board holds, and only that
- * flavour's keys, each within its limits. */
+ * flavour's keys on this board, each within its limits. */
 export function blockFits(id: string, block: Y.Map<unknown>, board: BoardKind) {
   const flavour = plainAt(block, 'sys:flavour');
+  const rules = blockTables(board);
   if (
     !(
       isString(flavour) &&
       holds(board).parents.has(flavour) &&
-      Object.hasOwn(BLOCKS, flavour) &&
+      Object.hasOwn(rules, flavour) &&
       isId(id)
     )
   )
     return false;
-  const rules = BLOCKS[flavour];
-  return tableFits(block, rules, id) && (rules.whole?.(block) ?? true);
+  const own = rules[flavour];
+  return tableFits(block, own, id) && (own.whole?.(block) ?? true);
 }
 
 /** Whether `child` may sit under `parent`: its flavour lists the parent's. */

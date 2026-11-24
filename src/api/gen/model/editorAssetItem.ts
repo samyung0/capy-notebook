@@ -5,7 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EditorAssetItemPurpose } from './editorAssetItemPurpose.ts';
-import type { MaterialRefType } from './materialRefType.ts';
+import type { MaterialKind } from './materialKind.ts';
 
 export interface EditorAssetItem {
   assetId: string;
@@ -13,8 +13,8 @@ export interface EditorAssetItem {
   createdAt: string;
   lostAccess: boolean;
   materialId?: string;
+  materialKind: MaterialKind;
   materialTitle: string;
-  materialType: MaterialRefType;
   name: string;
   purpose: EditorAssetItemPurpose;
   sizeBytes: number;

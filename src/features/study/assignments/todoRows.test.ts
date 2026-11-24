@@ -41,14 +41,6 @@ it('splits a class into open, done and answers waiting for whoever runs it', () 
   });
 });
 
-it('lists a task with a quiz for its maker, and its answers waiting', () => {
-  const task = row('task', {
-    manage: { toApprove: 1 } as Assignment['manage'],
-    own: true,
-  });
-  expect(todoRows([task])).toMatchObject({ open: [task], toApprove: [task] });
-});
-
 const view = (patch: Partial<TodoView> = {}): TodoView => ({
   ascending: true,
   sort: 'due',
@@ -157,15 +149,20 @@ it('sorts rows by title, and classes by name', () => {
   expect(rowIds(reversed[0])).toEqual(['b', 'a']);
 });
 
-it('keeps the tasks with no workspace first under either sort', () => {
+// Epo 2026-11-20: To do starts newest posted first.
+it('sorts rows by posted date, and classes by their newest', () => {
+  const posted = (id: string, day: number) =>
+    row(id, { postedAt: `2026-11-${String(day).padStart(2, '0')}T09:00:00Z` });
   const classes = [
-    workspace('Art', [row('a', { dueAt: '2026-11-01T00:00:00Z', title: 'A' })]),
-    workspace('', [row('loose', { title: 'Z' })]),
+    workspace('Art', [posted('old', 2)]),
+    workspace('Biology', [posted('mid', 10), posted('new', 18)]),
   ];
-  expect(ids(todoSections(classes, view()))).toEqual(['', 'Art']);
-  expect(
-    ids(todoSections(classes, view({ ascending: false, sort: 'title' })))
-  ).toEqual(['', 'Art']);
+  const sections = todoSections(
+    classes,
+    view({ ascending: false, sort: 'posted' })
+  );
+  expect(ids(sections)).toEqual(['Biology', 'Art']);
+  expect(rowIds(sections[0])).toEqual(['new', 'mid']);
 });
 
 it('moves answers staff ticked off down with the ticked rows', () => {

@@ -16,7 +16,7 @@ const DrawnSampleView = lazy(() =>
  * the marking scheme (Epo 2026-11-15). */
 export const hasSample = (part: QuestionPart) =>
   (part.answer.type === 'open' && !!part.answer.accepted[0]) ||
-  (part.answer.type === 'drawing' && !!part.answer.sample);
+  (part.answer.type === 'canvas' && !!part.answer.sample);
 
 /** A part's sample answer under its section's heading, or nothing. */
 export function SampleView({
@@ -29,7 +29,7 @@ export function SampleView({
   const { answer } = part;
   if (answer.type === 'open' && answer.accepted[0])
     return <TextView className={className} text={answer.accepted[0]} />;
-  if (answer.type === 'drawing' && answer.sample)
+  if (answer.type === 'canvas' && answer.sample)
     return (
       <Suspense fallback={null}>
         <DrawnSampleView sample={answer.sample} />

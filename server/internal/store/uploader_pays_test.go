@@ -684,7 +684,7 @@ func TestRemovedUploaderDeletesItsMediaFromTheFilesPage(t *testing.T) {
 			if lostAccess {
 				wantMaterial, wantWorkspace = "", ""
 			}
-			if item.LostAccess != lostAccess || item.MaterialID != wantMaterial || item.MaterialTitle != note.Title || item.MaterialType != MaterialRefNote ||
+			if item.LostAccess != lostAccess || item.MaterialID != wantMaterial || item.MaterialTitle != note.Title || item.MaterialKind != MaterialNote ||
 				item.WorkspaceName != ws.Name || item.WorkspaceID != wantWorkspace || item.SizeBytes != 100 {
 				t.Fatalf("item %+v, want lostAccess %v under %q opening %q", item, lostAccess, note.Title, wantMaterial)
 			}

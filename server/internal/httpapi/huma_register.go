@@ -113,7 +113,6 @@ func mapHTTPError(err error) error {
 		"event_limit":           store.ErrTooManyEvents,
 		"assignment_limit":      store.ErrTooManyAssignments,
 		"assignment_open_limit": store.ErrTooManyOpenAssignments,
-		"task_limit":            store.ErrTooManyOwnTasks,
 	} {
 		if errors.Is(err, rowCap) {
 			return conflictError(code, rowCap.Error())
@@ -296,18 +295,6 @@ func mapHTTPError(err error) error {
 			Title:  http.StatusText(http.StatusBadRequest),
 			Detail: errContextTooLarge.Error(),
 			Errors: []*huma.ErrorDetail{{Message: "context_too_large"}},
-		}
-	}
-	var pendingTooLarge *pendingSourcesTooLargeError
-	if errors.As(err, &pendingTooLarge) {
-		return &huma.ErrorModel{
-			Status: http.StatusBadRequest,
-			Title:  http.StatusText(http.StatusBadRequest),
-			Detail: pendingTooLarge.Error(),
-			Errors: []*huma.ErrorDetail{{
-				Message: "pending_sources_too_large",
-				Value:   map[string]any{"fileIds": pendingTooLarge.FileIDs, "materialIds": pendingTooLarge.MaterialIDs},
-			}},
 		}
 	}
 	if errors.Is(err, errSourceChanged) {

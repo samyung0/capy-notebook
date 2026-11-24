@@ -1,0 +1,320 @@
+{
+  "about": "Figure questions for bench/grading/scripts/question_figures.py (2026-11-23). Each figure is drawn by the script; the description is the short alt text a teacher would write, without the figure's details. Gold is each item's share (0, 0.5, 1), labelled by Claude from the figure as drawn.",
+  "questions": [
+    {
+      "id": "rainfall",
+      "figure": "rainfall",
+      "description": "Bar chart of monthly rainfall",
+      "text": "Figure 1 shows the rainfall in a town over six months. Which month had the highest rainfall, and by how much did it exceed the month with the lowest rainfall?",
+      "items": [
+        {
+          "text": "Names the month with the highest rainfall in Figure 1",
+          "marks": 1
+        },
+        {
+          "text": "Gives the difference between the highest and lowest months, read from Figure 1 (within 5 mm)",
+          "marks": 1
+        }
+      ],
+      "answers": [
+        {
+          "kind": "correct",
+          "text": "July had the most rain. It was 140 mm and the lowest was March with 20 mm, so July had 120 mm more.",
+          "gold": [
+            1,
+            1
+          ]
+        },
+        {
+          "kind": "wrong",
+          "text": "March had the highest rainfall, about 80 mm more than July.",
+          "gold": [
+            0,
+            0
+          ]
+        },
+        {
+          "kind": "partial",
+          "text": "July, by about 60 mm.",
+          "gold": [
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cell",
+      "figure": "cell",
+      "description": "Diagram of a plant cell with three labelled structures",
+      "text": "Name the structure labelled B in Figure 1 and give its function.",
+      "items": [
+        {
+          "text": "Names structure B in Figure 1",
+          "marks": 1
+        },
+        {
+          "text": "Gives the function of that structure",
+          "marks": 1
+        }
+      ],
+      "answers": [
+        {
+          "kind": "correct",
+          "text": "B is the nucleus. It controls the cell's activities and holds the DNA.",
+          "gold": [
+            1,
+            1
+          ]
+        },
+        {
+          "kind": "wrong",
+          "text": "B is the vacuole, which stores cell sap.",
+          "gold": [
+            0,
+            0
+          ]
+        },
+        {
+          "kind": "partial",
+          "text": "The nucleus.",
+          "gold": [
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cyclist",
+      "figure": "cyclist",
+      "description": "Distance-time graph for a cyclist",
+      "text": "Use Figure 1 to find the speed of the cyclist during the first 10 seconds. Show your working.",
+      "items": [
+        {
+          "text": "Divides the distance at 10 s by 10 s, the distance read correctly from Figure 1",
+          "marks": 1
+        },
+        {
+          "text": "Correct speed for the first 10 s from Figure 1 (within 0.5 m/s)",
+          "marks": 1
+        }
+      ],
+      "answers": [
+        {
+          "kind": "correct",
+          "text": "speed = distance / time = 50 m / 10 s = 5 m/s",
+          "gold": [
+            1,
+            1
+          ]
+        },
+        {
+          "kind": "misread",
+          "text": "speed = 60 / 10 = 6 m/s",
+          "gold": [
+            0,
+            0
+          ]
+        },
+        {
+          "kind": "wrong_method",
+          "text": "speed = 10 x 50 = 500 m/s",
+          "gold": [
+            0,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "readings",
+      "figure": "readings",
+      "description": "Table of a student's results",
+      "text": "Calculate the mean of the three current readings in Figure 1.",
+      "items": [
+        {
+          "text": "Correct mean of the three readings in Figure 1, to 1 decimal place",
+          "marks": 1
+        }
+      ],
+      "answers": [
+        {
+          "kind": "correct",
+          "text": "(4.2 + 4.6 + 4.4) / 3 = 4.4 A",
+          "gold": [
+            1
+          ]
+        },
+        {
+          "kind": "wrong",
+          "text": "The mean is 4.6 A.",
+          "gold": [
+            0
+          ]
+        },
+        {
+          "kind": "terse",
+          "text": "4.4",
+          "gold": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "lighthouse",
+      "figure": "lighthouse",
+      "description": "Map of a coastline with a harbour and a lighthouse",
+      "text": "Using Figure 1, give the compass direction of the lighthouse from the harbour.",
+      "items": [
+        {
+          "text": "Correct compass direction of the lighthouse from the harbour in Figure 1",
+          "marks": 1
+        }
+      ],
+      "answers": [
+        {
+          "kind": "correct",
+          "text": "North-east.",
+          "gold": [
+            1
+          ]
+        },
+        {
+          "kind": "reversed",
+          "text": "South-west.",
+          "gold": [
+            0
+          ]
+        },
+        {
+          "kind": "terse",
+          "text": "NE",
+          "gold": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "energy",
+      "figure": "energy",
+      "description": "Pie chart of a country's electricity sources",
+      "text": "Which source in Figure 1 provides about a quarter of the country's electricity?",
+      "items": [
+        {
+          "text": "Names the source with about 25% in Figure 1",
+          "marks": 1
+        }
+      ],
+      "answers": [
+        {
+          "kind": "correct",
+          "text": "Wind provides about a quarter.",
+          "gold": [
+            1
+          ]
+        },
+        {
+          "kind": "wrong",
+          "text": "Gas, which is about a quarter.",
+          "gold": [
+            0
+          ]
+        },
+        {
+          "kind": "terse",
+          "text": "wind power",
+          "gold": [
+            1
+          ]
+        }
+      ]
+    },
+    {
+      "id": "foodweb",
+      "figure": "foodweb",
+      "description": "A food web",
+      "text": "Name a primary consumer in Figure 1 and the organism it feeds on.",
+      "items": [
+        {
+          "text": "Names an animal in Figure 1 that feeds only on a producer",
+          "marks": 1
+        },
+        {
+          "text": "Names the producer that animal feeds on, as the arrows in Figure 1 show",
+          "marks": 1
+        }
+      ],
+      "answers": [
+        {
+          "kind": "correct",
+          "text": "The rabbit is a primary consumer; it eats the grass.",
+          "gold": [
+            1,
+            1
+          ]
+        },
+        {
+          "kind": "wrong",
+          "text": "The fox, which eats the rabbit.",
+          "gold": [
+            0,
+            0
+          ]
+        },
+        {
+          "kind": "partial",
+          "text": "Grasshopper.",
+          "gold": [
+            1,
+            0
+          ]
+        }
+      ]
+    },
+    {
+      "id": "triangle",
+      "figure": "triangle",
+      "description": "A triangle with two angles marked and one angle x",
+      "text": "Find the size of angle x in Figure 1. Give a reason for your answer.",
+      "items": [
+        {
+          "text": "Uses the two angles given in Figure 1 with the angle sum of a triangle (180 degrees)",
+          "marks": 1
+        },
+        {
+          "text": "Correct size of angle x",
+          "marks": 1
+        }
+      ],
+      "answers": [
+        {
+          "kind": "correct",
+          "text": "x = 180 - 50 - 60 = 70 degrees, because the angles in a triangle add up to 180.",
+          "gold": [
+            1,
+            1
+          ]
+        },
+        {
+          "kind": "misread",
+          "text": "x = 180 - 50 - 30 = 100 degrees, because the angles in a triangle add up to 180.",
+          "gold": [
+            0,
+            0
+          ]
+        },
+        {
+          "kind": "slip",
+          "text": "x = 180 - 50 - 60 = 80 degrees, because the angles in a triangle add up to 180.",
+          "gold": [
+            1,
+            0
+          ]
+        }
+      ]
+    }
+  ]
+}

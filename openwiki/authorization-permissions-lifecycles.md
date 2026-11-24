@@ -112,10 +112,9 @@ results", class only) and who pays for AI marking (class: the owner for
 assignments, a member for their own practice; personal: each person).
 
 Assignments ([study-progress.md](study-progress.md#assignments)) are a class's
-alone, but for the tasks a member sets themself in any workspace (after the
-table), and the store checks each of these itself (`assignmentStaff`, `taskStaff`,
-`lockAssignmentStaffTx`; `staffOf` and `lockStaffOfTx` read the assignment's row
-first, since a task's only staff is its maker):
+alone, made by its owner and editors; nobody sets work for themself (Epo
+2026-11-21), and the store checks each of these itself (`assignmentStaff`,
+`lockAssignmentStaffTx`):
 
 | Action | Owner | Editor member | Link/public editor | Viewer member it went to | Other viewer member |
 | --- | --- | --- | --- | --- | --- |
@@ -130,25 +129,9 @@ first, since a task's only staff is its maker):
 | Study → Members and a member's profile: every viewer member's marks, topic labels, practice counts and full storage | Yes | Yes | No | No | No |
 
 Everything else answers 404. A personal workspace hides a class's assignments
-without deleting them. Apart from assignments, any member of a workspace sets
-themself tasks (Epo 2026-11-10, New task: `assignments.own`, naming its maker
-alone and never a draft): a class's viewer members and everyone in a personal
-workspace, while a class's owner and editor members make assignments instead.
-Such a task takes every option an assignment does but who it goes to (Epo
-2026-11-11), and its maker is both its staff and the one it went to: they alone
-read, take, tick, mark, close, republish and delete it and read its report and
-its frozen images, on the same routes, while a class's staff and the workspace's
-owner get 404 on every one and see none of them. In a workspace it needs its
-maker still a member; when they leave or are removed, or the workspace is
-deleted, their tasks there move to no workspace. Such a task need not be in a workspace (Epo 2026-11-11, `POST
-/api/todo/tasks`), and its quiz and files are any its maker can open, from any
-workspace or none (`ownTaskFileSQL`, `ownTaskMaterialSQL`), while a marked
-task's quiz is made with it and the task owns it (`makeGradedQuizTx`, Epo
-2026-11-16): never one hidden from them (a class's quiz under an open
-assignment is held from every viewer member, and one it went to stays refused
-past the close while its keys are held), and a file they later lose access to leaves
-the task, so a task shows its maker nothing they could not open themself;
-in a personal workspace every otherassignment route answers 404; Members' store refuses a class's own viewer
+without deleting them, takes no new one (`POST /api/workspaces/{id}/assignments`
+answers 404 there and to a class's viewer members) and lists none; in a personal
+workspace every other assignment route answers 404; Members' store refuses a class's own viewer
 members with `ErrForbidden` (`membersStaff`), which the API answers as 404 like
 the rest (`TestMembersRoutesAuthorize`). Members shows staff a member's practice
 as counts only, never answers; its Frequently wrong lists prompts from the class's
@@ -484,12 +467,12 @@ unchanged.
 - **Owned by a graded quiz** (Epo 2026-11-14). A quiz a marked assignment owns
   (`materials.assignment_id`, migration 0174) is hidden for good: claiming it
   sets `hidden`, and `materialHiddenSQL` and `live_access` read it as hidden
-  whatever the column says, so only the class's staff (and a Task's maker) open
+  whatever the column says, so only the class's staff open
   it, before and after the close. It lists nowhere (every list, search, picker,
   Practice, Study, Explore and the pipeline's scope, outline and summary queries
   have `m.assignment_id IS NULL`), hiding it by hand and trashing it answer 404,
   and it goes when its assignment is deleted (`ON DELETE CASCADE`). A graded
-  quiz or a marked task is made with its quiz in one request (the quiz maker's
+  quiz is made with its quiz in one request (the quiz maker's
   `gradedQuiz`, or a copy of a workspace quiz, Epo 2026-11-16), so no quiz
   waits unowned. It is charged to its maker, so
   their account purge deletes it and the assignment keeps its frozen copy. See
@@ -548,9 +531,11 @@ unchanged.
   hidden and visible stays visible (Epo 2026-11-04). A copy with no workspace
   has no members, so it is not hidden.
 - **Every quiz an editor makes starts hidden** (Epo 2026-11-16): an owner or
-  editor shows it to members from its Hidden chip or ⋮ menu when it is ready.
+  editor shows it to members from its Hidden chip or ⋮ menu when it is ready
+  (the first hidden quiz opened on a browser points at the chip in a callout,
+  [appearance](frontend/appearance.md)).
   Generate (`huma_generate.go`, an editor's quiz), Create quiz (`createQuiz`
-  and `createMaterial` with kind quiz), From the bank (`CreateQuizFromBank`,
+  and `createMaterial` with kind quiz), From question bank (`CreateQuizFromBank`,
   `bankCopyToNewQuiz`) and the chat agent's quiz (`internal_materials.go`, in a
   workspace) insert it with `hidden`; a viewer's own practice quiz is a
   standalone material nobody else reaches, and a quiz embedded in a note
@@ -1478,7 +1463,11 @@ the person attempting (see [study-progress.md](study-progress.md) and
   writes nothing to the bucket until `CheckAssignmentDrawing` passes: the
   caller's own running attempt, in a class they still belong to, the attempt's
   time not run out, a drawing part of its frozen copy, and the caller's storage
-  for what the part adds (Q693). Another member's attempt, an unknown one or a
+  for what the part adds (Q693). A part answering in the canvas above takes
+  none unless it is the first part answering there, whose drawing answers
+  them all (`drawingPartIn`, `questions.DrawingParts`; Epo 2026-11-23); a
+  practice check sending one under another is refused the same way
+  (`planGrading`, 422). Another member's attempt, an unknown one or a
   malformed id (the id names the bucket folder: at most 64 of `[A-Za-z0-9_-]`)
   is refused first; the save checks it all again in its transaction. Marked by
   hand, no marking image is made in the browser (`drawingImages` on the
@@ -1500,7 +1489,10 @@ the person attempting (see [study-progress.md](study-progress.md) and
   (`DELETE /api/drawings/{id}`, `DELETE /api/drawings`); one still waiting on
   marking is not listed and not found, and an assignment's waits until the
   assignment has closed and, under Show grades Manual, its grades are released,
-  so staff can still revise marks (Epo 2026-11-08). Drawings go with their assignment, with
+  so staff can still revise marks (Epo 2026-11-08). A drawing answering
+  several parts in one canvas counts as marked only once every shared canvas
+  part of its question is (`sharedUnmarkedSQL`), for this list and for a
+  leaver. Drawings go with their assignment, with
   a practice attempt's quiz when it is permanently deleted, and a leaver's
   marked ones go as they leave.
 
@@ -1574,7 +1566,8 @@ room per canvas whether it is shared or not;
   editor from a viewer. `PATCH /api/canvases/{id}` with `{shared}` shares or
   takes back. `PUT /api/canvases/{id}` (the saved board) is gone, and a
   `board` editor asset for a canvas is refused with 400
-  (`checkEditorAsset`): a board asset is a quiz's drawn sample answer alone.
+  (`checkEditorAsset`): a board asset is a quiz's alone, a drawn sample
+  answer's or a canvas block's board.
   `UpdateMaterial` refuses a content patch for a canvas (its document is
   written by its room's projection alone).
 - **Who shares, renames and deletes (PROVISIONAL, open question 3 of the
@@ -2443,7 +2436,11 @@ completed more than 60 seconds ago (`editor_assets.trashed_at`, migration
 0065): still charged and holding its object, hidden from resolve, share and
 clone reads, restored by a save that references it again, and deleted by the
 trash sweep a day later (`PurgeTrashedEditorAssets`), which releases the charge
-and sends the object to the blob outbox. The minute lets a just-uploaded
+and sends the object to the blob outbox. A quiz's editors still resolve its
+trashed assets until they are purged (Epo 2026-11-24, `EditsAssetQuiz` in
+`resolveEditorAsset`), so a canvas their tab kept (an "Answer in" switch, a
+type switch) comes back after a reload; learners, viewers, share pages and
+everyone else still get 404, and a note's trashed images stay hidden from all. The minute lets a just-uploaded
 image's id reach a shared note before a collaborator's save. The children pass
 above handles images too: the note's own image comes out of the trash at once
 (undo, cut and paste, chat Undo of an AI edit within the day), another note's
@@ -2574,7 +2571,7 @@ longer reach the workspace (`lostAccessSQL`); a pending invite keeps its name,
 and a notice's own snapshot (a removal's `workspaceName`) still shows.
 The Files page lists every image and audio clip the caller pays for
 (`GET /api/items`, `ListEditorAssets`), under its note's current title and
-kind (`materialType`), marked
+kind (`materialKind`), marked
 `lostAccess` when the caller can no longer reach the note's workspace
 (`lostAccessSQL`; title and workspace name blank once that workspace's owner
 is no longer live). One in a note the caller can open opens that note; one it

@@ -29,8 +29,8 @@ test('closing an assignment ends the attempt open on the page, keeping its answe
   await expect(page.locator('[data-assignment-take]')).toHaveCount(0, {
     timeout: 30_000,
   });
-  // Its one mark (of the paper's 77) is the answer only the page held.
-  await expect(page.getByText('1 / 77')).toBeVisible({ timeout: 30_000 });
+  // Its one mark (of the paper's 83) is the answer only the page held.
+  await expect(page.getByText('1 / 83')).toBeVisible({ timeout: 30_000 });
   await expect(
     page.getByRole('heading', { name: m.assignment_submitted() })
   ).toHaveCount(0);

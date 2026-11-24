@@ -265,7 +265,7 @@ export function PartKey({
       );
     }
     case 'open':
-    case 'drawing':
+    case 'canvas':
       return (
         <KeyList title={m.question_ui_marking_scheme()}>
           {(part.markscheme ?? []).map((item, i) => (
@@ -393,6 +393,7 @@ export function QuestionPane({
   opening,
   picked,
   questions,
+  quizId,
   scrollTop,
   topics,
   uploadAsset,
@@ -423,13 +424,15 @@ export function QuestionPane({
   opening?: boolean;
   picked: string | undefined;
   questions: Question[];
+  quizId: string;
   /** The cards' scroll, kept by the page across the opening paint's swap. */
   scrollTop?: RefObject<number>;
   /** A workspace quiz's topics: none, no Topic field. */
   topics?: QuestionTopics;
   uploadAsset: UploadQuestionAsset;
   uploadSample: UploadDrawnSample;
-  write: (question: Question) => void;
+  /** False when the write did not go (`editQuestion`). */
+  write: (question: Question) => boolean;
 }) {
   const [removing, setRemoving] = useState<string | null>(null);
   const openIndex = questions.findIndex((question) => question.id === picked);
@@ -592,6 +595,7 @@ export function QuestionPane({
           number={number}
           openPart={clickedPart}
           question={question}
+          quizId={quizId}
           topic={
             topics && topics.topics.length > 0 ? (
               <TopicField

@@ -34,11 +34,13 @@ const question = (id: string, text: string, marks: number) =>
     updatedAt: '2026-11-12T10:00:00Z',
   }) satisfies ItemBankQuestion;
 
-const create = vi.hoisted(() => vi.fn());
+const create = vi.hoisted(() =>
+  vi.fn(() => Promise.resolve({ assignmentId: 'as_1', id: 'qz_1' }))
+);
 const copy = vi.hoisted(() => vi.fn());
 vi.mock('@/api/hooks', () => ({
   useCopyBankQuestions: () => ({ isPending: false, mutate: copy }),
-  useCreateBankQuiz: () => ({ isPending: false, mutate: create }),
+  useCreateBankQuiz: () => ({ isPending: false, mutateAsync: create }),
   useTopics: (wsId: string) => ({
     data: wsId ? [{ id: 'tp_cells', name: 'Cells', workspaceId: wsId }] : [],
   }),
@@ -72,6 +74,7 @@ vi.mock('@/api/itemBanks', () => ({
     data: [
       { count: 2, id: 'ws_bio', kind: 'workspace', name: 'Biology' },
       { count: 2, id: 'me', kind: 'personal', name: '' },
+      { count: 5, id: 'ws_chem', kind: 'workspace', name: 'Chemistry' },
     ],
   }),
   useItemBankTags: () => ({ data: ['osmosis'] }),
@@ -81,6 +84,14 @@ vi.mock('@/components/app/ListToolbar', () => ({
   toggleValue: () => [],
 }));
 vi.mock('@/components/app/ListEnd', () => ({ ListEnd: () => null }));
+// A phone's select of banks; linkedom has no form elements for Radix.
+vi.mock('@/components/ui/Select', () => ({
+  Select: () => null,
+  SelectContent: () => null,
+  SelectItem: () => null,
+  SelectTrigger: () => null,
+  SelectValue: () => null,
+}));
 // The dialog stays mounted while closed, as Radix keeps it for its animation.
 vi.mock('@/components/ui/Dialog', () => ({
   SimpleDialog: ({
@@ -102,10 +113,11 @@ const { BankQuestionsDialog, useBankPicker } = await import('./BankPicker');
 
 const form = { kind: 'marked', title: 'Cells check' } as AssignmentFormReq;
 
+// New graded quiz's: the pick goes on, and its Settings sends it.
 function Harness() {
-  const { action, body, note } = useBankPicker({
+  const { body, note, source } = useBankPicker({
     active: true,
-    gradedQuiz: form,
+    graded: true,
     label: m.action_continue(),
     onMade: () => {},
     title: () => 'Biology quiz 1',
@@ -115,7 +127,9 @@ function Harness() {
     <>
       {body}
       <p data-note>{note}</p>
-      {action}
+      <button onClick={() => void source?.send(form)} type="button">
+        {m.action_continue()}
+      </button>
     </>
   );
 }
@@ -130,14 +144,16 @@ const byText = (selector: string, text: string) =>
   );
 const note = () => document.querySelector('[data-note]')?.textContent ?? '';
 
-// From the bank: the class's bank and My bank switched, a box per question;
-// the picks, in the order picked, go to the server as one copy, and switching
-// banks starts the picks over. A class bank's question shows its topic.
+// From the bank: every bank the user reaches in a column, each with its
+// question count, a box per question; the picks, in the order picked, go to
+// the server as one copy, and switching banks starts the picks over. A class
+// bank's question shows its topic.
 it('copies the questions picked from the bank shown', async () => {
   const root = createRoot(document.getElementById('root') as never);
   await act(async () => root.render(<Harness />));
-  expect(byText('[role=group] button', 'Biology')).toBeTruthy();
-  expect(byText('button', m.bank_personal())).toBeTruthy();
+  expect(
+    [...document.querySelectorAll('[role=tab]')].map((tab) => tab.textContent)
+  ).toEqual(['Biology2', `${m.bank_personal()}2`, 'Chemistry5']);
   expect(byText('[role=checkbox]', 'Define osmosis.')?.textContent).toContain(
     'Cells'
   );
@@ -147,20 +163,26 @@ it('copies the questions picked from the bank shown', async () => {
   expect(note()).toContain(m.question_ui_question_count({ count: 2 }));
   expect(note()).toContain(m.question_ui_marks({ count: 3 }));
   await click(byText('button', m.action_continue()));
-  expect(create).toHaveBeenCalledWith(
-    {
-      bank: 'ws_bio',
-      gradedQuiz: form,
-      questionIds: ['bq2', 'bq1'],
-      title: 'Biology quiz 1',
-    },
-    expect.anything()
-  );
+  expect(create).toHaveBeenCalledWith({
+    bank: 'ws_bio',
+    gradedQuiz: form,
+    questionIds: ['bq2', 'bq1'],
+    title: 'Biology quiz 1',
+  });
 
-  await click(byText('button', m.bank_personal()));
+  await click(byText('[role=tab]', m.bank_personal()));
   expect(note()).toBe('');
   await click(byText('[role=checkbox]', m.bank_select_all({ count: 2 })));
   expect(note()).toContain(m.question_ui_question_count({ count: 2 }));
+
+  // Another class's bank copies into this class's quiz.
+  create.mockClear();
+  await click(byText('[role=tab]', 'Chemistry'));
+  await click(byText('[role=checkbox]', 'Explain turgor.'));
+  await click(byText('button', m.action_continue()));
+  expect(create).toHaveBeenCalledWith(
+    expect.objectContaining({ bank: 'ws_chem', questionIds: ['bq2'] })
+  );
   await act(async () => root.unmount());
 });
 

@@ -383,6 +383,8 @@ marking-point agreement, latency, memory and input truncation.
 The [Alibaba decision-model comparison](grading/reports/2026-09-27-alibaba-decision.md)
 uses the same requests through the hosted System One API, with separate
 format controls and server/client latency records.
+[`online_batching.py` and `question_figures.py`](grading/reports/2026-11-23-online-batching-and-figures.md)
+test the production grading prompt four parts to a call and with question figures as images.
 The [production contract report](grading/reports/2026-10-02-jev-production-contract.md)
 runs [`jev_contract.py`](grading/scripts/jev_contract.py) on new held-out fixtures
 to choose the Jev request for open quiz parts (question type, batching, state
@@ -457,6 +459,17 @@ the ingest host, the gold crops through `layout_score.py`, and region agreement
 on mixed and fresh pages (`layout_agree.py` compares two `layout_detect.py`
 records). Its pages and raw records stayed local; the build that ships is
 `layout/quantise.py`.
+
+`extraction/scripts/long_selections.py` runs selections past the 40-page cap
+through the production run: 110 pages of a committed CC BY textbook
+(`parsers/fixtures/budget/waterworks-math.pdf`, units 1 to 4, gold from its
+text layer, its own solutions as the answer file) as one map, in page windows,
+and as one map over the pages' indexed text with copy threads of at most 30
+question-page images; `--exams` runs the same arms on six scanned HKDSE papers
+picked together, and `scan-maps` maps the scanned gold papers from images and
+from their page reads.
+[Long selections](extraction/reports/2026-11-21-long-selections.md) has the
+results.
 
 ### rag
 

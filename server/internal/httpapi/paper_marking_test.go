@@ -302,7 +302,8 @@ func TestPaperFileThatCannotBeReadSaysSo(t *testing.T) {
 
 // Under manual marking a paper whose read failed counts in the report's
 // papersToRead with no error on its rows, and Read papers again (mark-with-ai)
-// reads it once more without grading, on the member's credits (Q725, Q730).
+// reads it once more without grading, on the credits of the staff member who
+// pressed it (Q725, Q730, Epo 2026-11-23).
 func TestReadPapersAgainUnderManualMarking(t *testing.T) {
 	h, st, stub := openPaperAPI(t)
 	stub.fail.Store(true)
@@ -360,7 +361,7 @@ func TestReadPapersAgainUnderManualMarking(t *testing.T) {
 		WHERE surface='quiz' AND workspace_id='ws_e2e_private' ORDER BY created_at DESC LIMIT 1`).Scan(&payer); err != nil {
 		t.Fatal(err)
 	}
-	if payer != "u_viewer" {
+	if payer != "u_owner" {
 		t.Fatalf("read paid by %s", payer)
 	}
 }

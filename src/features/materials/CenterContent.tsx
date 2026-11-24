@@ -556,7 +556,7 @@ function MaterialBody({
       citation={citation}
       forceReadOnly={readOnly || choice === 'readOnly'}
       key={materialId}
-      kind={reference?.type ?? listedKind(queryClient, materialId)}
+      kind={reference?.kind ?? listedKind(queryClient, materialId)}
       materialId={materialId}
       onEditorStatusChange={onEditorStatusChange}
       onPresenceChange={onPresenceChange}

@@ -3,7 +3,7 @@ import { act } from 'react';
 import { expect, it, vi } from 'vitest';
 import { getLocale } from '@/i18n';
 
-/* Fix 4 (Epo 2026-11-07): a drawing part or sample field showing mounts its
+/* Fix 4 (Epo 2026-11-07): a canvas part or sample field showing mounts its
    board ahead, one per page. */
 
 getLocale();
@@ -39,7 +39,7 @@ vi.mock('@/features/materials/resolvedAssetLinks', () => ({
 
 const { createRoot } = await import('react-dom/client');
 const { useBoardAhead } = await import('./boardPrefetch');
-const { DrawingAnswer } = await import('./DrawingAnswer');
+const { CanvasAnswer } = await import('./CanvasAnswer');
 const { DrawnSampleField } = await import('./DrawnSample');
 
 const PINNED = { body: null, marks: '', short: '1', summary: '', title: '1' };
@@ -96,7 +96,9 @@ it('one part of several holds the board, and the next part takes it once that on
 it('a part in review or disabled mounts no board ahead; one taking an answer does', async () => {
   const root = mount();
   const answer = (props: { disabled: boolean; review: boolean }) => (
-    <DrawingAnswer
+    <CanvasAnswer
+      canvas={{ type: 'canvas' }}
+      canvasName="q:part:p"
       onChange={() => undefined}
       partId="p"
       pinned={PINNED}
@@ -137,6 +139,7 @@ it('a sample field holds the board only once its sample board is fetched', async
       <DrawnSampleField
         onChange={() => undefined}
         pinned={PINNED}
+        question={undefined}
         sample={{ board: 'asset_board', image: 'asset_image' }}
         upload={() => Promise.reject(new Error('no upload'))}
       />

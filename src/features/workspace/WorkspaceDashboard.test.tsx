@@ -2,11 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
-import type {
-  Assignment,
-  WorkspaceDashboard as Dashboard,
-  Workspace,
-} from '@/api/types';
+import type { Assignment, WorkspaceDashboard as Dashboard } from '@/api/types';
 import { TodoSection } from '@/features/study/assignments/TodoSection';
 import { m } from '@/i18n';
 import { shortTime, WorkspaceDashboard } from './WorkspaceDashboard';
@@ -129,9 +125,11 @@ it('marks a hidden item on its activity row', () => {
   expect(render()).toContain(m.content_hidden());
 });
 
-// Epo 2026-11-10: To do stays, and the empty state stands where Recent files would.
-it('shows an empty workspace its To do, then its art, a short title and one button', () => {
+// Epo 2026-11-10: a class's To do stays, and the empty state stands where
+// Recent files would.
+it('shows an empty class its To do, then its art, a short title and one button', () => {
   page.data = { activity: [], members: 1, ownerName: 'Ms Wong' };
+  page.kind = 'class';
   const html = render();
   expect(html).toContain('Biology 101');
   expect(html).toContain(m.todo_empty());
@@ -145,6 +143,7 @@ it('shows an empty workspace its To do, then its art, a short title and one butt
   expect(html).not.toContain(m.dashboard_recent_files());
   // Those who may not add get no button.
   expect(render(false)).not.toContain(m.action_add_file());
+  page.kind = 'personal';
 });
 
 it("lists a class's To do: answers to approve for its owner, Nothing to do when empty", () => {
@@ -152,7 +151,6 @@ it("lists a class's To do: answers to approve for its owner, Nothing to do when 
   page.kind = 'class';
   page.assignments = [];
   expect(render()).toContain(m.todo_empty());
-  expect(render()).toContain('aria-haspopup="menu"');
   page.assignments = [
     {
       allowUploads: false,
@@ -181,7 +179,6 @@ it("lists a class's To do: answers to approve for its owner, Nothing to do when 
       },
       marks: 40,
       noLate: false,
-      own: false,
       paperFile: false,
       postedAt: '2026-11-03T08:00:00Z',
       postedBy: 'Ms Wong',
@@ -197,82 +194,26 @@ it("lists a class's To do: answers to approve for its owner, Nothing to do when 
   expect(html).toContain('Past paper');
   // The To do page's table: the row opens its details, with Approve marks.
   expect(html).toContain(m.todo_answers_waiting({ count: 5 }));
-  // Staff's New is the menu of Assignment and Graded quiz.
-  expect(html).toContain('aria-haspopup="menu"');
   page.assignments = [];
   page.kind = 'personal';
 });
 
-it("lists a personal workspace's To do: the tasks its viewer set themself, under the New menu", () => {
+// Epo 2026-11-21: nothing is given out in a personal workspace.
+it('has no To do in a personal workspace', () => {
   page.data = { activity: [], members: 1, ownerName: 'Kate' };
-  page.assignments = [
-    {
-      allowUploads: false,
-      attempts: 1,
-      closed: false,
-      draft: false,
-      drawingParts: false,
-      files: [],
-      gradesHidden: false,
-      id: 'as_2',
-      kind: 'unmarked',
-      latePenaltyPct: 0,
-      marks: 0,
-      mine: {
-        attemptsUsed: 0,
-        checkedOff: false,
-        done: false,
-        late: false,
-        latePenaltyPct: 0,
-        missing: false,
-        waitingAnswers: 0,
-        waitingMarks: 0,
-      },
-      noLate: false,
-      own: true,
-      paperFile: false,
-      postedAt: '2026-11-03T08:00:00Z',
-      postedBy: 'Kate',
-      questions: 0,
-      title: 'Read chapter 4',
-      topicIds: [],
-      uploadOnly: false,
-      workspaceId: 'ws',
-    } as Assignment,
-  ];
-  const html = render();
-  expect(html).toContain('Read chapter 4');
-  // Task or Graded quiz, from the New menu.
-  expect(html).toContain('aria-haspopup="menu"');
-  expect(html).not.toContain(m.todo_new_task());
-  page.assignments = [];
+  expect(render()).not.toContain(m.dashboard_todo());
 });
 
-it('keeps an empty To do, with the button of whoever may add', () => {
-  const section = (manages: boolean, role: string, kind = 'class') =>
-    renderToStaticMarkup(
-      <QueryClientProvider client={new QueryClient()}>
-        <TodoSection
-          manages={manages}
-          workspace={{
-            iconId: 'i',
-            id: 'ws',
-            kind: kind as Workspace['kind'],
-            name: 'Notes',
-            role: role as Workspace['role'],
-          }}
-        />
-      </QueryClientProvider>
-    );
-  expect(section(false, 'viewer')).toContain(m.todo_empty());
-  expect(section(false, 'viewer')).toContain(m.todo_new_task());
-  // Staff and a personal workspace get the New menu (Assignment or Task,
-  // and Graded quiz).
-  expect(section(true, 'owner')).toContain('aria-haspopup="menu"');
-  expect(section(false, 'owner', 'personal')).toContain('aria-haspopup="menu"');
-  // A visitor who is no member has nothing to add.
-  expect(section(false, '')).toContain(m.todo_empty());
-  expect(section(false, '')).not.toContain(m.todo_new_task());
+it('keeps an empty To do, saying Nothing to do', () => {
+  const html = renderToStaticMarkup(
+    <QueryClientProvider client={new QueryClient()}>
+      <TodoSection
+        manages={false}
+        workspace={{ iconId: 'i', id: 'ws', name: 'Notes' }}
+      />
+    </QueryClientProvider>
+  );
+  expect(html).toContain(m.todo_empty());
 });
 
 it('opens an assigned row on its assignment', () => {

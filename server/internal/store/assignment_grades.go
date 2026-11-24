@@ -19,12 +19,12 @@ import (
 // (nil). Only its class's staff change it, as quiz marks: from 0 to its points
 // with at most one decimal place, for someone it went to, open or closed alike.
 func (s *Store) SetAssignmentGrade(ctx context.Context, actorID, id, memberID string, points *float64, now time.Time) error {
-	row, err := s.taskRow(ctx, s.pool, id)
+	wsID, err := assignmentWorkspace(ctx, s.pool, id)
 	if err != nil {
 		return err
 	}
 	return s.inTx(ctx, func(tx pgx.Tx) error {
-		if err := s.lockStaffOfTx(ctx, tx, row, actorID); err != nil {
+		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID); err != nil {
 			return err
 		}
 		var outOf *int

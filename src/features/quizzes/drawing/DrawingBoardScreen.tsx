@@ -45,11 +45,6 @@ export type PinnedQuestion = {
 
 const DRAFT_DELAY_MS = 800;
 const PHONE_WIDTH = 768;
-/** Past this many board units on its longest side, the 1,568 px marking image
- * loses lowercase labels (bench/grading 2026-11-06), so Done asks first (W1,
- * Epo 2026-11-07). */
-const WIDE_BOARD_SPAN = 2000;
-
 /** The first fit's room, [top, right, bottom, left]: clear of the pinned
  * question (340px at 16px in) and Done, and of the toolbar when drawing. */
 const fitPadding = (readOnly: boolean): [number, number, number, number] => {
@@ -72,16 +67,34 @@ const readAsDataUrl = (file: Blob) =>
 const UNDER_CARD =
   '[.answer-board:has(.capy-board[data-editor-open])_&]:hidden';
 
+/** What Done asks when something lies outside the area its pictures show:
+ * the teacher's canvas, or an answer (a student's, a drawn sample). */
+const outsideCopy = {
+  answer: {
+    body: m.question_canvas_outside_body,
+    keep: m.question_canvas_outside_keep,
+    title: m.question_canvas_outside_title,
+  },
+  canvas: {
+    body: m.question_canvas_area_outside_body,
+    keep: m.question_canvas_area_outside_keep,
+    title: m.question_canvas_area_outside_title,
+  },
+};
+
 /**
- * A drawing answer's board, full screen (Epo 2026-11-03, boards B1, P2, P3): the
+ * A canvas's board, full screen (Epo 2026-11-03, boards B1, P2, P3): the
  * question pinned at the top left, folded to one line on a phone, and Done at the
  * top right. Taking an answer, the board is kept on this device as it changes
  * (`draft`) and Done hands back its document and marking image, or null for an
  * empty board; read only, Done is Close. A pasted picture is compressed at once,
  * kept with the draft, and handed back with Done (Epo 2026-11-09 and
- * 2026-11-10); `pictures` are the ones of the board it opens.
+ * 2026-11-10); `pictures` are the ones of the board it opens. `canvas` is the
+ * teacher drawing a question's canvas (E3, Epo 2026-11-23): its area moves and
+ * is the Canvas area, and it takes no pictures.
  */
 export default function DrawingBoardScreen({
+  canvas = false,
   draft,
   hidden = false,
   noPictures = false,
@@ -89,11 +102,14 @@ export default function DrawingBoardScreen({
   onDone,
   pictures,
   pinned,
+  question,
   readOnly = false,
   saved,
   store,
   withImage = true,
 }: {
+  /** The teacher's question canvas, not an answer. */
+  canvas?: boolean;
   /** The device key a board being drawn is kept under, when the page has one. */
   draft?: string;
   /** Mounted ahead in idle time and out of sight, so Draw shows a board that
@@ -115,6 +131,9 @@ export default function DrawingBoardScreen({
     load?: (id: string) => Promise<Blob | null>;
   };
   pinned: PinnedQuestion;
+  /** A Canvas part's question board: without `saved` the board opens as a
+   * copy of it, every part of it the question's, held as the teacher left it. */
+  question?: string;
   readOnly?: boolean;
   saved?: string;
   /** Done makes the marking image; manual grading reads none (Q693). */
@@ -145,7 +164,10 @@ export default function DrawingBoardScreen({
   // Desktop shows the question until hidden; a phone folds it to one line.
   const [shown, setShown] = useState(true);
   const [unfolded, setUnfolded] = useState(false);
-  const [wide, setWide] = useState(false);
+  // Done found something outside the area: it asks first.
+  const [outside, setOutside] = useState(false);
+  const copy = outsideCopy[canvas ? 'canvas' : 'answer'];
+  const pictureless = noPictures || canvas;
 
   useEffect(() => {
     const element = host.current;
@@ -215,8 +237,11 @@ export default function DrawingBoardScreen({
         cancelIdle?.();
         try {
           board.current = mountDrawingBoard(element, {
-            // Where to draw (W3, W4); a read-only board draws none.
-            answerArea: { label: m.drawing_answer_area() },
+            // Where to draw (W3, W4); a read-only board draws none. The
+            // teacher's moves (E3).
+            answerArea: canvas
+              ? { label: m.question_canvas_area(), movable: true }
+              : { label: m.drawing_answer_area() },
             board: 'question',
             fitPadding: fitPadding(readOnly),
             images: {
@@ -229,7 +254,7 @@ export default function DrawingBoardScreen({
                 const file = await opened.current?.load?.(id);
                 return file ? { file } : null;
               },
-              none: noPictures,
+              none: pictureless,
               onRefused: (error) =>
                 userToast({
                   description: errorCopy(error, m.drawing_picture_refused()),
@@ -239,8 +264,12 @@ export default function DrawingBoardScreen({
               // Compressed as it lands, under the answer board's cap, and
               // refused past the board's count.
               shrink: (file) => {
-                if (noPictures)
-                  throw new CopyError(m.drawing_sample_no_pictures());
+                if (pictureless)
+                  throw new CopyError(
+                    canvas
+                      ? m.question_canvas_no_pictures()
+                      : m.drawing_sample_no_pictures()
+                  );
                 const held = (board.current?.images().length ?? 0) + landing;
                 if (held >= BOARD_IMAGES_MAX)
                   throw new CopyError(
@@ -252,6 +281,9 @@ export default function DrawingBoardScreen({
             },
             onChange: readOnly ? undefined : keep,
             openPlane,
+            ...(question && {
+              question: { board: question, tip: m.question_canvas_tip() },
+            }),
             readOnly,
             saved: kept?.doc ?? saved,
           });
@@ -282,7 +314,7 @@ export default function DrawingBoardScreen({
       board.current?.unmount('save');
       board.current = null;
     };
-  }, [draft, noPictures, readOnly, saved]);
+  }, [canvas, draft, pictureless, question, readOnly, saved]);
   useEffect(() => {
     if (!failed) return;
     userToast({
@@ -313,7 +345,7 @@ export default function DrawingBoardScreen({
     return () => window.removeEventListener('resize', place);
   }, [busy]);
 
-  /** Done; `anyway` skips the wide-board question (Done anyway, a time limit).
+  /** Done; `anyway` skips the outside question (Done anyway, a time limit).
    * A Done pressed while one runs (a time limit during its upload) waits for
    * it, so the attempt is submitted with the drawing stored. */
   const finishing = useRef<Promise<void> | null>(null);
@@ -330,8 +362,9 @@ export default function DrawingBoardScreen({
     if (readOnly || !onDone) return onClose();
     const stats = current.stats();
     const empty = stats.canvas.length === 0 && stats.blocks.length === 0;
-    if (!empty && !anyway && stats.span > WIDE_BOARD_SPAN) {
-      setWide(true);
+    // Pictures and marking are the area alone: anything outside it asks first.
+    if (!empty && !anyway && current.outside()) {
+      setOutside(true);
       return;
     }
     const saved = empty ? null : current.save();
@@ -357,8 +390,8 @@ export default function DrawingBoardScreen({
         value = {
           board: saved.doc,
           image: withImage ? await readAsDataUrl(await current.toImage()) : '',
-          // Kept in the page's memory under the part's own key, for the store
-          // or the check that sends them.
+          // Kept in the page's memory under the canvas's draft key (or this
+          // screen's), for the store or the check that sends them.
           pictures: holdDrawingPictures(
             draft ?? screen,
             await current.imageFiles()
@@ -390,12 +423,12 @@ export default function DrawingBoardScreen({
     if (hidden || readOnly || !onDone) return;
     return holdOpenDrawing(() => latestFinish.current(true));
   }, [hidden, onDone, readOnly]);
-  // Put away, the board keeps no selection or keys, and no wide-board question.
+  // Put away, the board keeps no selection or keys, and no outside question.
   // Draw mounts a board not mounted yet, or fits one mounted ahead to the screen
   // as it is now.
   useEffect(() => {
     if (hidden) {
-      setWide(false);
+      setOutside(false);
       board.current?.putAway();
     } else if (mountNow.current) mountNow.current();
     else board.current?.fit(fitPadding(readOnly));
@@ -498,32 +531,32 @@ export default function DrawingBoardScreen({
           <>
             <Button
               onClick={() => {
-                setWide(false);
+                setOutside(false);
                 finish(true);
               }}
               size="lg"
               variant="outline"
             >
-              {m.drawing_wide_done_anyway()}
+              {m.question_canvas_outside_done_anyway()}
             </Button>
             <Button
               autoFocus
-              onClick={() => setWide(false)}
+              onClick={() => setOutside(false)}
               size="lg"
               variant="dark"
             >
-              {m.drawing_wide_keep()}
+              {copy.keep()}
             </Button>
           </>
         }
-        onClose={() => setWide(false)}
+        onClose={() => setOutside(false)}
         // Phones keep their header close; wider screens have the two buttons only (W1).
-        onCloseClick={() => setWide(false)}
-        open={wide}
+        onCloseClick={() => setOutside(false)}
+        open={outside}
         showCloseButton={false}
-        title={m.drawing_wide_title()}
+        title={copy.title()}
       >
-        <p className="text-[0.9375rem] sm:text-base">{m.drawing_wide_body()}</p>
+        <p className="text-[0.9375rem] sm:text-base">{copy.body()}</p>
       </SimpleDialog>
     </div>,
     document.body

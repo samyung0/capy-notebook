@@ -166,7 +166,7 @@ its light or dark palette. Settings → Customizations → Theme chooses it.
   up), phone values first and the `sm` breakpoint's in a media block.
   Components read them and never set a height per style; one that needs a
   control's height uses `h-(--control-h)`.
-  A page or file header's action (New workspace, Add task, the workspace
+  A page or file header's action (New workspace, the workspace
   Dashboard's Upload and Make a quiz, New assignment, Add practice, a
   file's Preview, a quiz's or set's Practice) is `PageButton`: 36px (`h-9`) in every
   style and on every screen (Epo 2026-11-16). The center header row
@@ -181,10 +181,18 @@ its light or dark palette. Settings → Customizations → Theme chooses it.
   A quiz's or set's Practice is not in the header: it sits at the pane's top
   right beside the title (`QuizPaneTitle`, `PaintedCards`). Neighbours sit about 10px apart by their ink:
   the save status is pulled 4px in after the name or chip, a quiz's buttons
-  Preview 4px past Redo, and ⋮ 4px past Preview. Its dots are a thin column
-  in a wide box, so from sm the ⋮ box is 24px wide (not 32) and its hover
-  never overlaps Preview; on phones (no Preview there) its 30px box sits 4px
-  in. The status's label (Saved) shows from a 42rem
+  Preview 4px past Redo, and ⋮ 4px past Preview, in the toolbar's square
+  box like Undo and Redo (Epo 2026-11-20: a 24px-wide box read as squished
+  in its focus ring); on phones (no Preview there) its 30px box sits 4px
+  in. The first hidden quiz opened on a browser by someone who may share it
+  shows an accent callout under its Hidden chip (Epo 2026-11-20, board A of
+  the hidden quiz callout mock): "Quiz made is hidden by default", a line on
+  clicking the chip to share it, and Got it. It takes no focus, stays through
+  clicks elsewhere, and closes on Got it, the chip or Esc, setting
+  `capy.tips.hiddenQuiz` so it never shows there again (`HiddenChip` with
+  `tip`). Its fill is the accent's deeper shade (`action-accent-hover`) in
+  light themes, where white text on the plain accent falls short of 4.5:1,
+  and the accent in dark. The status's label (Saved) shows from a 42rem
   header (`@2xl/header`, `data-wide` on WebKit), 36rem until then.
 
 | | Capy | Fisheye |

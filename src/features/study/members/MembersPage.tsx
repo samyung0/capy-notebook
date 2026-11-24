@@ -29,6 +29,7 @@ import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { percentText } from '../assignments/assignmentText';
 import { ListRow, PracticeFrame, RowScore } from '../practice/studyPage';
 import { studyView } from '../practice/studyView';
+import { TopicQuestionsPage } from '../practice/TopicQuestions';
 import { studyLink } from '../studyRoutes';
 import { LabelPill } from '../topicLabels';
 import { MemberProfilePage } from './MemberProfile';
@@ -81,14 +82,27 @@ function StaffRoster({ workspace }: { workspace: Workspace }) {
 export function MembersMarks({
   header,
   member,
+  questions,
   tab,
   workspace,
 }: {
   header: ReactNode;
   member?: string;
+  /** Beside `member`: a topic's questions (`topic`), else Frequently wrong's. */
+  questions?: { topic?: string };
   tab: MembersTab;
   workspace: Workspace;
 }) {
+  if (member && questions)
+    return (
+      <TopicQuestionsPage
+        key={`${member}/${questions.topic ?? 'wrong'}`}
+        memberId={member}
+        show={tab === 'topics' ? 'topics' : undefined}
+        topic={questions.topic}
+        workspaceId={workspace.id}
+      />
+    );
   if (member)
     return (
       <MemberProfilePage

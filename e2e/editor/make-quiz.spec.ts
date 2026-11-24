@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { pickExtract } from '../helpers/makeQuiz';
 import { m } from '../i18n';
 
 // Make a quiz on the mock (one dialog from the files to the questions found, then the
@@ -59,6 +60,7 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   await page
     .getByRole('button', { name: m.dashboard_make_quiz() })
     .click({ timeout: 30_000 });
+  await pickExtract(page);
   await expect(
     dialog(page).getByRole('button', { name: m.action_continue() })
   ).toBeDisabled();
@@ -79,16 +81,16 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   await dialog(page).getByRole('button', { name: m.action_continue() }).click();
 
   await expect(
-    page.getByRole('heading', { name: m.make_quiz_pages_title() })
+    page.getByRole('heading', { name: m.make_quiz_pages_step_title() })
   ).toBeVisible();
   await pickPages(page, 2, 3, 4);
   await expect(
-    page.getByText(m.make_quiz_pages_count({ count: 3, max: 40 }))
+    page.getByText(m.make_quiz_pages_selected({ count: 3, max: 30 }))
   ).toBeVisible();
   // A second click skips the page again.
   await pickPages(page, 4);
   await expect(
-    page.getByText(m.make_quiz_pages_count({ count: 2, max: 40 }))
+    page.getByText(m.make_quiz_pages_selected({ count: 2, max: 30 }))
   ).toBeVisible();
   // An answer file holds the run until a page of it is picked, and counts.
   await expect(
@@ -97,12 +99,13 @@ test('a paper and its mark scheme become a hidden quiz, open in its editor', asy
   await dialog(page)
     .getByRole('button', { name: /mark scheme/ })
     .click();
+  // One title for the step: the list marks the file on show.
   await expect(
-    page.getByRole('heading', { name: m.make_quiz_answers_title() })
-  ).toBeVisible();
+    dialog(page).getByRole('button', { name: /mark scheme/ })
+  ).toHaveAttribute('aria-current', 'page');
   await pickPages(page, 1);
   await expect(
-    page.getByText(m.make_quiz_pages_count({ count: 3, max: 40 }))
+    page.getByText(m.make_quiz_pages_selected({ count: 3, max: 30 }))
   ).toBeVisible();
   await expect(
     page.getByText(m.make_quiz_question_price({ price: 4 }))
@@ -146,6 +149,7 @@ test("the browser's Back walks the dialog's steps", async ({ page }) => {
   await page
     .getByRole('button', { name: m.dashboard_make_quiz() })
     .click({ timeout: 30_000 });
+  await pickExtract(page);
   await dialog(page)
     .getByRole('button', { name: m.file_choose() })
     .first()
@@ -169,12 +173,12 @@ test("the browser's Back walks the dialog's steps", async ({ page }) => {
   await expect(dialog(page)).toHaveCount(0);
 });
 
-test('Change files keeps the picks of files left in', async ({ page }) => {
+test('Back keeps the picks of files left in', async ({ page }) => {
   await page.goto(
     '/workspaces/ws_bio?make=pages&paper=f_paper_2025&answers=f_paper_scheme'
   );
   await pageSheet(page, 2).click({ timeout: 30_000 });
-  await page.getByRole('button', { name: m.make_quiz_change_files() }).click();
+  await page.getByRole('button', { name: m.action_back() }).click();
   await dialog(page)
     .getByRole('button', {
       name: m.make_quiz_remove_file({
@@ -195,7 +199,6 @@ test('cancelling the questions found goes back to the picks', async ({
   await page.goto('/workspaces/ws_bio?make=pages&paper=f_paper_2025');
   await pageSheet(page, 2).click({ timeout: 30_000 });
   await extract(page);
-  // The pages step has its own Cancel, which closes the dialog.
   await expect(
     page.getByRole('heading', { name: m.make_quiz_found_title({ count: 12 }) })
   ).toBeVisible({ timeout: 30_000 });
@@ -258,9 +261,11 @@ test('an edit on the page reaches the question list', async ({ page }) => {
   // The rail holds numbers; its outline lists each question's text (Canvas's
   // rail, Epo 2026-11-15).
   await page.getByRole('button', { name: m.quiz_editor_navigator() }).click();
-  await expect(
-    page.getByRole('dialog').getByRole('button').nth(1)
-  ).toContainText('Name it.');
+  // The outline, not the hidden quiz's tip, which is a dialog too.
+  const outline = page
+    .getByRole('dialog')
+    .filter({ hasText: m.quiz_editor_questions({ count: 12 }) });
+  await expect(outline.getByRole('button').nth(1)).toContainText('Name it.');
 });
 
 test('a failed run says so in the panel and goes back to the pages', async ({
@@ -276,13 +281,13 @@ test('a failed run says so in the panel and goes back to the pages', async ({
   await expect(pageSheet(page, 1)).toBeVisible({ timeout: 30_000 });
 });
 
-test('a run takes at most 40 pages', async ({ page }) => {
+test('a run takes at most 30 pages', async ({ page }) => {
   await page.goto('/workspaces/ws_bio?make=pages&paper=f_paper_long');
   await expect(pageSheet(page, 60)).toBeAttached({ timeout: 30_000 });
-  await pickPages(page, ...Array.from({ length: 40 }, (_, i) => i + 1));
+  await pickPages(page, ...Array.from({ length: 30 }, (_, i) => i + 1));
   await expect(page.getByText(m.make_quiz_at_cap())).toBeVisible();
-  await pageSheet(page, 41).click({ force: true });
-  await expect(pageSheet(page, 41)).toHaveAttribute('aria-pressed', 'false');
+  await pageSheet(page, 31).click({ force: true });
+  await expect(pageSheet(page, 31)).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('an uploaded paper is read first, and saved to Files hidden from members', async ({
@@ -292,12 +297,13 @@ test('an uploaded paper is read first, and saved to Files hidden from members', 
   await page
     .getByRole('button', { name: m.dashboard_make_quiz() })
     .click({ timeout: 30_000 });
+  await pickExtract(page);
+  // The question paper's Upload a file, the first field's.
+  const chooser = page.waitForEvent('filechooser');
   await dialog(page)
-    .getByRole('button', { name: m.file_choose() })
+    .getByRole('button', { name: m.make_quiz_upload_file() })
     .first()
     .click();
-  const chooser = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: m.make_quiz_upload_file() }).click();
   await (await chooser).setFiles({
     buffer: emptyPdf(),
     mimeType: 'application/pdf',
@@ -497,6 +503,7 @@ for (const [name, width, height] of [
     await page.addStyleTag({
       content: '[data-testid=mock-scenario-panel] { display: none }',
     });
+    await pickExtract(page);
     await dialog(page)
       .getByRole('button', { name: m.file_choose() })
       .first()
@@ -514,7 +521,7 @@ for (const [name, width, height] of [
   });
 }
 
-test('several question files share the 40 pages, and the list divides them from the answers', async ({
+test('several question files share the 30 pages, and the list divides them from the answers', async ({
   page,
 }) => {
   await page.goto(
@@ -529,7 +536,7 @@ test('several question files share the 40 pages, and the list divides them from 
   await list.getByRole('button', { name: /Past paper 2024/ }).click();
   await pageSheet(page, 1).click();
   await expect(
-    page.getByText(m.make_quiz_pages_count({ count: 2, max: 40 }))
+    page.getByText(m.make_quiz_pages_selected({ count: 2, max: 30 }))
   ).toBeVisible();
 });
 
@@ -542,6 +549,7 @@ test('the file menu scrolls with the wheel, names only a read file and greys out
     .getByRole('button', { name: m.dashboard_make_quiz() })
     .first()
     .click({ timeout: 60_000 });
+  await pickExtract(page);
   await dialog(page).getByText(m.file_choose()).first().click();
   const list = page.locator(
     '[data-radix-popper-content-wrapper] .overflow-y-auto'

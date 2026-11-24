@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
@@ -24,9 +25,26 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
-// gradedImages counts grading calls that carried a drawing's image, and
-// gradedSamples those that carried a drawn sample answer's.
-var gradedImages, gradedSamples atomic.Int32
+// gradedImages counts graded parts that carried a drawing's image,
+// gradedSamples those that carried a drawn sample answer's, and gradedFigures
+// those that carried their question's images.
+var gradedImages, gradedSamples, gradedFigures atomic.Int32
+
+// gradedPart is one part as /grade and /grade-batch take it.
+type gradedPart struct {
+	ID       string   `json:"id"`
+	Question string   `json:"question"`
+	Items    []any    `json:"items"`
+	Image    string   `json:"image"`
+	Sample   string   `json:"sampleImage"`
+	Figures  []string `json:"figures"`
+}
+
+// gradedBatches records each /grade-batch call's parts, as sent.
+var gradedBatches struct {
+	sync.Mutex
+	calls [][]gradedPart
+}
 
 // openGradingAPI serves the API with a stub grading model that gives every item
 // the same choice ("zero", "partial" or "full"), counting every model call.
@@ -40,37 +58,58 @@ func openGradingAPI(t *testing.T, choice string) (http.Handler, *store.Store, *a
 func openGradingAPIWithBlob(t *testing.T, choice string) (http.Handler, *store.Store, *atomic.Int32, *blob.Memory) {
 	t.Helper()
 	var calls atomic.Int32
-	// The grading slot's model, behind the pipeline: each item's share.
+	// The grading slot's model, behind the pipeline: each item's share, for one
+	// part (/grade) or up to four (/grade-batch).
 	pipe := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
 		var body struct {
-			Question string `json:"question"`
-			Items    []any  `json:"items"`
-			Image    string `json:"image"`
-			Sample   string `json:"sampleImage"`
+			gradedPart
+			Parts []gradedPart `json:"parts"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		if body.Sample != "" {
-			gradedSamples.Add(1)
+		batch := r.URL.Path == "/grade-batch"
+		parts := body.Parts
+		if batch {
+			gradedBatches.Lock()
+			gradedBatches.calls = append(gradedBatches.calls, parts)
+			gradedBatches.Unlock()
+		} else {
+			parts = []gradedPart{body.gradedPart}
 		}
 		// Counted before a failure, so a call that fails still shows what it sent.
-		if body.Image != "" {
-			gradedImages.Add(1)
+		for _, p := range parts {
+			if p.Sample != "" {
+				gradedSamples.Add(1)
+			}
+			if p.Image != "" {
+				gradedImages.Add(1)
+			}
+			if len(p.Figures) > 0 && strings.Contains(p.Question, "[Figure 1:") {
+				gradedFigures.Add(1)
+			}
 		}
 		if choice == "fail" || (choice == "fail-once" && calls.Load() == 1) {
 			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
-		// One part never answers, until the caller gives up on it.
-		if choice == "slow-second" && strings.Contains(body.Question, "Second part") {
-			<-r.Context().Done()
+		replies := map[string]any{}
+		for _, p := range parts {
+			// One part never answers, until the caller gives up on it.
+			if choice == "slow-part" && strings.Contains(p.Question, "Slow part") {
+				<-r.Context().Done()
+				return
+			}
+			shares := make([]float64, len(p.Items))
+			for i := range shares {
+				shares[i] = map[string]float64{"zero": 0, "partial": 0.5, "full": 1, "fail-once": 1, "slow-part": 1}[choice]
+			}
+			replies[p.ID] = map[string]any{"shares": shares, "comment": "Offered two answers for one point."}
+		}
+		if batch {
+			_ = json.NewEncoder(w).Encode(map[string]any{"parts": replies})
 			return
 		}
-		shares := make([]float64, len(body.Items))
-		for i := range shares {
-			shares[i] = map[string]float64{"zero": 0, "partial": 0.5, "full": 1, "fail-once": 1, "slow-second": 1}[choice]
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{"shares": shares, "comment": "Offered two answers for one point."})
+		_ = json.NewEncoder(w).Encode(replies[""])
 	}))
 	t.Cleanup(pipe.Close)
 	ctx := context.Background()
@@ -557,8 +596,8 @@ func TestQuizCheckAgainMarksADrawingFromItsKeptImage(t *testing.T) {
 		"name": "Drawn", "privacy": "private",
 		"questions": []any{map[string]any{
 			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
-			"parts": []any{map[string]any{"id": "draw-a", "blocks": []any{map[string]any{"type": "text", "text": "Draw it."}},
-				"answer": map[string]any{"type": "drawing"}, "marks": 2,
+			"parts": []any{map[string]any{"id": "draw-a", "blocks": []any{map[string]any{"type": "text", "text": "Draw it."}, map[string]any{"type": "canvas"}},
+				"answer": map[string]any{"type": "canvas"}, "marks": 2,
 				"markscheme": []any{map[string]any{"text": "Shape", "marks": 2}}, "solution": []any{}}},
 		}},
 	})

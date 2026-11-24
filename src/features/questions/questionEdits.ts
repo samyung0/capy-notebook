@@ -1,11 +1,17 @@
-import { QUESTION_MARKS_MAX } from '@/api/limits.generated';
+import {
+  QUESTION_CANVASES_MAX,
+  QUESTION_MARKS_MAX,
+} from '@/api/limits.generated';
 import { m } from '@/i18n';
+import { sameJson } from '@/lib/sameJson';
 import type { FigureBinding } from './figureBinding';
 import { localFigureBinding } from './localFigureBinding';
 import type { BlockSection } from './QuestionView';
+import type { KeptCanvas } from './typeMemory';
 import {
   blankQuestion,
-  GAP_MARKER,
+  canvasCount,
+  type DrawnSample,
   gapNumbers,
   gapText,
   modelMarked,
@@ -14,10 +20,13 @@ import {
   type QuestionBlock,
   type QuestionPart,
 } from './types';
+import { questionCanvases } from './validation';
 
 /** A part turned into blanks: one answer list for each blank its text has,
- * or a sample sentence holding one when it has none. */
-function gapsAnswer(part: QuestionPart): QuestionPart {
+ * or a sample sentence holding one when it has none; `lists` (the blanks'
+ * lists the part had when it left blanks, Epo 2026-11-23) go back to its
+ * blanks in order. */
+function gapsAnswer(part: QuestionPart, lists: string[][]): QuestionPart {
   const blanks = gapNumbers(part.blocks).length;
   const blocks: QuestionBlock[] = blanks
     ? part.blocks
@@ -31,9 +40,10 @@ function gapsAnswer(part: QuestionPart): QuestionPart {
   return {
     ...part,
     answer: {
-      accepted: Array.from({ length: blanks || 1 }, () => [
-        m.question_default_answer(),
-      ]),
+      accepted: Array.from(
+        { length: blanks || 1 },
+        (_, i) => lists[i] ?? [m.question_default_answer()]
+      ),
       type: 'gaps',
     },
     blocks,
@@ -43,20 +53,24 @@ function gapsAnswer(part: QuestionPart): QuestionPart {
   };
 }
 
-/** A gaps part's text turned away from blanks: the author's text stays, each
- * numbered blank a plain line; the untouched sample sentence goes. */
+/** A gaps part's text turned away from blanks: the author's text stays,
+ * numbered blanks and all, so lists kept for the tab match them again on the
+ * way back; the untouched sample sentence goes while its blank is the only
+ * one (with others, the blanks after it would no longer match their lists). */
 function withoutGaps(blocks: QuestionBlock[]): QuestionBlock[] {
+  if (gapNumbers(blocks).length !== 1) return blocks;
   const sample = m.question_ui_gaps_sample({ blank: gapText(1) });
-  return blocks.flatMap((block): QuestionBlock[] => {
-    if (block.type !== 'text') return [block];
-    if (block.text === sample) return [];
-    return [{ ...block, text: block.text.replace(GAP_MARKER, '______') }];
-  });
+  return blocks.filter(
+    (block) => !(block.type === 'text' && block.text === sample)
+  );
 }
 
-/** Open and drawing answers carry a marking scheme worth the part's marks;
+/** Open and canvas answers carry a marking scheme worth the part's marks;
  * closed ones drop it, and with it marks merged items took past the cap.
- * Turned away from blanks, the text keeps its words. */
+ * Turned away from blanks, the text keeps its words; turned into blanks, the
+ * answer's lists go to the text's blanks. A part turned into a canvas part
+ * keeps its canvas, else gets an empty one, unless it answers in the canvas
+ * above (Epo 2026-11-23). */
 export function withAnswer(
   part: QuestionPart,
   answer: QuestionAnswer
@@ -64,9 +78,15 @@ export function withAnswer(
   if (answer.type === 'gaps')
     return part.answer.type === 'gaps'
       ? { ...part, answer, itemAwards: undefined, markscheme: undefined }
-      : gapsAnswer(part);
-  const blocks =
+      : gapsAnswer(part, answer.accepted);
+  const kept =
     part.answer.type === 'gaps' ? withoutGaps(part.blocks) : part.blocks;
+  const blocks =
+    answer.type === 'canvas' &&
+    !answer.shared &&
+    !kept.some((block) => block.type === 'canvas')
+      ? [...kept, { type: 'canvas' as const }]
+      : kept;
   return modelMarked(answer.type)
     ? {
         ...part,
@@ -86,11 +106,55 @@ export function withAnswer(
       };
 }
 
-/** A plot has no editor, so it is never added empty. */
+/** A canvas part answering in the canvas above (Same canvas, Epo
+ * 2026-11-23): `shared`, its own canvas, the first of its blocks, out of
+ * them (`kept`, with its place, for the tab). */
+export function answerAbove(part: QuestionPart): {
+  kept?: KeptCanvas;
+  part: QuestionPart;
+} {
+  if (part.answer.type !== 'canvas') return { part };
+  const index = part.blocks.findIndex((block) => block.type === 'canvas');
+  const block = part.blocks[index];
+  return {
+    ...(block?.type === 'canvas' && { kept: { block, index } }),
+    part: {
+      ...part,
+      answer: { ...part.answer, shared: true },
+      blocks: part.blocks.filter((_, i) => i !== index),
+    },
+  };
+}
+
+/** A canvas part answering on a canvas of its own (New canvas): a canvas it
+ * holds already (a view-only one) becomes its own, `kept` unused; else the
+ * one Same canvas took out back in its place (`kept`), else an empty one
+ * after its blocks. */
+export function answerOwn(part: QuestionPart, kept?: KeptCanvas): QuestionPart {
+  if (part.answer.type !== 'canvas') return part;
+  const { shared: _, ...answer } = part.answer;
+  if (canvasCount(part.blocks)) return { ...part, answer };
+  const at = Math.min(kept?.index ?? part.blocks.length, part.blocks.length);
+  return {
+    ...part,
+    answer,
+    blocks: [
+      ...part.blocks.slice(0, at),
+      kept?.block ?? { type: 'canvas' },
+      ...part.blocks.slice(at),
+    ],
+  };
+}
+
+/** A plot has no editor, so it is never added empty. A canvas is added
+ * empty, to the stem, a group's or a quiz part's text (Epo 2026-11-23), and
+ * comes with a part turned into a canvas part (`withAnswer`). */
 export type AddableBlock = Exclude<QuestionBlock['type'], 'plot'>;
 
 export function newQuestionBlock(type: AddableBlock): QuestionBlock {
   switch (type) {
+    case 'canvas':
+      return { type };
     case 'text':
       // Empty, its placeholder showing (Epo 2026-11-16): empty text is
       // dropped before a question is checked, so it is never an issue.
@@ -188,7 +252,8 @@ export type FigureRoom = {
   /** The figure at `at` as a chart or graph dialog edits it, live. */
   bind(at: FigureAt): FigureBinding;
   /** A new figure after the block keyed `after`, else (none, or a key that
-   * went) at `index`; its entry key, or none when the section went. */
+   * went) at `index`; its entry key, or none when the section went or holds
+   * its one canvas already. */
   insert(
     place: {
       after?: string;
@@ -329,6 +394,42 @@ export function bindFigure(
 
 /** A new part: a short answer with an empty text. */
 export const newPart = () => blankQuestion().parts[0];
+
+/** Whether a part is still as `newPart()` made it, in a group or not (Epo
+ * 2026-11-24): what Add part or Add sub-part kept goes back only into one. */
+export function isBlankPart(part: QuestionPart): boolean {
+  const { group: _group, id: _id, ...held } = part;
+  const { id: _new, ...blank } = newPart();
+  return sameJson(held, blank);
+}
+
+/** The question with part `partId`'s drawn sample, just brought back, held
+ * off while it takes the question past QUESTION_CANVASES_MAX, a sample being
+ * one of its canvases (Epo 2026-11-24: a kept sample stays in the tab's
+ * memory at the cap, on a type switch and on a part left alone alike);
+ * `held` is that sample, for the tab to keep. */
+export function sampleWithinCap(
+  question: Question,
+  partId: string
+): { held?: DrawnSample; question: Question } {
+  const part = question.parts.find((item) => item.id === partId);
+  if (
+    part?.answer.type !== 'canvas' ||
+    !part.answer.sample ||
+    questionCanvases(question) <= QUESTION_CANVASES_MAX
+  )
+    return { question };
+  const { sample, ...answer } = part.answer;
+  return {
+    held: sample,
+    question: {
+      ...question,
+      parts: question.parts.map((item) =>
+        item.id === partId ? { ...part, answer } : item
+      ),
+    },
+  };
+}
 
 /** The question as a new one beside it (the card's Duplicate): fresh ids for
  * it, its parts and its groups; images and drawn samples keep their assets. */

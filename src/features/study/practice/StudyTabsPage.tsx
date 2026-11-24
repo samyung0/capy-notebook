@@ -23,6 +23,8 @@ export function StudyTabsPage({
         search={{
           member: search.member,
           show: tab === 'topics' ? 'topics' : undefined,
+          topic: search.topic,
+          wrong: search.wrong,
         }}
         workspaceId={workspaceId}
       />

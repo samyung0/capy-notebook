@@ -43,8 +43,8 @@ export const itemBankKeys = {
 
 const bankPath = (bank: string) => `/item-banks/${encodeURIComponent(bank)}`;
 
-/** The banks the caller may use: a class's when they are its staff, then
- * their own (always last). */
+/** Every bank the caller reaches: the class they are in first when they are
+ * its staff, then their own, then every other class they own or edit, A–Z. */
 export const itemBanksQuery = (workspaceId?: string) =>
   queryOptions({
     queryFn: ({ signal }) =>

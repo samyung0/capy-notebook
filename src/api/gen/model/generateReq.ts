@@ -20,6 +20,11 @@ export interface GenerateReq {
   fileIds?: string[];
   /** The New graded quiz dialog's settings (CreateMaterialReq.gradedQuiz), checked before the run starts; only an editor makes one. The response then holds assignmentId */
   gradedQuiz?: AssignmentFormReq;
+  /**
+     * Optional instructions for the quiz, sent to the model as the user's own words
+     * @maxLength 1000
+     */
+  instructions?: string;
   levels?: CognitiveLevel[];
   /** Add the caller's answered questions to the new ones */
   mix?: boolean;

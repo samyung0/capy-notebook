@@ -170,6 +170,15 @@ export const BOARD_CATALOG = {
       ]
     }
   ],
+  "props": [
+    {
+      "flavour": "affine:page",
+      "name": "area",
+      "boards": [
+        "question"
+      ]
+    }
+  ],
   "limits": {
     "AXIS_MAX": 1000000000,
     "BARS_MAX": 24,

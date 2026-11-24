@@ -36,35 +36,14 @@ function DialogClose({
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
-/** Within it a dialog opens without its motion: the next step of a flow that
- * puts one dialog in another's place, so the steps read as one dialog. */
-const DialogStepContext = React.createContext(false);
-
-function DialogStep({
-  children,
-  continued,
-}: {
-  children: React.ReactNode;
-  /** A step before this one was showing. */
-  continued: boolean;
-}) {
-  return (
-    <DialogStepContext.Provider value={continued}>
-      {children}
-    </DialogStepContext.Provider>
-  );
-}
-
 function DialogOverlay({
   className,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
-  const continued = React.useContext(DialogStepContext);
   return (
     <DialogPrimitive.Overlay
       className={cn(
-        !continued && 'motion-fade',
-        'fixed inset-0 isolate z-50 bg-black/10 supports-backdrop-filter:backdrop-blur-xs',
+        'motion-fade fixed inset-0 isolate z-50 bg-black/10 supports-backdrop-filter:backdrop-blur-xs',
         className
       )}
       data-slot="dialog-overlay"
@@ -99,7 +78,6 @@ function DialogContent({
   cardScrollContainerClassName?: string;
 }) {
   const held = useEditorHeld();
-  const continued = React.useContext(DialogStepContext);
   const [slot, setSlot] = React.useState<HTMLElement | null>(null);
   const actionSlot = React.useMemo(() => ({ setSlot, slot }), [slot]);
   return (
@@ -108,8 +86,7 @@ function DialogContent({
       <DialogPrimitive.Content
         // Round centering to pixels; keep the layer stable when motion ends.
         className={cn(
-          !continued && 'motion-modal motion-blur-in',
-          'fixed top-[var(--dialog-center,50%)] left-[var(--dialog-center,50%)] z-50 grid max-h-[88dvh] w-full max-w-2xl translate-x-[var(--dialog-offset,-50%)] translate-y-[var(--dialog-offset,-50%)] px-4 outline-none will-change-transform',
+          'motion-modal motion-blur-in fixed top-[var(--dialog-center,50%)] left-[var(--dialog-center,50%)] z-50 grid max-h-[88dvh] w-full max-w-2xl translate-x-[var(--dialog-offset,-50%)] translate-y-[var(--dialog-offset,-50%)] px-4 outline-none will-change-transform',
           'supports-[top:round(50%,1px)]:[--dialog-center:round(50%,1px)] supports-[translate:round(-50%,1px)]:[--dialog-offset:round(-50%,1px)]',
           // Phones: a full-screen page the keyboard covers, so its header
           // never moves.
@@ -161,10 +138,7 @@ function DialogContent({
             )}
           >
             <ActionSlotContext value={actionSlot}>
-              {/* A dialog opened from inside a step keeps its own motion. */}
-              <DialogStepContext value={false}>
-                <FrostedSurface value={false}>{children}</FrostedSurface>
-              </DialogStepContext>
+              <FrostedSurface value={false}>{children}</FrostedSurface>
             </ActionSlotContext>
             {showCloseButton && (
               <DialogPrimitive.Close asChild data-slot="dialog-close">
@@ -390,6 +364,7 @@ function SimpleDialog({
   formId,
   cardClassName,
   cardScrollContainerClassName,
+  compactFooter,
 }: {
   open: boolean;
   onClose: () => void;
@@ -435,6 +410,9 @@ function SimpleDialog({
   onSubmit?: React.FormEventHandler<HTMLFormElement>;
   cardClassName?: string;
   cardScrollContainerClassName?: string;
+  /** A tall dialog's footer: less room above it, and Cancel at the primary's
+   * height (Epo 2026-11-20, New quiz). */
+  compactFooter?: boolean;
 }) {
   // Close when the app navigates to another path while open. The /share/*
   // entry has no router, so the context is empty there and the dialog only
@@ -459,7 +437,9 @@ function SimpleDialog({
     action && !phone ? (
       <>
         {footer}
-        {showCloseButton && <DialogCancel disabled={pending} />}
+        {showCloseButton && (
+          <DialogCancel disabled={pending} size={compactFooter ? 'md' : 'lg'} />
+        )}
         {action}
       </>
     ) : (
@@ -481,7 +461,11 @@ function SimpleDialog({
         </DialogTitle>
       )}
       {children}
-      {footerRow && <DialogFooter className="mt-3">{footerRow}</DialogFooter>}
+      {footerRow && (
+        <DialogFooter className={compactFooter ? 'sm:pt-3' : 'mt-3'}>
+          {footerRow}
+        </DialogFooter>
+      )}
     </>
   );
 
@@ -604,7 +588,6 @@ export {
   DialogOverlay,
   DialogPortal,
   DialogPrimary,
-  DialogStep,
   DialogTitle,
   DialogTrigger,
   SimpleDialog,

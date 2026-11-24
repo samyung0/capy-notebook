@@ -88,6 +88,25 @@ describe('fitImage', () => {
     expect(await fitImage(chart, 2 * MB)).toBe(chart);
   });
 
+  it('re-encodes every AVIF a note takes as WebP, by its bytes whatever its name', async () => {
+    // Epo 2026-11-23: nothing stores AVIF, even where its WebP is larger.
+    codec.encoded = () => 90_000;
+    for (const [name, type] of [
+      ['photo.avif', 'image/avif'],
+      ['photo.webp', 'image/webp'],
+    ]) {
+      encodes.length = 0;
+      const photo = new File(
+        [fakeImage('image/avif', 800, 600, 'photo', 50_000)],
+        name,
+        { type }
+      );
+      const note = await fitImage(photo, 2 * MB);
+      expect([note.name, note.type]).toEqual(['photo.webp', 'image/webp']);
+      expect(encodes).toEqual(['image/webp 800x600 0.85']);
+    }
+  });
+
   it('gives an Office file PNG for transparency and flat graphics, JPEG for photos', async () => {
     const cases: [Look, string][] = [
       ['alpha', 'image/png'],

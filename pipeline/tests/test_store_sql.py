@@ -2317,6 +2317,19 @@ async def test_any_top_level_material_is_a_scope_item(workspace):
     assert [p.file_id for p in passages] == [note]
     assert "Mitosis has four phases." in context
 
+    # A file's passages are planned (store.chunk_map) and read in order beside
+    # the note's.
+    upload = workspace.add_file("cells.pdf")
+    await _write(workspace, upload, ["Cells divide.", "Cells grow."])
+    _context, passages = await workflows.gather_context(
+        workspace_id=workspace.id, file_ids=[note, upload]
+    )
+    assert [(p.file_id, p.chunk_idx) for p in passages] == [
+        (upload, 0),
+        (upload, 1),
+        (note, 0),
+    ]
+
 
 async def test_deleting_a_topic_does_not_break_its_files(workspace):
     """The topic FK is ON DELETE SET NULL, so deleting a topic unfiles its
