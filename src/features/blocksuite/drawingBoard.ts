@@ -752,9 +752,9 @@ export function mountDrawingBoard(
   // bottom row holds only the toolbar (Epo 2026-11-08). A teacher's has zoom only.
   const zoomTo = (zoom: number) =>
     gfx.viewport.smoothZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom)));
-  // The room's size and cap (`setRoomSize`, checked against this tab's own
-  // document from the lower of these lines: `itemRoom.ts`): the menu's last
-  // row from 75% of the cap (`BOARD_SIZE_SHOWN`, Epo 2026-11-18, 2B), and from
+  // The room's size and cap (`setRoomSize`, the tab's own measure of its
+  // document, encoded again before it crosses one of these lines after a
+  // deletion: `itemRoom.ts`): the menu's last row from 75% of the cap (`BOARD_SIZE_SHOWN`, Epo 2026-11-18, 2B), and from
   // the cap less the room's margin (`BOARD_OFFLINE_MARGIN`, online too:
   // client-limits A) the board takes only removals and the row says so in the
   // error colour.

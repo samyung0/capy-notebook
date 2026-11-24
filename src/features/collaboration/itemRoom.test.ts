@@ -6,7 +6,7 @@ import {
   COLLABORATION_NOT_FOUND_REASON,
 } from '@/features/notes/collaborationEvents';
 import { m } from '@/i18n';
-import { BOARD_OFFLINE_MARGIN } from '@/lib/const';
+import { BOARD_OFFLINE_MARGIN, BOARD_SIZE_SHOWN } from '@/lib/const';
 import type { RoomProviderConfig } from './roomProvider';
 
 // The room's provider, token and draft storage, recorded instead of real.
@@ -187,6 +187,11 @@ vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 const invalidateQueries = vi.hoisted(() => vi.fn());
 vi.mock('@/api/queryClient', () => ({ queryClient: { invalidateQueries } }));
 vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
+// A board's encodes for its size, counted (the real encode).
+vi.mock('yjs', async (load) => {
+  const yjs = await load<typeof import('yjs')>();
+  return { ...yjs, encodeStateAsUpdate: vi.fn(yjs.encodeStateAsUpdate) };
+});
 vi.mock('@/lib/sourceCache', async (load) => ({
   ...(await load<typeof import('@/lib/sourceCache')>()),
   dropDeviceCopies: vi.fn(async () => undefined),
@@ -1127,7 +1132,7 @@ it("keeps a full canvas's refused edits to copy, and opens afresh", async () => 
   room.destroy();
 });
 
-/** A board room's receipt, carrying the room's size bound. */
+/** A board room's receipt, carrying the room's own size bound. */
 function boardReceipt(
   provider: (typeof providers)[number],
   contentBytes: number
@@ -1141,93 +1146,118 @@ function boardReceipt(
   });
 }
 
-async function boardRoom(max: number) {
+/** A board room of cap `max`, its document holding `filled` bytes of text
+ * before it syncs, as a joiner's answer would. */
+async function boardRoom(max: number, filled = 0) {
   const room = new ItemRoom('q', {
     board: { max },
     drafts: { actorId: 'u', kind: 'canvas' },
     onReplace: vi.fn(),
   });
   await room.start();
+  if (filled) room.doc.getText('t').insert(0, 'x'.repeat(filled));
   return { provider: providers[0], room };
 }
 
-// Epo 2026-11-18 (2B, client-limits A): a board's size is the room's bound
-// at each receipt plus what arrived since, checked against this tab's own
-// document where anything acts on it; offline, its work stops at the space
-// the cap leaves.
-it("keeps a board's size from its receipts and stops offline work at the space left", async () => {
-  vi.stubGlobal('navigator', { onLine: false });
-  const { provider, room } = await boardRoom(100_000);
-  const sizes: (number | undefined)[] = [];
-  room.subscribeSize(() => sizes.push(room.size()?.bytes));
+/** The board's encodes for its size so far. */
+const encodes = () => vi.mocked(Y.encodeStateAsUpdate).mock.calls.length;
+const exact = (doc: Y.Doc) =>
+  vi.mocked(Y.encodeStateAsUpdate).getMockImplementation()?.(doc).byteLength;
+
+// Epo 2026-11-18 (2B, client-limits A), review 2 of the bytes room: a tab
+// that may write measures its board once as it syncs, with no device copy
+// to size it, before it takes an edit: on a full board the removals-only
+// line holds from the first stroke. Fails if the size waits for a receipt
+// or an idle encode.
+it('measures a fresh board once as it syncs and holds a full one at its cap', async () => {
+  const max = 100_000;
+  const { provider, room } = await boardRoom(max, 70_000);
+  const before = encodes();
   provider.config.onSynced?.({ state: true });
-  boardReceipt(provider, 20_000);
-  expect(room.size()).toEqual({ bytes: 20_000, max: 100_000 });
+  expect(encodes()).toBe(before + 1);
+  expect(room.size()).toEqual({ bytes: exact(room.doc), max });
+  expect(room.size()?.bytes).toBeGreaterThan(max - BOARD_OFFLINE_MARGIN);
+  boardReceipt(provider, max);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(encodes()).toBe(before + 1);
+  room.destroy();
+});
+
+// Review 2 finding 4: a receipt's bound is the room's at its store's start
+// and misses what the tab applied since; it never sets the size, so a full
+// board stays full.
+it('keeps a full board full whatever a lagging receipt says', async () => {
+  const max = 100_000;
+  const { provider, room } = await boardRoom(max, 70_000);
+  provider.config.onSynced?.({ state: true });
+  const size = room.size();
+  boardReceipt(provider, 1000);
+  expect(room.size()).toEqual(size);
+  room.destroy();
+});
+
+// Review 2 finding 1: every move of a drag overwrites a key (a deletion);
+// past the line, a tab encodes once at the next store's receipt, not once
+// per move, and then shows what the deletions freed.
+it('measures a dragged board past the line at a receipt, not at each move', async () => {
+  const max = 100_000;
+  const { provider, room } = await boardRoom(max, 70_000);
+  provider.config.onSynced?.({ state: true });
+  const before = encodes();
+  const block = room.doc.getMap('block');
+  for (let at = 0; at < 50; at++) block.set('xywh', `[${at},0,10,10]`);
+  room.doc.getText('t').delete(0, 60_000);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(encodes()).toBe(before);
+  boardReceipt(provider, max);
+  boardReceipt(provider, max);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(encodes()).toBe(before + 1);
+  expect(room.size()).toEqual({ bytes: exact(room.doc), max });
+  expect(room.size()?.bytes).toBeLessThan(max * BOARD_SIZE_SHOWN);
+  room.destroy();
+});
+
+// Epo 2026-11-18 (client-limits A), review 2 finding 3: offline, no receipt
+// comes. A size crossing the space the cap leaves with a deletion applied
+// since the last measure encodes at once and acts on the exact size: a
+// delete then a paste is counted, not passed by a frozen size, and stops
+// work only once the board really is past the line.
+it('measures an offline board as it crosses a line after deletions, and stops its work there', async () => {
+  vi.stubGlobal('navigator', { onLine: false });
+  const max = 100_000;
+  const { provider, room } = await boardRoom(max, 30_000);
+  provider.config.onSynced?.({ state: true });
   provider.config.onClose?.({ code: 1006, reason: 'socket closed' });
   expect(room.getSnapshot().offline).toBe('offline');
-  room.doc.getText('t').insert(0, 'x'.repeat(10_000));
-  expect(room.size()?.bytes).toBeGreaterThan(30_000);
-  expect(room.getSnapshot().offline).toBe('offline');
-  // Past the space the cap leaves: the board stops taking edits once its own
-  // encode says so.
-  room.doc.getText('t').insert(0, 'x'.repeat(40_000));
-  expect(room.getSnapshot().offline).toBe('offline');
-  await vi.advanceTimersByTimeAsync(0);
-  expect(room.size()?.bytes).toBe(Y.encodeStateAsUpdate(room.doc).byteLength);
-  expect(room.getSnapshot().offline).toBe('offline-limit');
-  expect(sizes[0]).toBe(20_000);
-  room.destroy();
-});
-
-// Review of 0d41ab8e1, finding A: the room's bound does not come down for a
-// deletion until its next exact measure, so a receipt past the cap less the
-// margin on a board whose document is small shows nothing and takes nothing
-// away until this tab's own encode, which it then shows. Fails if the board
-// turns full, even briefly, on the room's bound.
-it("checks a board's high receipt against its own document", async () => {
-  const max = 400_000;
-  const { provider, room } = await boardRoom(max);
-  const full: boolean[] = [];
-  room.subscribeSize(() => {
-    const size = room.size();
-    full.push(!!size && size.bytes >= max - BOARD_OFFLINE_MARGIN);
-  });
-  provider.config.onSynced?.({ state: true });
-  room.doc.getText('t').insert(0, 'x'.repeat(10_000));
-  boardReceipt(provider, max - 1000);
-  expect(room.size()).toBeNull();
-  await vi.advanceTimersByTimeAsync(0);
-  expect(room.size()).toEqual({
-    bytes: Y.encodeStateAsUpdate(room.doc).byteLength,
-    max,
-  });
-  boardReceipt(provider, max - 1000);
-  expect(room.size()?.bytes).toBeLessThan(20_000);
-  expect(full).not.toContain(true);
-  room.destroy();
-});
-
-// Review of 0d41ab8e1, finding A: a board its own encode found full stays
-// full, a later receipt taken at once with no encode waiting, and once a
-// deletion frees it the next encode shows it.
-it('keeps a really full board full and frees it after a deletion', async () => {
-  const max = 100_000;
-  const { provider, room } = await boardRoom(max);
-  provider.config.onSynced?.({ state: true });
   const text = room.doc.getText('t');
-  text.insert(0, 'x'.repeat(70_000));
-  boardReceipt(provider, 80_000);
+  const before = encodes();
+  text.delete(0, 20_000);
+  text.insert(0, 'y'.repeat(5000));
+  expect(encodes()).toBe(before + 1);
+  expect(room.size()).toEqual({ bytes: exact(room.doc), max });
+  expect(room.getSnapshot().offline).toBe('offline');
+  // With nothing deleted since, growth past the line acts at once.
+  text.insert(0, 'z'.repeat(25_000));
+  expect(encodes()).toBe(before + 1);
+  expect(room.getSnapshot().offline).toBe('offline-limit');
+  room.destroy();
+});
+
+// Review 2 finding 1 (readers too, whenever a peer drags): a tab that may
+// not write never encodes its board for size and shows none.
+it('never measures a board for a reader', async () => {
+  tokens.push({ access: 'read', room: 'material:q:schema:1' });
+  const max = 100_000;
+  const { provider, room } = await boardRoom(max, 70_000);
+  const before = encodes();
+  provider.config.onSynced?.({ state: true });
+  room.doc.getMap('block').set('xywh', '[1,0,10,10]');
+  room.doc.getText('t').delete(0, 60_000);
+  boardReceipt(provider, max);
   await vi.advanceTimersByTimeAsync(0);
-  const exact = Y.encodeStateAsUpdate(room.doc).byteLength;
-  expect(room.size()).toEqual({ bytes: exact, max });
-  boardReceipt(provider, 90_000);
-  expect(room.size()).toEqual({ bytes: exact, max });
-  text.delete(0, 60_000);
-  // The checked size holds until the next encode.
-  expect(room.size()).toEqual({ bytes: exact, max });
-  await vi.advanceTimersByTimeAsync(0);
-  expect(room.size()?.bytes).toBe(Y.encodeStateAsUpdate(room.doc).byteLength);
-  expect(room.size()?.bytes).toBeLessThan(max - BOARD_OFFLINE_MARGIN);
+  expect(encodes()).toBe(before);
+  expect(room.size()).toBeNull();
   room.destroy();
 });
 
