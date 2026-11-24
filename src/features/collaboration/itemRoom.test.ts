@@ -198,6 +198,7 @@ vi.mock('@/lib/sourceCache', async (load) => ({
 }));
 
 const { ItemRoom, openItemRoom } = await import('./itemRoom');
+const { collectedSize } = await import('./collectedSize');
 const { NoteSeat } = await import('./noteSeat');
 const { applyDrafts } = await import('@/lib/editDrafts');
 const { itemEditingStopped } = await import('./itemRoom');
@@ -1312,6 +1313,31 @@ it('checks a full board at once after deletions, its listeners hearing the exact
   expect(encodes()).toBe(before + 1);
   expect(heard).toBe(exact(room.doc));
   expect(heard).toBeLessThan(line);
+  room.destroy();
+});
+
+// The CI run of canvas-room-states.spec.ts (Clear all, then the pen): the
+// board's undo history (BlockSuite's, a Y.UndoManager) keeps what a tracked
+// transaction deleted, so the document's encode still reads a cleared board
+// full; the check measures what a collected copy holds, as the room's state
+// is. Fails if the measure reads the encode's length.
+it('frees a full board cleared under its undo history at the next check, sized as a collected copy', async () => {
+  const max = 100_000;
+  const line = max - BOARD_OFFLINE_MARGIN;
+  const { provider, room } = await boardRoom(max);
+  const blocks = room.doc.getMap('blocks');
+  const history = new Y.UndoManager(blocks);
+  provider.config.onSynced?.({ state: true });
+  room.doc.transact(() => {
+    for (let at = 0; at < 40; at++) blocks.set(`e${at}`, 'x'.repeat(2000));
+  });
+  expect(room.size()?.bytes).toBeGreaterThan(line);
+  room.doc.transact(() => blocks.clear());
+  room.checkSize();
+  expect(exact(room.doc)).toBeGreaterThan(line);
+  expect(room.size()).toEqual({ bytes: collectedSize(room.doc), max });
+  expect(room.size()?.bytes).toBeLessThan(line);
+  history.destroy();
   room.destroy();
 });
 

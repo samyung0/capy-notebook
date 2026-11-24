@@ -6867,11 +6867,24 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       fills the row (mock `StatusPhone`, 360 px included), a wider screen's shrinks
       into it. The status turns compact below 640 px, as a note's header.
       A tab that may write keeps the board's size (`size`, `subscribeSize`): its own
-      exact measure, an encode of its document (about 40 ms at 4 MiB on an M1) or
-      the device copy it opened from, plus the bytes of every update applied since,
-      an upper bound since deletions only lower it. A board with no copy is encoded
-      once as it first syncs, at once rather than when idle, so a full board takes
-      only removals from its first edit. The room's own bound in each receipt
+      measure, or the length of the device copy it opened from, plus the bytes of
+      every update applied since, an upper bound since deletions only lower it.
+      The measure (`measure`, every one of them: the first sync's, the idle ones,
+      the checks and the offline stop's) is what a collected copy of the document
+      holds (`collectedSize.ts`), not the encode's length: the board's undo
+      history (BlockSuite's, a `Y.UndoManager`) keeps what its transactions
+      deleted, so the encode still holds a cleared board (200 deleted 2 KB
+      entries: 404 KB against 3.3 KB collected), while the room's state is
+      collected. It is the encode less what collecting each deleted item that
+      still holds its content would save (an item inside a deleted type becomes a
+      GC struct, any other keeps its header with its content shrunk to its
+      length), an upper bound since collected neighbours merge (1.6% over at half
+      of a 2.9 MB board erased); the walk adds 25-35 ms to the encode's 40 at
+      that size on an M1, and reads Yjs internals in that one file. A device copy
+      is that tab's encode, so a copy-opened board takes deletions as pending
+      and its first check measures. A board with no copy is measured once as it
+      first syncs, at once rather than when idle, so a full board takes only
+      removals from its first edit. The room's own bound in each receipt
       (`metrics.contentBytes`: exact after a fold or a trial, otherwise that size
       plus the most each update since can add, as the room never encodes the board
       whole) never sets it, since it never comes down for a deletion between those

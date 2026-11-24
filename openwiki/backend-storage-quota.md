@@ -423,8 +423,9 @@ workspace or not (who holds it:
   the board under the board work permit, and the state's exact size with it
   decides: the cap is never passed, and an update that does not grow the
   state (a deletion) always enters. Deletions leave the bound high until the
-  next trial or fold, so the browser keeps a size of its own (the writing
-  tab's encode or device copy plus every update since), which its menu shows
+  next trial or fold, so the browser keeps a size of its own (what a
+  collected copy of the writing tab's document holds, or its device copy's
+  length, plus every update since; `frontend/plate-editor.md`), which its menu shows
   and its removals-only gate and offline stop read. The cap equals the
   largest sync message the collaboration server takes
   (`NOTE_MAX_SYNC_BYTES`, 4 MiB; a compile-time assert keeps the cap from

@@ -61,6 +61,7 @@ import {
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { dropDeviceCopies } from '@/lib/sourceCache';
 import { copyOf, hiddenEdits } from './boardHidden';
+import { collectedSize } from './collectedSize';
 import {
   type CopyLabel,
   dropDeletedCopies,
@@ -455,10 +456,10 @@ export class ItemRoom {
   private overLimit = false;
   /** Offline, a board's work reached the space its cap leaves. */
   private boardFull = false;
-  /** A board's size: this tab's own exact measure (an encode of its
-   * document, or the device copy it opened from) and the bytes of every
-   * update applied since, an upper bound since deletions only lower it. A
-   * tab that may not write measures nothing. */
+  /** A board's size: this tab's own measure (`measure`: what a collected
+   * copy of its document holds, or the length of the device copy it opened
+   * from) and the bytes of every update applied since, an upper bound since
+   * deletions only lower it. A tab that may not write measures nothing. */
   private measured: { base: number; since: number } | null = null;
   /** A deletion was applied since that measure: the size may be high by what
    * it freed. */
@@ -602,7 +603,7 @@ export class ItemRoom {
 
   /** Before the board acts on its size (a refusal of an add, the gate on a
    * tool, its menu opening, `boardFull.ts`): one encode when deletions were
-   * applied since the last measure, the exact size reaching the board
+   * applied since the last measure, the measured size reaching the board
    * before this returns (`subscribeSize` is synchronous). */
   readonly checkSize = () => {
     if (!(this.measured && this.deletedSince)) return;
@@ -635,7 +636,7 @@ export class ItemRoom {
     // removal, a card) stops it when it leaves the size past that line. One
     // that deletes (a removal, a move, a replacement) never stops it for the
     // line alone: whenever the size counted is past the cap, the board is
-    // measured, and it stops only when the exact size is past the line and a
+    // measured, and it stops only when the measured size is past the line and a
     // repeat of that update could take it over the cap. A move's update is
     // several times what it adds (a select-all drag of thousands of elements
     // sends more than the margin), so the line holds a board with room left.
@@ -644,7 +645,7 @@ export class ItemRoom {
     // 1,000 drags of one element add 35 B, but a selection moved together
     // adds about 10 B per element per drag (1,000 drags of ten add 100 KB).
     // Many moves of a large selection can so fill a board, which stops at
-    // its cap; it encodes once per (cap - exact size) bytes of updates.
+    // its cap; it measures once per (cap - measured size) bytes of updates.
     // A size high from deletions since the last measure is encoded first, at
     // once (offline, at those updates alone: an accepted cost, repeated often
     // only when large selections keep moving within a few KB of the cap), so
@@ -671,9 +672,9 @@ export class ItemRoom {
     }
     // A size crossing the full line with deletions since the last measure
     // (a long stroke rewrites its points every 20, a deletion each) is
-    // encoded once the tab is idle, so the next press's gate finds it exact
-    // rather than encoding inside the press. Once per stroke: a stroke's
-    // rewrites cross again after each measure, so the next crossing waits
+    // measured once the tab is idle, so the next press's gate finds it
+    // measured rather than measuring inside the press. Once per stroke: a
+    // stroke's rewrites cross again after each measure, so the next crossing waits
     // for a receipt or a press, and a press soon after a long stroke may
     // still find the size high and encode.
     if (
@@ -692,14 +693,16 @@ export class ItemRoom {
     for (const listener of this.sizeListeners) listener();
   }
 
-  /** One encode of the board's document (about 40 ms at 4 MiB on an M1):
-   * its exact size, by a tab that may write. */
+  /** Every measure of the board (the first sync's, a receipt's or a
+   * crossing's idle one, `checkSize`'s and the offline stop's), by a tab
+   * that may write: what a collected copy of its document holds
+   * (`collectedSize`; an encode, about 40 ms at 4 MiB on an M1, and a walk of
+   * its deleted items). Not the encode's length: the board's undo history
+   * keeps what it deleted in this document, while the room's state is
+   * collected, so a cleared board would still read full. */
   private measure() {
     if (!this.options.board || this.snapshot.access === 'read') return;
-    this.measured = {
-      base: Y.encodeStateAsUpdate(this.doc).byteLength,
-      since: 0,
-    };
+    this.measured = { base: collectedSize(this.doc), since: 0 };
     this.deletedSince = false;
   }
 
@@ -1723,9 +1726,13 @@ export class ItemRoom {
     this.room = seed.room;
     // Its size is the copy's at once, so the removals-only gate holds from
     // the first edit (review b1 finding 10); the waiting rows add theirs. The
-    // copy is this device's own encode of the state the document holds.
+    // copy is this device's encode of its document, holding what the writing
+    // tab's undo history kept of its deletions, which the document here
+    // collected as the copy was read: deletions are pending, so the first
+    // check measures (a cleared board's copy reads full until then).
     if (this.options.board) {
       this.measured = { base: seed.row.size, since: 0 };
+      this.deletedSince = true;
       this.sized();
     }
     const history = new Set(this.doc.store.clients.keys());
