@@ -776,6 +776,10 @@ pub(crate) mod tests {
             markdown: None,
             quiz_bounds: Default::default(),
             group_slots: Default::default(),
+            board_work: crate::work::WorkLimit::new(
+                crate::work::BOARD_WORK,
+                crate::trim::after_unload,
+            ),
         })
     }
 

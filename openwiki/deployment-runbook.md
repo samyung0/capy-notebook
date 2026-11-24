@@ -815,7 +815,11 @@ the bench behind them is
   one at a time and at least `TRIM_SPACING` (5 s, Epo 2026-11-24) apart, end
   to start. Unloads during a trim or its spacing ask for
   exactly one more, run once the spacing passed, so a burst of unloads costs
-  one trim per 5 s. A trim that panics leaves later ones running. Each trim
+  one trim per 5 s. The same request also follows each board's whole-board
+  work (`work.rs`: a load, a fold, a projection or a heavy update's
+  admission, whose 25 to 90 MiB peak otherwise stays resident on glibc),
+  spaced with the
+  unloads' trims. A trim that panics leaves later ones running. Each trim
   logs one Info line, `memory trimmed`, with `ms`, `released`,
   `rss_before_kib` and `rss_after_kib` (`VmRSS` of `/proc/self/status`, from
   the kernel's counters: `smaps_rollup` walks every page under the mmap lock,
@@ -4715,3 +4719,16 @@ canvases the same way. As of 2026-11-18 the board room's integration tests
 (`collaboration-rs/crates/server/tests/rooms.rs`) have compiled but not run:
 they need Docker, which did not answer on the build machine. Their first run
 is CI, so wait for it before this deploy.
+
+## Board base indexes (migration 0193)
+
+[`0193_board_base_indexes.sql`](../server/migrations/0193_board_base_indexes.sql)
+(the bytes-room plan, step 1b, Epo 2026-11-24) adds `base_state_vector` and
+`base_delete_set` to `material_yjs_documents`, as 0181 to 0183 must be applied
+before the new collaboration server starts: it writes both columns at every
+canvas's first seed and every board fold, so against a database without them
+a canvas's first open and each board fold fail. The deploy's own order
+(collaboration stopped, then `migrate`, then the services) does this. The
+columns are nullable, null for every other kind and for a board seeded
+before 0193 and not folded since; the migration backfills nothing and refuses
+nothing.

@@ -6,12 +6,11 @@ import {
   getSolidStrokePoints,
   getSvgPathFromStroke,
   inflateBound,
-  isPointOnlines,
   type IVec,
-  type IVec3,
   lineIntersects,
   PointLocation,
   polyLineNearestPoint,
+  rotatePoint,
   type SerializedXYWH,
   transformPointsToNewBound,
   Vec,
@@ -25,14 +24,22 @@ import {
   watch,
 } from '@blocksuite/std/gfx';
 
+import {
+  decodeStrokePoints,
+  encodeStrokePoints,
+  strokeNearPoint,
+} from '@/features/blocksuite/strokePoints';
+
 import { type Color, DefaultTheme } from '../../themes/index';
 
 export type BrushProps = BaseElementProps & {
   /**
-   * [[x0,y0,pressure0?],[x1,y1,pressure1?]...]
-   * pressure is optional and exsits when pressure sensitivity is supported, otherwise not.
+   * Capy (local change 79): the points as stored, relative to `xywh`, in one
+   * binary value (`strokePoints.ts`): x and y, and pressure where the pen gave
+   * one. Set them as drawn, `[[x0,y0,pressure0?],...]` in board units: `convert`
+   * stores them, and `serialize` gives them back that way (relative).
    */
-  points: number[][];
+  points: Uint8Array;
   color: Color;
   lineWidth: number;
 };
@@ -43,7 +50,10 @@ export class BrushElementModel extends GfxPrimitiveElementModel<BrushProps> {
    */
   get commands() {
     if (!this._local.has('commands')) {
-      const stroke = getSolidStrokePoints(this.points ?? [], this.lineWidth);
+      const stroke = getSolidStrokePoints(
+        decodeStrokePoints(this.points),
+        this.lineWidth
+      );
       const commands = getSvgPathFromStroke(stroke);
 
       this._local.set('commands', commands);
@@ -66,11 +76,6 @@ export class BrushElementModel extends GfxPrimitiveElementModel<BrushProps> {
   }
 
   override getLineIntersections(start: IVec, end: IVec) {
-    const tl = [this.x, this.y];
-    const points = getPointsFromBoundWithRotation(this, _ =>
-      this.points.map(point => Vec.add(point, tl))
-    );
-
     const box = Bound.fromDOMRect(getQuadBoundWithRotation(this));
 
     if (box.w < 8 && box.h < 8) {
@@ -78,6 +83,12 @@ export class BrushElementModel extends GfxPrimitiveElementModel<BrushProps> {
     }
 
     if (box.intersectLine(start, end, true)) {
+      // Capy (local change 79): decoded only for a line that crosses the box, as
+      // the eraser asks every stroke on every move.
+      const tl = [this.x, this.y];
+      const points = getPointsFromBoundWithRotation(this, _ =>
+        decodeStrokePoints(this.points).map(point => Vec.add(point, tl))
+      );
       const len = points.length;
       for (let i = 1; i < len; i++) {
         const result = lineIntersects(start, end, points[i - 1], points[i]);
@@ -98,7 +109,7 @@ export class BrushElementModel extends GfxPrimitiveElementModel<BrushProps> {
     const { x, y } = this;
 
     return polyLineNearestPoint(
-      this.points.map(p => Vec.add(p, [x, y])),
+      decodeStrokePoints(this.points).map(p => Vec.add(p, [x, y])),
       point
     ) as IVec;
   }
@@ -113,14 +124,26 @@ export class BrushElementModel extends GfxPrimitiveElementModel<BrushProps> {
     py: number,
     options?: PointTestOptions
   ): boolean {
-    const hit = isPointOnlines(
-      Bound.deserialize(this.xywh),
-      this.points as [number, number][],
-      this.rotate,
-      [px, py],
+    // Capy (local change 79): the stored points read in place, the pointer
+    // turned back about the box's centre.
+    const bound = Bound.deserialize(this.xywh);
+    const [x, y] = this.rotate
+      ? rotatePoint([px, py], bound.center, -this.rotate)
+      : [px, py];
+    return strokeNearPoint(
+      this.points,
+      x - bound.x,
+      y - bound.y,
       (options?.hitThreshold ?? 10) / Math.min(options?.zoom ?? 1, 1)
     );
-    return hit;
+  }
+
+  /** Capy (local change 79): the points as drawn (relative), which a copy, a
+   * paste and Duplicate hand back to `points`. */
+  override serialize() {
+    const result = super.serialize();
+    result.points = decodeStrokePoints(this.points);
+    return result;
   }
 
   @field()
@@ -139,7 +162,7 @@ export class BrushElementModel extends GfxPrimitiveElementModel<BrushProps> {
     )
       return {};
 
-    const points = instance.points;
+    const points = decodeStrokePoints(instance.points);
     const transformed = transformPointsToNewBound(
       points.map(([x, y]) => ({ x, y })),
       oldBound,
@@ -172,20 +195,18 @@ export class BrushElementModel extends GfxPrimitiveElementModel<BrushProps> {
       xywh: boundWidthLineWidth.serialize(),
     };
   })
-  @convert((points: (IVec | IVec3)[], instance) => {
+  @convert((points: number[][], instance) => {
     const lineWidth = instance.lineWidth;
     const bound = getBoundFromPoints(points as IVec[]);
     const boundWidthLineWidth = inflateBound(bound, lineWidth);
-    const relativePoints = points.map(([x, y, pressure]) => [
-      x - boundWidthLineWidth.x,
-      y - boundWidthLineWidth.y,
-      ...(pressure !== undefined ? [pressure] : []),
-    ]);
 
-    return relativePoints;
+    return encodeStrokePoints(points, [
+      boundWidthLineWidth.x,
+      boundWidthLineWidth.y,
+    ]);
   })
   @field()
-  accessor points: (IVec | IVec3)[] = [];
+  accessor points: Uint8Array = encodeStrokePoints([]);
 
   @field(0)
   accessor rotate: number = 0;
@@ -196,8 +217,9 @@ export class BrushElementModel extends GfxPrimitiveElementModel<BrushProps> {
     if (bound.w === instance.w && bound.h === instance.h) return {};
 
     const { lineWidth } = instance;
+    const points = decodeStrokePoints(instance.points);
     const transformed = transformPointsToNewBound(
-      instance.points.map(([x, y]) => ({ x, y })),
+      points.map(([x, y]) => ({ x, y })),
       instance,
       instance.lineWidth / 2,
       bound,
@@ -208,7 +230,7 @@ export class BrushElementModel extends GfxPrimitiveElementModel<BrushProps> {
       points: transformed.points.map((p, i) => [
         p.x,
         p.y,
-        ...(instance.points[i][2] !== undefined ? [instance.points[i][2]] : []),
+        ...(points[i][2] !== undefined ? [points[i][2]] : []),
       ]),
     };
   })

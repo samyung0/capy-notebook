@@ -317,6 +317,9 @@ pub struct App {
     pub quiz_bounds: QuizBounds,
     /// Each user's one unfinished group of pieces (`GroupSlots`).
     pub group_slots: GroupSlots,
+    /// Whole-board work at once (`work.rs`): canvas loads, folds, durable
+    /// projections and heavy-update trials.
+    pub board_work: crate::work::WorkLimit,
 }
 
 /// Each user's one unfinished group of pieces in this process, across rooms

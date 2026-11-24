@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { ApiError } from '@/api/client';
+import { encodeStrokePoints } from '@/features/blocksuite/strokePoints';
 import type { DraftMessage, DraftReply } from '@/lib/draftStore';
 import type { RoomProviderConfig } from './roomProvider';
 
@@ -331,10 +332,10 @@ function draw(doc: Y.Doc, id: string, x = 0) {
     id,
     index: 'a0',
     lineWidth: 4,
-    points: [
+    points: encodeStrokePoints([
       [0, 0],
       [10, 10],
-    ],
+    ]),
     rotate: 0,
     seed: 1,
     type: 'brush',

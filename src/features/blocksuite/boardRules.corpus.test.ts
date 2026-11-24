@@ -81,6 +81,7 @@ import { type BoardKind, ENUMS } from './boardRules';
 import { unknownStore } from './boardUnknown';
 import { lockQuestion } from './questionLock';
 import { openRoomStore } from './roomStore';
+import { encodeStrokePoints } from './strokePoints';
 
 /* The board's rules (boardRules.ts) on one corpus, read as a board reads them
  * (boardLoad.ts): what BlockSuite's own model code writes for every element type
@@ -489,6 +490,31 @@ const CASES: Case[] = [
       });
     });
   }),
+  writes(
+    'a pen stroke and a highlighter stroke resized, thickened, pasted and pasted through the clipboard',
+    async (s) => {
+      await s.editor(({ surface }) => {
+        const pen = surface.addElement({
+          points: [
+            [10, 10, 0.5],
+            [30, 25, 0.6],
+          ],
+          type: 'brush',
+        });
+        const marker = surface.addElement({
+          points: [
+            [0, 40],
+            [80, 50],
+          ],
+          type: 'highlighter',
+        });
+        surface.updateElement(pen, { xywh: '[100,100,90,60]' });
+        surface.updateElement(marker, { lineWidth: 30 });
+        for (const id of [pen, marker]) paste(surface, id);
+        pasteFromClipboard(surface, [pen, marker]);
+      });
+    }
+  ),
   writes('a shape and its text typed in, bold', async (s) => {
     await s.editor(({ surface }) => {
       const id = addShape(surface);
@@ -1295,9 +1321,25 @@ const CASES: Case[] = [
   misfits('a padding that is no pair', async (s) => {
     s.raw((doc) => putElement(doc, 'a', { ...SHAPE, padding: [10] }));
   }),
-  misfits('points that are not points', async (s) => {
+  misfits('a stroke without points', async (s) => {
+    s.raw((doc) => putElement(doc, 'a', { type: 'brush', xywh: '[0,0,1,1]' }));
+  }),
+  misfits('points as number arrays (no longer stored so)', async (s) => {
     s.raw((doc) =>
-      putElement(doc, 'a', { points: [[1]], type: 'brush', xywh: '[0,0,1,1]' })
+      putElement(doc, 'a', {
+        points: [[1, 1]],
+        type: 'brush',
+        xywh: '[0,0,1,1]',
+      })
+    );
+  }),
+  misfits('points whose bytes hold no whole point', async (s) => {
+    s.raw((doc) =>
+      putElement(doc, 'a', {
+        points: encodeStrokePoints([[1, 1]]).subarray(0, 10),
+        type: 'brush',
+        xywh: '[0,0,1,1]',
+      })
     );
   }),
   misfits("a connector's end on nothing", async (s) => {

@@ -11,6 +11,10 @@ import type {
 import { BaseBlockTransformer } from '@blocksuite/store';
 import * as Y from 'yjs';
 
+/** Capy (local change 79): a binary value (a stroke's points) in a snapshot, as its
+ * bytes, so a JSON snapshot keeps it. */
+const SURFACE_BYTES_UNIQ_IDENTIFIER = 'affine:surface:bytes';
+
 export class SurfaceBlockTransformer extends BaseBlockTransformer<SurfaceBlockProps> {
   private _elementToJSON(element: Y.Map<unknown>) {
     const value: Record<string, unknown> = {};
@@ -34,6 +38,8 @@ export class SurfaceBlockTransformer extends BaseBlockTransformer<SurfaceBlockPr
           yMap.set(key, value);
         });
         return yMap;
+      } else if (Reflect.has(value, SURFACE_BYTES_UNIQ_IDENTIFIER)) {
+        return Uint8Array.from(Reflect.get(value, 'bytes') as number[]);
       }
     }
     return value;
@@ -49,6 +55,11 @@ export class SurfaceBlockTransformer extends BaseBlockTransformer<SurfaceBlockPr
       return {
         [SURFACE_YMAP_UNIQ_IDENTIFIER]: true,
         json: value.toJSON(),
+      };
+    } else if (value instanceof Uint8Array) {
+      return {
+        [SURFACE_BYTES_UNIQ_IDENTIFIER]: true,
+        bytes: Array.from(value),
       };
     }
     return value;

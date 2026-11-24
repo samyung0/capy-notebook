@@ -13,6 +13,7 @@ import {
 } from './boardFixture';
 import { BoardLoadError } from './boardLoad';
 import { drawBoardPreview, POLYGON_CORNERS } from './boardPreview';
+import { encodeStrokePoints } from './strokePoints';
 
 const SIZE = { height: 120, width: 180 };
 const SVG_HEAD = /^<svg [^>]*width="180" height="120"/;
@@ -120,7 +121,7 @@ it('keeps a long stroke to what the preview can show', () => {
       withElements({
         color: '#e03131',
         lineWidth: 4,
-        points,
+        points: encodeStrokePoints(points),
         type: 'brush',
         xywh: '[0,600,500,20]',
       })
@@ -138,10 +139,10 @@ it('opens and draws a highlighter stroke', () => {
       withElements({
         color: '#84cfff4d',
         lineWidth: 22,
-        points: [
+        points: encodeStrokePoints([
           [0, 0],
           [80, 10],
-        ],
+        ]),
         type: 'highlighter',
         xywh: '[0,600,80,10]',
       })
@@ -311,10 +312,10 @@ it('frames a question board to its answer area, and a canvas to everything', () 
     {
       color: '#e03131',
       lineWidth: 4,
-      points: [
+      points: encodeStrokePoints([
         [0, 0],
         [50, 25],
-      ],
+      ]),
       type: 'brush',
       xywh: '[1100,600,50,25]',
     },
