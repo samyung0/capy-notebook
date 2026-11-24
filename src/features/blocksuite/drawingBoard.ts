@@ -141,7 +141,7 @@ import { cardUndo, onCardState } from '@/features/canvas/materialCardHosts';
 import type { PlaneOpener } from '@/features/graph/planeEditing';
 import { contentSizeKilobytes } from '@/features/notes/documentStats';
 import { m } from '@/i18n';
-import { BOARD_OFFLINE_MARGIN } from '@/lib/const';
+import { BOARD_OFFLINE_MARGIN, BOARD_SIZE_SHOWN } from '@/lib/const';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
 import { anyOutside, mountAnswerArea, storedArea } from './boardArea';
@@ -752,15 +752,17 @@ export function mountDrawingBoard(
   // bottom row holds only the toolbar (Epo 2026-11-08). A teacher's has zoom only.
   const zoomTo = (zoom: number) =>
     gfx.viewport.smoothZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom)));
-  // The room's size and cap (`setRoomSize`): the menu's last row from 75% of the
-  // cap, as a note's size line reads it (Epo 2026-11-18, 2B), and from the cap
-  // less the room's margin (`BOARD_OFFLINE_MARGIN`, online too: client-limits
-  // A) the board takes only removals and the row says so in the error colour.
+  // The room's size and cap (`setRoomSize`, checked against this tab's own
+  // document from the lower of these lines: `itemRoom.ts`): the menu's last
+  // row from 75% of the cap (`BOARD_SIZE_SHOWN`, Epo 2026-11-18, 2B), and from
+  // the cap less the room's margin (`BOARD_OFFLINE_MARGIN`, online too:
+  // client-limits A) the board takes only removals and the row says so in the
+  // error colour.
   let roomSize: { bytes: number; max: number } | null = null;
   const fullAt = (size: { bytes: number; max: number } | null) =>
     !!size && size.bytes >= size.max - BOARD_OFFLINE_MARGIN;
   const sizeNote = () => {
-    if (!roomSize || roomSize.bytes < roomSize.max * 0.75) return;
+    if (!roomSize || roomSize.bytes < roomSize.max * BOARD_SIZE_SHOWN) return;
     const text = m.editor_stats_size({
       current: contentSizeKilobytes(roomSize.bytes).toLocaleString(),
       max: contentSizeKilobytes(roomSize.max).toLocaleString(),

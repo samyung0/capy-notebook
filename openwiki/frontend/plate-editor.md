@@ -6857,16 +6857,22 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       their width as `--capy-board-chrome` (`useCanvasBoard`); a phone's picker
       fills the row (mock `StatusPhone`, 360 px included), a wider screen's shrinks
       into it. The status turns compact below 640 px, as a note's header.
-      The room keeps the board's size (`size`, `subscribeSize`): the room's own
-      bound in each receipt (`metrics.contentBytes`: at least the Yjs v1 encoding the
-      server caps, exact after a fold or a trial, as the room holds the board as its
-      stored bytes and never encodes it whole; it folds once its growth past the last
-      exact size and the bytes its deletions since are estimated to free, at that
-      measure's bytes per undeleted unit, pass 256 KiB, so the receipts stay near the
-      state), one encode of this tab's document when idle before the first, plus the
-      bytes of every update applied since; the page hands it to the board
-      (`setRoomSize`), whose menu ends with the size from 75% and, at the cap, "Only
-      edits that remove content will be saved." The server is the judge of what
+      The room keeps the board's size (`size`, `subscribeSize`) from two upper
+      bounds, each plus the bytes of every update applied since: the room's own bound
+      in each receipt (`metrics.contentBytes`: at least the Yjs v1 encoding the server
+      caps, exact after a fold or a trial and otherwise that exact size plus the most
+      each update since can add, as the room holds the board as its stored bytes and
+      never encodes it whole, so it never comes down for a deletion between those
+      measures), and this tab's own encode of its document (or the device copy it
+      opened from). The lower is used; below the menu's 75% line
+      (`BOARD_SIZE_SHOWN`) and the cap less the 64 KiB margin it is used as it is,
+      and from there only while this tab's own encode holds it with no deletion
+      applied since (a transaction's delete set): otherwise one encode runs once the
+      tab is idle (one at a time), the last size so checked still shown meanwhile, so
+      a receipt kept high by erased content neither shows nor gates anything, and a
+      board really at its cap stays there with no encode per receipt. The page hands
+      the size to the board (`setRoomSize`), whose menu ends with it from 75% and, at
+      the cap, "Only edits that remove content will be saved." The server is the judge of what
       removes content: an update whose state with it is no larger than without it (a
       deletion) is always admitted, and a growing one at the cap is refused and kept
       for copying as above. Offline, a board's work stops under the offline-limit

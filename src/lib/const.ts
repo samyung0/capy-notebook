@@ -19,6 +19,10 @@ export const SOURCE_STATE_MAX_BYTES = 100 * 1024 * 1024;
  * gate: the server's estimate adds a little per struct to each update's bytes. */
 export const BOARD_OFFLINE_MARGIN = 64 * 1024;
 
+/** The share of a board's cap from which its menu shows its size (Epo
+ * 2026-11-18, 2B). */
+export const BOARD_SIZE_SHOWN = 0.75;
+
 /**
  * When to warn before opening a document, deliberately NOT derived from
  * MATERIAL_DOCUMENT_LIMITS. Those caps protect the collaboration service and
