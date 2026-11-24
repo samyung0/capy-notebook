@@ -6872,12 +6872,14 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       plus the most each update since can add, as the room never encodes the board
       whole) never sets it, since it never comes down for a deletion between those
       measures and misses what was appended during its store. With deletions
-      applied since the last measure (a transaction's delete set; every move of a
-      drag overwrites a key), the size is encoded again once the tab is idle at the
-      next store's receipt while it is at or past the lower of the menu's 75% line
-      (`BOARD_SIZE_SHOWN`) and the cap less the 64 KiB margin, so a drag costs one
-      encode per store, not one per move, and never one per move however near a
-      line. Nothing acts on a size deletions may have left high: the page hands
+      applied since the last measure (a transaction's delete set; a move
+      overwrites a key, written once per drag at its end and once per arrow-key
+      nudge; a long stroke rewrites its points every 20), the size is encoded again
+      once the tab is idle at the next store's receipt while it is at or past the
+      lower of the menu's 75% line (`BOARD_SIZE_SHOWN`) and the cap less the 64 KiB
+      margin, and as it crosses the full line, so the next press finds it exact:
+      moves cost one encode per store, never one each, however near a line.
+      Nothing acts on a size deletions may have left high: the page hands
       the board its size with its check (`setRoomSize(size, checkSize)`, kept per
       store in `boardFull.ts`), and whatever refuses an add (`refusesAdds`: a tool
       picked, a press on the board with a tool that adds, a paste, a drop, ⌘D, a
@@ -6897,18 +6899,22 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       first. An update that deletes nothing (a stroke, typing in a note, Undo of
       a removal, a card: the gate checks only some of these) stops it when it
       leaves the size past the line. One that deletes (a removal, a move, a
-      replacement) never stops it for the line: when it takes the size past the
-      cap itself, the board is measured and stops only if a repeat of that update
-      could take it over the cap (exact size plus the update's bytes). A move of
-      one element barely grows the board (Yjs merges a key's consecutive
-      overwrites: 1,000 moves add 35 B), but a selection moved together adds
-      about 10 B per element per move (1,000 moves of ten add 100 KB), so a long
-      drag can fill a board and stops at its cap; it encodes once per (cap −
-      exact size) bytes of updates, not per move. With deletions since the last
-      measure, either check encodes first, at once (offline, at those updates
-      alone: an accepted cost, thrashing only in a long drag of many elements
-      within a few KB of the cap), so a board removals freed takes adds until one
-      takes it back past the line. A single update larger than the room left
+      replacement) never stops it for the line alone: whenever the size counted
+      is past the cap (going offline with it there included), the board is
+      measured, and stops only when the exact size is past the line and a repeat
+      of that update could take it over the cap (exact size plus the update's
+      bytes). A move's update is several times what it adds (a select-all move
+      of thousands of elements sends more than the margin), so the line keeps a
+      board with room left going. A move of one element barely grows the board
+      (Yjs merges a key's consecutive overwrites: 1,000 drags add 35 B), but a
+      selection moved together adds about 10 B per element per drag (1,000 drags
+      of ten add 100 KB), so many moves of a large selection can fill a board,
+      which stops at its cap; it encodes once per (cap − exact size) bytes of
+      updates. With deletions since the last measure, either check encodes
+      first, at once (offline, at those updates alone: an accepted cost,
+      repeated often only when large selections keep moving within a few KB of
+      the cap), so a board removals freed takes adds until one takes it back
+      past the line. A single update larger than the room left
       still overshoots, as one large add always could.
     - **Opened from the Trash.** A canvas in its maker's Trash opens from the Trash's
       link on its own canvas page (the account's, or its workspace's with

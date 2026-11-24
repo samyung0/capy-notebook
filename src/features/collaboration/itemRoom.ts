@@ -625,38 +625,47 @@ export class ItemRoom {
     // update that deletes nothing (a stroke, typing in a note, Undo of a
     // removal, a card) stops it when it leaves the size past that line. One
     // that deletes (a removal, a move, a replacement) never stops it for the
-    // line: when it takes the size past the cap itself, the board is measured
-    // and stops only if a repeat of that update could take it over the cap.
-    // A move barely grows the board (Yjs merges a key's consecutive
-    // overwrites: 1,000 moves of one element add 35 B), but a selection moved
-    // together adds about 10 B per element per move (1,000 moves of ten add
-    // 100 KB), so a long drag can reach the cap and stops there; it encodes
-    // at most once per (cap - exact size) bytes of updates, not per move.
+    // line alone: whenever the size counted is past the cap, the board is
+    // measured, and it stops only when the exact size is past the line and a
+    // repeat of that update could take it over the cap. A move's update is
+    // several times what it adds (a select-all drag of thousands of elements
+    // sends more than the margin), so the line holds a board with room left.
+    // BlockSuite writes an element's place once per drag, at its end, and
+    // once per arrow-key nudge; Yjs merges a key's consecutive overwrites, so
+    // 1,000 drags of one element add 35 B, but a selection moved together
+    // adds about 10 B per element per drag (1,000 drags of ten add 100 KB).
+    // Many moves of a large selection can so fill a board, which stops at
+    // its cap; it encodes once per (cap - exact size) bytes of updates.
     // A size high from deletions since the last measure is encoded first, at
-    // once (offline, at those updates alone: an accepted cost, thrashing only
-    // in a long drag of many elements within a few KB of the cap), so a board
-    // removals freed takes adds until the next such update. A single update
-    // larger than the room left still goes past the line, as one large add
-    // always could.
+    // once (offline, at those updates alone: an accepted cost, repeated often
+    // only when large selections keep moving within a few KB of the cap), so
+    // a board removals freed takes adds until the next such update. A single
+    // update larger than the room left still goes past the line, as one
+    // large add always could.
     const line = board.max - BOARD_OFFLINE_MARGIN;
     const after = measured.base + measured.since;
     if (
       this.snapshot.offline &&
       !this.boardFull &&
-      (deletes ? before <= board.max && after > board.max : after > line)
+      after > (deletes ? board.max : line)
     ) {
       if (this.deletedSince) this.measure();
       const size = this.size();
       if (
         size &&
-        (deletes
-          ? size.bytes + update.byteLength > board.max
-          : size.bytes > line)
+        size.bytes > line &&
+        (!deletes || size.bytes + update.byteLength > board.max)
       ) {
         this.boardFull = true;
         this.showOffline();
       }
     }
+    // A size crossing the full line with deletions since the last measure
+    // (a long stroke rewrites its points every 20, a deletion each) is
+    // encoded once the tab is idle, so the next press's gate finds it exact
+    // rather than encoding inside the press.
+    if (this.deletedSince && before < line && after >= line)
+      this.remeasureSoon();
     this.sized();
   };
 
@@ -676,11 +685,13 @@ export class ItemRoom {
   }
 
   /** At a store's receipt (the room's stores come at most every 2 s of
-   * quiet or 10 s of editing), one encode once the tab is idle, when
+   * quiet or 10 s of editing) and as the size crosses the full line, one
+   * encode once the tab is idle, when
    * deletions were applied since the last measure and the size is where
    * something acts on it (the lower of the menu's line and the cap less the
-   * margin): a drag, whose every move overwrites a key, costs one encode
-   * per store, not one per move. The size stays live meanwhile. */
+   * margin): moves, each overwriting a key (a drag's end, an arrow-key
+   * nudge), cost one encode per store, not one each. The size stays live
+   * meanwhile. */
   private remeasureSoon() {
     const size = this.size();
     if (
