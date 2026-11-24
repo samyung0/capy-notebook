@@ -86,6 +86,9 @@ pub struct Config {
     /// group waits for one whole piece at it past the slack
     /// (`Room::draft_wait`). Tests raise it.
     pub slowest_uplink: u64,
+    /// How often a writer's access is rechecked on its updates
+    /// ([crate::socket::RECHECK]); the rooms tests shorten it.
+    pub recheck: Duration,
 }
 
 /// The slowest uplink a group of pieces must still land on: 8 KB/s (64
@@ -144,18 +147,17 @@ fn millis(
     positive(env, name, fallback).map(Duration::from_millis)
 }
 
-/// How often the server's clients send their heartbeat
-/// ([crate::protocol::HEARTBEAT_MS]). A debug build takes
-/// `COLLABORATION_IT_HEARTBEAT_MS` instead, so the rooms tests can scale the
-/// windows it bounds down; a release build refuses it.
-fn heartbeat(env: &HashMap<String, String>) -> Result<Duration, ConfigError> {
-    const NAME: &str = "COLLABORATION_IT_HEARTBEAT_MS";
-    if cfg!(debug_assertions) {
-        millis(env, NAME, crate::protocol::HEARTBEAT_MS)
-    } else if env.contains_key(NAME) {
-        Err(ConfigError(format!("{NAME} is for debug builds only")))
-    } else {
-        Ok(Duration::from_millis(crate::protocol::HEARTBEAT_MS))
+/// A window only the rooms tests scale: a debug build takes `name` (in
+/// milliseconds) instead of `fallback`; a release build refuses it.
+fn test_window(
+    env: &HashMap<String, String>,
+    name: &str,
+    fallback: Duration,
+) -> Result<Duration, ConfigError> {
+    match env.get(name) {
+        None => Ok(fallback),
+        Some(_) if cfg!(debug_assertions) => millis(env, name, 0),
+        Some(_) => Err(ConfigError(format!("{name} is for debug builds only"))),
     }
 }
 
@@ -226,8 +228,14 @@ impl Config {
         }
         // A tab's heartbeat keeps its socket heard through a long send to it,
         // and its group alive while the first piece's acknowledgement waits
-        // behind that send: each window holds two.
-        let heartbeat = heartbeat(env)?;
+        // behind that send: each window holds two. The rooms tests scale the
+        // heartbeat ([crate::protocol::HEARTBEAT_MS]) down, and these windows
+        // with it.
+        let heartbeat = test_window(
+            env,
+            "COLLABORATION_IT_HEARTBEAT_MS",
+            Duration::from_millis(crate::protocol::HEARTBEAT_MS),
+        )?;
         let group_slack = millis(env, "COLLABORATION_GROUP_SLACK_MS", 90_000)?;
         for (name, window) in [
             ("COLLABORATION_SILENT_SECONDS", silent_close),
@@ -311,6 +319,7 @@ impl Config {
             silent_close,
             group_slack,
             slowest_uplink: positive(env, "COLLABORATION_SLOWEST_UPLINK_BYTES", SLOWEST_UPLINK)?,
+            recheck: test_window(env, "COLLABORATION_IT_RECHECK_MS", crate::socket::RECHECK)?,
         })
     }
 
@@ -372,6 +381,8 @@ mod tests {
         assert_eq!(config.connections_per_document, 4);
         assert_eq!(config.ping_every, Duration::from_secs(30));
         assert_eq!(config.silent_close, Duration::from_secs(60));
+        // Epo 2026-11-24: "30 seconds is fine".
+        assert_eq!(config.recheck, Duration::from_secs(30));
     }
 
     #[test]

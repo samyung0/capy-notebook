@@ -575,10 +575,16 @@ view-only for everyone, the rest of the workspace staying editable:
   or spent.
 
 Enforcement is at admission only, like frozen: the collaboration service's
-5 s writer recheck (`full_sql` in `collaboration-rs/crates/server/src/access.rs`, mirrored
+30 s writer recheck (`RECHECK` in `collaboration-rs/crates/server/src/socket.rs`;
+`full_sql` in `collaboration-rs/crates/server/src/access.rs`, mirrored
 by `StorageUsage.Full`, both on the material's payer) closes every writer in
 the payer's rooms with `room-read-only` once it crosses the limit, and up to
-about 5 s of edits admitted before that may save. The open editor drops to view
+about 30 s of edits admitted before that may save. Nothing pushes the limit
+to the rooms (Epo 2026-11-24 kept the recheck over pushing a lock): usage
+moves with every save, upload and delete, and the plan limit with the clock.
+Those 30 s are bounded by each writer's update allowance (2 MiB and 200
+updates a second, an 8 MiB burst; `rate.rs`), the 8 MiB update cap and the
+file's own caps (above). The open editor drops to view
 mode under the read-only strip and discards its unsaved edits. When the payer
 or the actor is `over_quota_frozen` (or the payer is suspended or being
 deleted), the same admission points refuse with `account_over_quota` (see the
@@ -1456,9 +1462,10 @@ exact debounced snapshot, along with the workspace owner. Claimed markers are
 removed from the committed state; newer generations remain for the next save.
 A token minted before suspension or deletion cannot bypass that boundary, and
 one minted before a role removal or plan expiry is refused at admission (the
-join and the 5 s writer recheck), so up to about 5 s of what such a writer sent
-saves (Q634). A save refused for a lock evicts the room so the uncommitted
-update is not retained in memory. Before writing authoritative Yjs state, the
+join and the 30 s writer recheck; a role removal also closes them at the
+outbox's revoke), so up to about 30 s of what such a writer sent saves (Q634).
+A save refused for a lock evicts the room so the uncommitted update is not
+retained in memory. Before writing authoritative Yjs state, the
 collaboration server applies the same structural and material-kind contract as Go. Invalid
 Plate content cannot become a durable state that projection will reject. The
 server discards that in-memory room and reloads the last durable state instead

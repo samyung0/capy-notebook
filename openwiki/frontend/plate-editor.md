@@ -2050,13 +2050,15 @@ logs (deployment-runbook). The server reads while it sends
 however long the send takes and however the kernels and proxies between
 buffer it; a client that sends nothing, not even a heartbeat, closes at the
 window during a send too. Meanwhile the socket's other work (token timers,
-closings, auth and join answers) waits for the send to end; the writer
-recheck, every 5 s on a writer's updates, still enforces access, so an
+closings, auth and join answers) waits for the send to end; the room still
+refuses an update or stateless event whose token has expired, and the writer
+recheck, every 30 s on a writer's updates, still enforces access, so an
 expired token only stretches its grace. The server refuses to start with
 `COLLABORATION_SILENT_SECONDS` or `COLLABORATION_GROUP_SLACK_MS` under two
 heartbeats (40 s, 40,000 ms; `config.rs`; a debug build takes
 `COLLABORATION_IT_HEARTBEAT_MS` for the 20 s, so the rooms tests scale their
-windows down, and a release build refuses it). So a
+windows down, and `COLLABORATION_IT_RECHECK_MS` for the writer recheck's 30 s;
+a release build refuses both). So a
 dead connection (a laptop that
 changed networks) frees its places through the normal close; the client takes
 that close (1001) like any drop and reconnects. A send has no total time limit,
@@ -4367,7 +4369,9 @@ keeps the same contributor set. If an account lock races an already-applied in-m
 persistence rejects the whole snapshot and evicts the room; authorized clients
 then reload the last durable state rather than inheriting or later retrying the
 locked user's update. A lost role does not reject it: what the room admitted saves
-(Q635), so up to about 5 s of a removed person's last edits can survive.
+(Q635), so a removed person's last edits until the outbox's revoke closes
+them can survive, at most the 30 s writer recheck's worth when it has not
+delivered.
 
 None of this gates **opening** a document. Limits protect the collaboration
 service and the database on write; a document that already exists always opens.

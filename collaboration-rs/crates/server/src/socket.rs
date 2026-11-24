@@ -1,7 +1,7 @@
 //! One task per WebSocket (DESIGN.md 1.3, 4): channels authenticate on their
 //! own (JOIN runs every `onAuthenticate` check, which a draft send runs too),
 //! their messages queue until JOINED and then go to the room in order; a
-//! writer's access is rechecked at most every 5 s before its updates go on;
+//! writer's access is rechecked at most every 30 s before its updates go on;
 //! tokens refresh in band. A user over their allowance (`rate.rs`), or
 //! sending an update over `ydoc::MAX_UPDATE_BYTES`, is in a timeout: their
 //! SYNC, awareness, query and stateless messages are dropped on every socket
@@ -41,8 +41,18 @@ use crate::rate::{TimedOut, Verdict};
 use crate::room::{self, RoomCmd};
 use crate::seats::{Closing, Membership, Seat, Sending, Step, Traffic};
 
-/// A writer's access is revalidated at most this often per channel.
-const RECHECK: Duration = Duration::from_secs(5);
+/// A writer's access is revalidated on its updates at most this often per
+/// channel (Epo 2026-11-24, "30 seconds is fine"; `Config::recheck`, which
+/// the rooms tests shorten). Pub/sub closes a lost role (the outbox's
+/// revoke), a locked writer (user-evict) and the rooms of a locked payer or
+/// workspace owner (discard) at once; only this recheck catches a payer
+/// reaching its storage limit and a frozen payer or writer, which no row
+/// announces (a save, an upload or the clock moves them). So such a writer
+/// keeps writing for up to this long, bounded by the update allowance
+/// (`rate.rs`), [ydoc::MAX_UPDATE_BYTES] and the per-file caps. It also
+/// closes a lost role the outbox has not delivered. Token expiry has its own
+/// timer and per-update check (`arm_token`, `Room::closed_to`).
+pub const RECHECK: Duration = Duration::from_secs(30);
 /// A channel asks its client for a fresh token this long before expiry.
 const TOKEN_LEAD: Duration = Duration::from_secs(60);
 /// Queued messages before JOINED, per socket (Hocuspocus's unauthenticated queue).
@@ -985,7 +995,7 @@ impl Connection {
                 let writes = decoded.is_some() && !step1;
                 if writes
                     && context.access == Access::Write
-                    && checked.is_none_or(|at| at.elapsed() >= RECHECK)
+                    && checked.is_none_or(|at| at.elapsed() >= self.app.config.recheck)
                 {
                     match recheck(&self.app, &name, &context).await {
                         Ok(()) => {

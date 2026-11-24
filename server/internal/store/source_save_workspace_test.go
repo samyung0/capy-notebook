@@ -57,11 +57,11 @@ func TestASourceSaveIsCheckedAgainstTheWorkspaceItsRoomOpened(t *testing.T) {
 	}
 }
 
-// Security regression (Q634, Epo 2026-11-05: up to about 5 s of a removed
-// person's last edits can survive): a room's save stores what its room admitted
-// from someone who lost their role since, so the room is not discarded under
-// everyone else, while admission refuses them at once. An agent edit with no
-// room and an account lock still refuse the save. Fails if a room's save checks
+// Security regression (Q634, Epo 2026-11-05: a removed person's last edits,
+// at most the writer recheck's 30 s, can survive): a room's save stores what
+// its room admitted from someone who lost their role since, so the room is not
+// discarded under everyone else, while admission refuses them at once. An agent
+// edit with no room and an account lock still refuse the save. Fails if a room's save checks
 // the contributors' roles (its next store would discard the room for everyone),
 // or admission or a direct agent edit stops checking them.
 func TestARoomsSaveStoresWhatItAdmittedFromSomeoneWhoLostTheirRole(t *testing.T) {

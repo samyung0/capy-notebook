@@ -368,8 +368,8 @@ pub async fn append(
     session_users.dedup();
     // Frozen, the storage limit and the role are enforced at admission, so
     // updates already admitted save even if their writer froze or lost the role
-    // since (up to about 5 s of them, Epo 2026-11-05): refusing them would
-    // discard the room under everyone else.
+    // since (Epo 2026-11-05; up to the writer recheck's 30 s of them, Epo
+    // 2026-11-24): refusing them would discard the room under everyone else.
     access::lock_boundary(&tx, material_id, actors, &session_users).await?;
     // Every store's statements are prepared once per pooled connection.
     let current = tx
