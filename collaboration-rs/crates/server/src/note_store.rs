@@ -122,8 +122,7 @@ pub struct Loaded {
     pub collected: IdSet,
     /// A board base's indexes as stored beside it (`board::Board::load`);
     /// none for every other document, and for a board saved before they
-    /// were stored. Read once the board room loads on bytes.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// were stored, whose load fails.
     pub indexes: Option<StoredIndexes>,
 }
 
@@ -824,8 +823,7 @@ pub struct Folded {
     pub base_bytes: i64,
     pub collected: Option<(Window, IdSet)>,
     /// A board's new base and the indexes stored with it, for the board
-    /// room's swap (`board::Board::folded`), once it runs on bytes.
-    #[cfg_attr(not(test), allow(dead_code))]
+    /// room's swap (`board::Board::folded`).
     pub board: Option<(Vec<u8>, Indexes)>,
 }
 

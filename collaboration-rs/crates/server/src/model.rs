@@ -287,7 +287,8 @@ fn state_bytes<T: ReadTxn>(txn: &T) -> u64 {
     txn.encode_state_as_update_v1(&StateVector::default()).len() as u64
 }
 
-fn board_metrics(content_bytes: u64) -> Metrics {
+/// A board's metrics: its state's bytes, or an upper bound of them.
+pub(crate) fn board_metrics(content_bytes: u64) -> Metrics {
     Metrics {
         content_bytes,
         max_depth: 0,
@@ -318,10 +319,13 @@ pub(crate) fn board_growth(update: &yrs::Update, bytes: usize) -> u64 {
     bytes as u64 + structs * REPLACED + (sides + 2 * ranges as u64) * SPLIT_HEADER
 }
 
-/// A board update's own checks, after the room's (the client-id rule, the
-/// marker root): one the room can place, within its work budget and no
-/// deeper than [BOARD_DEPTH] (`ydoc::inspect_bounded`), writing only the
-/// blocks root, and keeping the state within [CANVAS_BOARD_MAX].
+/// A board update's trial, after the room's checks (the client-id rule, the
+/// marker root, `board::Board::read`), on `doc`, the board's replica: one
+/// the room can place, within its work budget and no deeper than
+/// [BOARD_DEPTH] (`ydoc::inspect_bounded`), writing only the blocks root,
+/// and keeping the state within [CANVAS_BOARD_MAX]. The room tries an
+/// update so when its read flagged it or its growth would pass the cap;
+/// any other enters on [RoomValidator::board_grows] alone.
 ///
 /// `bound` is an upper bound of the state's bytes. While it and the most the
 /// update can add ([board_growth]) fit the cap, the update enters unmeasured.
@@ -418,7 +422,10 @@ impl RoomValidator {
     /// them). `changes`: whether it tells the room anything new
     /// (`ydoc::contains_changes`). `draft`: a draft send's update, refused
     /// when a note's typing would be hidden in a deleted block (live typing
-    /// there is collaboration).
+    /// there is collaboration). A board's `doc` is its replica
+    /// (`board::Board::replica`), built for the trial of an update past a
+    /// small edit or near the cap, under the board work permit, and its
+    /// `update` what the board lacks of the writer's (`board::Fresh`).
     pub fn admit(
         &mut self,
         doc: &yrs::Doc,
@@ -461,11 +468,34 @@ impl RoomValidator {
         }
     }
 
-    /// Whether admitting `update` of `bytes` bytes measures a board exactly,
-    /// which runs off the async workers.
-    pub fn near_cap(&self, update: &yrs::Update, bytes: usize) -> bool {
-        matches!(self, RoomValidator::Board(bound)
-            if bound + board_growth(update, bytes) > CANVAS_BOARD_MAX as u64)
+    /// A board's update of at most `growth` bytes ([board_growth]), taken
+    /// on its bound while that stays within the cap: false past it (the
+    /// bound unchanged), where the update's trial measures the board
+    /// exactly ([admit_board]). Only a board bounds its bytes so.
+    pub fn board_grows(&mut self, growth: u64) -> bool {
+        match self {
+            RoomValidator::Board(bound) if *bound + growth <= CANVAS_BOARD_MAX as u64 => {
+                *bound += growth;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// A board's bound, lowered to `bound` (one a fold's exact base gave)
+    /// when that is lower: both hold the state.
+    pub fn tighten(&mut self, bound: u64) {
+        if let RoomValidator::Board(held) = self {
+            *held = (*held).min(bound);
+        }
+    }
+
+    /// A board's upper bound of its state's bytes.
+    pub fn board_bound(&self) -> Option<u64> {
+        match self {
+            RoomValidator::Board(bound) => Some(*bound),
+            RoomValidator::Note(_) | RoomValidator::Item(_) => None,
+        }
     }
 
     /// The room's own write of `bytes` to the document (a contributor
@@ -1313,7 +1343,8 @@ mod tests {
         let (room, mut validator) = board();
         let writer = tab(&room, 11);
         let mut unmeasured = |bytes: Vec<u8>| {
-            assert!(!validator.near_cap(&Update::decode_v1(&bytes).unwrap(), bytes.len()));
+            let growth = super::board_growth(&Update::decode_v1(&bytes).unwrap(), bytes.len());
+            assert!(bound(&validator) + growth <= CANVAS_BOARD_MAX as u64);
             assert!(matches!(
                 send(&room, &mut validator, &bytes),
                 Admitted::Accepted

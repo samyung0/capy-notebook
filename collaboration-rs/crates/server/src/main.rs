@@ -8,8 +8,6 @@ compile_error!("the collaboration server needs panic = \"unwind\": rooms catch u
 mod access;
 mod app;
 mod auth;
-// T6 wires this into room.rs.
-#[cfg_attr(not(test), allow(dead_code))]
 mod board;
 mod children;
 mod client_ids;

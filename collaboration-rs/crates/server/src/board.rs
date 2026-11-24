@@ -135,7 +135,7 @@ pub enum Read {
     /// Nothing the room lacks: acknowledged, nothing appended.
     Held,
     /// What it holds that the room lacks, for [Board::append].
-    New(Fresh),
+    New(Box<Fresh>),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,6 +160,11 @@ pub struct Fresh {
     taken: Taken,
     /// Its new types' depths, where known.
     types: Vec<(ID, u32)>,
+    /// Its new types whose depth the index cannot give (an implicit parent
+    /// among held items), until a trial reads them ([Fresh::take_depths]).
+    unplaced: Vec<ID>,
+    /// The most it adds to the board's state (`model::board_growth`).
+    growth: u64,
 }
 
 impl Fresh {
@@ -168,9 +173,37 @@ impl Fresh {
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
+
+    /// The most it adds to the board's state, for the room's size bound.
+    pub fn growth(&self) -> u64 {
+        self.growth
+    }
+
+    /// Whether it holds new types whose depth the index cannot give.
+    pub fn unplaced_types(&self) -> bool {
+        !self.unplaced.is_empty()
+    }
+
+    /// The depths of its new types the index could not give, read from
+    /// `doc`: a replica its trial passed, with the update applied (the
+    /// bytes-room plan's section 8). Without them, every later update under
+    /// such a type would go to a trial until the next fold names it.
+    pub fn take_depths(&mut self, doc: &Doc) {
+        let txn = doc.transact();
+        let store = txn.store();
+        let mut depths = HashMap::new();
+        for id in std::mem::take(&mut self.unplaced) {
+            if let Some(item) = store.get_item(&id) {
+                held_depth(&item, &mut depths);
+            }
+            if let Some(depth) = depths.get(&id) {
+                self.types.push((id, *depth));
+            }
+        }
+    }
 }
 
-/// A joiner's answer ([Board::join]), sized by its bytes.
+/// A joiner's answer ([Board::join]).
 pub struct Join<'a> {
     /// Sent first, each as an update, in order: the base's part (the base as
     /// it is for a joiner holding none of it, its diff for one behind it,
@@ -182,16 +215,6 @@ pub struct Join<'a> {
     /// the delete-set index for a joiner holding the base (deletions a fold
     /// took into it move no clock), else an empty update.
     pub step2: Cow<'a, [u8]>,
-}
-
-impl Join<'_> {
-    pub fn size(&self) -> usize {
-        self.updates
-            .iter()
-            .map(|update| update.len())
-            .sum::<usize>()
-            + self.step2.len()
-    }
 }
 
 /// A store's row ([Board::row]) until it commits ([Board::stored]).
@@ -1358,7 +1381,7 @@ impl Board {
         }
         let (mut ends, mut taken) = (StateVector::default(), Taken::default());
         let (mut count, mut writer, mut flagged) = (0, None, false);
-        let (mut memo, mut types) = (HashMap::new(), Vec::new());
+        let (mut memo, mut types, mut unplaced) = (HashMap::new(), Vec::new(), Vec::new());
         for block in trimmed.blocks() {
             let (client, end) = ydoc::struct_end(&block);
             if earlier(&client) {
@@ -1393,7 +1416,10 @@ impl Board {
                         )));
                     }
                     Some(depth) => types.push((*item.id(), depth)),
-                    None => flagged = true,
+                    None => {
+                        flagged = true;
+                        unplaced.push(*item.id());
+                    }
                 }
             }
             flagged |= !self.placed(item, &held, &items);
@@ -1422,7 +1448,8 @@ impl Board {
         // commit, as Yjs does), with the planned streaming reader work.
         flagged |=
             count > ydoc::SMALL_EDIT || ranges > ydoc::SMALL_EDIT || covered > ydoc::MAX_WORK;
-        Ok(Read::New(Fresh {
+        let growth = crate::model::board_growth(&trimmed, kept.len());
+        Ok(Read::New(Box::new(Fresh {
             check: if flagged {
                 Check::Flagged
             } else {
@@ -1433,14 +1460,23 @@ impl Board {
             deleted,
             taken,
             types,
-        }))
+            unplaced,
+            growth,
+        })))
+    }
+
+    /// Whether a writer's `update` holds anything the room lacks: a struct
+    /// past its state vector or a deletion the index lacks ([Board::read]'s
+    /// held case). A draft group the room holds in full is a no-op.
+    pub fn changes(&self, update: &Update) -> bool {
+        writes(&self.state_vector(), update) || !self.fresh_deletions(update).is_empty()
     }
 
     /// Appends what [Board::read] found new, before anything else changes
     /// the board (the room's queue waits with a flagged update's trial).
     /// Implicit deletions need nothing: every replica derives them from the
     /// structs it receives. What peers hear.
-    pub fn append(&mut self, fresh: Fresh) -> &[u8] {
+    pub fn append(&mut self, fresh: Box<Fresh>) -> &[u8] {
         let Fresh {
             bytes,
             ends,
@@ -1448,7 +1484,7 @@ impl Board {
             taken,
             types,
             ..
-        } = fresh;
+        } = *fresh;
         self.sv.merge(ends);
         self.deleted.add(&deleted);
         let touched = self.origins.take(taken);
@@ -2123,7 +2159,6 @@ mod tests {
         fn catch_up(&self, doc: &Doc) {
             let since = doc.transact().state_vector();
             let answer = self.board.join(&since).unwrap();
-            assert!(answer.size() > 0);
             for update in answer.updates.iter().chain([&answer.step2]) {
                 apply(doc, update);
                 assert!(!pending(doc), "a part of the answer waits");

@@ -1,11 +1,13 @@
-//! One task per loaded room (DESIGN.md 4): it owns the yrs document and does
-//! every check that reads it, then the apply; it batches broadcasts over the
+//! One task per loaded room (DESIGN.md 4): it owns the yrs document (a
+//! canvas's board: its saved bytes, `board.rs`) and does every check that
+//! reads it, then the apply; it batches broadcasts over the
 //! 30 ms flush window with no echo to the sender, acknowledges each writer's
 //! messages once per window, keeps awareness as bytes, writes contributor
 //! markers once per store window, stores with delta rows, projects notes on
 //! idle and unloads once empty and clean. Note rooms validate Plate content
 //! (`notes`); source rooms admit and store through `sources`.
 
+use std::borrow::Cow;
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -14,10 +16,12 @@ use std::time::{Duration, Instant};
 use bytes::BytesMut;
 use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
+use yrs::block::ClientID;
 use yrs::{Doc, ReadTxn, StateVector, Transact};
 
 use crate::app::{GroupClaim, Outbox, RoomHandle, RoomView, Shared, ViewState, draft_slot};
 use crate::auth::{Access, Context, RoomName};
+use crate::board::{self, Board};
 use crate::client_ids::{self, ClientIds};
 use crate::drafts::{Class, Refused};
 use crate::incidents::{self, Cause, Incident, Kind as IncidentKind};
@@ -78,6 +82,9 @@ const ACK_TYPE: &str = "ack";
 pub const PRESENCE_TYPE: &str = "room-presence";
 pub const PRESENCE_EVERY: Duration = Duration::from_secs(1);
 pub const MAX_PRESENCE: usize = 64;
+/// A board folds once its log passes this (Epo 2026-11-24, bytes-room
+/// plan step 2), or at the store's own rule, whichever comes first.
+const BOARD_TAIL: i64 = 256 * 1024;
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
@@ -155,6 +162,9 @@ pub enum RoomCmd {
         Option<(i64, i64, i64)>,
         Option<Box<(ydoc::gc::Window, yrs::IdSet)>>,
     ),
+    /// A board's fold finished: what it folded, or none when it failed or
+    /// found nothing to fold.
+    BoardFolded(board::Fold, Option<Box<BoardFold>>),
     /// The source handoff: a channel goes read-only, every channel back to
     /// its token's access, channels close (none named: all of them).
     SetReadOnly(u64),
@@ -461,21 +471,6 @@ struct Screened {
     heavy: bool,
 }
 
-/// Where [Room::check_now] stopped without an update to apply.
-enum Stop {
-    Outcome(Outcome),
-    /// A board's heavy update: its admission waits for the board work permit
-    /// (`work.rs`, [Room::trial]).
-    Trial(Trial),
-}
-
-/// A board's heavy update before its trial: what its checks found, without
-/// the decoded update, which may not cross an await.
-struct Trial {
-    changes: bool,
-    written: Vec<u64>,
-}
-
 struct Member {
     context: Context,
     /// The handoff's name for this channel.
@@ -733,6 +728,8 @@ struct Note {
     /// The first gap below a store the room could not announce, and whether
     /// it was warned of (`announce_stored`).
     stall: Option<(i64, bool)>,
+    /// A board's growth its stored rows and folds do not hold yet.
+    growth: BoardGrowth,
 }
 
 impl Note {
@@ -806,11 +803,124 @@ pub struct StoreDone {
     /// The change count of the note sessions' rows it wrote
     /// (`Sessions::saved`).
     sessions: Option<u64>,
+    /// A board's row, which joins its tail once committed.
+    board_row: Option<board::Row>,
 }
 
 enum Kindly {
     Note(Box<Note>),
     Source(Box<Source>),
+}
+
+/// What the room holds: a live yrs document (notes, items, sources), or a
+/// canvas's board as its saved bytes (Epo 2026-11-24, `board.rs`), which no
+/// path may read as a document.
+enum State {
+    Doc(Doc),
+    Board(Box<Board>),
+}
+
+impl State {
+    /// The document the room writes its contributor markers in: its own, or
+    /// the board's marker document.
+    fn markers(&self) -> &Doc {
+        match self {
+            State::Doc(doc) => doc,
+            State::Board(board) => board.markers(),
+        }
+    }
+
+    /// Everything the room holds, its markers included.
+    fn state_vector(&self) -> StateVector {
+        match self {
+            State::Doc(doc) => doc.transact().state_vector(),
+            State::Board(board) => board.state_vector(),
+        }
+    }
+
+    /// The room's own client, which writes the markers (and a document's
+    /// server edits): one no stored struct names and no user was assigned.
+    fn client(&self) -> ClientID {
+        self.markers().client_id()
+    }
+}
+
+/// A step 1's answer: a document's diff, sent as the step 2, or a board's
+/// parts ([board::Join]), each sent as an update and its step 2 last, so a
+/// joiner synced holds the whole board.
+enum Answer {
+    Diff(Vec<u8>),
+    Board {
+        updates: Vec<Vec<u8>>,
+        step2: Vec<u8>,
+    },
+}
+
+impl Answer {
+    fn size(&self) -> usize {
+        match self {
+            Answer::Diff(diff) => diff.len(),
+            Answer::Board { updates, step2 } => {
+                updates.iter().map(Vec::len).sum::<usize>() + step2.len()
+            }
+        }
+    }
+}
+
+/// What a board's size bound took that its stored rows and folds do not
+/// hold yet, so a fold's exact base can tighten it (`RoomValidator::tighten`):
+/// the bound otherwise only grows between trials near the cap, and the
+/// receipts' `metrics.contentBytes` carry it.
+#[derive(Default)]
+struct BoardGrowth {
+    /// The growth appended since the running store took its row (or the
+    /// last one did).
+    unstored: u64,
+    /// The growth in the running store's row.
+    storing: u64,
+    /// While a fold runs: what its new base will not hold (the updates no
+    /// committed row held when it began, and all growth since).
+    unfolded: Option<u64>,
+}
+
+impl BoardGrowth {
+    fn grew(&mut self, growth: u64) {
+        self.unstored += growth;
+        if let Some(unfolded) = &mut self.unfolded {
+            *unfolded += growth;
+        }
+    }
+
+    fn row_taken(&mut self) {
+        self.storing = std::mem::take(&mut self.unstored);
+    }
+
+    fn row_ended(&mut self, committed: bool) {
+        let storing = std::mem::take(&mut self.storing);
+        if !committed {
+            self.unstored += storing;
+        }
+    }
+
+    fn fold_began(&mut self) {
+        self.unfolded = Some(self.unstored + self.storing);
+    }
+
+    /// What the ended fold's base does not hold.
+    fn fold_ended(&mut self) -> Option<u64> {
+        self.unfolded.take()
+    }
+}
+
+/// A board's fold, back from the store (`note_store::Folded`): the rows and
+/// bytes it took off the log, the new base's size, the new base and its
+/// indexes.
+pub struct BoardFold {
+    rows: i64,
+    log_bytes: i64,
+    base_bytes: i64,
+    base: Vec<u8>,
+    indexes: board::Indexes,
 }
 
 struct Store {
@@ -919,7 +1029,7 @@ pub struct Room {
     app: Shared,
     id: u64,
     name: String,
-    doc: Doc,
+    state: State,
     members: HashMap<MemberKey, Member>,
     /// Which user each client id was recorded to (Q213).
     client_ids: ClientIds,
@@ -1070,7 +1180,7 @@ impl From<String> for LoadError {
 
 /// What a load gives the room.
 type Loaded = (
-    Doc,
+    State,
     Kindly,
     ydoc::Durable,
     Option<sources::LoadTimes>,
@@ -1120,8 +1230,9 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 loaded.window,
             );
             let collected = std::mem::take(&mut loaded.collected);
+            let indexes = loaded.indexes.take();
             let material_kind = kind.clone();
-            // A board's replay waits for the board work limit (`work.rs`),
+            // A board's load waits for the board work limit (`work.rs`),
             // taken once the load committed, so no material lock is held
             // while it waits.
             let permit = board_permit(app, model, WorkKind::Load, &name.to_string()).await;
@@ -1136,9 +1247,28 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 );
                 tokio::time::sleep(Duration::from_secs(3)).await;
             }
-            let (doc, durable, metrics, mut refused) =
+            let (state, durable, metrics, mut refused) =
                 tokio::task::spawn_blocking(move || -> Result<_, String> {
                     let _permit = permit;
+                    // A board loads on its stored bytes and the indexes stored
+                    // beside its base, which is never decoded; one stored
+                    // without them fails here (Epo 2026-11-24). Its size is
+                    // the bound the load gives, its markers a document of
+                    // their own, and it holds whatever its editors wrote
+                    // (`Model::stored`).
+                    if model == crate::model::Model::Board {
+                        let (board, bound) =
+                            Board::load(loaded.base, indexes.as_ref(), loaded.rows, |id| {
+                                assigned.contains(&id)
+                            })
+                            .map_err(|error| error.to_string())?;
+                        return Ok((
+                            State::Board(Box::new(board)),
+                            ydoc::Durable::default(),
+                            crate::model::board_metrics(bound),
+                            None,
+                        ));
+                    }
                     let doc = loaded_doc(loaded.base, loaded.rows, &assigned)?;
                     let txn = doc.transact();
                     model.assert_roots(&txn)?;
@@ -1147,7 +1277,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                     let refused = model.stored(&material_kind, &txn)?;
                     let durable = ydoc::Durable::of(&txn);
                     drop(txn);
-                    Ok((doc, durable, metrics, refused))
+                    Ok((State::Doc(doc), durable, metrics, refused))
                 })
                 .await
                 .map_err(|error| error.to_string())??;
@@ -1210,6 +1340,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 collected,
                 gaps: std::collections::BTreeSet::new(),
                 stall: None,
+                growth: BoardGrowth::default(),
             };
             // A note's content room keeps its sessions (Q274: notes only).
             let sessions = if note.sessioned() {
@@ -1227,7 +1358,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 None
             };
             Ok((
-                doc,
+                state,
                 Kindly::Note(Box::new(note)),
                 durable,
                 None,
@@ -1300,7 +1431,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 base_sha256: loaded.session.base_source_sha256,
             };
             Ok((
-                doc,
+                State::Doc(doc),
                 Kindly::Source(Box::new(source)),
                 durable,
                 Some(loaded.times),
@@ -1360,7 +1491,7 @@ async fn run(
     let room_name = name.to_string();
     let started = Instant::now();
     let loaded = load(&app, &name, &actor).await;
-    let (doc, kind, durable, times, client_ids, sessions) = match loaded {
+    let (state, kind, durable, times, client_ids, sessions) = match loaded {
         Ok(loaded) => loaded,
         Err(error) => {
             let error = match error {
@@ -1405,7 +1536,7 @@ async fn run(
         app,
         id,
         name: room_name,
-        doc,
+        state,
         members: HashMap::new(),
         client_ids,
         sessions,
@@ -1689,7 +1820,7 @@ impl Room {
             && !self.store.running
             && self.store.retry_at.is_none()
             && self.store.waiters.is_empty()
-            && !markers::pending(&self.doc)
+            && !markers::pending(self.state.markers())
     }
 
     async fn handle(&mut self, command: RoomCmd) {
@@ -1771,7 +1902,7 @@ impl Room {
             RoomCmd::Persist(reply) => {
                 if !self.store.dirty
                     && !self.store.running
-                    && !markers::pending(&self.doc)
+                    && !markers::pending(self.state.markers())
                     && self.store.retry_at.is_none()
                 {
                     let _ = reply.send(Ok(()));
@@ -1786,7 +1917,7 @@ impl Room {
                     return;
                 };
                 note.project_waiters.push(reply);
-                if self.store.dirty || markers::pending(&self.doc) {
+                if self.store.dirty || markers::pending(self.state.markers()) {
                     self.start_store().await;
                 } else {
                     self.start_projection().await;
@@ -1860,6 +1991,7 @@ impl Room {
                     self.collect_live(&window, held).await;
                 }
             }
+            RoomCmd::BoardFolded(fold, folded) => self.board_folded(fold, folded),
             RoomCmd::SetReadOnly(channel) => {
                 if let Some(member) = self
                     .members
@@ -1910,20 +2042,19 @@ impl Room {
                     });
                     return;
                 }
-                let state = self.encoded(StateVector::default()).await;
-                let _ = reply.send(state);
+                if let Some(state) = self.snapshot().await {
+                    let _ = reply.send(state);
+                }
             }
             RoomCmd::LiveNote(reply) => {
                 let unprojected = matches!(&self.kind,
                     Kindly::Note(note) if note.stored_version > note.projected_version);
-                let board = matches!(&self.kind,
-                    Kindly::Note(note) if note.model == crate::model::Model::Board);
-                let state = if board {
-                    Err(IsBoard)
-                } else if self.store.dirty || self.store.running || unprojected {
-                    Ok(Some(self.encoded(StateVector::default()).await))
-                } else {
-                    Ok(None)
+                let state = match &self.state {
+                    State::Board(_) => Err(IsBoard),
+                    State::Doc(doc) if self.store.dirty || self.store.running || unprojected => {
+                        Ok(Some(encoded(doc.clone(), StateVector::default()).await))
+                    }
+                    State::Doc(_) => Ok(None),
                 };
                 let _ = reply.send(state);
             }
@@ -2115,8 +2246,7 @@ impl Room {
         // holds collected is admitted as an ordinary draft; one naming
         // collected units is answered late at admission (Q443). Decoded for
         // this check alone: admission decodes it again.
-        let held = ydoc::decode(update)
-            .is_ok_and(|decoded| !ydoc::contains_changes(&self.doc.transact(), &decoded));
+        let held = ydoc::decode(update).is_ok_and(|decoded| !self.changes(&decoded));
         if held {
             return Ok(None);
         }
@@ -2247,7 +2377,7 @@ impl Room {
             }
         }
         let changes = ydoc::decode(update)
-            .map(|decoded| ydoc::contains_changes(&self.doc.transact(), &decoded))
+            .map(|decoded| self.changes(&decoded))
             .unwrap_or(true);
         if changes {
             let room_bytes = self.group_bytes();
@@ -2401,10 +2531,7 @@ impl Room {
             // holds (Q403).
             if let Some(update) = &update {
                 let granted = self.server_ids(update);
-                match self
-                    .check_update(None, &context, false, update, &granted, &mut None)
-                    .await
-                {
+                match self.check_update(None, &context, false, update, &granted, &mut None) {
                     Ok(_) | Err(Outcome::Admitted) => {}
                     Err(outcome) => return Err(agent_refusal(outcome, undoing)),
                 }
@@ -2476,12 +2603,12 @@ impl Room {
             return Vec::new();
         };
         let recorded = self.client_ids.ids();
-        let state = self.doc.transact().state_vector();
+        let state = self.state.state_vector();
         client_ids::written(&state, &decoded)
             .into_iter()
             .filter(|id| {
                 !recorded.contains(id)
-                    && *id != self.doc.client_id().get()
+                    && *id != self.state.client().get()
                     && !self
                         .members
                         .values()
@@ -2520,9 +2647,13 @@ impl Room {
             return;
         }
         let material_id = note.material_id.clone();
+        let Some(doc) = self.document() else {
+            self.child_passes.clear();
+            return;
+        };
         while let Some(pass) = self.child_passes.pop_front() {
             let plan = {
-                let txn = self.doc.transact();
+                let txn = doc.transact();
                 let Ok(update) = ydoc::decode(&pass.update) else {
                     continue;
                 };
@@ -2610,11 +2741,15 @@ impl Room {
             parent: None,
             identity: Default::default(),
         };
-        if let Some(marker) = self.markers.write(&self.doc, &context) {
+        // Note rooms alone run children passes (`next_child_pass`).
+        let Some(doc) = self.document() else {
+            return;
+        };
+        if let Some(marker) = self.markers.write(&doc, &context) {
             self.broadcast_update(None, marker);
         }
-        let root = self.doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
-        let mut txn = self.doc.transact_mut();
+        let root = doc.get_or_insert_text(notes::plate::CONTENT_ROOT);
+        let mut txn = doc.transact_mut();
         let applied = notes::children::apply(&mut txn, &root, answer);
         let update = ydoc::committed_update(txn);
         if let Err(error) = applied {
@@ -2713,10 +2848,10 @@ impl Room {
         {
             return;
         }
-        let Some(peer) = self.peer() else {
+        let (Some(peer), Some(doc)) = (self.peer(), self.document()) else {
             return;
         };
-        let parts = items::quiz::item_parts(&self.doc.transact());
+        let parts = items::quiz::item_parts(&doc.transact());
         let Kindly::Note(note) = &mut self.kind else {
             return;
         };
@@ -2812,7 +2947,13 @@ impl Room {
                 if failing {
                     return Err("integration test apply failure".to_owned());
                 }
-                ydoc::apply(&self.doc, update).map_err(|error| error.to_string())
+                match &self.state {
+                    State::Doc(doc) => ydoc::apply(doc, update).map_err(|error| error.to_string()),
+                    // No server edit writes a canvas (`edits.rs` refuses
+                    // them); one that did is in the stored rows the next
+                    // room loads.
+                    State::Board(_) => Err("a board room applies no server edit".to_owned()),
+                }
             });
         let update = match applied {
             Ok(update) => update,
@@ -2923,8 +3064,9 @@ impl Room {
             }
             return;
         }
-        let unsaved =
-            self.store.dirty || self.store.retry_at.is_some() || markers::pending(&self.doc);
+        let unsaved = self.store.dirty
+            || self.store.retry_at.is_some()
+            || markers::pending(self.state.markers());
         if unsaved && self.discard_pending.is_none() {
             let cause = incidents::broadcast_cause(notification.as_deref());
             self.record_room_incidents(&cause, None);
@@ -2943,7 +3085,7 @@ impl Room {
     fn record_room_incidents(&self, cause: &Cause, bytes: Option<u64>) {
         let users: BTreeSet<String> = self
             .markers
-            .contributors(&self.doc)
+            .contributors(self.state.markers())
             .unwrap_or_default()
             .into_iter()
             .map(|c| c.user_id)
@@ -2975,7 +3117,9 @@ impl Room {
         incidents::record(&self.app, list);
     }
 
-    /// Folds the log once it passes the configured size (DESIGN.md 3.5).
+    /// Folds the log once it passes the configured size (DESIGN.md 3.5); a
+    /// board's also once its tail passes [BOARD_TAIL] (Epo 2026-11-24), a
+    /// compaction its room swaps in ([Room::board_folded]).
     fn maybe_fold(&mut self) {
         let (min_bytes, max_rows) = (
             self.app.config.fold_min_bytes as i64,
@@ -3021,16 +3165,33 @@ impl Room {
                 return;
             }
         };
+        let mut threshold = min_bytes.max(note.base_bytes);
+        if let State::Board(_) = self.state {
+            threshold = threshold.min(BOARD_TAIL);
+        }
         // A committed row the room has not applied (a direct write racing its
         // load): no fold until it arrives, so the window never holds a row the
         // open room lacks and a store holding a draft group is folded with it
         // (Q419); `service_edit()` folds once the gap closes.
         if note.folding
             || !note.gaps.is_empty()
-            || (note.log_bytes < min_bytes.max(note.base_bytes) && note.log_rows < max_rows)
+            || (note.log_bytes < threshold && note.log_rows < max_rows)
         {
             return;
         }
+        // A board's fold begins before it reads its rows: they hold at least
+        // the ones committed now, and rows stored from now on stay in the
+        // tail past its base.
+        let fold = match &mut self.state {
+            State::Board(board) => match board.begin_fold() {
+                Some(fold) => {
+                    note.growth.fold_began();
+                    Some(fold)
+                }
+                None => return,
+            },
+            State::Doc(_) => None,
+        };
         note.folding = true;
         let (app, material_id, schema, through, doc_kind, model) = (
             self.app.clone(),
@@ -3040,7 +3201,7 @@ impl Room {
             note.doc,
             note.model,
         );
-        let holds = self.fold_holds(Some(self.doc.client_id()));
+        let holds = self.fold_holds(Some(self.state.client()));
         // The fold's window is at most the version every counted session
         // reached (the stored one when none counts): a JOIN or draft group
         // older than that while the fold runs is late already.
@@ -3052,7 +3213,7 @@ impl Room {
             // The fold gives the permit back before it returns, so none is
             // held while `Folded` waits for room in the room's queue.
             let permit = board_permit(&app, model, WorkKind::Fold, &material_id).await;
-            let (folded, collected) = match note_store::fold(
+            let folded = note_store::fold(
                 &app.db,
                 &material_id,
                 schema,
@@ -3062,23 +3223,102 @@ impl Room {
                 permit,
             )
             .await
-            {
-                Ok(Some(f)) => (
+            .unwrap_or_else(|error| {
+                observe::capture(
+                    &error.to_string(),
+                    None,
+                    &[("room", &material_id), ("stage", "fold")],
+                );
+                None
+            });
+            let done = match (fold, folded) {
+                // `note_store::fold` returns a board's base and indexes, or
+                // fails.
+                (Some(fold), Some(f)) => {
+                    let folded = f.board.map(|(base, indexes)| {
+                        Box::new(BoardFold {
+                            rows: f.rows as i64,
+                            log_bytes: f.log_bytes,
+                            base_bytes: f.base_bytes,
+                            base,
+                            indexes,
+                        })
+                    });
+                    RoomCmd::BoardFolded(fold, folded)
+                }
+                (Some(fold), None) => RoomCmd::BoardFolded(fold, None),
+                (None, Some(f)) => RoomCmd::Folded(
                     Some((f.rows as i64, f.log_bytes, f.base_bytes)),
                     f.collected.map(Box::new),
                 ),
-                Ok(None) => (None, None),
-                Err(error) => {
-                    observe::capture(
-                        &error.to_string(),
-                        None,
-                        &[("room", &material_id), ("stage", "fold")],
-                    );
-                    (None, None)
-                }
+                (None, None) => RoomCmd::Folded(None, None),
             };
-            let _ = handle.tx.send(RoomCmd::Folded(folded, collected)).await;
+            let _ = handle.tx.send(done).await;
         });
+    }
+
+    /// A board's fold ended (`maybe_fold`): its new base and indexes replace
+    /// the base and the rows it covered ([Board::folded]), the rows stored
+    /// since it began staying in the tail, and the live markers its base
+    /// deletes, written again, go to every channel, joins still waiting for
+    /// their answer included. The size bound takes the base's exact bytes
+    /// with what it does not hold ([BoardGrowth]). A fold that failed (the
+    /// task reported why) or found nothing gives its rows back to the tail
+    /// ([Board::fold_failed]).
+    fn board_folded(&mut self, fold: board::Fold, folded: Option<Box<BoardFold>>) {
+        let (State::Board(board), Kindly::Note(note)) = (&mut self.state, &mut self.kind) else {
+            return;
+        };
+        note.folding = false;
+        let unfolded = note.growth.fold_ended();
+        let Some(folded) = folded else {
+            if let Err(error) = board.fold_failed(fold) {
+                observe::capture(
+                    &error.to_string(),
+                    None,
+                    &[("room", &self.name), ("stage", "board_fold")],
+                );
+            }
+            return;
+        };
+        let BoardFold {
+            rows,
+            log_bytes,
+            base_bytes,
+            base,
+            indexes,
+        } = *folded;
+        note.log_rows -= rows;
+        note.log_bytes -= log_bytes;
+        note.base_bytes = base_bytes;
+        let base_len = base.len() as u64;
+        let rewritten = match board.folded(fold, base, indexes) {
+            Ok(rewritten) => {
+                let markers = board
+                    .markers()
+                    .transact()
+                    .encode_state_as_update_v1(&StateVector::default())
+                    .len() as u64;
+                if let Some(unfolded) = unfolded {
+                    note.validator.tighten(base_len + unfolded + markers);
+                }
+                rewritten
+            }
+            Err(error) => {
+                observe::capture(
+                    &error.to_string(),
+                    None,
+                    &[("room", &self.name), ("stage", "board_fold")],
+                );
+                None
+            }
+        };
+        unlog_bytes(&self.app, log_bytes.max(0) as u64);
+        if let Some(update) = rewritten {
+            // Its markers are live again: a store clears them.
+            self.content_changed();
+            self.broadcast_update(None, update);
+        }
     }
 
     /// The open room collects its own document (Q401) at the window and held
@@ -3106,7 +3346,11 @@ impl Room {
         );
         #[cfg(not(debug_assertions))]
         let (refuse, panics) = (false, false);
-        let (doc, model, started) = (self.doc.clone(), note.model, Instant::now());
+        // Only a note's content room collects (Q274), on its document.
+        let Some(doc) = self.document() else {
+            return;
+        };
+        let (model, started) = (note.model, Instant::now());
         let window = window.clone();
         let collected = tokio::task::spawn_blocking(move || {
             if panics {
@@ -3121,7 +3365,7 @@ impl Room {
         .unwrap_or_else(|error| Err(error.to_string()));
         match collected {
             Ok(Some((doc, units))) => {
-                self.doc = doc;
+                self.state = State::Doc(doc);
                 log(
                     Level::Info,
                     "live document collected",
@@ -3159,15 +3403,16 @@ impl Room {
     }
 
     /// A member's step 1, answered with up to the whole state (encoded on the
-    /// blocking pool) and charged to its user's open budget by the answer's
-    /// bytes (Epo 2026-10-19). An answer under `SMALL_ANSWER` goes at once
-    /// while the user owes less than a full budget (Epo 2026-10-20). Any
-    /// other is encoded in its user's turn, so their waiting answers are
-    /// charged one at a time, and waits while the budget is spent or another
-    /// one of theirs is being encoded: the member then keeps only its latest
-    /// step 1 and hears once that its open is slowed. A bounded walk tells a
-    /// large answer before the encode (the encode checks it after), so a
-    /// waiting step 1 costs no encode.
+    /// blocking pool; a board's parts, [Room::step1_answer]) and charged to
+    /// its user's open budget by the answer's bytes (Epo 2026-10-19). An
+    /// answer under `SMALL_ANSWER` goes at once while the user owes less
+    /// than a full budget (Epo 2026-10-20). Any other is encoded in its
+    /// user's turn, so their waiting answers are charged one at a time, and
+    /// waits while the budget is spent or another one of theirs is being
+    /// encoded: the member then keeps only its latest step 1 and hears once
+    /// that its open is slowed. A bounded walk tells a large answer before
+    /// the encode (the encode checks it after), so a waiting step 1 costs no
+    /// encode; a board's joiner behind its base is taken as large.
     async fn on_step1(&mut self, key: MemberKey, since: StateVector) {
         let Some(member) = self.members.get_mut(&key) else {
             return;
@@ -3182,19 +3427,23 @@ impl Room {
         }
         let user = member.context.user_id.clone();
         let small = crate::rate::SMALL_ANSWER;
-        if self.app.allowances.small_skips(&user, Instant::now())
-            && !ydoc::answer_at_least(&self.doc.transact(), &since, small)
-        {
-            let diff = self.encoded(since.clone()).await;
-            if diff.len() < small {
-                self.charge_open(key, diff.len());
-                self.answer(key, &diff);
+        let large = match &self.state {
+            State::Doc(doc) => ydoc::answer_at_least(&doc.transact(), &since, small),
+            State::Board(board) => board.behind_base(&since),
+        };
+        if self.app.allowances.small_skips(&user, Instant::now()) && !large {
+            let Some(answer) = self.step1_answer(key, since.clone()).await else {
+                return;
+            };
+            if answer.size() < small {
+                self.charge_open(key, answer.size());
+                self.answer(key, &answer);
                 return;
             }
             match self.app.allowances.open_turn(&user, Instant::now()) {
                 Ok(()) => {
                     let mut turn = self.turn(user);
-                    turn.bytes = self.answer(key, &diff);
+                    turn.bytes = self.answer(key, &answer);
                 }
                 Err(wait) => self.wait_to_open(key, Some(since), false, wait),
             }
@@ -3203,10 +3452,53 @@ impl Room {
         match self.app.allowances.open_turn(&user, Instant::now()) {
             Ok(()) => {
                 let mut turn = self.turn(user);
-                let diff = self.encoded(since).await;
-                turn.bytes = self.answer(key, &diff);
+                if let Some(answer) = self.step1_answer(key, since).await {
+                    turn.bytes = self.answer(key, &answer);
+                }
             }
             Err(wait) => self.wait_to_open(key, Some(since), false, wait),
+        }
+    }
+
+    /// The answer to a step 1 at `since`: a document's state past it,
+    /// encoded on the blocking pool, or a board's [board::Join] (the base's
+    /// part first, the step 2 last), built off the async workers and, for a
+    /// joiner behind the base, whose answer diffs all of it, under the board
+    /// work permit. The room waits for it, as for a store's validation, so
+    /// nothing changes the state meanwhile. A board whose stored bytes cannot
+    /// be read refuses the channel (reported); none then.
+    async fn step1_answer(&mut self, key: MemberKey, since: StateVector) -> Option<Answer> {
+        let board = match &self.state {
+            State::Doc(doc) => return Some(Answer::Diff(encoded(doc.clone(), since).await)),
+            State::Board(board) => board,
+        };
+        let permit = match board.behind_base(&since) {
+            true => Some(
+                self.app
+                    .board_work
+                    .acquire(WorkKind::Rejoin, &self.name)
+                    .await,
+            ),
+            false => None,
+        };
+        let answer = tokio::task::block_in_place(|| {
+            board.join(&since).map(|join| Answer::Board {
+                updates: join.updates.into_iter().map(Cow::into_owned).collect(),
+                step2: join.step2.into_owned(),
+            })
+        });
+        drop(permit);
+        match answer {
+            Ok(answer) => Some(answer),
+            Err(error) => {
+                observe::capture(
+                    &error.to_string(),
+                    None,
+                    &[("room", &self.name), ("stage", "board_join")],
+                );
+                self.refuse(key, &[], "the board cannot be read");
+                None
+            }
         }
     }
 
@@ -3225,21 +3517,31 @@ impl Room {
     /// store or a server edit's row committed, and the room handles nothing
     /// else between encoding the answer and sending it; a store still
     /// pending is announced when it commits.
-    fn answer(&mut self, key: MemberKey, diff: &[u8]) -> usize {
+    fn answer(&mut self, key: MemberKey, answer: &Answer) -> usize {
         let Some(member) = self.members.get_mut(&key) else {
             return 0;
         };
         member.synced = true;
         member.seen = self.admissions;
         let client = member.client;
-        self.send(key, Kind::Sync, &sync::encode(sync::STEP2, diff));
+        match answer {
+            Answer::Diff(diff) => self.send(key, Kind::Sync, &sync::encode(sync::STEP2, diff)),
+            // The browser applies each and holds the board synced at the
+            // step 2 (`roomProvider.ts`).
+            Answer::Board { updates, step2 } => {
+                for update in updates {
+                    self.send(key, Kind::Sync, &sync::encode(sync::UPDATE, update));
+                }
+                self.send(key, Kind::Sync, &sync::encode(sync::STEP2, step2));
+            }
+        }
         if let (Some(sessions), Kindly::Note(note)) = (&mut self.sessions, &self.kind) {
             sessions.synced(client);
             let version = crate::sessions::whole(note.stored_version, &note.gaps);
             let notice = json!({ "type": STORED_TYPE, "version": version });
             self.send(key, Kind::Stateless, &protocol::text(&notice.to_string()));
         }
-        diff.len()
+        answer.size()
     }
 
     /// A member's awareness query: answered and charged at once, or kept
@@ -3335,8 +3637,9 @@ impl Room {
                 match self.app.allowances.open_turn(&user, Instant::now()) {
                     Ok(()) => {
                         let mut turn = self.turn(user.clone());
-                        let diff = self.encoded(since).await;
-                        turn.bytes = self.answer(key, &diff);
+                        if let Some(answer) = self.step1_answer(key, since).await {
+                            turn.bytes = self.answer(key, &answer);
+                        }
                     }
                     Err(wait) => {
                         let step1 = Some(since);
@@ -3435,7 +3738,7 @@ impl Room {
         if unsupported && let Some(notice) = self.unsupported() {
             self.send(key, Kind::Stateless, &protocol::text(&notice));
         }
-        let sv = self.doc.transact().state_vector();
+        let sv = self.state.state_vector();
         use yrs::updates::encoder::Encode;
         self.send(key, Kind::Sync, &sync::encode(sync::STEP1, &sv.encode_v1()));
         if !(viewer || self.awareness.is_empty()) {
@@ -3736,14 +4039,34 @@ impl Room {
         }
     }
 
-    /// The room's state beyond `since`, encoded on the blocking pool; the
-    /// room waits for it, as for a store's validation, so nothing changes the
-    /// document meanwhile. A panic in the encode is the room's own.
-    async fn encoded(&self, since: StateVector) -> Vec<u8> {
-        let doc = self.doc.clone();
-        tokio::task::spawn_blocking(move || doc.transact().encode_state_as_update_v1(&since))
-            .await
-            .unwrap_or_else(|error| std::panic::resume_unwind(error.into_panic()))
+    /// The room's whole state for a server read of the live room (an agent
+    /// edit's snapshot): a board's merged from its parts under the board
+    /// work permit, whose stored bytes, if unreadable, answer nothing
+    /// (reported).
+    async fn snapshot(&self) -> Option<Vec<u8>> {
+        let board = match &self.state {
+            State::Doc(doc) => return Some(encoded(doc.clone(), StateVector::default()).await),
+            State::Board(board) => board,
+        };
+        let permit = self
+            .app
+            .board_work
+            .acquire(WorkKind::Snapshot, &self.name)
+            .await;
+        let merged = tokio::task::block_in_place(|| {
+            let join = board.join(&StateVector::default())?;
+            Ok::<_, board::BoardError>(board::bytes::merge_chunked(&join.updates)?)
+        });
+        drop(permit);
+        merged
+            .map_err(|error| {
+                observe::capture(
+                    &error.to_string(),
+                    None,
+                    &[("room", &self.name), ("stage", "board_snapshot")],
+                );
+            })
+            .ok()
     }
 
     async fn sync_message(&mut self, key: MemberKey, payload: &[u8]) {
@@ -4220,21 +4543,23 @@ impl Room {
         {
             panic!("integration test panic");
         }
-        let checked = self
-            .check_update(writer, context, read_only, bytes, granted, &mut pieces)
-            .await;
-        match checked {
+        // A board admits on its bytes; a board's peers never hear pieces
+        // (only a source room's do).
+        if let State::Board(_) = self.state {
+            return self
+                .admit_board_update(writer, context, read_only, bytes, granted)
+                .await;
+        }
+        match self.check_update(writer, context, read_only, bytes, granted, &mut pieces) {
             Ok(checked) => self.apply_update(writer, context, bytes, checked, pieces),
             Err(outcome) => outcome,
         }
     }
 
-    /// [Room::admit_update]'s checks: the update to apply, or the outcome
-    /// (an update with nothing new is admitted without an apply, and told
-    /// with `pieces` when it deletes). A board's heavy update waits for the
-    /// board work permit first ([Room::trial]); the room's queue waits with
-    /// it, as for any trial.
-    async fn check_update(
+    /// [Room::admit_update]'s checks on a document: the update to apply, or
+    /// the outcome (an update with nothing new is admitted without an apply,
+    /// and told with `pieces` when it deletes).
+    fn check_update(
         &mut self,
         writer: Option<MemberKey>,
         context: &Context,
@@ -4243,54 +4568,139 @@ impl Room {
         granted: &[u64],
         pieces: &mut Option<Vec<Vec<u8>>>,
     ) -> Result<Checked, Outcome> {
-        let trial = match self.check_now(writer, context, read_only, bytes, granted, pieces) {
-            Ok(checked) => return Ok(checked),
-            Err(Stop::Outcome(outcome)) => return Err(outcome),
-            Err(Stop::Trial(trial)) => trial,
+        let screened = self.screen(writer, context, read_only, bytes, granted)?;
+        self.admit_screened(writer, context, bytes, screened, pieces)
+    }
+
+    /// A board's writer update (Epo 2026-11-24, bytes-room plan step 2):
+    /// the room's checks and [Board::read] ([Room::read_board]), then what
+    /// the board lacks of it appended and relayed as it is trimmed
+    /// ([Room::append_board]). A small edit enters on its growth alone
+    /// (`RoomValidator::board_grows`); one past it, or whose growth would
+    /// take the bound past the cap, is first tried on the board's replica
+    /// under the board work permit ([Room::board_trial]), the room's queue
+    /// waiting with it, as for any trial. Read, tried and appended in this
+    /// one command, the update finds the board as its read did. An update
+    /// past `ydoc::INLINE_BYTES` (a small edit by its structs, large by its
+    /// bytes) is read and appended off the async workers.
+    async fn admit_board_update(
+        &mut self,
+        writer: Option<MemberKey>,
+        context: &Context,
+        read_only: bool,
+        bytes: &[u8],
+        granted: &[u64],
+    ) -> Outcome {
+        let large = bytes.len() > ydoc::INLINE_BYTES;
+        let read = if large {
+            tokio::task::block_in_place(|| {
+                self.read_board(writer, context, read_only, bytes, granted)
+            })
+        } else {
+            self.read_board(writer, context, read_only, bytes, granted)
         };
-        self.trial(writer, context, bytes, trial, pieces).await
+        let (mut fresh, written, names_asset) = match read {
+            Ok(read) => read,
+            Err(outcome) => return outcome,
+        };
+        let Kindly::Note(note) = &mut self.kind else {
+            return Outcome::refused(Class::Unavailable, "not a material room");
+        };
+        let small =
+            fresh.check == board::Check::Small && note.validator.board_grows(fresh.growth());
+        if !small && let Err(outcome) = self.board_trial(context, bytes.len(), &mut fresh).await {
+            return outcome;
+        }
+        self.append_board(writer, context, fresh, written, names_asset, large)
     }
 
-    /// [Room::check_update] up to a board's trial, with no await: the decoded
-    /// update may not cross one.
-    fn check_now(
+    /// [Room::admit_board_update]'s checks, with no await (the decoded update
+    /// may not cross one). A read-only channel's update is acknowledged when
+    /// it tells the board nothing, deletions within held clocks included (a
+    /// reader's step 2 names the implicit deletions the board's index
+    /// misses), and refused otherwise. A writer's goes through the marker
+    /// check, the client-id rule and [Board::read]: unheld, held (acknowledged),
+    /// refused, or what the board lacks of it, with the ids it writes under
+    /// and whether it names an asset (`model::names_asset`).
+    fn read_board(
         &mut self,
         writer: Option<MemberKey>,
         context: &Context,
         read_only: bool,
         bytes: &[u8],
         granted: &[u64],
-        pieces: &mut Option<Vec<Vec<u8>>>,
-    ) -> Result<Checked, Stop> {
-        let screened = self
-            .screen(writer, context, read_only, bytes, granted)
-            .map_err(Stop::Outcome)?;
-        if screened.heavy
-            && matches!(&self.kind, Kindly::Note(note) if note.model == crate::model::Model::Board)
-        {
-            let Screened {
-                changes, written, ..
-            } = screened;
-            return Err(Stop::Trial(Trial { changes, written }));
+    ) -> Result<(Box<board::Fresh>, Vec<u64>, bool), Outcome> {
+        if let Some(refused) = self.closed_to(context) {
+            return Err(refused);
         }
-        self.admit_screened(writer, context, bytes, screened, None, pieces)
-            .map_err(Stop::Outcome)
+        let Ok(update) = ydoc::decode(bytes) else {
+            return Err(Outcome::refused(Class::Malformed, "malformed update"));
+        };
+        let State::Board(board) = &self.state else {
+            return Err(Outcome::refused(Class::Unavailable, "not a board room"));
+        };
+        if read_only {
+            if board.reader_changes(&update) {
+                return Err(Outcome::refused(
+                    Class::Permission,
+                    "read-only connection sent a document update",
+                ));
+            }
+            self.ack(writer);
+            return Err(Outcome::Admitted);
+        }
+        let markers = board.markers();
+        if markers::check(&markers.transact(), &update, markers.client_id()).is_err() {
+            return Err(Outcome::refused(
+                Class::Malformed,
+                "client update changed collaboration metadata",
+            ));
+        }
+        // As a document's writer (`screen`, Q213): structs only under ids
+        // its user holds.
+        let state = board.state_vector();
+        let bound: Vec<u64> = self
+            .members
+            .values()
+            .filter(|member| member.context.user_id == context.user_id)
+            .flat_map(|member| std::iter::once(member.client).chain(member.worker))
+            .collect();
+        if let Some(client) = client_ids::foreign(&state, &update, |id| {
+            self.client_ids.owned_by(id, &context.user_id)
+                || bound.contains(&id)
+                || granted.contains(&id)
+        }) {
+            return Err(self.foreign_update_refused(context, client, bytes.len()));
+        }
+        let written = client_ids::written(&state, &update);
+        let names_asset = crate::model::names_asset(&update);
+        match board.read(bytes, &update) {
+            Ok(board::Read::New(fresh)) => Ok((fresh, written, names_asset)),
+            Ok(board::Read::Held) => {
+                self.placed(writer, context);
+                self.ack(writer);
+                Err(Outcome::Admitted)
+            }
+            Ok(board::Read::Unheld) => Err(Outcome::Unheld),
+            Err(error) => Err(self.refused_on_entry(error.to_string())),
+        }
     }
 
-    /// A board's heavy update, once the board work permit is free (`work.rs`,
+    /// A board update's trial, once the board work permit is free (`work.rs`,
     /// its warnings included): the room and the writer's token are checked
-    /// again (the wait lasts as long as the permit's queue), then the update
-    /// is decoded again and admitted as any heavy update, both off the async
-    /// workers. The permit goes back as soon as the admission ends, before
-    /// anything is sent or applied.
-    async fn trial(
+    /// again (the wait lasts as long as the permit's queue), then the board's
+    /// replica is built and the update, as the board lacks it, tried on it and,
+    /// near the cap or deleting content it does not name, measured
+    /// (`model::admit_board`), off the async workers. The depths of new types
+    /// the board's index could not give are read from the replica with the
+    /// update applied ([board::Fresh::take_depths]). The replica and the
+    /// permit go before anything is appended or sent.
+    async fn board_trial(
         &mut self,
-        writer: Option<MemberKey>,
         context: &Context,
-        bytes: &[u8],
-        trial: Trial,
-        pieces: &mut Option<Vec<Vec<u8>>>,
-    ) -> Result<Checked, Outcome> {
+        sent: usize,
+        fresh: &mut board::Fresh,
+    ) -> Result<(), Outcome> {
         let permit = self
             .app
             .board_work
@@ -4299,20 +4709,106 @@ impl Room {
         if let Some(refused) = self.closed_to(context) {
             return Err(refused);
         }
-        let Trial { changes, written } = trial;
-        // The admission's own `block_in_place` runs inline in this one.
-        tokio::task::block_in_place(|| {
-            let Ok(update) = ydoc::decode(bytes) else {
-                return Err(Outcome::refused(Class::Malformed, "malformed update"));
+        let (State::Board(board), Kindly::Note(note)) = (&self.state, &mut self.kind) else {
+            return Err(Outcome::refused(Class::Unavailable, "not a board room"));
+        };
+        let tried = tokio::task::block_in_place(|| -> Result<Verdict, String> {
+            let replica = board.replica().map_err(|error| error.to_string())?;
+            let update = ydoc::decode(fresh.bytes()).map_err(|error| error.to_string())?;
+            let verdict = match note
+                .validator
+                .admit(&replica, &update, fresh.bytes(), true, false)
+            {
+                crate::model::Admitted::Accepted => Verdict::Accept,
+                crate::model::Admitted::Unheld => Verdict::Unheld,
+                crate::model::Admitted::Limit(code, metrics) => Verdict::Limit(code, metrics),
+                crate::model::Admitted::Refused(message) => Verdict::Refused(message),
+                crate::model::Admitted::Hidden => Verdict::Hidden,
             };
-            let screened = Screened {
-                update,
-                changes,
-                written,
-                heavy: true,
-            };
-            self.admit_screened(writer, context, bytes, screened, Some(permit), pieces)
-        })
+            if matches!(verdict, Verdict::Accept) && fresh.unplaced_types() {
+                ydoc::apply(&replica, update).map_err(|error| error.to_string())?;
+                fresh.take_depths(&replica);
+            }
+            Ok(verdict)
+        });
+        drop(permit);
+        match tried {
+            Ok(Verdict::Accept) => Ok(()),
+            Ok(Verdict::Unheld) => Err(Outcome::Unheld),
+            Ok(Verdict::Limit(code, metrics)) => {
+                Err(self.limit_refused(context, code, metrics, sent))
+            }
+            Ok(Verdict::Refused(message)) => Err(self.refused_on_entry(message)),
+            // A note draft's verdict alone.
+            Ok(Verdict::Hidden | Verdict::Source(_)) => Err(Outcome::refused(
+                Class::Malformed,
+                "a board update was refused",
+            )),
+            // The board's own bytes would not replay, or the update it read
+            // would not apply where its trial passed: reported, and the
+            // writer's channel closes (its editor joins again).
+            Err(error) => {
+                observe::capture(
+                    &error,
+                    None,
+                    &[("room", &self.name), ("stage", "board_trial")],
+                );
+                Err(Outcome::refused(
+                    Class::Unavailable,
+                    "the board cannot be tried",
+                ))
+            }
+        }
+    }
+
+    /// Appends an admitted board update ([Board::append]) after its writer's
+    /// contributor marker, both relayed, peers hearing what the board lacked
+    /// of it; then what any admitted write does: the ids it wrote recorded,
+    /// its acknowledgement, the store due and, when it names an asset, a
+    /// projection after that store.
+    fn append_board(
+        &mut self,
+        writer: Option<MemberKey>,
+        context: &Context,
+        fresh: Box<board::Fresh>,
+        written: Vec<u64>,
+        names_asset: bool,
+        large: bool,
+    ) -> Outcome {
+        self.placed(writer, context);
+        self.applying = true;
+        if let Some(marker) = self.markers.write(self.state.markers(), context) {
+            if let Kindly::Note(note) = &mut self.kind {
+                note.validator.wrote(marker.len() as u64);
+            }
+            self.broadcast_update(None, marker);
+        }
+        let growth = fresh.growth();
+        let State::Board(board) = &mut self.state else {
+            self.applying = false;
+            return Outcome::refused(Class::Unavailable, "not a board room");
+        };
+        let relayed = if large {
+            tokio::task::block_in_place(|| board.append(fresh).to_vec())
+        } else {
+            board.append(fresh).to_vec()
+        };
+        self.applying = false;
+        if let Kindly::Note(note) = &mut self.kind {
+            note.growth.grew(growth);
+            note.project_soon |= names_asset;
+        }
+        if context.token_id != AGENT_TOKEN
+            && let Some(rows) =
+                self.client_ids
+                    .first_writes(&context.user_id, &written, std::time::Instant::now())
+        {
+            self.write_rows(rows);
+        }
+        self.ack(writer);
+        self.content_changed();
+        self.broadcast_update(writer, relayed);
+        Outcome::Admitted
     }
 
     /// The refusal of any update while the room is being reset or the
@@ -4333,8 +4829,8 @@ impl Room {
         None
     }
 
-    /// The checks of a writer's update that read the room, up to whether its
-    /// admission is heavy.
+    /// The checks of a writer's update that read the room's document, up to
+    /// whether its admission is heavy.
     fn screen(
         &mut self,
         writer: Option<MemberKey>,
@@ -4349,7 +4845,11 @@ impl Room {
         let Ok(update) = ydoc::decode(bytes) else {
             return Err(Outcome::refused(Class::Malformed, "malformed update"));
         };
-        let changes = ydoc::contains_changes(&self.doc.transact(), &update);
+        // A board's update goes through [Room::admit_board_update].
+        let Some(doc) = self.document() else {
+            return Err(Outcome::refused(Class::Unavailable, "not a document room"));
+        };
+        let changes = ydoc::contains_changes(&doc.transact(), &update);
         if read_only {
             if changes {
                 return Err(Outcome::refused(
@@ -4386,7 +4886,7 @@ impl Room {
                 class: Class::Unavailable,
             });
         }
-        if markers::check(&self.doc.transact(), &update, self.doc.client_id()).is_err() {
+        if markers::check(&doc.transact(), &update, doc.client_id()).is_err() {
             return Err(Outcome::refused(
                 Class::Malformed,
                 "client update changed collaboration metadata",
@@ -4408,7 +4908,7 @@ impl Room {
                 Class::Late,
                 "the update names units the collection discarded",
             );
-            match ydoc::gc::named_collected(&self.doc.transact(), &update, &note.collected) {
+            match ydoc::gc::named_collected(&doc.transact(), &update, &note.collected) {
                 Named::Nothing => {}
                 Named::Window => return Err(late),
                 // Only what yrs dropped under a block deleted since: a
@@ -4431,7 +4931,7 @@ impl Room {
         // draft send has none of its own) or granted to a draft by its stored
         // token (Q288). Reserved copy ids are refused until override-seed
         // copies exist (r2 N8).
-        let state = self.doc.transact().state_vector();
+        let state = doc.transact().state_vector();
         let bound: Vec<u64> = self
             .members
             .values()
@@ -4458,28 +4958,15 @@ impl Room {
             // The note scan reads Plate content; an item room's admission
             // copies only past its own bound.
             Kindly::Note(note) if note.model == crate::model::Model::Note => {
-                notes::limits::heavy(&self.doc.transact(), &update, bytes.len(), &note.kind)
+                notes::limits::heavy(&doc.transact(), &update, bytes.len(), &note.kind)
             }
-            // A board bounds its work, and at its cap is measured exactly.
-            Kindly::Note(note) if note.model == crate::model::Model::Board => {
-                !ydoc::applies_inline_bounded(
-                    &self.doc.transact(),
-                    &ydoc::Incoming::new(&update),
-                    bytes.len(),
-                ) || note.validator.near_cap(&update, bytes.len())
+            Kindly::Note(_) => {
+                !ydoc::applies_inline(&doc.transact(), &ydoc::Incoming::new(&update), bytes.len())
             }
-            Kindly::Note(_) => !ydoc::applies_inline(
-                &self.doc.transact(),
-                &ydoc::Incoming::new(&update),
-                bytes.len(),
-            ),
             Kindly::Source(source) => {
-                !ydoc::applies_inline(
-                    &self.doc.transact(),
-                    &ydoc::Incoming::new(&update),
-                    bytes.len(),
-                ) || source.estimate.bytes + bytes.len() as u64
-                    > sources::admission_cap(source.state_cap)
+                !ydoc::applies_inline(&doc.transact(), &ydoc::Incoming::new(&update), bytes.len())
+                    || source.estimate.bytes + bytes.len() as u64
+                        > sources::admission_cap(source.state_cap)
             }
         };
         Ok(Screened {
@@ -4490,16 +4977,13 @@ impl Room {
         })
     }
 
-    /// A screened update's admission, under `permit` for a board's trial
-    /// (given back as soon as the admission ends), then what it needs before
-    /// its apply.
+    /// A screened update's admission, then what it needs before its apply.
     fn admit_screened(
         &mut self,
         writer: Option<MemberKey>,
         context: &Context,
         bytes: &[u8],
         screened: Screened,
-        permit: Option<crate::work::Permit>,
         pieces: &mut Option<Vec<Vec<u8>>>,
     ) -> Result<Checked, Outcome> {
         let Screened {
@@ -4511,6 +4995,9 @@ impl Room {
         // A quiz document counts with the other one's bound as it stands, and
         // its growth is taken against it again once admitted.
         let peer = self.peer_bound();
+        let Some(doc) = self.document() else {
+            return Err(Outcome::refused(Class::Unavailable, "not a document room"));
+        };
         let before = match &mut self.kind {
             Kindly::Note(note) => {
                 if let Some(peer) = peer {
@@ -4524,7 +5011,7 @@ impl Room {
             Kindly::Note(note) => {
                 match note
                     .validator
-                    .admit(&self.doc, &update, bytes, changes, writer.is_none())
+                    .admit(&doc, &update, bytes, changes, writer.is_none())
                 {
                     crate::model::Admitted::Accepted => Verdict::Accept,
                     crate::model::Admitted::Unheld => Verdict::Unheld,
@@ -4535,7 +5022,7 @@ impl Room {
             }
             Kindly::Source(source) => {
                 match sources::admit_update(
-                    &self.doc,
+                    &doc,
                     source.format,
                     bytes,
                     &mut source.estimate,
@@ -4553,7 +5040,6 @@ impl Room {
         } else {
             admit()
         };
-        drop(permit);
         let verdict = match verdict {
             Verdict::Accept => match self.take_quiz_bound(peer, before) {
                 Ok(()) => Verdict::Accept,
@@ -4580,22 +5066,7 @@ impl Room {
             Verdict::Limit(code, metrics) => {
                 return Err(self.limit_refused(context, code, metrics, bytes.len()));
             }
-            // Refused on entry (Epo 2026-10-18): the room keeps its state, the
-            // writer's editor reloads it on a fresh document and channel on
-            // the same socket, and only this channel closes.
-            Verdict::Refused(error) => {
-                let payload = json!({
-                    "code": "invalid_document",
-                    "materialId": self.material_id(),
-                    "room": self.name,
-                    "type": "document-rejected",
-                });
-                return Err(Outcome::Refused {
-                    payloads: vec![payload.to_string()],
-                    reason: error,
-                    class: Class::Malformed,
-                });
-            }
+            Verdict::Refused(error) => return Err(self.refused_on_entry(error)),
         }
         self.placed(writer, context);
         if !changes {
@@ -4634,17 +5105,18 @@ impl Room {
             mut written,
             heavy,
         } = checked;
+        let Some(doc) = self.document() else {
+            return Outcome::refused(Class::Unavailable, "not a document room");
+        };
         let mut applied = 0;
         self.applying = true;
-        if let Some(marker) = self.markers.write(&self.doc, context) {
+        if let Some(marker) = self.markers.write(&doc, context) {
             applied += marker.len();
             if let Kindly::Note(note) = &mut self.kind {
                 note.validator.wrote(marker.len() as u64);
             }
             self.broadcast_update(None, marker);
         }
-        let names_asset = matches!(&self.kind, Kindly::Note(note)
-            if note.model == crate::model::Model::Board && crate::model::names_asset(&update));
         // A source room's estimate also takes off what the update's deletes
         // freed (Epo 2026-10-19); a note's sessions hold what it deleted.
         let seed = match &self.kind {
@@ -4653,11 +5125,11 @@ impl Room {
         };
         let sessioned = self.sessions.is_some();
         let apply = || match seed {
-            Some(seed) => ydoc::apply_freeing(&self.doc, update, seed)
+            Some(seed) => ydoc::apply_freeing(&doc, update, seed)
                 .map(|(content, freed, lost)| (content, freed, yrs::IdSet::new(), lost)),
-            None if sessioned => ydoc::apply_deleting(&self.doc, update)
+            None if sessioned => ydoc::apply_deleting(&doc, update)
                 .map(|(content, deleted)| (content, 0, deleted, ydoc::Lost::default())),
-            None => ydoc::apply(&self.doc, update)
+            None => ydoc::apply(&doc, update)
                 .map(|content| (content, 0, yrs::IdSet::new(), ydoc::Lost::default())),
         };
         let content = if heavy {
@@ -4719,9 +5191,6 @@ impl Room {
         self.ack(writer);
         if !content.is_empty() {
             self.content_changed();
-            if names_asset && let Kindly::Note(note) = &mut self.kind {
-                note.project_soon = true;
-            }
             // What the room's collection took out still reaches an editor
             // whose Undo can bring it back (Q549); stored state and joiners
             // never hold it. A resync's step 2 names its whole delete set,
@@ -4736,7 +5205,7 @@ impl Room {
             // children pass; typing writes none and costs a decode.
             if matches!(&self.kind, Kindly::Note(note) if note.model == crate::model::Model::Note)
                 && let Ok(update) = ydoc::decode(bytes)
-                && notes::children::child_writes(&self.doc.transact(), &update).is_some()
+                && notes::children::child_writes(&doc.transact(), &update).is_some()
             {
                 self.child_passes.push_back(ChildPass {
                     actor: context.user_id.clone(),
@@ -4759,12 +5228,12 @@ impl Room {
             return;
         };
         let (model, kind) = (note.model, note.kind.clone());
-        if !model.repairs() {
+        let (true, Some(doc)) = (model.repairs(), self.document()) else {
             return;
-        }
+        };
         let repair = || {
             let update = ydoc::decode(bytes).ok()?;
-            let mut txn = self.doc.transact_mut();
+            let mut txn = doc.transact_mut();
             let repaired = model.repair_on_entry(&mut txn, &update, &kind);
             Some((repaired, ydoc::committed_update(txn)))
         };
@@ -5007,7 +5476,7 @@ impl Room {
     /// The room's step 1 to one channel: its answer brings what it lacks.
     fn send_step1(&mut self, key: MemberKey) {
         use yrs::updates::encoder::Encode;
-        let sv = self.doc.transact().state_vector().encode_v1();
+        let sv = self.state.state_vector().encode_v1();
         self.send(key, Kind::Sync, &sync::encode(sync::STEP1, &sv));
     }
 
@@ -5244,7 +5713,7 @@ impl Room {
         // write transaction, outside the sync path.
         #[cfg(debug_assertions)]
         if event["type"] == "capy-it-panic" {
-            let _txn = self.doc.transact_mut();
+            let _txn = self.state.markers().transact_mut();
             panic!("integration test panic in a transaction");
         }
         if event["type"] == "source-handoff-ready" {
@@ -5313,6 +5782,41 @@ impl Room {
         }
     }
 
+    /// The room's live document; a board holds bytes instead, so each caller
+    /// says what a board does.
+    fn document(&self) -> Option<Doc> {
+        match &self.state {
+            State::Doc(doc) => Some(doc.clone()),
+            State::Board(_) => None,
+        }
+    }
+
+    /// Whether a writer's `update` tells the room anything new: a document's
+    /// `ydoc::contains_changes`, a board's [Board::changes].
+    fn changes(&self, update: &yrs::Update) -> bool {
+        match &self.state {
+            State::Doc(doc) => ydoc::contains_changes(&doc.transact(), update),
+            State::Board(board) => board.changes(update),
+        }
+    }
+
+    /// A writer's update refused on entry (Epo 2026-10-18): the room keeps
+    /// its state, the writer's editor reloads it on a fresh document and
+    /// channel on the same socket, and only this channel closes.
+    fn refused_on_entry(&self, reason: String) -> Outcome {
+        let payload = json!({
+            "code": "invalid_document",
+            "materialId": self.material_id(),
+            "room": self.name,
+            "type": "document-rejected",
+        });
+        Outcome::Refused {
+            payloads: vec![payload.to_string()],
+            reason,
+            class: Class::Malformed,
+        }
+    }
+
     /// A note room's material id ("" in a source room).
     fn material_id(&self) -> &str {
         match &self.kind {
@@ -5352,7 +5856,7 @@ impl Room {
         !self.store.dirty
             && !self.store.running
             && self.store.retry_at.is_none()
-            && !markers::pending(&self.doc)
+            && !markers::pending(self.state.markers())
     }
 
     // ---------------------------------------------------------------------- stores
@@ -5365,7 +5869,7 @@ impl Room {
         if self.app.evictions.blocks(&self.name, true) {
             return;
         }
-        if !self.store.dirty && !markers::pending(&self.doc) {
+        if !self.store.dirty && !markers::pending(self.state.markers()) {
             self.answer_store_waiters(Ok(()));
             // A clean source room's requests are durability receipts at its
             // checkpoint, as storeSource answered them (a reconnect's flush
@@ -5383,7 +5887,7 @@ impl Room {
             self.start_source_store().await;
             return;
         }
-        let contributors = match self.markers.claim(&self.doc) {
+        let contributors = match self.markers.claim(self.state.markers()) {
             Ok(contributors) => contributors,
             Err(error) => {
                 let error = StoreFailure::Note(StoreError::Other(error.to_string()));
@@ -5395,10 +5899,45 @@ impl Room {
         self.store.dirty = false;
         self.store.first_change = None;
         let started = Instant::now();
-        // Checked (and repaired) first: the row holds what a repair wrote.
-        let validated = self.checked().await;
-        let hidden = markers::live_items(&self.doc);
-        let (row, durable) = ydoc::delta_update(&self.doc.transact(), &self.durable, &hidden);
+        // A board is not validated: admission bounds its bytes and the server
+        // reads no shape in it. Its bound is what the receipts carry (an upper
+        // bound, tightened at each fold).
+        let validated = match &self.kind {
+            Kindly::Note(note) if matches!(self.state, State::Board(_)) => note
+                .validator
+                .board_bound()
+                .map(|bound| (crate::model::board_metrics(bound), None))
+                .ok_or_else(|| StoreError::Other("a board without its size bound".into())),
+            // Checked (and repaired) first: the row holds what a repair wrote.
+            _ => self.checked().await,
+        };
+        // A document's row is its delta since the durable state; a board's,
+        // the updates since its last store and its marker delta, merged off
+        // the async workers (live markers hidden in both).
+        let written = match &mut self.state {
+            State::Doc(doc) => {
+                let hidden = markers::live_items(doc);
+                let (row, durable) = ydoc::delta_update(&doc.transact(), &self.durable, &hidden);
+                Ok((row, durable, None))
+            }
+            State::Board(board) => tokio::task::block_in_place(|| board.row())
+                .map(|row| (Vec::new(), ydoc::Durable::default(), Some(row)))
+                .map_err(|error| StoreError::Other(error.to_string())),
+        };
+        let (row, durable, board_row) = match written {
+            Ok(written) => written,
+            Err(error) => {
+                self.markers.unclaim(&contributors);
+                self.store.dirty = true;
+                self.store.first_change.get_or_insert(started);
+                self.store_failed(StoreFailure::Note(error), started, 0, claimed);
+                return;
+            }
+        };
+        if let (Some(_), Kindly::Note(note)) = (&board_row, &mut self.kind) {
+            note.growth.row_taken();
+        }
+        let row_bytes = board_row.as_ref().map_or(row.len(), |row| row.bytes.len());
         // The sessions as of this snapshot go in its transaction, their held
         // deletions with the state that holds them.
         let (session_rows, sessions) = match &mut self.sessions {
@@ -5417,7 +5956,10 @@ impl Room {
                 self.markers.unclaim(&contributors);
                 self.store.dirty = true;
                 self.store.first_change.get_or_insert(started);
-                self.store_failed(StoreFailure::Note(error), started, row.len(), claimed);
+                if let (Some(_), Kindly::Note(note)) = (&board_row, &mut self.kind) {
+                    note.growth.row_ended(false);
+                }
+                self.store_failed(StoreFailure::Note(error), started, row_bytes, claimed);
                 return;
             }
         };
@@ -5450,12 +5992,13 @@ impl Room {
             if material_id.contains(IT_SLOW_STORE) {
                 tokio::time::sleep(std::time::Duration::from_secs(1)).await;
             }
+            let stored = board_row.as_ref().map_or(row.as_slice(), |row| &row.bytes);
             let result = note_store::append(
                 &app.db,
                 &material_id,
                 schema,
                 doc_kind,
-                &row,
+                stored,
                 &actors,
                 &session_rows,
                 &receipts,
@@ -5465,13 +6008,14 @@ impl Room {
             let done = StoreDone {
                 result,
                 started,
-                row_bytes: row.len(),
+                row_bytes,
                 contributors,
                 claimed,
                 durable,
                 metrics: Some(metrics),
                 limit_code,
                 sessions,
+                board_row,
             };
             let _ = handle.tx.send(RoomCmd::Stored(Box::new(done))).await;
         });
@@ -5490,9 +6034,12 @@ impl Room {
             return first;
         };
         let (model, kind) = (note.model, note.kind.clone());
+        let Some(doc) = self.document() else {
+            return first;
+        };
         // Its own scope: a transaction is not held across an await.
         let (repaired, fix) = {
-            let mut txn = self.doc.transact_mut();
+            let mut txn = doc.transact_mut();
             let repaired = model.repair(&mut txn, &kind);
             (repaired, ydoc::committed_update(txn))
         };
@@ -5515,10 +6062,9 @@ impl Room {
     async fn check(
         &self,
     ) -> Result<(notes::limits::Metrics, Option<notes::limits::LimitCode>), StoreError> {
-        let Kindly::Note(note) = &self.kind else {
-            return Err(StoreError::Other("not a material room".into()));
+        let (Kindly::Note(note), Some(doc)) = (&self.kind, self.document()) else {
+            return Err(StoreError::Other("not a material document room".into()));
         };
-        let doc = self.doc.clone();
         let (kind, model) = (note.kind.clone(), note.model);
         let previous = note.durable_metrics;
         let peer = self.peer_bound();
@@ -5530,14 +6076,14 @@ impl Room {
     /// This room's registry handle (none once it unloaded).
     /// Whether the room's state holds structs under an id (Q213).
     fn in_history(&self) -> impl Fn(u64) -> bool + use<> {
-        let held = self.doc.transact().state_vector();
+        let held = self.state.state_vector();
         move |id| held.get(&yrs::block::ClientID::new(id)) > 0
     }
 
     /// Whether an id is bound to a live channel (a session's or its DOCX
     /// worker's) other than `except`, or is the room's own (Q213, Q226).
     fn live_ids(&self, except: &[MemberKey]) -> impl Fn(u64) -> bool + use<> {
-        let own = self.doc.client_id().get();
+        let own = self.state.client().get();
         let bound: HashSet<u64> = self
             .members
             .iter()
@@ -5804,7 +6350,13 @@ impl Room {
             self.answer_store_waiters(Err(sources::SourceError::Backoff.to_string()));
             return;
         }
-        let pending = sources::failure::pending_source_save(&self.doc.transact());
+        // A source room holds a document (`load`).
+        let Some(doc) = self.document() else {
+            let error = sources::SourceError::Other("a source room holds a document".into());
+            self.source_store_failed(error, started, 0, Vec::new());
+            return;
+        };
+        let pending = sources::failure::pending_source_save(&doc.transact());
         if pending == sources::failure::PendingSave::Wait {
             let Kindly::Source(source) = &mut self.kind else {
                 return;
@@ -5825,7 +6377,7 @@ impl Room {
             self.source_store_failed(sources::SourceError::Pending, started, 0, Vec::new());
             return;
         }
-        let contributors = match self.markers.claim(&self.doc) {
+        let contributors = match self.markers.claim(&doc) {
             Ok(contributors) => contributors,
             Err(error) => {
                 let error = sources::SourceError::Other(error.to_string());
@@ -5834,7 +6386,7 @@ impl Room {
             }
         };
         let claimed = self.receipts.clone();
-        let hidden = markers::live_items(&self.doc);
+        let hidden = markers::live_items(&doc);
         let Kindly::Source(source) = &self.kind else {
             return;
         };
@@ -5843,11 +6395,7 @@ impl Room {
         // up to O(text) for a text room (the pending effect spans every edit
         // since the baseline): off the runtime's threads, while the room
         // waits as it does for a note store's validation.
-        let (doc, previous, sources) = (
-            self.doc.clone(),
-            self.durable.clone(),
-            self.app.sources.clone(),
-        );
+        let (previous, sources) = (self.durable.clone(), self.app.sources.clone());
         let effect_room = room.clone();
         let computed = tokio::task::spawn_blocking(move || {
             let txn = doc.transact();
@@ -5937,6 +6485,7 @@ impl Room {
                 metrics: None,
                 limit_code: None,
                 sessions: None,
+                board_row: None,
             };
             let _ = handle.tx.send(RoomCmd::Stored(Box::new(done))).await;
         });
@@ -5955,7 +6504,11 @@ impl Room {
             metrics,
             limit_code,
             sessions,
+            board_row,
         } = done;
+        if let (Some(_), Kindly::Note(note)) = (&board_row, &mut self.kind) {
+            note.growth.row_ended(result.is_ok());
+        }
         let version = match result {
             Ok(version) => version,
             Err(error) => {
@@ -5975,7 +6528,19 @@ impl Room {
         timings.record(started.elapsed(), true, row_bytes, &self.name);
         // A source save with no writer in it appends nothing (row_bytes 0).
         if row_bytes > 0 || matches!(self.kind, Kindly::Note(_)) {
-            self.durable = durable;
+            match (board_row, &mut self.state) {
+                // The row's updates join the board's tail.
+                (Some(row), State::Board(board)) => {
+                    if let Err(error) = tokio::task::block_in_place(|| board.stored(row)) {
+                        observe::capture(
+                            &error.to_string(),
+                            None,
+                            &[("room", &self.name), ("stage", "board_store")],
+                        );
+                    }
+                }
+                _ => self.durable = durable,
+            }
             self.app
                 .stats
                 .log_bytes
@@ -5985,7 +6550,7 @@ impl Room {
             self.app.stats.failed_stores.fetch_sub(1, Ordering::Relaxed);
         }
         self.store.retry_delay = RETRY_FIRST / 2;
-        if let Some(cleared) = self.markers.clear(&self.doc, &contributors) {
+        if let Some(cleared) = self.markers.clear(self.state.markers(), &contributors) {
             self.broadcast_update(None, cleared);
         }
         match &mut self.kind {
@@ -6004,7 +6569,7 @@ impl Room {
                 // Claimed receipts, and every waiting one when no writer's
                 // update reached the room after the snapshot.
                 let mut ids: Vec<String> = Vec::new();
-                let everything = !markers::pending(&self.doc) && !self.store.dirty;
+                let everything = !markers::pending(self.state.markers()) && !self.store.dirty;
                 self.receipts.retain(|id| {
                     if everything || claimed.contains(id) {
                         ids.push(id.clone());
@@ -6033,7 +6598,7 @@ impl Room {
                 // Claimed receipts, and every waiting one when no writer's
                 // update reached the room after the snapshot, as a note's: a
                 // flush that came while this store ran waits for no other.
-                let answered = if !self.store.dirty && !markers::pending(&self.doc) {
+                let answered = if !self.store.dirty && !markers::pending(self.state.markers()) {
                     self.receipts.clone()
                 } else {
                     claimed
@@ -6046,7 +6611,7 @@ impl Room {
         }
         self.announce_stored(version);
         self.project_on_cadence();
-        if self.store.dirty || markers::pending(&self.doc) {
+        if self.store.dirty || markers::pending(self.state.markers()) {
             if self.store.again {
                 self.store.again = false;
                 self.store.retry_at = Some(Instant::now());
@@ -6368,6 +6933,9 @@ impl Room {
     }
 
     async fn start_projection(&mut self) {
+        // A board projects from its durable rows, under the board work
+        // permit (`projection::project_durable`): it holds no document.
+        let doc = self.document();
         let Kindly::Note(note) = &mut self.kind else {
             return;
         };
@@ -6388,22 +6956,25 @@ impl Room {
         let version = note.stored_version;
         let material_id = note.material_id.clone();
         let app = self.app.clone();
-        if note.model.quiz() {
-            let Some(handle) = self.own_handle() else {
-                return;
-            };
-            tokio::spawn(async move {
-                let projected = match projection::project_durable(&app, &material_id).await {
-                    Ok(projected) => RoomCmd::Projected(projected, Ok(())),
-                    Err(error) => RoomCmd::Projected(version, Err(error)),
+        let doc = match doc {
+            Some(doc) if !note.model.quiz() => doc,
+            _ => {
+                let Some(handle) = self.own_handle() else {
+                    return;
                 };
-                let _ = handle.tx.send(projected).await;
-            });
-            return;
-        }
+                tokio::spawn(async move {
+                    let projected = match projection::project_durable(&app, &material_id).await {
+                        Ok(projected) => RoomCmd::Projected(projected, Ok(())),
+                        Err(error) => RoomCmd::Projected(version, Err(error)),
+                    };
+                    let _ = handle.tx.send(projected).await;
+                });
+                return;
+            }
+        };
         // Read here, so the content is exactly the durable state at `version`;
         // the room waits for it as for a store's validation.
-        let content = projection::content_of(self.doc.clone(), note.model, version).await;
+        let content = projection::content_of(doc, note.model, version).await;
         let Some(handle) = self
             .app
             .rooms
@@ -6511,7 +7082,8 @@ impl Room {
             return;
         };
         let app = self.app.clone();
-        let doc = self.doc.clone();
+        // None for a board, which projects from its durable rows.
+        let doc = self.document();
         let (model, doc_kind) = (note.model, note.doc);
         let (material_id, schema, stored, projected) = (
             note.material_id.clone(),
@@ -6533,12 +7105,13 @@ impl Room {
             // neither waits for the other.
             let projecting = async {
                 if stored > projected
-                    && let Err(error) = if model.quiz() {
-                        projection::project_durable(&app, &material_id)
+                    && let Err(error) = match doc {
+                        Some(doc) if !model.quiz() => {
+                            projection::project_doc(&app, &material_id, stored, doc, model).await
+                        }
+                        _ => projection::project_durable(&app, &material_id)
                             .await
-                            .map(|_| ())
-                    } else {
-                        projection::project_doc(&app, &material_id, stored, doc, model).await
+                            .map(|_| ()),
                     }
                     // Logged at info already: no failure.
                     && error != projection::IN_TRASH
@@ -6877,6 +7450,15 @@ fn validate(
     Ok((metrics, code))
 }
 
+/// `doc`'s state beyond `since`, encoded on the blocking pool; the room
+/// waits for it, as for a store's validation, so nothing changes the
+/// document meanwhile. A panic in the encode is the room's own.
+async fn encoded(doc: Doc, since: StateVector) -> Vec<u8> {
+    tokio::task::spawn_blocking(move || doc.transact().encode_state_as_update_v1(&since))
+        .await
+        .unwrap_or_else(|error| std::panic::resume_unwind(error.into_panic()))
+}
+
 async fn sleep_until(deadline: Option<Instant>) {
     match deadline {
         Some(deadline) => tokio::time::sleep_until(deadline.into()).await,
@@ -7036,7 +7618,7 @@ mod tests {
     };
 
     use crate::markers;
-    use crate::model::{BOARD_ROOT, Model};
+    use crate::model::Model;
 
     /// A room's document as its load built it before cut 1: the stored state
     /// replayed into a scratch document, encoded whole and applied into the
@@ -7168,7 +7750,8 @@ mod tests {
     }
 
     /// Cut 1: a material room replays its stored base and rows straight into
-    /// its own document. For every room kind that loads so, the room holds
+    /// its own document (a board loads on bytes, `board.rs`). For every room
+    /// kind that loads so, the room holds
     /// the state the scratch copy gave, passes the same load checks, and
     /// answers the next peer write and writes its own as before, under a
     /// client id no stored struct or deletion names and no user was
@@ -7222,12 +7805,6 @@ mod tests {
                 Model::Item(items::Kind::QuizKeys),
                 Root::Map(items::quiz::KEYS_ROOT),
                 quiz_keys,
-            ),
-            (
-                "canvas",
-                Model::Board,
-                Root::Map(BOARD_ROOT),
-                Model::Board.state_from_value(&[]),
             ),
         ];
         let assigned: HashSet<u64> = [41, 7].into();
