@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -1450,31 +1451,36 @@ func TestPDFAnnotationsArePrivateAndBoundToSource(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members(workspace_id,user_id,role) VALUES($1,$2,'viewer')`, ws.ID, viewer); err != nil {
 		t.Fatal(err)
 	}
-	body := PDFAnnotationBody{SourceIdentity: "revision:1", Page: 1, Kind: "highlight", Rects: []PDFRect{{X: 10, Y: 20, Width: 100, Height: 30}, {X: 10, Y: 60, Width: 80, Height: 30}}, Color: "#ffcc00"}
-	row, err := s.SavePDFAnnotation(ctx, viewer, file.ID, "", body)
-	if err != nil {
+	mark := testMark("highlight")
+	if err := saveMarks(ctx, s, viewer, file.ID, mark); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := s.ListPDFAnnotations(ctx, owner, file.ID)
-	if err != nil || len(rows) != 0 {
-		t.Fatalf("owner read viewer private marks: %v %+v", err, rows)
+	list, err := s.ListPDFAnnotations(ctx, owner, file.ID)
+	if err != nil || len(list.Marks) != 0 {
+		t.Fatalf("owner read viewer private marks: %v %+v", err, list)
 	}
-	if err = s.DeletePDFAnnotation(ctx, owner, file.ID, row.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("owner erased private mark: %v", err)
+	// The owner's remove and save over the viewer's ID leave the mark alone.
+	if err = removeMarks(ctx, s, owner, file.ID, mark.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err = saveMarks(ctx, s, owner, file.ID, mark); !errors.Is(err, ErrConflict) {
+		t.Fatalf("owner saved over a private mark: %v", err)
+	}
+	if list, err = s.ListPDFAnnotations(ctx, viewer, file.ID); err != nil || len(list.Marks) != 1 || !reflect.DeepEqual(list.Marks[0], mark) {
+		t.Fatalf("viewer's mark after the owner's writes = %+v %v", list, err)
 	}
 	if _, err = s.ListPDFAnnotations(ctx, outsider, file.ID); err == nil {
 		t.Fatal("private source disclosed")
 	}
-	body.Rects[0].Width = 1001
-	if _, err = s.SavePDFAnnotation(ctx, viewer, file.ID, row.ID, body); !errors.Is(err, ErrInvalidPDFAnnotation) {
+	mark.Rects[0].Width = 1001
+	if err = saveMarks(ctx, s, viewer, file.ID, mark); !errors.Is(err, ErrInvalidPDFAnnotation) {
 		t.Fatalf("invalid geometry accepted: %v", err)
 	}
-	body.Rects[0].Width = 100
-	body.SourceIdentity = "revision:2"
-	if _, err = s.SavePDFAnnotation(ctx, viewer, file.ID, row.ID, body); !errors.Is(err, ErrConflict) {
+	mark.Rects[0].Width = 100
+	if err = s.ChangePDFAnnotations(ctx, viewer, file.ID, PDFAnnotationChanges{SourceIdentity: "revision:2", Save: []PDFAnnotation{mark}, Remove: []string{}}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("wrong source accepted: %v", err)
 	}
-	if err = s.DeletePDFAnnotation(ctx, viewer, file.ID, row.ID); err != nil {
+	if err = removeMarks(ctx, s, viewer, file.ID, mark.ID); err != nil {
 		t.Fatal(err)
 	}
 }

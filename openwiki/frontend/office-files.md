@@ -471,7 +471,7 @@ rendering the open session's shared text, whose edits the leave just saved.
 Every other editable type already views its latest state: materials render
 their projected content, and nothing else in a workspace is edited in place.
 
-Workspace and standalone file pages read `?mode=view|edit` on entry and update it after accepted toggles. Leaving Edit updates the URL only after checkpoint/export succeeds; failed saves keep Edit, its URL and the saved mode. PDFs and text/CSV sources use the same URL contract.
+Workspace and standalone file pages read `?mode=view|edit` on entry and update it after accepted toggles. Leaving Edit updates the URL only after checkpoint/export succeeds; failed saves keep Edit, its URL and the saved mode. Text/CSV sources use the same URL contract. A PDF has no mode: its marks are private, so their tools are always on (Epo 2026-11-24).
 
 View and edit use separate iframe lifetimes so the browser can reclaim each
 WASM realm. Entering Edit replaces the viewer iframe. Leaving Edit keeps durable
@@ -3679,33 +3679,95 @@ collaboration server must be stopped before it runs (deployment runbook,
 
 ## Private PDF annotations
 
-Native PDFs support private text highlights, pen strokes, text, rectangles,
-ellipses and erasing.
-Annotations belong to the actor and exact source identity. They use normalized
-page coordinates and do not alter downloads, retrieval evidence or material
-collaboration. View/Edit lives in the shared document header. A fixed single-row
-PDF toolbar shows plain Page x of x, centered drawing tools and Undo/Redo, and
-zoom buttons at the right. Below lg, zoom is hidden and the center tools scroll
-horizontally with `scroll-fade-x` and no scrollbar. Menus render in portals so
-the scrolling mask does not clip them.
+Native PDFs take private marks (PDF marks round 1, Epo 2026-11-24, mock
+https://claude.ai/artifact/4xwRDnrehUHCvk24LQmgCN): highlight and underline on
+the text, a freehand marker, pen, text boxes, notes, rectangles, ellipses and
+arrows, an eraser, and a comment on any mark. They belong to the actor and the
+exact source identity, and never alter downloads, retrieval evidence or
+material collaboration. There is no View/Edit: the marks are the viewer's own,
+so a PDF opens with the marks toolbar on, and only a trashed or view-only file
+draws them read-only.
 
-The toolbar uses the shared `useHorizontalWheelScroll` hook for ordinary
-mouse-wheel scrolling, with the same input and boundary handling as Tabs and Plate.
+**Units.** A mark sits in page units on the page as shown, its longer side 1000
+on both axes, so ink, text and circles keep their shape at any zoom. A page's
+rotation is part of the bytes the marks are saved on, so the page as shown is
+the page. Highlights and underlines hold one band per line (browser text runs
+merge, so overlaps never darken) and the text they cover; text boxes, notes and
+shapes one rect; pens and markers strokes; an arrow one stroke of its two ends.
+Stroke kinds keep a width, a text box its size. Every saved mark passes
+`normalizeMark`: corners and points on the hundredth, inside 0..1000; the
+server allows a hundredth over, where rounded corners sum past the edge.
 
-Draw chooses Pen or Highlight; Text collects a label before placement; Shape
-chooses Rectangle or Ellipse. Highlight applies to text selections, and choosing
-it for a fully highlighted selection removes just that selected portion.
-The eraser cursor is a 48px-radius circle and removes marks it crosses. Session
-undo/redo records inverse API operations, remaps restored annotation IDs and
-resets when the viewer unmounts or the source identity changes. The marks remain
-durable and private. Failed or partly completed batches clear unreliable history
-and refetch the saved marks. Pen geometry is bounded to 4096 points and text to
-2000 characters by the store and generated contract.
+**Toolbar.** One row under the header, on the shared `Toolbar`, `ToolbarGroup`
+and `ToolbarButton` a note's toolbar uses: Select (V), Highlight (H), Pen (P),
+Text (T), Note (N), Shapes (S: rectangle, ellipse, arrow), Eraser (E), colour
+(keys 1 to 6; marks start yellow and a note purple), width, and Undo/Redo from `sm` (phones go
+without, Epo 2026-11-04). The keys show in the tooltips only. The tools scroll
+with `scroll-fade-x` and `useHorizontalWheelScroll`, from the left below `md`
+and centred from it; Marks and Comments stay pinned at the end, as a note's
+comments are (Epo 2026-11-24).
+
+**Drawing.** Ink draws on one SVG path per page set straight on the element,
+from every coalesced pointer sample, through midpoint curves; it is simplified
+on release and never re-renders the pages while drawn. Each page's layer
+(`PdfMarkLayer`) is memoised, so a change redraws only its page. Highlight on
+the text selects and lands on release; on empty space it draws a marker band,
+straightened when nearly level. Pen strokes within a second and near the last
+one join its mark. The eraser cuts pen ink where it crosses and removes any
+other mark it touches whole. A finger or pen draws instead of scrolling while a
+tool other than Select is picked. Once a pen has drawn, touches on the page are
+palms and draw nothing; a pen landing during a touch's stroke drops that stroke.
+The text layer's spans take the tool's cursor and keep their stand-in glyphs
+hidden when selected or found by the browser's find in page (`::search-text`,
+Chrome; its yellow and current orange set again), under solid tints with the
+layer multiplied onto the page, so overlapping spans (italics, touching lines)
+never darken them: browsers otherwise paint such text in their own colours (Tailwind variants on `.textLayer`, since `_`
+in a variant reads as a space, and the cursor important over react-pdf's
+unlayered stylesheet).
+
+**Selecting.** Select hits a mark on its ink (a shape on its outline, so the
+text inside stays selectable); Shift adds. A selection drags, nudges with the
+arrows (Shift for more) and deletes with Delete; one shape or ink mark shows
+corner handles on its frame (ink scales evenly, a shape stretches, the frame's
+corner following the pointer), a text box a width handle; bands on the text
+keep their place. Double-clicking a text box types in it again; its height
+refits its text (measured on a hidden copy in the page) when it closes, rewraps
+or changes size. A floating bar over the selection recolours it, sets
+its width or text size (three buttons drawn as a line or a letter at each
+weight, `WeightIcon`, which the toolbar's Width menu draws too), turns a
+highlight into an underline and back, opens its comment (not on a note, which
+is one) and deletes it. Selected PDF text takes a bar of its own: highlight
+in a colour, underline, or highlight with a comment. A placed shape opens selected
+with its bar and the tool goes back to Select; placed text switches to Select
+and is typed with no frame, then shows selected with its bar once Escape closes
+it, while a click elsewhere leaves it unselected (Epo 2026-11-24). An empty
+text box goes when it closes. The selection frame is square. A note is a pinned comment:
+it opens its comment as it lands, and one left empty goes; with Select a click
+opens its comment and a drag moves it.
+
+**Comments.** With room (a pane of 720px and more) comments sit in a margin
+beside the pages, each card at its mark's height and pushed below the one
+above; the pages narrow to make room. The toolbar's Comments collapses them to
+icons at the same height and back (Word's Simple Markup). With no room the
+marks carry a comment icon and Comments lists the comments; Marks lists every
+mark in page order, and a row scrolls to its mark and selects it.
+
+**Saving.** Marks draw and change at once and save behind (`usePdfMarks`):
+edits queue for 400 ms and go in one `PATCH /api/files/{id}/annotations`
+(save and remove, split at 200 marks or 3 MB), one request in flight. Mark IDs
+are the viewer's, so nothing waits for the server to name a mark. The header
+shows Syncing until the queue empties. What is queued saves at once when the
+viewer closes or the tab hides. A failed save drops the queue and history, the
+marks go back to the saved ones and the strip under the toolbar says so; a
+frozen account or full storage speaks through the workspace status instead.
+Session undo/redo records each edit's marks before and after and resets when
+the viewer unmounts. The store caps a mark at 4096 points across its strokes,
+text at 2000 characters and a comment at 3000.
 
 The marks load beside the document rather than after it: `FileViewer` starts the
 annotation read as soon as it knows the file is a PDF, alongside the presigned
-link, while the overlay itself still mounts only once pages exist. The document
-never waits on its marks. pdf.js loads with its defaults, which stream the whole
+link. The overlay mounts with the viewer, so the toolbar is there at once,
+dimmed until the pages exist. The document never waits on its marks. pdf.js loads with its defaults, which stream the whole
 file into its worker; reading only the needed byte ranges is not on, because
 read links live five minutes and a range read after expiry would fail. The
 source-file limit (10 MiB Free, 30 MiB Pro) bounds the bytes held, and pages

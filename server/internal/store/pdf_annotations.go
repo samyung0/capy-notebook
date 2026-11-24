@@ -8,7 +8,6 @@ import (
 	"math"
 	"regexp"
 	"strings"
-	"time"
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
@@ -26,69 +25,113 @@ type PDFPoint struct {
 	X float64 `json:"x"`
 	Y float64 `json:"y"`
 }
-type PDFAnnotationBody struct {
-	SourceIdentity string     `json:"sourceIdentity"`
-	Page           int        `json:"page" minimum:"1"`
-	Kind           string     `json:"kind" enum:"highlight,rectangle,ellipse,pen,text"`
-	Rects          []PDFRect  `json:"rects" nullable:"false" minItems:"1" maxItems:"1000"`
-	Points         []PDFPoint `json:"points,omitempty" maxItems:"4096"`
-	Text           string     `json:"text,omitempty" maxLength:"2000"`
-	Color          string     `json:"color" pattern:"^#[0-9a-fA-F]{6}$"`
-}
+
+// PDFAnnotation is one private mark. Coordinates are page units on the
+// unrotated page, its longer side 1000 on both axes, so ink keeps its shape.
+// Highlights and underlines hold a band per line (rects) and the text they
+// cover; text boxes, notes, rectangles and ellipses one rect; pens and
+// markers strokes (a pen's strokes drawn close together are one mark); an
+// arrow one stroke of its two ends. Stroke kinds keep a width, a text box its
+// size, and any mark a comment (a note is one).
 type PDFAnnotation struct {
-	PDFAnnotationBody
-	ID        string    `json:"id"`
-	FileID    string    `json:"fileId"`
-	AuthorID  string    `json:"authorId"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	ID      string       `json:"id" pattern:"^ann_[0-9a-f]{10,32}$"`
+	Page    int          `json:"page" minimum:"1"`
+	Kind    string       `json:"kind" enum:"highlight,underline,marker,pen,text,note,rectangle,ellipse,arrow"`
+	Color   string       `json:"color" pattern:"^#[0-9a-fA-F]{6}$"`
+	Rects   []PDFRect    `json:"rects" nullable:"false" maxItems:"1000"`
+	Strokes [][]PDFPoint `json:"strokes" nullable:"false" maxItems:"512"`
+	Width   float64      `json:"width" minimum:"0" maximum:"80"`
+	Size    float64      `json:"size" minimum:"0" maximum:"80"`
+	Text    string       `json:"text" maxLength:"2000"`
+	Comment string       `json:"comment" maxLength:"3000"`
 }
 
-var annotationColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+// PDFAnnotationList is the caller's marks on the bytes sourceIdentity names.
+type PDFAnnotationList struct {
+	SourceIdentity string          `json:"sourceIdentity"`
+	Marks          []PDFAnnotation `json:"marks" nullable:"false"`
+}
+
+// PDFAnnotationChanges saves and removes marks in one write: the viewer
+// queues edits and sends them together, never waiting on a save to draw.
+type PDFAnnotationChanges struct {
+	SourceIdentity string          `json:"sourceIdentity"`
+	Save           []PDFAnnotation `json:"save" nullable:"false" maxItems:"200"`
+	Remove         []string        `json:"remove" nullable:"false" maxItems:"2000"`
+}
+
+const (
+	// pdfMarkPoints caps one mark's points across its strokes.
+	pdfMarkPoints = 4096
+	pdfMarkUnits  = 1000
+	// pdfMarkBound lets a rounded corner (x+width) sit a float's hair over the
+	// page: the client rounds to hundredths.
+	pdfMarkBound = pdfMarkUnits + 0.01
+	// pdfMarkStyle caps a stroke's width and a text box's size, in page units.
+	pdfMarkStyle = 80
+)
+
+var (
+	annotationColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+	annotationID    = regexp.MustCompile(`^ann_[0-9a-f]{10,32}$`)
+)
 
 // ErrInvalidPDFAnnotation rejects a mark whose shape the schema cannot express.
 var ErrInvalidPDFAnnotation = errors.New("invalid pdf annotation")
 
-func validatePDFAnnotation(in PDFAnnotationBody) error {
-	if in.Page < 1 || !annotationColor.MatchString(in.Color) || len(in.Rects) < 1 || len(in.Rects) > 1000 {
-		return ErrInvalidPDFAnnotation
-	}
-	if in.Kind != "highlight" && in.Kind != "rectangle" && in.Kind != "ellipse" && in.Kind != "pen" && in.Kind != "text" {
-		return ErrInvalidPDFAnnotation
-	}
-	if in.Kind != "highlight" && len(in.Rects) != 1 {
-		return ErrInvalidPDFAnnotation
-	}
-	if in.Kind == "pen" {
-		if len(in.Points) < 2 || len(in.Points) > 4096 {
-			return ErrInvalidPDFAnnotation
+// within reports finite values from 0 to max.
+func within(max float64, values ...float64) bool {
+	for _, v := range values {
+		if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > max {
+			return false
 		}
-		for _, point := range in.Points {
-			for _, v := range []float64{point.X, point.Y} {
-				if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > 1000 {
-					return ErrInvalidPDFAnnotation
-				}
-			}
-		}
-	} else if len(in.Points) != 0 {
-		return ErrInvalidPDFAnnotation
 	}
-	if in.Kind == "text" {
-		if strings.TrimSpace(in.Text) == "" || utf8.RuneCountInString(in.Text) > fieldlimits.PDFAnnotationText {
-			return ErrInvalidPDFAnnotation
-		}
-	} else if in.Text != "" {
+	return true
+}
+
+func validatePDFAnnotation(in PDFAnnotation) error {
+	if !annotationID.MatchString(in.ID) || in.Page < 1 || !annotationColor.MatchString(in.Color) ||
+		len(in.Rects) > 1000 || len(in.Strokes) > 512 ||
+		utf8.RuneCountInString(in.Text) > fieldlimits.PDFAnnotationText ||
+		utf8.RuneCountInString(in.Comment) > fieldlimits.Comment ||
+		!within(pdfMarkStyle, in.Width, in.Size) {
 		return ErrInvalidPDFAnnotation
 	}
 	for _, r := range in.Rects {
-		for _, v := range []float64{r.X, r.Y, r.Width, r.Height} {
-			if math.IsNaN(v) || math.IsInf(v, 0) {
+		if !within(pdfMarkBound, r.X, r.Y, r.X+r.Width, r.Y+r.Height) || r.Width <= 0 || r.Height <= 0 {
+			return ErrInvalidPDFAnnotation
+		}
+	}
+	points := 0
+	for _, stroke := range in.Strokes {
+		if len(stroke) < 2 {
+			return ErrInvalidPDFAnnotation
+		}
+		points += len(stroke)
+		for _, p := range stroke {
+			if !within(pdfMarkBound, p.X, p.Y) {
 				return ErrInvalidPDFAnnotation
 			}
 		}
-		if r.X < 0 || r.Y < 0 || r.Width <= 0 || r.Height <= 0 || r.X+r.Width > 1000 || r.Y+r.Height > 1000 {
-			return ErrInvalidPDFAnnotation
-		}
+	}
+	stroked := in.Width > 0
+	var ok bool
+	switch in.Kind {
+	case "highlight", "underline":
+		ok = len(in.Rects) >= 1 && len(in.Strokes) == 0 && !stroked && in.Size == 0
+	case "pen", "marker":
+		ok = len(in.Rects) == 0 && len(in.Strokes) >= 1 && points <= pdfMarkPoints && stroked && in.Size == 0 && in.Text == ""
+	case "arrow":
+		ok = len(in.Rects) == 0 && len(in.Strokes) == 1 && points == 2 && stroked && in.Size == 0 && in.Text == ""
+	case "rectangle", "ellipse":
+		ok = len(in.Rects) == 1 && len(in.Strokes) == 0 && stroked && in.Size == 0 && in.Text == ""
+	case "text":
+		ok = len(in.Rects) == 1 && len(in.Strokes) == 0 && !stroked && in.Size > 0 && strings.TrimSpace(in.Text) != ""
+	case "note":
+		ok = len(in.Rects) == 1 && len(in.Strokes) == 0 && !stroked && in.Size == 0 && in.Text == "" && strings.TrimSpace(in.Comment) != ""
+	}
+	if !ok {
+		return ErrInvalidPDFAnnotation
 	}
 	return nil
 }
@@ -152,30 +195,27 @@ func (s *Store) trashedAnnotationIdentity(ctx context.Context, tx pgx.Tx, actor,
 	return fmt.Sprintf("revision:%d", revision), nil
 }
 
-const annotationColumns = `id,file_id,author_id,source_identity,page,kind,rects,color,points,text,created_at,updated_at`
+const annotationColumns = `id,page,kind,color,rects,strokes,width,size,text,comment`
 
 func scanAnnotation(row pgx.Row) (PDFAnnotation, error) {
 	var out PDFAnnotation
-	var rects, points []byte
-	err := row.Scan(&out.ID, &out.FileID, &out.AuthorID, &out.SourceIdentity, &out.Page, &out.Kind, &rects, &out.Color, &points, &out.Text, &out.CreatedAt, &out.UpdatedAt)
+	var rects, strokes []byte
+	err := row.Scan(&out.ID, &out.Page, &out.Kind, &out.Color, &rects, &strokes, &out.Width, &out.Size, &out.Text, &out.Comment)
 	if err == nil {
 		err = json.Unmarshal(rects, &out.Rects)
 		if err == nil {
-			err = json.Unmarshal(points, &out.Points)
+			err = json.Unmarshal(strokes, &out.Strokes)
 		}
-	}
-	if isNoRows(err) {
-		err = ErrNotFound
 	}
 	return out, err
 }
 
 // ListPDFAnnotations is the caller's own marks on the file's current bytes. A
 // trashed PDF's trash readers read theirs too, read-only (Epo 2026-11-12).
-func (s *Store) ListPDFAnnotations(ctx context.Context, actor, file string) ([]PDFAnnotation, error) {
+func (s *Store) ListPDFAnnotations(ctx context.Context, actor, file string) (PDFAnnotationList, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return PDFAnnotationList{}, err
 	}
 	defer tx.Rollback(ctx)
 	identity, err := s.annotationLock(ctx, tx, actor, file, false)
@@ -183,84 +223,93 @@ func (s *Store) ListPDFAnnotations(ctx context.Context, actor, file string) ([]P
 		identity, err = s.trashedAnnotationIdentity(ctx, tx, actor, file)
 	}
 	if err != nil {
-		return nil, err
+		return PDFAnnotationList{}, err
 	}
 	rows, err := tx.Query(ctx, `SELECT `+annotationColumns+` FROM pdf_annotations WHERE file_id=$1 AND author_id=$2 AND source_identity=$3 ORDER BY page,created_at,id`, file, actor, identity)
 	if err != nil {
-		return nil, err
+		return PDFAnnotationList{}, err
 	}
 	defer rows.Close()
-	out := []PDFAnnotation{}
+	out := PDFAnnotationList{SourceIdentity: identity, Marks: []PDFAnnotation{}}
 	for rows.Next() {
-		row, e := scanAnnotation(rows)
+		mark, e := scanAnnotation(rows)
 		if e != nil {
-			return nil, e
+			return PDFAnnotationList{}, e
 		}
-		out = append(out, row)
+		out.Marks = append(out.Marks, mark)
 	}
 	if err = rows.Err(); err != nil {
-		return nil, err
+		return PDFAnnotationList{}, err
 	}
 	rows.Close()
 	return out, tx.Commit(ctx)
 }
-func (s *Store) SavePDFAnnotation(ctx context.Context, actor, file, id string, in PDFAnnotationBody) (PDFAnnotation, error) {
-	if err := validatePDFAnnotation(in); err != nil {
-		return PDFAnnotation{}, err
+
+// ChangePDFAnnotations saves (inserts or replaces) and removes the caller's
+// marks in one transaction. A mark ID is the viewer's, so its marks draw and
+// change before any save lands; one held by another author or file, or saved
+// on other bytes, is a conflict. Removing a mark already gone is no error: a
+// later queue or another tab removed it first.
+func (s *Store) ChangePDFAnnotations(ctx context.Context, actor, file string, in PDFAnnotationChanges) error {
+	for _, mark := range in.Save {
+		if err := validatePDFAnnotation(mark); err != nil {
+			return err
+		}
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return PDFAnnotation{}, err
+		return err
 	}
 	defer tx.Rollback(ctx)
 	identity, err := s.annotationLock(ctx, tx, actor, file, true)
 	if err != nil {
-		return PDFAnnotation{}, err
+		return err
 	}
 	if identity != in.SourceIdentity {
-		return PDFAnnotation{}, ErrConflict
+		return ErrConflict
 	}
-	rects, err := json.Marshal(in.Rects)
-	if err != nil {
-		return PDFAnnotation{}, err
+	if len(in.Remove) > 0 {
+		if _, err := tx.Exec(ctx, `DELETE FROM pdf_annotations WHERE file_id=$1 AND author_id=$2 AND id=ANY($3)`, file, actor, in.Remove); err != nil {
+			return err
+		}
 	}
-	points := []byte("[]")
-	if len(in.Points) > 0 {
-		points, err = json.Marshal(in.Points)
+	if len(in.Save) == 0 {
+		return tx.Commit(ctx)
+	}
+	batch := &pgx.Batch{}
+	for _, mark := range in.Save {
+		rects, err := json.Marshal(mark.Rects)
 		if err != nil {
-			return PDFAnnotation{}, err
+			return err
+		}
+		strokes, err := json.Marshal(mark.Strokes)
+		if err != nil {
+			return err
+		}
+		batch.Queue(`INSERT INTO pdf_annotations(id,file_id,author_id,source_identity,page,kind,color,rects,strokes,width,size,text,comment)
+			VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			ON CONFLICT (id) DO UPDATE SET page=EXCLUDED.page,kind=EXCLUDED.kind,color=EXCLUDED.color,rects=EXCLUDED.rects,
+				strokes=EXCLUDED.strokes,width=EXCLUDED.width,size=EXCLUDED.size,text=EXCLUDED.text,comment=EXCLUDED.comment,updated_at=now()
+			WHERE pdf_annotations.file_id=EXCLUDED.file_id AND pdf_annotations.author_id=EXCLUDED.author_id
+				AND pdf_annotations.source_identity=EXCLUDED.source_identity`,
+			mark.ID, file, actor, identity, mark.Page, mark.Kind, mark.Color, rects, strokes, mark.Width, mark.Size, mark.Text, mark.Comment)
+	}
+	results := tx.SendBatch(ctx, batch)
+	for range in.Save {
+		tag, err := results.Exec()
+		if err == nil && tag.RowsAffected() == 0 {
+			err = ErrConflict
+		}
+		if err != nil {
+			results.Close()
+			return err
 		}
 	}
-	var row pgx.Row
-	if id == "" {
-		if err := assertAnnotationRoomTx(ctx, tx, file); err != nil {
-			return PDFAnnotation{}, err
-		}
-		row = tx.QueryRow(ctx, `INSERT INTO pdf_annotations(id,file_id,author_id,source_identity,page,kind,rects,color,points,text) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING `+annotationColumns, uid("ann"), file, actor, in.SourceIdentity, in.Page, in.Kind, rects, in.Color, points, in.Text)
-	} else {
-		row = tx.QueryRow(ctx, `UPDATE pdf_annotations SET page=$4,kind=$5,rects=$6,color=$7,points=$9,text=$10,updated_at=now() WHERE id=$1 AND file_id=$2 AND author_id=$3 AND source_identity=$8 RETURNING `+annotationColumns, id, file, actor, in.Page, in.Kind, rects, in.Color, identity, points, in.Text)
-	}
-	out, err := scanAnnotation(row)
-	if err != nil {
-		return out, err
-	}
-	return out, tx.Commit(ctx)
-}
-func (s *Store) DeletePDFAnnotation(ctx context.Context, actor, file, id string) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
+	if err := results.Close(); err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
-	if _, err = s.annotationLock(ctx, tx, actor, file, true); err != nil {
+	if err := assertAnnotationRoomTx(ctx, tx, file); err != nil {
 		return err
-	}
-	result, err := tx.Exec(ctx, `DELETE FROM pdf_annotations WHERE id=$1 AND file_id=$2 AND author_id=$3`, id, file, actor)
-	if err != nil {
-		return err
-	}
-	if result.RowsAffected() == 0 {
-		return ErrNotFound
 	}
 	return tx.Commit(ctx)
 }

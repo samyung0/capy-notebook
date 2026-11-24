@@ -24,7 +24,8 @@ import type {
   ModelRef,
   MoveFilesReq,
   PDFAnnotation,
-  PDFAnnotationBody,
+  PDFAnnotationChanges,
+  PDFAnnotationList,
   Question,
   SearchResult,
   SourceCollaborationToken,
@@ -545,6 +546,9 @@ function trashedEntry(id: unknown) {
 }
 
 const pdfAnnotations: Record<string, PDFAnnotation[]> = {};
+/** The bytes a file's marks are saved on, as the server names them. */
+const mockMarkIdentity = (fileId: string) =>
+  `revision:${(db.files.find((row) => row.id === fileId) ?? trashedEntry(fileId)?.file)?.revision ?? 1}`;
 
 export { mockWorkspaceMembers } from './workspaceMembers';
 
@@ -1043,44 +1047,34 @@ export const handlers = [
     }
   ),
   ...voiceInputHandlers,
-  http.get('/api/files/:id/annotations', ({ params }) =>
-    params.id === 'mock-preview-annotations'
-      ? new HttpResponse(null, { status: 503 })
-      : HttpResponse.json(pdfAnnotations[String(params.id)] ?? [])
-  ),
-  http.post('/api/files/:id/annotations', async ({ params, request }) => {
+  http.get('/api/files/:id/annotations', ({ params }) => {
+    if (params.id === 'mock-preview-annotations')
+      return new HttpResponse(null, { status: 503 });
     const fileId = String(params.id);
-    const body = (await request.json()) as PDFAnnotationBody;
-    const mark: PDFAnnotation = {
-      ...body,
-      authorId: db.user.id,
-      createdAt: new Date().toISOString(),
-      fileId,
-      id: uid('annotation'),
-      updatedAt: new Date().toISOString(),
-    };
-    pdfAnnotations[fileId] ??= [];
-    pdfAnnotations[fileId].push(mark);
-    return HttpResponse.json(mark, { status: 201 });
+    return HttpResponse.json<PDFAnnotationList>({
+      marks: pdfAnnotations[fileId] ?? [],
+      sourceIdentity: mockMarkIdentity(fileId),
+    });
   }),
-  http.patch(
-    '/api/files/:id/annotations/:annotationId',
-    async ({ params, request }) => {
-      const mark = pdfAnnotations[String(params.id)]?.find(
-        (item) => item.id === params.annotationId
-      );
-      if (!mark) return new HttpResponse(null, { status: 404 });
-      Object.assign(mark, await request.json(), {
-        updatedAt: new Date().toISOString(),
-      });
-      return HttpResponse.json(mark);
-    }
-  ),
-  http.delete('/api/files/:id/annotations/:annotationId', ({ params }) => {
+  http.patch('/api/files/:id/annotations', async ({ params, request }) => {
     const fileId = String(params.id);
-    pdfAnnotations[fileId] = (pdfAnnotations[fileId] ?? []).filter(
-      (item) => item.id !== params.annotationId
+    const body = (await request.json()) as PDFAnnotationChanges;
+    if (body.sourceIdentity !== mockMarkIdentity(fileId))
+      return HttpResponse.json(
+        {
+          code: 'revision_conflict',
+          message: 'someone else changed this first',
+        },
+        { status: 409 }
+      );
+    const saved = new Map(body.save.map((mark) => [mark.id, mark]));
+    const kept = (pdfAnnotations[fileId] ?? [])
+      .filter((mark) => !body.remove.includes(mark.id))
+      .map((mark) => saved.get(mark.id) ?? mark);
+    const added = body.save.filter(
+      (mark) => !kept.some((row) => row.id === mark.id)
     );
+    pdfAnnotations[fileId] = [...kept, ...added];
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/files/:id/links', ({ params }) => {

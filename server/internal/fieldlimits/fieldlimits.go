@@ -273,6 +273,7 @@ var Columns = map[string]int{
 	"upload_sessions.name":             FileName,
 	"reconcile_runs.requested_by_name": UserName,
 	"pdf_annotations.text":             PDFAnnotationText,
+	"pdf_annotations.comment":          Comment,
 	"material_comments.text":           Comment,
 }
 

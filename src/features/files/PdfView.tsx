@@ -20,10 +20,10 @@ import { m } from '@/i18n';
 import { useHorizontalWheelScroll } from '@/lib/useHorizontalWheelScroll';
 import { CitationOverlay } from './CitationOverlay';
 import { normalizeCitationRegions } from './citationRegions';
-import { FileModeControl, useFileMode } from './FileModeControl';
 import { FileError } from './FileStates';
 import { FileHeaderTarget } from './fileModeContext';
 import { PdfAnnotations } from './PdfAnnotations';
+import { MARGIN_CARDS_PX, MARGIN_ICONS_PX } from './PdfMarkComments';
 import { keepPdfPlace } from './pdfPlace';
 import { scrollToCenter } from './scrollToCenter';
 
@@ -54,9 +54,10 @@ function autoPageWidth(page: Size, pane: Size) {
   return Math.max(0, Math.floor(width * Math.min(MAX_AUTO_SCALE, fit)));
 }
 
-// TODO: better UX for PDF highlighting and overlays. Until then the annotation
-// tools and the Edit/View switch stay hidden; saved marks still draw.
-const ANNOTATION_TOOLS = false;
+/** The pane's least width for comments beside the pages (D11 B); narrower,
+ * the toolbar's Comments lists them. */
+const MARGIN_MIN_PANE_PX = 720;
+const MARGIN_GAP_PX = 16;
 
 /** How long a citation box shows; matches the overlay's animation. */
 const CITATION_FLASH_MS = 1600;
@@ -201,13 +202,13 @@ export default function PdfView({
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
+  const [toolbarEnd, setToolbarEnd] = useState<HTMLDivElement | null>(null);
   const [strip, setStrip] = useState<HTMLDivElement | null>(null);
+  const [margin, setMargin] = useState<HTMLDivElement | null>(null);
+  const [comments, setComments] = useState({ collapsed: false, comments: 0 });
   useHorizontalWheelScroll(toolbar);
-  const canAnnotate =
-    ANNOTATION_TOOLS && !!annotationFile && !annotationsReadOnly;
-  const [mode, setMode] = useFileMode(canAnnotate, 'view');
-  const editing = mode === 'edit';
-  const [annotationBusy, setAnnotationBusy] = useState(false);
+  // Marks are private, so a PDF has no View/Edit: its tools are always on.
+  const canAnnotate = !!annotationFile && !annotationsReadOnly;
   const [zoom, setZoom] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [numPages, setNumPages] = useState(0);
@@ -224,7 +225,22 @@ export default function PdfView({
   const [firstPage, setFirstPage] = useState<Size | null>(null);
   const [firstPageFailed, setFirstPageFailed] = useState(false);
   const loadingPdf = useRef<unknown>(null);
-  const pageWidth = pane && firstPage ? autoPageWidth(firstPage, pane) : 0;
+  const marginWidth =
+    annotationFile &&
+    comments.comments > 0 &&
+    pane &&
+    pane.width >= MARGIN_MIN_PANE_PX
+      ? comments.collapsed
+        ? MARGIN_ICONS_PX
+        : MARGIN_CARDS_PX
+      : 0;
+  const pageWidth =
+    pane && firstPage
+      ? autoPageWidth(firstPage, {
+          height: pane.height,
+          width: pane.width - (marginWidth && marginWidth + MARGIN_GAP_PX),
+        })
+      : 0;
   const pageAspectRatio = firstPage ? firstPage.width / firstPage.height : 1;
   const [pageMeasureVersion, setPageMeasureVersion] = useState(0);
   // Bumped when the cited page paints, to run the final citation scroll.
@@ -408,12 +424,6 @@ export default function PdfView({
   }, [numPages]);
   return (
     <div className="flex h-full min-h-0 w-full flex-col">
-      <FileModeControl
-        canEdit={canAnnotate}
-        disabled={annotationBusy}
-        mode={mode}
-        onChange={setMode}
-      />
       {header &&
         createPortal(
           <>
@@ -444,12 +454,16 @@ export default function PdfView({
           header
         )}
       {canAnnotate && (
-        <Toolbar className="justify-center">
+        <Toolbar aria-label={m.pdf_private_annotations()} role="toolbar">
+          {/* From the left as a note's tools on small panes, else centred. */}
           <div
-            aria-label={m.pdf_private_annotations()}
-            className="scroll-fade-x flex h-full min-w-0 max-w-full items-center overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            className="scroll-fade-x flex h-full min-w-0 flex-1 items-center overflow-x-auto [scrollbar-width:none] md:[justify-content:safe_center] [&::-webkit-scrollbar]:hidden"
             ref={setToolbar}
-            role="toolbar"
+          />
+          {/* Marks and Comments stay pinned, as a note's comments do. */}
+          <div
+            className="ml-auto flex shrink-0 items-center pl-1 sm:pl-2"
+            ref={setToolbarEnd}
           />
         </Toolbar>
       )}
@@ -458,8 +472,15 @@ export default function PdfView({
         className="min-h-0 flex-1 overflow-auto [overflow-anchor:none]"
         ref={scrollRef}
       >
+        {/* Selected or found PDF text keeps its glyphs hidden: browsers paint
+         * it in their own colours, which drew the text layer's stand-in font
+         * over the page. The tints are solid and the layer multiplies onto the
+         * page, so overlapping spans never darken them; find matches keep
+         * Chrome's own yellow and current orange. Its spans take
+         * the tool's cursor, important over react-pdf's unlayered `text`.
+         * `textLayer`, as `_` in a variant is a space. */}
         <div
-          className="relative flex min-h-full w-max min-w-full flex-col items-center [&_.react-pdf__Page__textContent_span]:cursor-inherit"
+          className="relative flex min-h-full w-max min-w-full flex-col items-center [&_.textLayer]:mix-blend-multiply [&_.textLayer_span::search-text:current]:bg-[#ff9632] [&_.textLayer_span::search-text]:bg-[Mark] [&_.textLayer_span::search-text]:text-transparent [&_.textLayer_span::selection]:bg-[color-mix(in_srgb,Highlight_40%,white)] [&_.textLayer_span::selection]:text-transparent [&_.textLayer_span]:cursor-[inherit]!"
           ref={containerRef}
           tabIndex={annotationFile ? 0 : undefined}
         >
@@ -468,73 +489,87 @@ export default function PdfView({
               <FileError onRetry={retry} />
             </div>
           )}
-          <div className="shrink-0" style={{ width: pageWidth * zoom }}>
-            <Document
-              className="shrink-0"
-              error={
-                <div className="absolute inset-0">
-                  <FileError onRetry={retry} />
-                </div>
-              }
-              file={url}
-              key={`${url}:${retryVersion}`}
-              loading={<Skeleton className="h-full w-full" />}
-              onLoadSuccess={async (pdf) => {
-                loadingPdf.current = pdf;
-                try {
-                  const first = (await pdf.getPage(1)).getViewport({
-                    scale: 1,
-                  });
-                  if (loadingPdf.current !== pdf) return;
-                  setFirstPage({ height: first.height, width: first.width });
-                  setNumPages(pdf.numPages);
-                } catch {
-                  if (loadingPdf.current === pdf) setFirstPageFailed(true);
+          <div
+            className="flex shrink-0 items-start"
+            style={{ gap: marginWidth && MARGIN_GAP_PX }}
+          >
+            <div className="shrink-0" style={{ width: pageWidth * zoom }}>
+              <Document
+                className="shrink-0"
+                error={
+                  <div className="absolute inset-0">
+                    <FileError onRetry={retry} />
+                  </div>
                 }
-              }}
-            >
-              <div className="flex w-full flex-col items-center gap-4">
-                {Array.from({ length: numPages }, (_, i) => {
-                  const p = i + 1;
-                  const pageRegions = citationRegions.filter(
-                    (region) => region.page === p
-                  );
-                  return (
-                    <LazyPdfPage
-                      flashing={!!flashKey && flashKey === citationKey}
-                      forceRender={p === 1 || p === targetPage}
-                      key={p}
-                      observeVisibility={observeVisibility}
-                      onMeasured={() =>
-                        setPageMeasureVersion((value) => value + 1)
-                      }
-                      onPainted={
-                        p === targetPage
-                          ? () => setPaintVersion((value) => value + 1)
-                          : undefined
-                      }
-                      onRetry={retry}
-                      pageNumber={p}
-                      pageWidth={pageWidth * zoom}
-                      placeholderAspectRatio={pageAspectRatio}
-                      regions={pageRegions}
-                    />
-                  );
-                })}
-              </div>
-            </Document>
+                file={url}
+                key={`${url}:${retryVersion}`}
+                loading={<Skeleton className="h-full w-full" />}
+                onLoadSuccess={async (pdf) => {
+                  loadingPdf.current = pdf;
+                  try {
+                    const first = (await pdf.getPage(1)).getViewport({
+                      scale: 1,
+                    });
+                    if (loadingPdf.current !== pdf) return;
+                    setFirstPage({ height: first.height, width: first.width });
+                    setNumPages(pdf.numPages);
+                  } catch {
+                    if (loadingPdf.current === pdf) setFirstPageFailed(true);
+                  }
+                }}
+              >
+                <div className="flex w-full flex-col items-center gap-4">
+                  {Array.from({ length: numPages }, (_, i) => {
+                    const p = i + 1;
+                    const pageRegions = citationRegions.filter(
+                      (region) => region.page === p
+                    );
+                    return (
+                      <LazyPdfPage
+                        flashing={!!flashKey && flashKey === citationKey}
+                        forceRender={p === 1 || p === targetPage}
+                        key={p}
+                        observeVisibility={observeVisibility}
+                        onMeasured={() =>
+                          setPageMeasureVersion((value) => value + 1)
+                        }
+                        onPainted={
+                          p === targetPage
+                            ? () => setPaintVersion((value) => value + 1)
+                            : undefined
+                        }
+                        onRetry={retry}
+                        pageNumber={p}
+                        pageWidth={pageWidth * zoom}
+                        placeholderAspectRatio={pageAspectRatio}
+                        regions={pageRegions}
+                      />
+                    );
+                  })}
+                </div>
+              </Document>
+            </div>
+            {marginWidth > 0 && (
+              <div
+                className="shrink-0 pt-px"
+                ref={setMargin}
+                style={{ width: marginWidth }}
+              />
+            )}
           </div>
-          {annotationFile && numPages > 0 && (
+          {annotationFile && (
             <PdfAnnotations
               containerRef={containerRef}
-              editing={editing}
               fileId={annotationFile.id}
               key={`${annotationFile.id}:${annotationFile.revision}`}
-              onPendingChange={setAnnotationBusy}
-              renderVersion={`${numPages}:${zoom}:${pageWidth}:${pageAspectRatio}:${pageMeasureVersion}`}
+              margin={marginWidth ? margin : null}
+              onMarginChange={setComments}
+              readOnly={!canAnnotate}
+              renderVersion={`${numPages}:${zoom}:${pageWidth}:${pageAspectRatio}:${pageMeasureVersion}:${marginWidth}`}
               revision={annotationFile.revision}
               strip={strip}
               toolbar={toolbar}
+              toolbarEnd={toolbarEnd}
             />
           )}
         </div>

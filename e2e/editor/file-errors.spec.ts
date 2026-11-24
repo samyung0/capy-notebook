@@ -278,8 +278,7 @@ test('User scenarios opens seeded material errors in the workspace and survives 
   await expect(blamedLine).toHaveText('  A[Unclosed node', { timeout: 30_000 });
 });
 
-// biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
-test.fixme('PDF annotation load toast shows before the PDF loads', async ({
+test('PDF annotation load toast shows before the PDF loads', async ({
   page,
   context,
 }) => {
@@ -318,9 +317,8 @@ test.fixme('PDF annotation load toast shows before the PDF loads', async ({
       hasText: m.pdf_annotations_failed(),
     })
   ).toHaveCount(0);
-  await page.getByRole('button', { name: m.material_mode() }).click();
   await expect(
-    page.getByRole('button', { exact: true, name: m.pdf_draw() })
+    page.getByRole('button', { exact: true, name: m.pdf_pen() })
   ).toBeDisabled();
 });
 

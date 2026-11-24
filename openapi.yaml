@@ -5761,115 +5761,113 @@ components:
     PDFAnnotation:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/PDFAnnotation.json
-          format: uri
-          readOnly: true
-          type: string
-        authorId:
-          type: string
         color:
           pattern: ^#[0-9a-fA-F]{6}$
           type: string
-        createdAt:
-          format: date-time
-          type: string
-        fileId:
+        comment:
+          maxLength: 3000
           type: string
         id:
+          pattern: ^ann_[0-9a-f]{10,32}$
           type: string
         kind:
           enum:
             - highlight
-            - rectangle
-            - ellipse
+            - underline
+            - marker
             - pen
             - text
+            - note
+            - rectangle
+            - ellipse
+            - arrow
           type: string
         page:
           format: int64
           minimum: 1
           type: integer
-        points:
-          items:
-            $ref: "#/components/schemas/PDFPoint"
-          maxItems: 4096
-          nullable: true
-          type: array
         rects:
           items:
             $ref: "#/components/schemas/PDFRect"
           maxItems: 1000
-          minItems: 1
           type: array
-        sourceIdentity:
-          type: string
+        size:
+          format: double
+          maximum: 80
+          minimum: 0
+          type: number
+        strokes:
+          items:
+            items:
+              $ref: "#/components/schemas/PDFPoint"
+            nullable: true
+            type: array
+          maxItems: 512
+          type: array
         text:
           maxLength: 2000
           type: string
-        updatedAt:
-          format: date-time
-          type: string
+        width:
+          format: double
+          maximum: 80
+          minimum: 0
+          type: number
       required:
         - id
-        - fileId
-        - authorId
-        - createdAt
-        - updatedAt
-        - sourceIdentity
         - page
         - kind
-        - rects
         - color
+        - rects
+        - strokes
+        - width
+        - size
+        - text
+        - comment
       type: object
-    PDFAnnotationBody:
+    PDFAnnotationChanges:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/PDFAnnotationBody.json
+          example: https://example.com/schemas/PDFAnnotationChanges.json
           format: uri
           readOnly: true
           type: string
-        color:
-          pattern: ^#[0-9a-fA-F]{6}$
-          type: string
-        kind:
-          enum:
-            - highlight
-            - rectangle
-            - ellipse
-            - pen
-            - text
-          type: string
-        page:
-          format: int64
-          minimum: 1
-          type: integer
-        points:
+        remove:
           items:
-            $ref: "#/components/schemas/PDFPoint"
-          maxItems: 4096
-          nullable: true
+            type: string
+          maxItems: 2000
           type: array
-        rects:
+        save:
           items:
-            $ref: "#/components/schemas/PDFRect"
-          maxItems: 1000
-          minItems: 1
+            $ref: "#/components/schemas/PDFAnnotation"
+          maxItems: 200
           type: array
         sourceIdentity:
           type: string
-        text:
-          maxLength: 2000
+      required:
+        - sourceIdentity
+        - save
+        - remove
+      type: object
+    PDFAnnotationList:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PDFAnnotationList.json
+          format: uri
+          readOnly: true
+          type: string
+        marks:
+          items:
+            $ref: "#/components/schemas/PDFAnnotation"
+          type: array
+        sourceIdentity:
           type: string
       required:
         - sourceIdentity
-        - page
-        - kind
-        - rects
-        - color
+        - marks
       type: object
     PDFPoint:
       additionalProperties: false
@@ -12692,9 +12690,7 @@ paths:
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/PDFAnnotation"
-                type: array
+                $ref: "#/components/schemas/PDFAnnotationList"
           description: OK
         default:
           content:
@@ -12705,8 +12701,8 @@ paths:
       summary: Read private PDF annotations
       tags:
         - Source collaboration
-    post:
-      operationId: createPDFAnnotation
+    patch:
+      operationId: changePDFAnnotations
       parameters:
         - in: path
           name: id
@@ -12717,38 +12713,8 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PDFAnnotationBody"
+              $ref: "#/components/schemas/PDFAnnotationChanges"
         required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PDFAnnotation"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Create a private PDF annotation
-      tags:
-        - Source collaboration
-  /api/files/{id}/annotations/{annotationId}:
-    delete:
-      operationId: deletePDFAnnotation
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: annotationId
-          required: true
-          schema:
-            type: string
       responses:
         "204":
           description: No Content
@@ -12758,42 +12724,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Delete an authored PDF annotation
-      tags:
-        - Source collaboration
-    patch:
-      operationId: updatePDFAnnotation
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: annotationId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PDFAnnotationBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PDFAnnotation"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Update an authored PDF annotation
+      summary: Save and remove private PDF annotations
       tags:
         - Source collaboration
   /api/files/{id}/clone:

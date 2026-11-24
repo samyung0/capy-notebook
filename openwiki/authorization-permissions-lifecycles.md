@@ -2867,7 +2867,8 @@ transfer use the collaboration eviction/outbox and processing fences.
 
 Private PDF annotations belong to one actor and exact source identity. Reading
 and mutation require current file access, and one actor cannot read or modify
-another actor's marks. A file holds at most 2,000 annotations across all
+another actor's marks: mark IDs come from the viewer, so a save over an ID
+another author holds is a conflict and a remove of it touches nothing. A file holds at most 2,000 annotations across all
 authors (409 `annotation_limit`), as decided; at the cap, a reader learns
 only that the file is full, never whose marks fill it. Clones and downloads do not include them, and
 `PurgeUser` deletes the actor's marks at account purge.

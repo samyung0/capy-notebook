@@ -173,8 +173,8 @@ import type {
   NotificationCountOutputBody,
   NotificationPage,
   NotificationPrefs,
-  PDFAnnotation,
-  PDFAnnotationBody,
+  PDFAnnotationChanges,
+  PDFAnnotationList,
   PaperFileReq,
   PendingWorkspaceInvite,
   Practice,
@@ -5647,7 +5647,7 @@ const res = await fetch(getUpdateFileUrl(id),
 
 
 export type listPDFAnnotationsResponse200 = {
-  data: PDFAnnotation[]
+  data: PDFAnnotationList
   status: 200
 }
 
@@ -5696,26 +5696,26 @@ export const listPDFAnnotations = async (id: string, options?: RequestInit): Pro
 
 
 
-export type createPDFAnnotationResponse201 = {
-  data: PDFAnnotation
-  status: 201
+export type changePDFAnnotationsResponse204 = {
+  data: void
+  status: 204
 }
 
-export type createPDFAnnotationResponseDefault = {
+export type changePDFAnnotationsResponseDefault = {
   data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
+  status: Exclude<HTTPStatusCodes, 204>
 }
 
-export type createPDFAnnotationResponseSuccess = (createPDFAnnotationResponse201) & {
+export type changePDFAnnotationsResponseSuccess = (changePDFAnnotationsResponse204) & {
   headers: Headers;
 };
-export type createPDFAnnotationResponseError = (createPDFAnnotationResponseDefault) & {
+export type changePDFAnnotationsResponseError = (changePDFAnnotationsResponseDefault) & {
   headers: Headers;
 };
 
-export type createPDFAnnotationResponse = (createPDFAnnotationResponseSuccess | createPDFAnnotationResponseError)
+export type changePDFAnnotationsResponse = (changePDFAnnotationsResponseSuccess | changePDFAnnotationsResponseError)
 
-export const getCreatePDFAnnotationUrl = (id: string,) => {
+export const getChangePDFAnnotationsUrl = (id: string,) => {
 
 
 
@@ -5724,10 +5724,10 @@ export const getCreatePDFAnnotationUrl = (id: string,) => {
 }
 
 /**
- * @summary Create a private PDF annotation
+ * @summary Save and remove private PDF annotations
  */
-export const createPDFAnnotation = async (id: string,
-    pDFAnnotationBody: NonReadonly<PDFAnnotationBody>, options?: RequestInit): Promise<createPDFAnnotationResponse> => {
+export const changePDFAnnotations = async (id: string,
+    pDFAnnotationChanges: NonReadonly<PDFAnnotationChanges>, options?: RequestInit): Promise<changePDFAnnotationsResponse> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -5743,139 +5743,20 @@ export const createPDFAnnotation = async (id: string,
     }
     return headers;
   };
-const res = await fetch(getCreatePDFAnnotationUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(pDFAnnotationBody)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: createPDFAnnotationResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createPDFAnnotationResponse
-}
-
-
-
-export type deletePDFAnnotationResponse204 = {
-  data: void
-  status: 204
-}
-
-export type deletePDFAnnotationResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
-}
-
-export type deletePDFAnnotationResponseSuccess = (deletePDFAnnotationResponse204) & {
-  headers: Headers;
-};
-export type deletePDFAnnotationResponseError = (deletePDFAnnotationResponseDefault) & {
-  headers: Headers;
-};
-
-export type deletePDFAnnotationResponse = (deletePDFAnnotationResponseSuccess | deletePDFAnnotationResponseError)
-
-export const getDeletePDFAnnotationUrl = (id: string,
-    annotationId: string,) => {
-
-
-
-
-  return `/api/files/${id}/annotations/${annotationId}`
-}
-
-/**
- * @summary Delete an authored PDF annotation
- */
-export const deletePDFAnnotation = async (id: string,
-    annotationId: string, options?: RequestInit): Promise<deletePDFAnnotationResponse> => {
-
-  const res = await fetch(getDeletePDFAnnotationUrl(id,annotationId),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: deletePDFAnnotationResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as deletePDFAnnotationResponse
-}
-
-
-
-export type updatePDFAnnotationResponse200 = {
-  data: PDFAnnotation
-  status: 200
-}
-
-export type updatePDFAnnotationResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type updatePDFAnnotationResponseSuccess = (updatePDFAnnotationResponse200) & {
-  headers: Headers;
-};
-export type updatePDFAnnotationResponseError = (updatePDFAnnotationResponseDefault) & {
-  headers: Headers;
-};
-
-export type updatePDFAnnotationResponse = (updatePDFAnnotationResponseSuccess | updatePDFAnnotationResponseError)
-
-export const getUpdatePDFAnnotationUrl = (id: string,
-    annotationId: string,) => {
-
-
-
-
-  return `/api/files/${id}/annotations/${annotationId}`
-}
-
-/**
- * @summary Update an authored PDF annotation
- */
-export const updatePDFAnnotation = async (id: string,
-    annotationId: string,
-    pDFAnnotationBody: NonReadonly<PDFAnnotationBody>, options?: RequestInit): Promise<updatePDFAnnotationResponse> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-const res = await fetch(getUpdatePDFAnnotationUrl(id,annotationId),
+const res = await fetch(getChangePDFAnnotationsUrl(id),
   {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(pDFAnnotationBody)
+    body: JSON.stringify(pDFAnnotationChanges)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: updatePDFAnnotationResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updatePDFAnnotationResponse
+  const data: changePDFAnnotationsResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as changePDFAnnotationsResponse
 }
 
 
