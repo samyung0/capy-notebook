@@ -384,7 +384,7 @@ workspace or not (who holds it:
   projection (each projection changes the content, since the block carries the
   stored version); a fold between projections is not charged again, and a
   rename, a share or a trash charges nothing. The board's base state vector
-  and delete set (`base_state_vector`, `base_delete_set`, migration 0190,
+  and delete set (`base_state_vector`, `base_delete_set`, migration 0193,
   ids only, written at the seed and each fold) are not charged. The seeded
   board is charged
   once its room first seeds it, at its first open (migration 0184, Epo
