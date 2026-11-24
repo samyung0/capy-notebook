@@ -582,9 +582,11 @@ pub async fn serve(app: Shared, socket: WebSocket, _address: Seat, traffic: Arc<
             }
             Some(out) = out_rx.recv() => match out {
                 Out::Frame(frame) => {
-                    let len = frame.len();
+                    // Off the backlog as it goes to the write: a large answer
+                    // being written leaves its reader the floor for the
+                    // relays after it (`Outbox::frame`).
+                    connection.outbox.sent(frame.len());
                     let delivered = connection.write(&mut socket, WsMessage::Binary(frame)).await;
-                    connection.outbox.sent(len);
                     if !delivered {
                         break;
                     }
