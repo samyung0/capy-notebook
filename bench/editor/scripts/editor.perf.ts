@@ -92,26 +92,25 @@ const BUDGET = {
   // 1.3x the medians of three Performance runs of the production build on
   // 5b054df3a, 2026-11-24 (CPU x4), opens from the slower runner (steps above).
   // Run values are listed as 45330694331 / 45330707441 (AMD EPYC 7763) /
-  // 45330721726 (AMD EPYC 9V45). They are the only perf gate and only a human
-  // lowers them. See openwiki/editor-perf.md.
+  // 45330721726 (AMD EPYC 9V45). The opens were set again on the fixed
+  // measure (below). They are the only perf gate and only a human lowers them.
+  // See openwiki/editor-perf.md.
   large: {
-    // BUDGET: both opens await recalibration on the fixed measure
-    // (2026-11-24, bench/editor/reports/2026-11-24-editable-open-breakdown.md).
-    // They were set on the old one, where read-only stopped ~0.1 s after its
-    // click, on the note's title in the left panel (on screen behind the
-    // gate), and interactive waited for the page's first contenteditable (a
-    // MathLive field in the paint until its DOM left when idle) and then ran a
-    // text scan of the 26k-element editable. Both now end once the frame first
-    // showing the note's first block is rendered (`waitForNote`). On the Mac
-    // at CI speed (2.2x) that put read-only 2.1 s later (2,450 to 4,599 ms)
-    // and interactive 2.3 s sooner (8,867 to 6,587). New figures come from
-    // three CI runs of the fixed bench by the steps above, and need Epo's
-    // word; until then a read-only miss is the measure, not a regression.
-    // Wall-clock from navigation to a synced, editable Plate instance. Measured
-    // unthrottled. 1.3x the slower EPYC 7763 run: 8,491 / 9,119 / 7,399.
-    interactiveOpenMs: 11_900,
-    // 1.3x the slower EPYC 7763 run: 2,137 / 2,279 / 2,602.
-    readOnlyOpenMs: 3000,
+    // Both opens end once the frame first showing the note's first block is
+    // rendered (`waitForNote`, 2026-11-24,
+    // bench/editor/reports/2026-11-24-editable-open-breakdown.md); the old
+    // measure stopped read-only on the left panel's title and waited
+    // interactive on a MathLive field. Set on that measure (Epo 2026-11-24,
+    // "Set them now") from three runs on 276d1de7e, listed as 45362191070
+    // (Intel Xeon 6975P-C) / 45362210464 / 45362227226 (AMD EPYC 9V74), by
+    // step 3: none drew the EPYC 7763, so 1.3x the slower run of the slowest
+    // runner present, the 9V74. The first runs that draw the 7763 replace
+    // them.
+    // Wall-clock from navigation to a synced, editable Plate instance showing
+    // the note. Measured unthrottled. 4,701 / 4,963 / 5,010.
+    interactiveOpenMs: 6550,
+    // 3,573 / 3,719 / 3,824.
+    readOnlyOpenMs: 5000,
     // Debounce, Yjs commit, the acknowledgement's state updates, and the
     // projection invalidation. Nothing here may touch the document tree, so
     // this budget is the tripwire for a regression that reconnects the save
