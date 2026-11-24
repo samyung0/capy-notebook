@@ -4752,6 +4752,11 @@ backfills nothing and refuses nothing.
 The board room on bytes (step 2's room tasks) loads a board from these three
 columns and never decodes its base, so a canvas whose row lacks any of them
 fails its load with "a board's base has no stored indexes" (Epo 2026-11-24:
-canvases saved before the stored indexes are deleted, not migrated). Before
-that server reaches UAT, delete the UAT canvases by hand as 0181 to 0183's
-section above does; until then the live-document room still opens them.
+canvases saved before the stored indexes are deleted, not migrated). A damaged
+value fails it too, with "a board's stored indexes cannot be read": sets whose
+runs or clients are out of order, overlap or are empty, heads or firsts out of
+order, or a sequence's first that is not one of its heads. Flipped bytes inside
+a value that keep its order (a place hash, a depth) still read; there is no
+checksum. Before that server reaches UAT, delete the UAT canvases by hand as
+0181 to 0183's section above does; until then the live-document room still
+opens them.

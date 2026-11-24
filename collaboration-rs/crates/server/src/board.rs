@@ -30,7 +30,8 @@
 //!   base, and a base stored without them fails ([Board::load]).
 
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
+use std::ops::Range;
 use std::sync::Arc;
 
 use sha2::{Digest, Sha256};
@@ -286,7 +287,8 @@ impl Indexes {
                 }
             }
         }
-        origins.take(taken);
+        origins.named = units(taken.named).into();
+        origins.continued = taken.continued.into();
         origins.keys = Keys::sorted(places);
         Indexes {
             sv: snapshot.state_map,
@@ -376,7 +378,9 @@ pub struct StoredIndexes {
 }
 
 impl StoredIndexes {
-    /// The indexes [Indexes::stored] wrote.
+    /// The indexes [Indexes::stored] wrote, refused when damaged: sets
+    /// whose runs or clients are out of order, overlap or are empty, heads
+    /// or firsts out of order, a sequence's first not one of its heads.
     pub fn decode(&self) -> Result<Indexes, BoardError> {
         let wrong = |why: &str| BoardError::Indexes(why.to_owned());
         let mut rest = Cursor::new(&self.rest);
@@ -384,8 +388,8 @@ impl StoredIndexes {
         if version != STORED_VERSION {
             return Err(BoardError::Indexes(format!("unknown version {version}")));
         }
-        let named = IdSet::decode_v1(rest.read_buf()?)?;
-        let continued = IdSet::decode_v1(rest.read_buf()?)?;
+        let named = read_runs(rest.read_buf()?)?;
+        let continued = read_runs(rest.read_buf()?)?;
         let count = read_count(&mut rest, 8)?;
         let mut keys = Vec::with_capacity(count);
         for _ in 0..count {
@@ -395,16 +399,28 @@ impl StoredIndexes {
             return Err(wrong("the keys are not ascending"));
         }
         let count = read_count(&mut rest, 10)?;
-        let mut heads = HashMap::with_capacity(count);
+        let (mut heads, mut last) = (HashMap::with_capacity(count), None);
         for _ in 0..count {
             let id = read_id(&mut rest)?;
+            if last.is_some_and(|last| last >= id) {
+                return Err(wrong("the heads are not in id order"));
+            }
+            last = Some(id);
             heads.insert(id, read_place(&mut rest)?);
         }
         let count = read_count(&mut rest, 10)?;
-        let mut firsts = HashMap::with_capacity(count);
+        let (mut firsts, mut last) = (HashMap::with_capacity(count), None);
         for _ in 0..count {
             let place = read_place(&mut rest)?;
-            firsts.insert(place, read_id(&mut rest)?);
+            if last.is_some_and(|last| last >= place) {
+                return Err(wrong("the firsts are not in place order"));
+            }
+            last = Some(place);
+            let id = read_id(&mut rest)?;
+            if heads.get(&id) != Some(&place) {
+                return Err(wrong("a sequence's first is not one of its heads"));
+            }
+            firsts.insert(place, id);
         }
         let count = read_count(&mut rest, 3)?;
         let mut depths = Vec::with_capacity(count);
@@ -425,10 +441,10 @@ impl StoredIndexes {
         }
         Ok(Indexes {
             sv: StateVector::decode_v1(&self.state_vector)?,
-            deleted: IdSet::decode_v1(&self.delete_set)?,
+            deleted: read_runs(&self.delete_set)?,
             origins: Origins {
-                named,
-                continued,
+                named: named.into(),
+                continued: continued.into(),
                 keys: Keys {
                     base: keys,
                     newer: HashSet::new(),
@@ -443,6 +459,40 @@ impl StoredIndexes {
             markers,
         })
     }
+}
+
+/// A delete-set encoding (v1) as [IdSet] writes it: each client once,
+/// ascending, its runs ascending, not overlapping and not empty. yrs's
+/// decoder takes a damaged one as it is, which binary searches misread.
+fn read_runs(bytes: &[u8]) -> Result<IdSet, BoardError> {
+    let wrong = || BoardError::Indexes("a set's runs are out of order, overlap or empty".into());
+    let mut cursor = Cursor::new(bytes);
+    let (mut clients, mut last) = (Vec::new(), None);
+    for _ in 0..read_count(&mut cursor, 2)? {
+        let client = read_client(&mut cursor)?;
+        if last.is_some_and(|last| last >= client) {
+            return Err(wrong());
+        }
+        last = Some(client);
+        let mut runs: Vec<Range<u32>> = Vec::new();
+        for _ in 0..read_count(&mut cursor, 2)? {
+            let start: u32 = cursor.read_var()?;
+            let len: u32 = cursor.read_var()?;
+            let end = start.checked_add(len).ok_or_else(wrong)?;
+            if len == 0 || runs.last().is_some_and(|run| run.end > start) {
+                return Err(wrong());
+            }
+            runs.push(start..end);
+        }
+        if runs.is_empty() {
+            return Err(wrong());
+        }
+        clients.push((client, runs));
+    }
+    if cursor.has_content() {
+        return Err(BoardError::Indexes("bytes follow a set".into()));
+    }
+    Ok(IdSet::from_iter(clients))
 }
 
 fn write_id(out: &mut Vec<u8>, id: &ID) {
@@ -592,6 +642,148 @@ impl Depths {
     }
 }
 
+/// A set of units ([Origins::named], [Origins::continued], the delete-set
+/// index): the base's in an [IdSet] (each client's runs in one sorted
+/// array), those taken since in an ordered map of runs, so an update's
+/// inserts and lookups cost the same however much the room holds (an
+/// [IdSet] merge rebuilds the client's whole array: 0.65 ms an update at
+/// 80,000 updates). The newer runs join the base at a fold
+/// ([Units::settle]).
+#[derive(Clone, Debug, Default)]
+pub struct Units {
+    base: IdSet,
+    /// Each run's client and first clock, and its end. Runs never overlap
+    /// or touch.
+    newer: BTreeMap<(ClientID, u32), u32>,
+}
+
+impl From<IdSet> for Units {
+    fn from(base: IdSet) -> Units {
+        Units {
+            base,
+            newer: BTreeMap::new(),
+        }
+    }
+}
+
+impl PartialEq for Units {
+    fn eq(&self, other: &Units) -> bool {
+        self.whole() == other.whole()
+    }
+}
+
+impl Units {
+    pub fn contains(&self, id: &ID) -> bool {
+        self.base.contains(id)
+            || self
+                .newer
+                .range(..=(id.client, id.clock))
+                .next_back()
+                .is_some_and(|(&(client, _), &end)| client == id.client && id.clock < end)
+    }
+
+    /// Whether a unit of `client` is held.
+    fn names(&self, client: &ClientID) -> bool {
+        self.base.get(client).is_some()
+            || self
+                .newer
+                .range((*client, 0)..=(*client, u32::MAX))
+                .next()
+                .is_some()
+    }
+
+    fn insert(&mut self, client: ClientID, units: Range<u32>) {
+        let Range { mut start, mut end } = units;
+        if start >= end {
+            return;
+        }
+        if let Some((&(of, from), &to)) = self.newer.range(..(client, start)).next_back()
+            && of == client
+            && to >= start
+        {
+            if to >= end {
+                return;
+            }
+            self.newer.remove(&(of, from));
+            start = from;
+        }
+        while let Some((&at, &to)) = self.newer.range((client, start)..=(client, end)).next() {
+            self.newer.remove(&at);
+            end = end.max(to);
+        }
+        self.newer.insert((client, start), end);
+    }
+
+    fn add(&mut self, set: &IdSet) {
+        for (client, runs) in set.iter() {
+            for run in runs.iter() {
+                self.insert(*client, run.clone());
+            }
+        }
+    }
+
+    /// What of `set` is not held: `set` less the held runs meeting it, each
+    /// found by halves.
+    fn missing(&self, set: &IdSet) -> IdSet {
+        let mut near = IdSet::default();
+        for (&client, runs) in set.iter() {
+            let base = self
+                .base
+                .get(&client)
+                .map_or(&[][..], |held| held.as_slice());
+            for run in runs.iter() {
+                let from = base.partition_point(|(held, _)| held.end <= run.start);
+                for (held, _) in base[from..]
+                    .iter()
+                    .take_while(|(held, _)| held.start < run.end)
+                {
+                    near.insert(ID::new(client, held.start), held.end - held.start);
+                }
+                let before = self
+                    .newer
+                    .range(..(client, run.start))
+                    .next_back()
+                    .filter(|((of, _), end)| *of == client && **end > run.start);
+                let within = self.newer.range((client, run.start)..(client, run.end));
+                for (&(_, start), &end) in before.into_iter().chain(within) {
+                    near.insert(ID::new(client, start), end - start);
+                }
+            }
+        }
+        set.diff(&near)
+    }
+
+    fn newer_set(&self) -> IdSet {
+        let mut set = IdSet::default();
+        for (&(client, start), &end) in &self.newer {
+            set.insert(ID::new(client, start), end - start);
+        }
+        set
+    }
+
+    /// Every unit held, as one set.
+    fn whole(&self) -> Cow<'_, IdSet> {
+        if self.newer.is_empty() {
+            return Cow::Borrowed(&self.base);
+        }
+        let mut whole = self.base.clone();
+        whole.merge_with(self.newer_set());
+        Cow::Owned(whole)
+    }
+
+    /// At a fold: the newer runs and `more` (the fold's own) join the base.
+    fn settle(&mut self, more: IdSet) {
+        let newer = self.newer_set();
+        self.newer.clear();
+        self.base.merge_with(newer);
+        self.base.merge_with(more);
+    }
+
+    fn encode_v1(&self) -> Vec<u8> {
+        self.whole().encode_v1()
+    }
+}
+
 /// The depth of the held type `item` ([Depths]), noting it and every type
 /// above it the walk passes in `depths`. Iterative.
 fn held_depth(item: &Item, depths: &mut HashMap<ID, u32>) {
@@ -679,10 +871,10 @@ pub struct Origins {
     /// Units a held item names as its origin, except an item's own client's
     /// previous unit: something was placed right after them. Compressed per
     /// run, as the delete-set index is.
-    pub named: IdSet,
+    pub named: Units,
     /// Units whose client's next unit names them as its origin: a run goes
     /// on past them.
-    pub continued: IdSet,
+    pub continued: Units,
     /// The places ([place]) holding at least one item: every map key set,
     /// every sequence written.
     pub keys: Keys,
@@ -723,8 +915,10 @@ impl Origins {
             continued,
             unanchored,
         } = taken;
-        self.named.merge_with(units(named));
-        self.continued.merge_with(continued);
+        for id in named {
+            self.named.insert(id.client, id.clock..id.clock + 1);
+        }
+        self.continued.add(&continued);
         let mut touched = Touched::default();
         let at: HashMap<ID, usize> = unanchored
             .iter()
@@ -959,7 +1153,7 @@ pub struct Board {
     /// each appended update's new deletions. It lacks implicit deletions (a
     /// concurrent overwrite's loser, content added to a type deleted at the
     /// same time) until a fold's base names them.
-    deleted: IdSet,
+    deleted: Units,
     /// The base's and every appended item's origins and places.
     origins: Origins,
     /// The base's and every appended type's depth.
@@ -1001,7 +1195,7 @@ impl Board {
             tail: Vec::new(),
             recent: Vec::new(),
             rows_made: 0,
-            deleted,
+            deleted: deleted.into(),
             origins,
             depths,
             marker_clients: markers,
@@ -1049,7 +1243,7 @@ impl Board {
         }
         let room_client = loop {
             let client = ClientID::random();
-            let named = board.sv.get(&client) > 0 || board.deleted.get(&client).is_some();
+            let named = board.sv.get(&client) > 0 || board.deleted.names(&client);
             if !named && !taken(client.get()) {
                 break client;
             }
@@ -1088,7 +1282,7 @@ impl Board {
             }
         }
         self.sv.merge(ends);
-        self.deleted.merge_with(update.delete_set().clone());
+        self.deleted.add(update.delete_set());
         self.origins.take(taken);
         for (id, depth) in types {
             self.depths.insert(id, depth);
@@ -1216,8 +1410,16 @@ impl Board {
                 .map(|range| u64::from(range.end - range.start))
                 .sum::<u64>();
         }
-        // Open, for a decision (not in the approved flag rule): flag a fresh
-        // range that covers a type, whose content yrs deletes unnamed.
+        // A crafted update deleting a type without naming its content is
+        // Small. Browsers are fine: Yjs collects deletions unsorted and
+        // sorts once. yrs keeps them sorted as it goes, so deleting a block
+        // whose text was typed backwards costs quadratic time in yrs: 567 ms
+        // at 80,000 characters, about 5 s at the 4 MiB cap, in the server's
+        // fold and trials and in the late-merge WASM. Honest deletions name
+        // every child and are flagged past 16 ranges; type deletions are not
+        // flagged, since every eraser stroke would go to a trial. The fix
+        // goes into the yrs fork (collect deletions unsorted, sort at
+        // commit, as Yjs does), with the planned streaming reader work.
         flagged |=
             count > ydoc::SMALL_EDIT || ranges > ydoc::SMALL_EDIT || covered > ydoc::MAX_WORK;
         Ok(Read::New(Fresh {
@@ -1248,7 +1450,7 @@ impl Board {
             ..
         } = fresh;
         self.sv.merge(ends);
-        self.deleted.merge_with(deleted);
+        self.deleted.add(&deleted);
         let touched = self.origins.take(taken);
         for (id, depth) in types {
             self.depths.insert(id, depth);
@@ -1336,7 +1538,8 @@ impl Board {
 
     /// The running fold's new base and its indexes (`note_store::fold`)
     /// replace the base and the rows it covered. The index keeps what it
-    /// held and takes the implicit deletions the new base names; the fold's
+    /// held and takes the implicit deletions the new base names, the unit
+    /// sets' newer runs joining their base ([Units::settle]); the fold's
     /// places and depths become the base's part of theirs, its heads and
     /// marker clients join the room's, and its first of each sequence is
     /// trusted again where no item with no origin was put since its rows
@@ -1367,7 +1570,9 @@ impl Board {
         self.base = base;
         self.sv.merge(sv.clone());
         self.base_sv = sv;
-        self.deleted.merge_with(deleted);
+        self.deleted.settle(deleted);
+        self.origins.named.settle(IdSet::default());
+        self.origins.continued.settle(IdSet::default());
         let Origins {
             keys,
             heads,
@@ -1496,7 +1701,7 @@ impl Board {
     /// `update`'s deletions the room does not hold by name: outside the
     /// index and, for the room's client, the marker document's own.
     fn fresh_deletions(&self, update: &Update) -> IdSet {
-        let mut fresh = update.delete_set().diff(&self.deleted);
+        let mut fresh = self.deleted.missing(update.delete_set());
         if fresh.get(&self.markers.client_id()).is_some() {
             fresh.diff_with(&self.markers.transact().snapshot().delete_set);
         }
@@ -1677,8 +1882,10 @@ mod tests {
     #![allow(clippy::unwrap_used)]
 
     use std::collections::HashMap;
+    use std::time::{Duration, Instant};
 
     use yrs::block::ClientID;
+    use yrs::encoding::write::Write as _;
     use yrs::types::{Attrs, ToJson};
     use yrs::updates::decoder::Decode;
     use yrs::updates::encoder::Encode;
@@ -2337,7 +2544,10 @@ mod tests {
         let step2 = replica(&reconnecting)
             .transact()
             .encode_state_as_update_v1(&stale);
-        let (state, deleted) = (room.board.state_vector(), room.board.deleted.clone());
+        let (state, deleted) = (
+            room.board.state_vector(),
+            room.board.deleted.whole().into_owned(),
+        );
         room.deliver(&step2);
         let relayed = room.board.recent.last().unwrap().clone();
         assert!(relayed.len() < step2.len());
@@ -3091,8 +3301,14 @@ mod tests {
             &room.board.origins,
             Indexes::of_doc(&doc.transact()).origins,
         );
-        assert!(document.named.diff(&ours.named).is_empty());
-        assert!(document.continued.diff(&ours.continued).is_empty());
+        assert!(document.named.whole().diff(&ours.named.whole()).is_empty());
+        assert!(
+            document
+                .continued
+                .whole()
+                .diff(&ours.continued.whole())
+                .is_empty()
+        );
         assert!(
             document
                 .keys
@@ -3168,19 +3384,27 @@ mod tests {
         let document = Indexes::of_doc(&stored.transact());
         let loaded = &next.board;
         assert_eq!(loaded.sv, document.sv);
-        assert!(room.board.deleted.diff(&loaded.deleted).is_empty());
+        assert!(
+            room.board
+                .deleted
+                .whole()
+                .diff(&loaded.deleted.whole())
+                .is_empty()
+        );
         assert!(
             document
                 .origins
                 .named
-                .diff(&loaded.origins.named)
+                .whole()
+                .diff(&loaded.origins.named.whole())
                 .is_empty()
         );
         assert!(
             document
                 .origins
                 .continued
-                .diff(&loaded.origins.continued)
+                .whole()
+                .diff(&loaded.origins.continued.whole())
                 .is_empty()
         );
         assert!(
@@ -3240,7 +3464,7 @@ mod tests {
         .unwrap();
         let stored = held(&room.stored());
         assert_eq!(board.sv, stored.0);
-        assert!(board.deleted.diff(&stored.1).is_empty());
+        assert!(board.deleted.whole().diff(&stored.1).is_empty());
         assert!(matches!(
             Board::load(room.stored_base.clone(), None, room.rows.clone(), |_| false),
             Err(BoardError::NoIndexes)
@@ -3486,5 +3710,143 @@ mod tests {
         move |txn, blocks| {
             text(txn, blocks, id, "prop:text").insert(txn, 0, "s");
         }
+    }
+
+    /// Performance regression (bytes-room review 3, finding 1): an update's
+    /// read and append cost the same after 80,000 updates as in the first
+    /// thousand, though each adds a named unit, a continued run and a
+    /// deletion apart from all the indexes held (typing backwards at a
+    /// text's start and setting a property). The long room's last thousand
+    /// take turns with a fresh room's first thousand, so both see the same
+    /// load, and the median of the last is held to 4 times the first's.
+    /// Fails with each update merged into the whole sets, or its deletions
+    /// diffed against the whole delete-set index (at 20,000 updates the
+    /// last median was 34 times the first's).
+    #[test]
+    fn an_updates_cost_stays_flat_however_long_the_room_runs() {
+        const UPDATES: u32 = 80_000;
+        const WINDOW: u32 = 1_000;
+        let open = || {
+            let mut room = Room::new();
+            let writer = synced(&room, 11);
+            room.deliver(&edited(&writer, |txn, blocks| {
+                blocks.insert(txn, "x", MapPrelim::default()).insert(
+                    txn,
+                    "prop:text",
+                    TextPrelim::new(""),
+                );
+            }));
+            (room, writer)
+        };
+        // The `n`th update's read and append.
+        let update = |room: &mut Room, writer: &Tab, n: u32| {
+            let sent = edited(writer, |txn, blocks| {
+                text(txn, blocks, "x", "prop:text").insert(txn, 0, "zz");
+                block(txn, blocks, "x").insert(txn, "n", n);
+            });
+            let started = Instant::now();
+            let Read::New(fresh) = read(&room.board, &sent) else {
+                panic!("nothing new");
+            };
+            room.board.append(fresh);
+            started.elapsed()
+        };
+        let (mut long, long_writer) = open();
+        for n in 0..UPDATES - WINDOW {
+            update(&mut long, &long_writer, n);
+        }
+        let (mut fresh, fresh_writer) = open();
+        let (mut first, mut last) = (Vec::new(), Vec::new());
+        for n in 0..WINDOW {
+            first.push(update(&mut fresh, &fresh_writer, n));
+            last.push(update(&mut long, &long_writer, UPDATES - WINDOW + n));
+        }
+        let median = |mut costs: Vec<Duration>| {
+            costs.sort_unstable();
+            costs[costs.len() / 2]
+        };
+        let (first, last) = (median(first), median(last));
+        eprintln!("an update's read and append: first {first:?}, last {last:?}");
+        assert!(last <= first * 4, "first {first:?}, last {last:?}");
+    }
+
+    /// Damaged stored indexes fail the load instead of reading as other
+    /// indexes (bytes-room review 3, finding 2): runs that overlap, go back
+    /// or are empty and clients out of order, in the named or continued
+    /// units or the delete set; heads out of id order; a sequence's first
+    /// that is not one of its heads. The same parts undamaged read back.
+    #[test]
+    fn damaged_stored_indexes_are_refused() {
+        // A delete-set encoding (v1) of runs (client, start, length), each
+        // client's together.
+        let set = |runs: &[(u64, u32, u32)]| {
+            let mut clients: Vec<(u64, Vec<(u32, u32)>)> = Vec::new();
+            for &(client, start, len) in runs {
+                match clients.last_mut() {
+                    Some((last, of)) if *last == client => of.push((start, len)),
+                    _ => clients.push((client, vec![(start, len)])),
+                }
+            }
+            let mut set = Vec::new();
+            set.write_var(clients.len());
+            for (client, runs) in clients {
+                set.write_var(client);
+                set.write_var(runs.len());
+                for (start, len) in runs {
+                    set.write_var(start);
+                    set.write_var(len);
+                }
+            }
+            set
+        };
+        let write_id = |out: &mut Vec<u8>, id: &ID| {
+            out.write_var(id.client.get());
+            out.write_var(id.clock);
+        };
+        let stored = |sets: [&[u8]; 3], heads: &[(ID, u64)], firsts: &[(u64, ID)]| {
+            let [named, continued, deleted] = sets;
+            let mut rest = vec![1];
+            rest.write_buf(named);
+            rest.write_buf(continued);
+            rest.write_var(0u32);
+            rest.write_var(heads.len());
+            for (id, place) in heads {
+                write_id(&mut rest, id);
+                rest.write_all(&place.to_le_bytes());
+            }
+            rest.write_var(firsts.len());
+            for (place, id) in firsts {
+                rest.write_all(&place.to_le_bytes());
+                write_id(&mut rest, id);
+            }
+            rest.write_var(0u32);
+            rest.write_var(0u32);
+            StoredIndexes {
+                state_vector: StateVector::default().encode_v1(),
+                delete_set: deleted.to_vec(),
+                rest,
+            }
+        };
+        let refused =
+            |stored: StoredIndexes| matches!(stored.decode(), Err(BoardError::Indexes(_)));
+        let good = set(&[(5, 0, 2), (5, 4, 1), (9, 3, 1)]);
+        let (a, b) = (ID::new(ClientID::new(11), 0), ID::new(ClientID::new(11), 4));
+        let heads = [(a, 7), (b, 8)];
+        let decoded = stored([&good; 3], &heads, &[(7, a)]).decode().unwrap();
+        assert!(decoded.deleted.contains(&ID::new(ClientID::new(5), 4)));
+        assert_eq!(decoded.origins.firsts.get(&7), Some(&a));
+        for bad in [
+            set(&[(5, 0, 4), (5, 2, 4)]),
+            set(&[(5, 4, 1), (5, 0, 2)]),
+            set(&[(5, 3, 0)]),
+            set(&[(9, 0, 1), (5, 0, 1)]),
+        ] {
+            assert!(refused(stored([&bad, &good, &good], &heads, &[])));
+            assert!(refused(stored([&good, &bad, &good], &heads, &[])));
+            assert!(refused(stored([&good, &good, &bad], &heads, &[])));
+        }
+        assert!(refused(stored([&good; 3], &[(b, 8), (a, 7)], &[])));
+        assert!(refused(stored([&good; 3], &heads, &[(8, a)])));
+        assert!(refused(stored([&good; 3], &[], &[(7, a)])));
     }
 }
