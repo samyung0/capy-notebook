@@ -425,7 +425,8 @@ workspace or not (who holds it:
   state (a deletion) always enters. Deletions leave the bound high until the
   next trial or fold, so the browser keeps a size of its own (the writing
   tab's encode or device copy plus every update since), which its menu shows
-  and its removals-only gate and offline stop read. It equals the largest sync message the collaboration server takes
+  and its removals-only gate and offline stop read. The cap equals the
+  largest sync message the collaboration server takes
   (`NOTE_MAX_SYNC_BYTES`, 4 MiB; a compile-time assert keeps the cap from
   passing it). The embed catalog carries the number to the Rust catalog and
   the board catalog to the browser. A store never refuses a board for size.

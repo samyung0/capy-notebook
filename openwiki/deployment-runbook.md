@@ -4762,8 +4762,13 @@ checksum. Before that server reaches UAT, the UAT canvases stored before it
 (each with a `material_yjs_documents` row and no `base_indexes`; one never
 opened has no row and seeds afresh) are deleted by hand, and only once Epo
 has said yes to it (the bytes-room plan's follow-ups). As for 0181, count
-them and tell whoever drew them, then delete them just before the deploy; the
-cascade releases each charge and queues each blob:
+them before the deploy and tell whoever drew them, then delete them right
+after it. Not before: the old server, running until the deploy, writes rows
+without `base_indexes`, so a canvas opened or created between the delete and
+the deploy would fail its load afterwards. The new server writes
+`base_indexes` at every first seed and every fold, so after the deploy the
+query matches exactly the canvases stored before it, and nothing adds more.
+The cascade releases each charge and queues each blob:
 
 ```sql
 SELECT m.owner_user_id, count(*) FROM materials m
@@ -4774,4 +4779,5 @@ DELETE FROM materials m USING material_yjs_documents d
 WHERE d.material_id = m.id AND m.kind = 'canvas' AND d.base_indexes IS NULL;
 ```
 
-Until then the live-document room still opens them.
+Until the deploy the live-document room still opens them; from the deploy to
+the delete they fail their load.
