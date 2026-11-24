@@ -1211,8 +1211,10 @@ function readLink(value: string) {
 }
 
 /** A typed link's card in the view's middle, selected: a YouTube video 16:9, any
- * other web address a web card. False when it isn't a web address. */
+ * other web address a web card. False when it isn't a web address, null when
+ * a full board refuses it (`refusesAdds` says so). */
 function placeLink(gfx: GfxController, value: string) {
+  if (refusesAdds(gfx.doc)) return null;
   const link = readLink(value);
   if (!link) return false;
   addCard(gfx, LINK_FLAVOUR, link, link.videoId ? [320, 180] : [280, 76]);
@@ -1288,10 +1290,12 @@ class CapyLinkAdd extends LitElement {
         @submit=${(event: SubmitEvent) => {
           event.preventDefault();
           const input = this.renderRoot.querySelector('input');
-          if (input && placeLink(this.gfx, input.value)) {
+          const placed = input ? placeLink(this.gfx, input.value) : false;
+          if (placed) {
             this.dispatchEvent(new Event('placed'));
             return;
           }
+          if (placed === null) return;
           this.invalid = true;
           this.requestUpdate();
         }}
@@ -3146,11 +3150,9 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
 
   /** A link card: a YouTube video shows its poster; any other address its host. */
   private addLink(value: string) {
-    if (!placeLink(this.gfx, value)) {
-      this.linkError = true;
-      return;
-    }
-    this.placed();
+    const placed = placeLink(this.gfx, value);
+    if (placed) this.placed();
+    else if (placed === false) this.linkError = true;
   }
 
   private renderLink() {
@@ -3184,8 +3186,10 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     </div>`;
   }
 
-  /** A quiz or set card at the view's middle, then the panel goes. */
+  /** A quiz or set card at the view's middle, then the panel goes; a full
+   * board refuses it (`refusesAdds` says so). */
   private placeMaterial(kind: CardMaterialKind, id: string, title: string) {
+    if (refusesAdds(this.gfx.doc)) return;
     addCard(
       this.gfx,
       MATERIAL_FLAVOUR,
@@ -3201,10 +3205,10 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
 
   /** The New tile: the workspace makes one, the card lands, its editor opens (also
    * when the panel closed while the create was in flight: nothing made is left
-   * unplaced and unsaid). */
+   * unplaced and unsaid). A full board makes none it would refuse to place. */
   private async createMaterial(kind: CardMaterialKind) {
     const workspace = workspaceOf(this.edgeless.std);
-    if (!workspace || this.creating) return;
+    if (!workspace || this.creating || refusesAdds(this.gfx.doc)) return;
     this.creating = true;
     try {
       const made = await workspace.create(kind);

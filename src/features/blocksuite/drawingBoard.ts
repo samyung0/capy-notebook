@@ -156,8 +156,8 @@ import {
 } from './boardFormula';
 import { forgetFormulas } from './boardFormulaDraw';
 import {
-  boardFull,
   checkBoardSize,
+  gatePresses,
   refusesAdds,
   setBoardCheck,
   setBoardFull,
@@ -852,31 +852,23 @@ export function mountDrawingBoard(
     PanTool.toolName,
     TapPanTool.toolName,
   ]);
-  /** Back to select from a tool that adds, while gated (the size checked
-   * first, `boardFull.ts`): said when the person picked it, silent when the
-   * gate came on under it (the size row says why), and never under a stroke
-   * in progress, which ends first. */
-  let stillTool: (() => void) | null = null;
-  const refuseTool = (picked: boolean) => {
-    if (!full || ADDS_NOTHING.has(gfx.tool.currentToolName$.peek())) return;
-    if (picked) {
-      if (refusesAdds(store)) gfx.tool.setTool(DefaultTool);
-      return;
-    }
-    stillTool?.();
-    stillTool = gfx.tool.dragging$.subscribe((dragging) => {
-      if (dragging) return;
-      queueMicrotask(() => {
-        stillTool?.();
-        stillTool = null;
-        if (
-          !ADDS_NOTHING.has(gfx.tool.currentToolName$.peek()) &&
-          boardFull(store)
-        )
-          gfx.tool.setTool(DefaultTool);
-      });
-    });
+  /** A tool that adds, picked while gated: back to select with the cap's
+   * line, the size checked first (`boardFull.ts`). */
+  const refuseTool = () => {
+    if (
+      !ADDS_NOTHING.has(gfx.tool.currentToolName$.peek()) &&
+      refusesAdds(store)
+    )
+      gfx.tool.setTool(DefaultTool);
   };
+  // A press on the canvas with a tool that adds, while gated, is refused the
+  // same way; the gate coming on under a tool leaves it until the next press.
+  gatePresses(
+    store,
+    gfx.tool.get(DefaultTool),
+    () => !(readOnly || ADDS_NOTHING.has(gfx.tool.currentToolName$.peek())),
+    () => gfx.tool.setTool(DefaultTool)
+  );
   /** A mind map's node alone is selected: Tab and Enter add its child or
    * sibling. */
   const onMindmapNode = () => {
@@ -924,7 +916,7 @@ export function mountDrawingBoard(
   // The stylesheet shows the eraser's ring while it's the tool.
   const unwatchTool = gfx.tool.currentToolName$.subscribe((name) => {
     board.dataset.tool = name;
-    if (full) queueMicrotask(() => refuseTool(true));
+    if (full) queueMicrotask(refuseTool);
   });
   // The ☰ and, just left of it, the page's save status (`statusSlot`, empty
   // without a room).
@@ -1474,7 +1466,6 @@ export function mountDrawingBoard(
           'enable_dblclick_note',
           options.board === 'workspace' && !full
         );
-      refuseTool(false);
     },
     /** The board as it is, leaving a tool in use alone; a note's size waiting
      * on a pause in typing goes in. */
@@ -1536,7 +1527,6 @@ export function mountDrawingBoard(
       chrome.remove();
       uploads?.dispose();
       boardUploads.delete(std);
-      stillTool?.();
       copying?.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols?.unmount();

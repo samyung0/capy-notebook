@@ -5793,14 +5793,19 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   a drop, ⌘D and the element toolbar's Duplicate (both through
   `createElementsFromClipboardDataCommand`), an Alt-drag's copy, a mind map's
   Tab or Enter child, a shape's auto-complete +, a double click's note, a piece
-  or picture from the toolbar or Misc, an image picked, and a new formula.
+  or picture from the toolbar or Misc, a link card and a quiz or set card (or
+  a new one made for the board), an image picked, and a new formula.
   Typing in what is already there and Undo are not stopped; the room refuses
   them past its cap and its copy-only recovery takes over. Below the margin it
-  all comes back. The gate coming on under the pen waits for the stroke to end,
-  then goes back to select without a toast (the row says why); picking an
-  adding tool while gated is what the toast is for. `setRoomSize` is called on
-  every update of the room, so it does nothing unless the row's text or the
-  gate changes.
+  all comes back. The gate coming on under the pen leaves it picked: its next
+  press on the board (`gatePresses`, the tool controller's hooks, which hear
+  only presses on the canvas, never the toolbar's) checks the size and, still
+  full, is refused with the toast and goes back to select, nothing of the
+  press reaching the pen (bytes room review 4, 2026-11-25: before, the board
+  went back to select silently as the gate came on, which encoded the board at
+  each crossing in every tab holding the pen while a peer dragged). `setRoomSize`
+  is called on every update of the room, so it does nothing unless the row's
+  text or the gate changes.
   A popover, menu or dialog of the page's that holds focus keeps it while the pointer
   crosses the board (local change 40): upstream the board took focus back on the
   pointer's first move, which closed the canvas picker.
@@ -6875,8 +6880,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       line. Nothing acts on a size deletions may have left high: the page hands
       the board its size with its check (`setRoomSize(size, checkSize)`, kept per
       store in `boardFull.ts`), and whatever refuses an add (`refusesAdds`: a tool
-      picked, a paste, a drop, ⌘D, a formula, a piece), the tool switch after a
-      stroke at the cap and the menu as it opens call the check first. With
+      picked, a press on the board with a tool that adds, a paste, a drop, ⌘D, a
+      formula, a piece, a link or quiz card), a double click (before its note is
+      decided) and the menu as it opens call the check first. With
       deletions since the last measure it encodes once and the exact size reaches
       the board before it returns (`subscribeSize` is synchronous), so a board
       that peers cleared takes an add with no receipt. A tab that may not write
