@@ -19993,17 +19993,29 @@ async fn settled_long(client: &mut Client, check: impl Fn(&Client) -> bool) -> b
     false
 }
 
-/// Bytes-room step 2, markers across a fold: every store begins a fold
-/// (one row is enough here) that reads its rows 5 s later (debug builds:
-/// `capy-it-fold-later`), and a store taken while one runs commits but
-/// tells its room only once the test lets it (`capy-it-hold-stored`). The
-/// writer's second drawing goes in such a store: its row hides the live
-/// marker, and the fold reads that row, so the new base deletes a marker
-/// the room has not cleared. The swap writes it again and relays that to
-/// the writer; a tab joining then holds it live, the marker map and the
-/// board as the writer does; once the store is let go its clear removes the
-/// marker on both. Fails if a join after a fold loses the live markers, or
-/// the swap does not write them again.
+/// The loaded rooms' log bytes (`capy_collaboration_room_log_bytes`).
+async fn room_log_bytes(port: u16) -> u64 {
+    metrics_text(port)
+        .await
+        .lines()
+        .find_map(|line| line.strip_prefix("capy_collaboration_room_log_bytes "))
+        .and_then(|value| value.parse().ok())
+        .expect("room log bytes")
+}
+
+/// Bytes-room step 2, markers across a fold (review of 0d41ab8e1, finding
+/// B): every store begins a fold (one row is enough here) that reads its
+/// rows 5 s later (debug builds: `capy-it-fold-later`), through the version
+/// the room took as stored when it began, and a store taken while one runs
+/// commits but tells its room only once the test lets it
+/// (`capy-it-hold-stored`). The writer's second drawing goes in such a
+/// store: its row, committed, hides the live marker, and the fold swaps in
+/// its base without that row (the room's log bytes back to 0), so the base
+/// deletes no live marker and nothing is written again. A tab joining then
+/// holds the marker live, the marker map and the board as the writer does;
+/// once the store is let go its clear removes the marker on both. Fails if
+/// a fold reads a row whose store its room has not taken (a joiner holding
+/// the new base would skip the live marker).
 #[tokio::test]
 async fn a_joiner_after_a_fold_sees_live_markers() {
     let Some(env) = env() else { return };
@@ -20018,24 +20030,21 @@ async fn a_joiner_after_a_fold_sees_live_markers() {
     let mut writer = Client::at_board(server.port, &room, &user).await;
     writer.draw("one", "affine:note", &[]).await;
     persisted(&mut writer, "one").await;
+    assert!(writer.settle(|c| live_markers(c) == 0).await);
+    assert!(room_log_bytes(server.port).await > 0);
     writer.draw("two", "affine:note", &[]).await;
-    writer.until(6).await.expect("ack");
     assert!(writer.settle(|c| live_markers(c) == 1).await);
     store_held(&env, &material).await;
-    let written = writer.doc.transact().state_vector();
-    let own = yrs::block::ClientID::new(writer.id());
-    let rewritten = |c: &Client| {
-        c.doc
-            .transact()
-            .state_vector()
-            .iter()
-            .any(|(client, clock)| *client != own && *clock > written.get(client))
-    };
-    assert!(
-        settled_long(&mut writer, rewritten).await,
-        "the swap wrote no marker again"
-    );
-    assert_eq!(live_markers(&writer), 1);
+    let mut swapped = false;
+    for _ in 0..200 {
+        if room_log_bytes(server.port).await == 0 {
+            swapped = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(swapped, "the fold never swapped in");
+    let marked = writer.doc.transact().state_vector();
     let mut joiner = Client::at_board(server.port, &room, &user).await;
     assert!(
         joiner
@@ -20052,6 +20061,7 @@ async fn a_joiner_after_a_fold_sees_live_markers() {
     };
     assert_eq!(markers(&joiner), markers(&writer));
     assert_eq!(board_json(&joiner.doc), board_json(&writer.doc));
+    assert_eq!(joiner.doc.transact().state_vector(), marked);
     store_released(&env, &material).await;
     assert!(settled_long(&mut writer, |c| live_markers(c) == 0).await);
     assert!(settled_long(&mut joiner, |c| live_markers(c) == 0).await);

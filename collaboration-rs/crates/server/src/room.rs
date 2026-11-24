@@ -3289,13 +3289,20 @@ impl Room {
 
     /// A board's fold ended (`maybe_fold`): its new base and indexes replace
     /// the base and the rows it covered ([Board::folded]), the rows stored
-    /// since it began staying in the tail, and the live markers its base
-    /// deletes, written again, go to every channel, joins still waiting for
-    /// their answer included. The size bound takes the base's exact bytes
-    /// with what it does not hold ([BoardGrowth]). A fold that failed
-    /// (the task reported why) or found nothing gives its rows back to the
-    /// tail ([Board::fold_failed]). Both rework the board's indexes or tail,
-    /// off the async workers.
+    /// since it began staying in the tail, off the async workers. The size
+    /// bound takes the base's exact bytes with what it does not hold
+    /// ([BoardGrowth]). A fold that failed (the task reported why) or found
+    /// nothing gives its rows back to the tail ([Board::fold_failed]).
+    ///
+    /// The new base deletes no live marker, so nothing is written again: a
+    /// fold reads the rows through the version this room took as stored
+    /// when it began (`maybe_fold`), and a row is taken as stored only as
+    /// its store's commit clears the markers that row hid (`stored`), every
+    /// live marker at its snapshot (`markers::Markers::claim`, with
+    /// [Board::row] and no await between them). A marker the writer wrote
+    /// again since is a new item, which no stored row holds. Rows of an
+    /// earlier life hold none of this life's markers: a load starts its
+    /// marker document empty ([Board::load]).
     fn board_folded(&mut self, fold: board::Fold, folded: Option<Box<BoardFold>>) {
         let (State::Board(board), Kindly::Note(note)) = (&mut self.state, &mut self.kind) else {
             return;
@@ -3324,20 +3331,19 @@ impl Room {
         note.base_bytes = base_bytes;
         let base_len = base.len() as u64;
         let swapped = tokio::task::block_in_place(|| {
-            let rewritten = board.folded(fold, base, indexes)?;
+            board.folded(fold, base, indexes)?;
             let markers = board
                 .markers()
                 .transact()
                 .encode_state_as_update_v1(&StateVector::default())
                 .len() as u64;
-            Ok::<_, board::BoardError>((rewritten, markers))
+            Ok::<_, board::BoardError>(markers)
         });
-        let rewritten = match swapped {
-            Ok((rewritten, markers)) => {
+        match swapped {
+            Ok(markers) => {
                 if let Some(unfolded) = unfolded {
                     note.validator.tighten(base_len + markers + unfolded);
                 }
-                rewritten
             }
             Err(error) => {
                 observe::capture(
@@ -3345,15 +3351,9 @@ impl Room {
                     None,
                     &[("room", &self.name), ("stage", "board_fold")],
                 );
-                None
             }
-        };
-        unlog_bytes(&self.app, log_bytes.max(0) as u64);
-        if let Some(update) = rewritten {
-            // Its markers are live again: a store clears them.
-            self.content_changed();
-            self.broadcast_update(None, update);
         }
+        unlog_bytes(&self.app, log_bytes.max(0) as u64);
     }
 
     /// The open room collects its own document (Q401) at the window and held

@@ -41,7 +41,7 @@ use yrs::encoding::read::{Cursor, Read as _};
 use yrs::encoding::write::Write as _;
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
-use yrs::{Any, Doc, ID, IdSet, Map, Out, ReadTxn, StateVector, Transact, Update, UpdateBlock};
+use yrs::{Doc, ID, IdSet, ReadTxn, StateVector, Transact, Update, UpdateBlock};
 
 use crate::model::{BOARD_DEPTH, BOARD_ROOT};
 
@@ -1581,16 +1581,15 @@ impl Board {
     /// trusted again where no item with no origin was put since its rows
     /// end (anywhere, after a clear): a sequence an unplaceable insert or
     /// two tabs typing at its start at once left untrusted is trusted from
-    /// the next fold on. A live marker the new base deletes (one a committed
-    /// row hid and the room has not cleared since) is written again as a new
-    /// item, since a joiner holding the deleted struct would skip the marker
-    /// document's copy: that update, to relay.
+    /// the next fold on. The new base deletes no live marker: the room folds
+    /// only rows whose stores cleared the markers they hid (`room.rs`'s
+    /// `board_folded`).
     pub fn folded(
         &mut self,
         fold: Fold,
         base: Vec<u8>,
         indexes: Indexes,
-    ) -> Result<Option<Vec<u8>>, BoardError> {
+    ) -> Result<(), BoardError> {
         let Some(Folding { from, .. }) = self.folding.take_if(|folding| folding.fold == fold)
         else {
             return Err(BoardError::StaleFold);
@@ -1602,7 +1601,6 @@ impl Board {
             depths,
             markers,
         } = indexes;
-        let rewritten = self.rewrite_markers(&deleted);
         self.base = base;
         self.sv.merge(sv.clone());
         self.base_sv = sv;
@@ -1627,7 +1625,7 @@ impl Board {
         self.last_put.retain(|_, at| *at >= from);
         self.depths.rebase(depths);
         self.marker_clients.extend(markers);
-        Ok(rewritten)
+        Ok(())
     }
 
     /// The running fold failed: the rows it covered go back to the tail.
@@ -1795,34 +1793,6 @@ impl Board {
             (None, Some(_)) => false,
             (None, None) => named_place(item).is_some_and(|place| !origins.keys.contains(&place)),
         }
-    }
-
-    /// Writes again, as new items, the live markers `deleted` names. The
-    /// update to relay, if any.
-    fn rewrite_markers(&self, deleted: &IdSet) -> Option<Vec<u8>> {
-        let (map, hidden) = {
-            let txn = self.markers.transact();
-            let map = txn.get_map(ydoc::CONTRIBUTORS_ROOT)?;
-            let branch: &yrs::branch::Branch = map.as_ref();
-            // The room writes every marker as a map of `Any`.
-            let hidden: Vec<(String, Any)> = branch
-                .map_items()
-                .filter(|(_, item)| !item.is_deleted() && deleted.contains(item.id()))
-                .filter_map(|(key, _)| match map.get(&txn, key) {
-                    Some(Out::Any(value)) => Some((key.to_string(), value)),
-                    _ => None,
-                })
-                .collect();
-            (map, hidden)
-        };
-        if hidden.is_empty() {
-            return None;
-        }
-        let mut txn = self.markers.transact_mut();
-        for (key, value) in hidden {
-            map.insert(&mut txn, key, value);
-        }
-        Some(ydoc::committed_update(txn))
     }
 }
 
@@ -2093,10 +2063,24 @@ mod tests {
             apply(&self.peer, update);
         }
 
+        /// A store as the room makes one: its row, taken with every live
+        /// marker hidden in it, commits, and the room clears those markers
+        /// (`room.rs`'s `stored`).
         fn store(&mut self) {
+            let hidden: Vec<String> = {
+                let markers = self
+                    .board
+                    .markers()
+                    .get_or_insert_map(ydoc::CONTRIBUTORS_ROOT);
+                let txn = self.board.markers().transact();
+                markers.keys(&txn).map(str::to_owned).collect()
+            };
             let row = self.board.row().unwrap();
             self.rows.push(row.bytes.clone());
             self.board.stored(row).unwrap();
+            for key in hidden {
+                self.clear(&key);
+            }
         }
 
         /// A fold begins over the rows committed so far: which, and how many
@@ -2106,23 +2090,19 @@ mod tests {
         }
 
         /// The fold of the stored base and its first `through` rows ends, as
-        /// `note_store::fold` stores it; what the room rewrote is relayed.
-        fn end_fold(&mut self, fold: Fold, through: usize) -> Option<Vec<u8>> {
+        /// `note_store::fold` stores it.
+        fn end_fold(&mut self, fold: Fold, through: usize) {
             let mut parts = vec![self.stored_base.clone()];
             parts.extend(self.rows.drain(..through));
             let (base, indexes) = compacted(&parts);
             self.stored_base = base.clone();
             self.stored_indexes = indexes.stored();
-            let rewritten = self.board.folded(fold, base, indexes).unwrap();
-            if let Some(update) = &rewritten {
-                self.relay(update);
-            }
-            rewritten
+            self.board.folded(fold, base, indexes).unwrap();
         }
 
-        fn fold(&mut self) -> Option<Vec<u8>> {
+        fn fold(&mut self) {
             let (fold, through) = self.begin_fold();
-            self.end_fold(fold, through)
+            self.end_fold(fold, through);
         }
 
         /// The stored board: its base and rows, live markers hidden.
@@ -3175,10 +3155,11 @@ mod tests {
         assert!(held(&replica(&stored)) == held(&room.reference));
     }
 
-    /// A marker still live when a fold's base holds it deleted (a committed
-    /// row hid it and the room has not cleared it) is written again: fresh
-    /// joiners and ones holding the base read it live, and a writer's step 2
-    /// deletes no live marker, so the marker check admits it.
+    /// A marker the room wrote since its last store is live across a fold
+    /// (the base, folded from rows whose stores cleared what they hid,
+    /// deletes none): fresh joiners and ones holding the base read it live,
+    /// and a writer's step 2 deletes no live marker, so the marker check
+    /// admits it.
     #[test]
     fn a_live_marker_survives_a_fold() {
         let mut room = Room::new();
@@ -3187,8 +3168,9 @@ mod tests {
             room.deliver(sent);
         }
         room.store();
+        room.mark("writer");
         let holding = room.join();
-        assert!(room.fold().is_some());
+        room.fold();
         assert!(room.board.holds_base(&holding.transact().state_vector()));
         room.catch_up(&holding);
         let fresh = room.join();
@@ -3201,9 +3183,9 @@ mod tests {
         assert!(!live.is_empty() && live.iter().all(|id| !step2.delete_set().contains(id)));
     }
 
-    /// Markers across three folds: a live one is written again at each, one
-    /// cleared between folds stays cleared, one a row hid and the room
-    /// cleared before the fold is not written again, and the stored base and
+    /// Markers across three folds, each store clearing what its row hid:
+    /// ones written again after a store stay live through the next fold,
+    /// every joiner holding the reference's markers, and the stored base and
     /// rows hold no live marker.
     #[test]
     fn markers_stay_right_across_folds() {
@@ -3215,22 +3197,22 @@ mod tests {
             room.deliver(sent);
         }
         room.store();
+        room.mark("w1");
         let early = room.join();
-        assert_eq!(decode(&room.fold().unwrap()).blocks().count(), 2);
-        room.clear("w2");
+        room.fold();
         for sent in &updates[40..80] {
             room.deliver(sent);
         }
+        room.mark("w2");
         room.store();
-        assert_eq!(decode(&room.fold().unwrap()).blocks().count(), 1);
+        room.fold();
         room.mark("w3");
-        room.store();
-        room.clear("w3");
         for sent in &updates[80..] {
             room.deliver(sent);
         }
         room.store();
-        assert_eq!(decode(&room.fold().unwrap()).blocks().count(), 1);
+        room.mark("w3");
+        room.fold();
         room.catch_up(&early);
         let board = room.board.replica().unwrap();
         for doc in [&room.join(), &early, &room.peer, &board] {
