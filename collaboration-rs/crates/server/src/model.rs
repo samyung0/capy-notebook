@@ -337,30 +337,37 @@ pub(crate) fn board_growth(update: &yrs::Update, bytes: usize) -> u64 {
 /// like any growth, a board at its cap can always be thinned, and no update
 /// is refused by a stale estimate (a person who cleared half a full board
 /// draws again at once). The room tries only updates that tell the board
-/// something new (`board::Board::read`).
-fn admit_board(doc: &yrs::Doc, update: &yrs::Update, bytes: &[u8], bound: &mut u64) -> Admitted {
+/// something new (`board::Board::read`). Accepted after a measure, the
+/// state's exact bytes with the update come with the verdict.
+fn admit_board(
+    doc: &yrs::Doc,
+    update: &yrs::Update,
+    bytes: &[u8],
+    bound: &mut u64,
+) -> (Admitted, Option<u64>) {
     let cap = CANVAS_BOARD_MAX as u64;
     let txn = doc.transact();
     let incoming = ydoc::Incoming::new(update);
     let bounds = ydoc::Bounds { depth: BOARD_DEPTH };
     let inspection = match ydoc::inspect_bounded(&txn, &incoming, bounds) {
         Ok(inspection) => inspection,
-        Err(error) => return Admitted::Refused(error.to_string()),
+        Err(error) => return (Admitted::Refused(error.to_string()), None),
     };
     if inspection.unheld {
-        return Admitted::Unheld;
+        return (Admitted::Unheld, None);
     }
     if inspection
         .containers
         .iter()
         .any(|found| &*found.root != BOARD_ROOT)
     {
-        return Admitted::Refused("a board update writes only the blocks root".into());
+        let refused = "a board update writes only the blocks root";
+        return (Admitted::Refused(refused.into()), None);
     }
     let growth = board_growth(update, bytes.len());
     if !inspection.unnamed && *bound + growth <= cap {
         *bound += growth;
-        return Admitted::Accepted;
+        return (Admitted::Accepted, None);
     }
     let before = state_bytes(&txn);
     // The inspection tried it on a copy already, unless it is a small edit.
@@ -368,16 +375,20 @@ fn admit_board(doc: &yrs::Doc, update: &yrs::Update, bytes: &[u8], bound: &mut u
         Some(placed) => placed,
         None => match ydoc::placed(&txn, &incoming) {
             Ok(placed) => placed,
-            Err(error) => return Admitted::Refused(error.to_string()),
+            Err(error) => return (Admitted::Refused(error.to_string()), None),
         },
     };
     let after = state_bytes(&placed.transact());
     if after <= before.max(cap) {
         *bound = after;
-        Admitted::Accepted
+        (Admitted::Accepted, Some(after))
     } else {
         *bound = before;
-        Admitted::Limit(LimitCode::DocumentSizeExceeded, board_metrics(after))
+        let metrics = board_metrics(after);
+        (
+            Admitted::Limit(LimitCode::DocumentSizeExceeded, metrics),
+            None,
+        )
     }
 }
 
@@ -444,7 +455,24 @@ impl RoomValidator {
                 Err(items::Refusal::Limit { code, metrics }) => Admitted::Limit(code, metrics),
                 Err(error) => Admitted::Refused(error.to_string()),
             },
+            RoomValidator::Board(bound) => admit_board(doc, update, bytes, bound).0,
+        }
+    }
+
+    /// [RoomValidator::admit] of a board's update on its replica, with the
+    /// state's exact bytes when the trial measured them with the update
+    /// placed (near the cap, or deleting content it does not name).
+    pub fn admit_board(
+        &mut self,
+        doc: &yrs::Doc,
+        update: &yrs::Update,
+        bytes: &[u8],
+    ) -> (Admitted, Option<u64>) {
+        match self {
             RoomValidator::Board(bound) => admit_board(doc, update, bytes, bound),
+            RoomValidator::Note(_) | RoomValidator::Item(_) => {
+                (Admitted::Refused("not a board".into()), None)
+            }
         }
     }
 

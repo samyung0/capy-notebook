@@ -728,8 +728,8 @@ struct Note {
     /// The first gap below a store the room could not announce, and whether
     /// it was warned of (`announce_stored`).
     stall: Option<(i64, bool)>,
-    /// A board's size between exact measures.
-    size: BoardSize,
+    /// A board's growth its stored rows and folds do not hold yet.
+    growth: BoardGrowth,
 }
 
 impl Note {
@@ -867,70 +867,31 @@ impl Answer {
     }
 }
 
-/// A board's size between exact measures (a trial's replica, a fold's new
-/// base, the base at load). The validator's bound holds the state and the
-/// receipts' `metrics.contentBytes` carry it; what no measure has seen is
-/// the bound past the last exact size and the bytes the deletions since are
-/// estimated to free (their units at that measure's bytes per undeleted
-/// unit). Past [BOARD_TAIL] of that the board folds (`maybe_fold`), so the
-/// receipts stay near the state: an erased board comes back down. The
-/// changes no stored row or fold holds yet are kept apart, for the
-/// tightening at a fold's end ([BoardSize::folded]).
+/// What a board's size bound took that its stored rows and folds do not
+/// hold yet, so a fold's exact base can tighten it (`RoomValidator::tighten`).
+/// The bound is the last exact size (a trial's replica, a fold's base, the
+/// base at load) and the most every update since can add: an upper bound,
+/// never lowered by a deletion between measures, which the receipts'
+/// `metrics.contentBytes` carry and the browser checks against its own
+/// document before acting on it (`itemRoom.ts`).
 #[derive(Default)]
-struct BoardSize {
-    /// The last exact size.
-    exact: u64,
-    /// Bytes per undeleted unit at that measure.
-    per_unit: u64,
-    /// What the deletions since are estimated to free.
-    freed: u64,
-    /// Appended since the running store took its row (or the last one did).
-    unstored: Change,
-    /// In the running store's row.
-    storing: Change,
+struct BoardGrowth {
+    /// The growth appended since the running store took its row (or the
+    /// last one did).
+    unstored: u64,
+    /// The growth in the running store's row.
+    storing: u64,
     /// While a fold runs: what its new base will not hold (the updates no
-    /// committed row held when it began, and all since).
-    unfolded: Option<Change>,
+    /// committed row held when it began, and all growth since).
+    unfolded: Option<u64>,
 }
 
-/// Growth and estimated freed bytes ([BoardSize]).
-#[derive(Clone, Copy, Default)]
-struct Change {
-    grown: u64,
-    freed: u64,
-}
-
-impl Change {
-    fn add(&mut self, other: Change) {
-        self.grown += other.grown;
-        self.freed += other.freed;
-    }
-}
-
-impl BoardSize {
-    /// The board was `exact` bytes holding `live` undeleted units.
-    fn measured(&mut self, exact: u64, live: u64) {
-        self.exact = exact;
-        self.per_unit = exact / live.max(1);
-        self.freed = 0;
-    }
-
-    /// An update growing the board by at most `grown` and deleting `units`.
-    fn appended(&mut self, grown: u64, units: u64) {
-        let change = Change {
-            grown,
-            freed: units.saturating_mul(self.per_unit),
-        };
-        self.freed = self.freed.saturating_add(change.freed);
-        self.unstored.add(change);
+impl BoardGrowth {
+    fn grew(&mut self, growth: u64) {
+        self.unstored += growth;
         if let Some(unfolded) = &mut self.unfolded {
-            unfolded.add(change);
+            *unfolded += growth;
         }
-    }
-
-    /// What no measure has seen of a board whose bound is `bound`.
-    fn unmeasured(&self, bound: u64) -> u64 {
-        bound.saturating_sub(self.exact).saturating_add(self.freed)
     }
 
     fn row_taken(&mut self) {
@@ -940,28 +901,17 @@ impl BoardSize {
     fn row_ended(&mut self, committed: bool) {
         let storing = std::mem::take(&mut self.storing);
         if !committed {
-            self.unstored.add(storing);
+            self.unstored += storing;
         }
     }
 
     fn fold_began(&mut self) {
-        let mut unfolded = self.unstored;
-        unfolded.add(self.storing);
-        self.unfolded = Some(unfolded);
+        self.unfolded = Some(self.unstored + self.storing);
     }
 
-    /// The running fold ended, failed or found nothing.
-    fn fold_ended(&mut self) -> Option<Change> {
+    /// What the ended fold's base does not hold.
+    fn fold_ended(&mut self) -> Option<u64> {
         self.unfolded.take()
-    }
-
-    /// A fold's new base swapped in, the bound tightened to it with what it
-    /// does not hold (`unfolded`, `RoomValidator::tighten`) and now `bound`,
-    /// the board holding `live` undeleted units: what the base does not hold
-    /// stays unmeasured.
-    fn folded(&mut self, bound: u64, unfolded: Change, live: u64) {
-        self.measured(bound.saturating_sub(unfolded.grown), live);
-        self.freed = unfolded.freed;
     }
 }
 
@@ -1327,7 +1277,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 );
                 tokio::time::sleep(Duration::from_secs(3)).await;
             }
-            let (state, durable, metrics, mut refused, size) =
+            let (state, durable, metrics, mut refused) =
                 tokio::task::spawn_blocking(move || -> Result<_, String> {
                     let _permit = permit;
                     // A board loads on its stored bytes and the indexes stored
@@ -1335,22 +1285,18 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                     // without them fails here (Epo 2026-11-24). Its size is
                     // the bound the load gives, its markers a document of
                     // their own, and it holds whatever its editors wrote
-                    // (`Model::stored`). Its base is the last exact size.
+                    // (`Model::stored`).
                     if model == crate::model::Model::Board {
-                        let base = loaded.base.len() as u64;
                         let (board, bound) =
                             Board::load(loaded.base, indexes.as_ref(), loaded.rows, |id| {
                                 assigned.contains(&id)
                             })
                             .map_err(|error| error.to_string())?;
-                        let mut size = BoardSize::default();
-                        size.measured(base, board.live_units());
                         return Ok((
                             State::Board(Box::new(board)),
                             ydoc::Durable::default(),
                             crate::model::board_metrics(bound),
                             None,
-                            size,
                         ));
                     }
                     let doc = loaded_doc(loaded.base, loaded.rows, &assigned)?;
@@ -1361,13 +1307,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                     let refused = model.stored(&material_kind, &txn)?;
                     let durable = ydoc::Durable::of(&txn);
                     drop(txn);
-                    Ok((
-                        State::Doc(doc),
-                        durable,
-                        metrics,
-                        refused,
-                        BoardSize::default(),
-                    ))
+                    Ok((State::Doc(doc), durable, metrics, refused))
                 })
                 .await
                 .map_err(|error| error.to_string())??;
@@ -1430,7 +1370,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 collected,
                 gaps: std::collections::BTreeSet::new(),
                 stall: None,
-                size,
+                growth: BoardGrowth::default(),
             };
             // A note's content room keeps its sessions (Q274: notes only).
             let sessions = if note.sessioned() {
@@ -3255,16 +3195,9 @@ impl Room {
                 return;
             }
         };
-        // A board folds at a shorter tail, and once what no measure has seen
-        // of its size passes it too ([BoardSize]).
         let mut threshold = min_bytes.max(note.base_bytes);
-        let mut unmeasured = false;
         if let State::Board(_) = self.state {
             threshold = threshold.min(BOARD_TAIL);
-            unmeasured = note
-                .validator
-                .board_bound()
-                .is_some_and(|bound| note.size.unmeasured(bound) > BOARD_TAIL as u64);
         }
         // A committed row the room has not applied (a direct write racing its
         // load): no fold until it arrives, so the window never holds a row the
@@ -3272,7 +3205,7 @@ impl Room {
         // (Q419); `service_edit()` folds once the gap closes.
         if note.folding
             || !note.gaps.is_empty()
-            || (note.log_bytes < threshold && note.log_rows < max_rows && !unmeasured)
+            || (note.log_bytes < threshold && note.log_rows < max_rows)
         {
             return;
         }
@@ -3282,7 +3215,7 @@ impl Room {
         let fold = match &mut self.state {
             State::Board(board) => match board.begin_fold() {
                 Some(fold) => {
-                    note.size.fold_began();
+                    note.growth.fold_began();
                     Some(fold)
                 }
                 None => return,
@@ -3359,7 +3292,7 @@ impl Room {
     /// since it began staying in the tail, and the live markers its base
     /// deletes, written again, go to every channel, joins still waiting for
     /// their answer included. The size bound takes the base's exact bytes
-    /// with what it does not hold ([BoardSize::folded]). A fold that failed
+    /// with what it does not hold ([BoardGrowth]). A fold that failed
     /// (the task reported why) or found nothing gives its rows back to the
     /// tail ([Board::fold_failed]). Both rework the board's indexes or tail,
     /// off the async workers.
@@ -3368,7 +3301,7 @@ impl Room {
             return;
         };
         note.folding = false;
-        let unfolded = note.size.fold_ended();
+        let unfolded = note.growth.fold_ended();
         let Some(folded) = folded else {
             if let Err(error) = tokio::task::block_in_place(|| board.fold_failed(fold)) {
                 observe::capture(
@@ -3397,15 +3330,12 @@ impl Room {
                 .transact()
                 .encode_state_as_update_v1(&StateVector::default())
                 .len() as u64;
-            Ok::<_, board::BoardError>((rewritten, markers, board.live_units()))
+            Ok::<_, board::BoardError>((rewritten, markers))
         });
         let rewritten = match swapped {
-            Ok((rewritten, markers, live)) => {
+            Ok((rewritten, markers)) => {
                 if let Some(unfolded) = unfolded {
-                    note.validator.tighten(base_len + markers + unfolded.grown);
-                    if let Some(bound) = note.validator.board_bound() {
-                        note.size.folded(bound, unfolded, live);
-                    }
+                    note.validator.tighten(base_len + markers + unfolded);
                 }
                 rewritten
             }
@@ -4700,7 +4630,7 @@ impl Room {
     /// under the board work permit ([Room::board_trial]), the room's queue
     /// waiting with it, as for any trial. Read, tried and appended in this
     /// one command, the update finds the board as its read did. A trial
-    /// leaves the board measured ([BoardSize]). An update past
+    /// leaves the bound at the board's exact size. An update past
     /// `ydoc::INLINE_BYTES` (a small edit by its structs, large by its bytes)
     /// is read and appended off the async workers.
     async fn admit_board_update(
@@ -4728,23 +4658,10 @@ impl Room {
         };
         let small =
             fresh.check == board::Check::Small && note.validator.board_grows(fresh.growth());
-        let measured = if small {
-            None
-        } else {
-            match self.board_trial(context, bytes.len(), &mut fresh).await {
-                Ok(measured) => Some(measured),
-                Err(outcome) => return outcome,
-            }
-        };
-        self.append_board(
-            writer,
-            context,
-            fresh,
-            written,
-            names_asset,
-            large,
-            measured,
-        )
+        if !small && let Err(outcome) = self.board_trial(context, bytes.len(), &mut fresh).await {
+            return outcome;
+        }
+        self.append_board(writer, context, fresh, written, names_asset, large)
     }
 
     /// [Room::admit_board_update]'s checks, with no await (the decoded update
@@ -4824,18 +4741,18 @@ impl Room {
     /// again (the wait lasts as long as the permit's queue), then the board's
     /// replica is built and the update, as the board lacks it, tried on it and,
     /// near the cap or deleting content it does not name, measured
-    /// (`model::admit_board`), off the async workers. Admitted, the update is
-    /// applied to the replica, which is measured: the size bound becomes its
-    /// exact bytes, returned with the board's undeleted units once it is appended
-    /// ([BoardSize::measured]), and the depths of new types the board's index
-    /// could not give are read from it ([board::Fresh::take_depths]). The
-    /// replica and the permit go before anything is appended or sent.
+    /// (`model::admit_board`), off the async workers. Admitted, the size
+    /// bound becomes the board's exact bytes with the update: the trial's own
+    /// measure, or else the replica's with the update applied. The depths of
+    /// new types the board's index could not give are read from the replica
+    /// with the update applied ([board::Fresh::take_depths]). The replica and
+    /// the permit go before anything is appended or sent.
     async fn board_trial(
         &mut self,
         context: &Context,
         sent: usize,
         fresh: &mut board::Fresh,
-    ) -> Result<(u64, u64), Outcome> {
+    ) -> Result<(), Outcome> {
         let permit = self
             .app
             .board_work
@@ -4847,13 +4764,11 @@ impl Room {
         let (State::Board(board), Kindly::Note(note)) = (&self.state, &mut self.kind) else {
             return Err(Outcome::refused(Class::Unavailable, "not a board room"));
         };
-        let tried = tokio::task::block_in_place(|| -> Result<(Verdict, (u64, u64)), String> {
+        let tried = tokio::task::block_in_place(|| -> Result<Verdict, String> {
             let replica = board.replica().map_err(|error| error.to_string())?;
             let update = ydoc::decode(fresh.bytes()).map_err(|error| error.to_string())?;
-            let verdict = match note
-                .validator
-                .admit(&replica, &update, fresh.bytes(), false)
-            {
+            let (admitted, measured) = note.validator.admit_board(&replica, &update, fresh.bytes());
+            let verdict = match admitted {
                 crate::model::Admitted::Accepted => Verdict::Accept,
                 crate::model::Admitted::Unheld => Verdict::Unheld,
                 crate::model::Admitted::Limit(code, metrics) => Verdict::Limit(code, metrics),
@@ -4861,26 +4776,30 @@ impl Room {
                 crate::model::Admitted::Hidden => Verdict::Hidden,
             };
             if !matches!(verdict, Verdict::Accept) {
-                return Ok((verdict, (0, 0)));
+                return Ok(verdict);
             }
-            ydoc::apply(&replica, update).map_err(|error| error.to_string())?;
+            if measured.is_none() || fresh.unplaced_types() {
+                ydoc::apply(&replica, update).map_err(|error| error.to_string())?;
+            }
             if fresh.unplaced_types() {
                 fresh.take_depths(&replica);
             }
-            let exact = crate::model::state_bytes(&replica.transact());
-            note.validator.board_measured(exact);
-            Ok((verdict, (exact, board.live_units_with(fresh))))
+            if measured.is_none() {
+                let exact = crate::model::state_bytes(&replica.transact());
+                note.validator.board_measured(exact);
+            }
+            Ok(verdict)
         });
         drop(permit);
         match tried {
-            Ok((Verdict::Accept, measured)) => Ok(measured),
-            Ok((Verdict::Unheld, _)) => Err(Outcome::Unheld),
-            Ok((Verdict::Limit(code, metrics), _)) => {
+            Ok(Verdict::Accept) => Ok(()),
+            Ok(Verdict::Unheld) => Err(Outcome::Unheld),
+            Ok(Verdict::Limit(code, metrics)) => {
                 Err(self.limit_refused(context, code, metrics, sent))
             }
-            Ok((Verdict::Refused(message), _)) => Err(self.refused_on_entry(message)),
+            Ok(Verdict::Refused(message)) => Err(self.refused_on_entry(message)),
             // A note draft's verdict alone.
-            Ok((Verdict::Hidden | Verdict::Source(_), _)) => Err(Outcome::refused(
+            Ok(Verdict::Hidden | Verdict::Source(_)) => Err(Outcome::refused(
                 Class::Malformed,
                 "a board update was refused",
             )),
@@ -4905,9 +4824,7 @@ impl Room {
     /// contributor marker, both relayed, peers hearing what the board lacked
     /// of it; then what any admitted write does: the ids it wrote recorded,
     /// its acknowledgement, the store due and, when it names an asset, a
-    /// projection after that store. `measured`: the exact size and
-    /// undeleted units its trial found, the update included.
-    #[allow(clippy::too_many_arguments)]
+    /// projection after that store.
     fn append_board(
         &mut self,
         writer: Option<MemberKey>,
@@ -4916,7 +4833,6 @@ impl Room {
         written: Vec<u64>,
         names_asset: bool,
         large: bool,
-        measured: Option<(u64, u64)>,
     ) -> Outcome {
         self.placed(writer, context);
         self.applying = true;
@@ -4926,7 +4842,7 @@ impl Room {
             }
             self.broadcast_update(None, marker);
         }
-        let (growth, units) = (fresh.growth(), fresh.deleted_units());
+        let growth = fresh.growth();
         let State::Board(board) = &mut self.state else {
             self.applying = false;
             return Outcome::refused(Class::Unavailable, "not a board room");
@@ -4938,10 +4854,7 @@ impl Room {
         };
         self.applying = false;
         if let Kindly::Note(note) = &mut self.kind {
-            note.size.appended(growth, units);
-            if let Some((exact, live)) = measured {
-                note.size.measured(exact, live);
-            }
+            note.growth.grew(growth);
             note.project_soon |= names_asset;
         }
         if context.token_id != AGENT_TOKEN
@@ -6078,7 +5991,7 @@ impl Room {
             }
         };
         if let (Some(_), Kindly::Note(note)) = (&board_row, &mut self.kind) {
-            note.size.row_taken();
+            note.growth.row_taken();
         }
         let row_bytes = board_row.as_ref().map_or(row.len(), |row| row.bytes.len());
         // The sessions as of this snapshot go in its transaction, their held
@@ -6100,7 +6013,7 @@ impl Room {
                 self.store.dirty = true;
                 self.store.first_change.get_or_insert(started);
                 if let (Some(_), Kindly::Note(note)) = (&board_row, &mut self.kind) {
-                    note.size.row_ended(false);
+                    note.growth.row_ended(false);
                 }
                 self.store_failed(StoreFailure::Note(error), started, row_bytes, claimed);
                 return;
@@ -6659,7 +6572,7 @@ impl Room {
             board_row,
         } = done;
         if let (Some(_), Kindly::Note(note)) = (&board_row, &mut self.kind) {
-            note.size.row_ended(result.is_ok());
+            note.growth.row_ended(result.is_ok());
         }
         let version = match result {
             Ok(version) => version,
