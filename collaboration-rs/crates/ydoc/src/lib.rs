@@ -285,18 +285,6 @@ pub const INLINE_BYTES: usize = 64 * 1024;
 /// no trial on a copy. Anything else goes to the blocking pool while the room
 /// waits.
 pub fn applies_inline<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize) -> bool {
-    inline(txn, incoming, bytes, false)
-}
-
-/// [applies_inline] for a room that inspects with [inspect_bounded]: an
-/// edit whose splits cost more than [SMALL_SPLITS], or one deleting a type
-/// whose content it does not name, is tried on a copy there, so it is not
-/// inline here.
-pub fn applies_inline_bounded<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize) -> bool {
-    inline(txn, incoming, bytes, true)
-}
-
-fn inline<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize, bounded: bool) -> bool {
     if bytes > INLINE_BYTES {
         return false;
     }
@@ -309,8 +297,7 @@ fn inline<T: ReadTxn>(txn: &T, incoming: &Incoming, bytes: usize, bounded: bool)
         }
     }
     // The few structs of an inline edit walk few holders: none counted.
-    tried(txn, &txn.state_vector(), incoming, bounded.then_some(0))
-        .is_ok_and(|tried| tried.budget.is_none())
+    tried(txn, &txn.state_vector(), incoming, None).is_ok_and(|tried| tried.budget.is_none())
 }
 
 /// Whether at most [SMALL_EDIT] of the update's delete ranges delete

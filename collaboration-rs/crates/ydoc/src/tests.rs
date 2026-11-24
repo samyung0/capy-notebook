@@ -1172,9 +1172,9 @@ fn a_split_costs_the_piece_it_copies_and_walks() {
 }
 
 /// A keystroke in the middle of a long text splits it once. Where splits
-/// count it is applied directly while the split is cheap, and tried on a copy
-/// off the async workers once it costs more than a small edit's share
-/// ([SMALL_SPLITS]); where they do not it stays a small edit.
+/// count ([inspect_bounded]) it is tried on a copy once it costs more than a
+/// small edit's share ([SMALL_SPLITS]); where they do not it stays a small
+/// edit, applied inline.
 #[test]
 fn a_costly_split_is_not_a_small_edit_where_splits_count() {
     let keystroke = |units: usize| {
@@ -1192,12 +1192,12 @@ fn a_costly_split_is_not_a_small_edit_where_splits_count() {
             .is_some();
         let uncounted = inspect(&txn, &incoming).unwrap().trial.is_some();
         (
-            (tried, applies_inline_bounded(&txn, &incoming, bytes.len())),
+            tried,
             (uncounted, applies_inline(&txn, &incoming, bytes.len())),
         )
     };
-    assert_eq!(keystroke(100_000), ((false, true), (false, true)));
-    assert_eq!(keystroke(3_000_000), ((true, false), (false, true)));
+    assert_eq!(keystroke(100_000), (false, (false, true)));
+    assert_eq!(keystroke(3_000_000), (true, (false, true)));
 }
 
 /// Runs `check` on a thread with the 2 MiB stack a server task has.
@@ -1407,11 +1407,6 @@ fn a_bounded_inspection_tells_content_deleted_unnamed() {
         let taken = counting(&room, bytes).unwrap();
         assert!(taken.unnamed && taken.trial.is_some() && !taken.unheld);
         let incoming = decode(bytes).unwrap();
-        assert!(!applies_inline_bounded(
-            &room.transact(),
-            &Incoming::new(&incoming),
-            bytes.len()
-        ));
         // Any other room reads no such thing.
         assert!(!inspect_update(&room.transact(), &incoming).unwrap().unnamed);
     }
