@@ -5794,7 +5794,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   `createElementsFromClipboardDataCommand`), an Alt-drag's copy, a mind map's
   Tab or Enter child, a shape's auto-complete +, a double click on empty
   canvas (its note, or with the note off at the cap a canvas text label; one
-  on an element edits it), a piece or picture from the toolbar or Misc, a
+  on an element edits it, and a board that takes no edits, offline past its
+  cap, says nothing), a piece or picture from the toolbar or Misc, a
   link card and a quiz or set card (or a new one made for the board; one a
   peer's filling refused while it was made still opens, kept in the
   workspace's list), an image picked, and a new formula.
@@ -6881,10 +6882,14 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       once the tab is idle at the next store's receipt while it is at or past the
       lower of the menu's 75% line (`BOARD_SIZE_SHOWN`) and the cap less the 64 KiB
       margin, and as it crosses the full line, so the next press finds it exact:
-      moves cost one encode per store, never one each, however near a line.
-      Nothing acts on a size deletions may have left high: the page hands
-      the board its size with its check (`setRoomSize(size, checkSize)`, kept per
-      store in `boardFull.ts`), and whatever refuses an add (`refusesAdds`: a tool
+      moves cost one encode per store, never one each, however near a line. The
+      crossing's encode comes once per stroke (a stroke's rewrites cross again
+      after each measure) and is armed again by a receipt or a press on the
+      board, so a press right after a long stroke near the line may still
+      encode. Nothing acts on a size deletions may have left high: the page
+      hands the board its size with its check and its note of presses
+      (`setRoomSize(size, { check, pressed })`, kept per store in
+      `boardFull.ts`), and whatever refuses an add (`refusesAdds`: a tool
       picked, a press on the board with a tool that adds, a paste, a drop, ⌘D, a
       formula, a piece, a link or quiz card, a double click on empty canvas) and
       the menu as it opens call the check first. With

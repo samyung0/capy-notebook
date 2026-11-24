@@ -1315,6 +1315,53 @@ it('checks a full board at once after deletions, its listeners hearing the exact
   room.destroy();
 });
 
+// Bytes room T8: a stroke's rewrites cross the full line again after each
+// idle measure (each adds its whole points, the board keeps one copy); the
+// crossing books an idle encode once, and again only after a press or a
+// store's receipt. Fails if a long stroke near the line encodes at each
+// crossing.
+it('measures a board idle once per stroke at the full line, again after a press or a receipt', async () => {
+  const max = 100_000;
+  const line = max - BOARD_OFFLINE_MARGIN;
+  const { provider, room } = await boardRoom(max, 30_000);
+  provider.config.onSynced?.({ state: true });
+  const stroke = room.doc.getMap('stroke');
+  let rewrites = 0;
+  /** Rewrites the stroke's points (1 KB) until the size crosses the full
+   * line, then lets the tab be idle. */
+  const crossing = async () => {
+    for (let at = 0; at < 100; at++) {
+      const under = (room.size()?.bytes ?? 0) < line;
+      stroke.set('points', `${'p'.repeat(1000)}${rewrites++}`);
+      if (under && (room.size()?.bytes ?? 0) >= line) break;
+    }
+    expect(room.size()?.bytes).toBeGreaterThanOrEqual(line);
+    await vi.advanceTimersByTimeAsync(0);
+  };
+  const before = encodes();
+  await crossing();
+  expect(encodes()).toBe(before + 1);
+  // The size measured, the stroke goes on and crosses again: no encode.
+  room.checkSize();
+  const measured = encodes();
+  await crossing();
+  expect(encodes()).toBe(measured);
+  // A press (its gate checking the full board) arms the next crossing.
+  room.pressed();
+  room.checkSize();
+  await crossing();
+  expect(encodes()).toBe(measured + 2);
+  // So does a store's receipt, which measures the deletions itself.
+  room.checkSize();
+  await crossing();
+  boardReceipt(provider, max);
+  await vi.advanceTimersByTimeAsync(0);
+  const received = encodes();
+  await crossing();
+  expect(encodes()).toBe(received + 1);
+  room.destroy();
+});
+
 /** A board room of cap `max` holding `filled` bytes of text and one element
  * at a place, synced and then offline: the element's moves overwrite its
  * `xywh`, as a drag's end and a nudge do. */

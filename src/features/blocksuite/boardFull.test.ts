@@ -5,7 +5,7 @@ import { beforeEach, expect, it, vi } from 'vitest';
 
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 const { userToast } = await import('@/components/ui/userToast');
-const { gatePresses, refusesAdds, setBoardCheck, setBoardFull } = await import(
+const { gatePresses, refusesAdds, setBoardFull, setBoardSizer } = await import(
   './boardFull'
 );
 
@@ -21,7 +21,7 @@ it('checks a full board before it refuses an add, and takes the add once it is f
   const store = {} as Store;
   let exact = 'full';
   const check = vi.fn(() => setBoardFull(store, exact === 'full'));
-  setBoardCheck(store, check);
+  setBoardSizer(store, { check, pressed: vi.fn() });
   setBoardFull(store, true);
   expect(refusesAdds(store)).toBe(true);
   expect(check).toHaveBeenCalledOnce();
@@ -65,7 +65,8 @@ it('checks a full board at a press with a tool that adds, and refuses the press 
   const store = {} as Store;
   let exact = 'full';
   const check = vi.fn(() => setBoardFull(store, exact === 'full'));
-  setBoardCheck(store, check);
+  const pressed = vi.fn();
+  setBoardSizer(store, { check, pressed });
   setBoardFull(store, true);
   let adds = true;
   const select = vi.fn(() => {
@@ -96,6 +97,8 @@ it('checks a full board at a press with a tool that adds, and refuses the press 
   expect(heard('dragStart')).toBe(true);
   expect(check).toHaveBeenCalledTimes(2);
   expect(userToast).toHaveBeenCalledOnce();
+  // The room hears of every press (it arms its next idle measure).
+  expect(pressed).toHaveBeenCalledTimes(3);
 });
 
 // Review 4 finding 3, review 5 finding 3: a double click on empty canvas
@@ -109,7 +112,7 @@ it("refuses a full board's double click on empty canvas, its size checked first,
   const store = {} as Store;
   let exact = 'full';
   const check = vi.fn(() => setBoardFull(store, exact === 'full'));
-  setBoardCheck(store, check);
+  setBoardSizer(store, { check, pressed: vi.fn() });
   setBoardFull(store, true);
   let element = false;
   const { heard, tool } = controller();
@@ -135,4 +138,25 @@ it("refuses a full board's double click on empty canvas, its size checked first,
   // Under the cap a double click checks nothing.
   expect(heard('doubleClick')).toBe(true);
   expect(check).toHaveBeenCalledTimes(2);
+});
+
+// Bytes room T8: a board that takes no edits (offline past its cap, its
+// store read-only) says nothing at a double click: the remove-only line
+// would promise an edit it cannot take.
+it("leaves a read-only full board's double click alone", () => {
+  const store = { readonly: true } as Store;
+  const check = vi.fn();
+  setBoardSizer(store, { check, pressed: vi.fn() });
+  setBoardFull(store, true);
+  const { heard, tool } = controller();
+  gatePresses(
+    store,
+    tool,
+    () => false,
+    () => false,
+    vi.fn()
+  );
+  expect(heard('doubleClick')).toBe(true);
+  expect(check).not.toHaveBeenCalled();
+  expect(userToast).not.toHaveBeenCalled();
 });

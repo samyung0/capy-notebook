@@ -6,24 +6,26 @@ import { m } from '@/i18n';
 
 /** The stores of boards at their room's cap (`setRoomSize`). */
 const full = new WeakSet<Store>();
-/** Each board's check of its size before something acts on it (the room's
- * `checkSize`): an encode when deletions may have freed it, whose size
- * reaches `setBoardFull` before it returns. */
-const checks = new WeakMap<Store, () => void>();
+/** The room's hold on a board's size (`ItemRoom`): `check`, run before
+ * something acts on the size (an encode when deletions may have freed it,
+ * whose size reaches `setBoardFull` before it returns), and `pressed`, told
+ * of each press on the board. */
+export type BoardSizer = { check: () => void; pressed: () => void };
+const sizers = new WeakMap<Store, BoardSizer>();
 
 export function setBoardFull(store: Store, on: boolean) {
   if (on) full.add(store);
   else full.delete(store);
 }
 
-export function setBoardCheck(store: Store, check: (() => void) | null) {
-  if (check) checks.set(store, check);
-  else checks.delete(store);
+export function setBoardSizer(store: Store, sizer: BoardSizer | null) {
+  if (sizer) sizers.set(store, sizer);
+  else sizers.delete(store);
 }
 
-/** Checks the board's size now (`setBoardCheck`). */
+/** Checks the board's size now (`setBoardSizer`). */
 export function checkBoardSize(store: Store) {
-  checks.get(store)?.();
+  sizers.get(store)?.check();
 }
 
 /** Whether the board at `store` is at its cap once its size is checked. */
@@ -63,6 +65,7 @@ export function gatePresses(
 ) {
   let refused = false;
   tool.addHook('pointerDown', (event: PointerEventState) => {
+    if (event.button === 0) sizers.get(store)?.pressed();
     refused = event.button === 0 && adds() && refusesAdds(store);
     if (!refused) return;
     event.raw.preventDefault();
@@ -80,6 +83,9 @@ export function gatePresses(
     tool.addHook(name, () => (refused ? false : undefined));
   tool.addHook('doubleClick', (event: PointerEventState) => {
     if (refused) return false;
+    // A board that takes no edits (offline past its cap, read-only) has
+    // nothing to refuse.
+    if (store.readonly) return;
     if (full.has(store) && !hit(event) && refusesAdds(store)) return false;
   });
 }

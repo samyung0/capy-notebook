@@ -156,11 +156,12 @@ import {
 } from './boardFormula';
 import { forgetFormulas } from './boardFormulaDraw';
 import {
+  type BoardSizer,
   checkBoardSize,
   gatePresses,
   refusesAdds,
-  setBoardCheck,
   setBoardFull,
+  setBoardSizer,
 } from './boardFull';
 import { IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import type { BoardImages } from './boardImages';
@@ -1447,12 +1448,12 @@ export function mountDrawingBoard(
       copying?.draw();
     },
     /** The room's size against its cap, shown in the menu from 75%, and its
-     * check (`boardFull.ts`); null (no room) shows none. */
+     * hold on it (`boardFull.ts`); null (no room) shows none. */
     setRoomSize: (
       size: { bytes: number; max: number } | null,
-      check?: () => void
+      sizer?: BoardSizer
     ) => {
-      setBoardCheck(store, check ?? null);
+      setBoardSizer(store, sizer ?? null);
       // Called on every update of the room: only a change of what the board
       // shows or takes does any work.
       const before = menu.open ? JSON.stringify(sizeNote()) : '';

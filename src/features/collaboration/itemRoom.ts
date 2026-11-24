@@ -465,6 +465,9 @@ export class ItemRoom {
   private deletedSince = false;
   /** A receipt's encode waits for the tab to be idle (one at a time). */
   private measuring = false;
+  /** The next crossing of the full line books an idle encode: once, until a
+   * receipt or a press (`pressed`) arms it again. */
+  private measuresAtLine = true;
   private readonly sizeListeners = new Set<() => void>();
   /** Says saving is delayed once a receipt waits too long (`delayed`). */
   private readonly delay = new SaveDelayClock(NOTE_SAVE_DELAY_MS, () =>
@@ -607,6 +610,12 @@ export class ItemRoom {
     this.sized();
   };
 
+  /** A press on the board (`boardFull.ts`): its next crossing of the full
+   * line books an idle encode again. */
+  readonly pressed = () => {
+    this.measuresAtLine = true;
+  };
+
   private readonly grew = (
     update: Uint8Array,
     _origin: unknown,
@@ -663,9 +672,19 @@ export class ItemRoom {
     // A size crossing the full line with deletions since the last measure
     // (a long stroke rewrites its points every 20, a deletion each) is
     // encoded once the tab is idle, so the next press's gate finds it exact
-    // rather than encoding inside the press.
-    if (this.deletedSince && before < line && after >= line)
+    // rather than encoding inside the press. Once per stroke: a stroke's
+    // rewrites cross again after each measure, so the next crossing waits
+    // for a receipt or a press, and a press soon after a long stroke may
+    // still find the size high and encode.
+    if (
+      this.measuresAtLine &&
+      this.deletedSince &&
+      before < line &&
+      after >= line
+    ) {
+      this.measuresAtLine = false;
       this.remeasureSoon();
+    }
     this.sized();
   };
 
@@ -1888,6 +1907,7 @@ export class ItemRoom {
       case 'checkpoint-persisted': {
         // A board's deletions since its last measure are measured at the
         // pace of the room's stores.
+        this.measuresAtLine = true;
         this.remeasureSoon();
         const ids = Array.isArray(event.checkpointIds)
           ? (event.checkpointIds as string[])
