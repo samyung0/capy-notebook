@@ -519,8 +519,9 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(json.loads(build)["VITE_APP_URL"], "https://app.example.com")
         self.assertNotIn("never-in-the-build", build)
 
-    def test_build_values_pin_the_bench_routes_off(self):
-        """bench:canvas's switch (VITE_BENCH_ROUTES) never reaches a deployed build,
+    def test_build_values_pin_the_bench_switches_off(self):
+        """The benches' switches (VITE_BENCH_MSW for bench:editor's mocks,
+        VITE_BENCH_ROUTES for bench:canvas's route) never reach a deployed build,
         whatever the configuration holds: the deploy's `pnpm build` takes these values
         over the runner's environment."""
         values = {
@@ -531,10 +532,13 @@ class ConfigTest(unittest.TestCase):
         values.update(
             CLERK_PUBLISHABLE_KEY="pk_public",
             DEPLOYMENT_APP_URL="https://app.example.com",
+            VITE_BENCH_MSW="true",
             VITE_BENCH_ROUTES="true",
         )
         build = config.build_values(values, "production", "a" * 40)
+        self.assertEqual(build["VITE_BENCH_MSW"], "false")
         self.assertEqual(build["VITE_BENCH_ROUTES"], "false")
+        self.assertEqual(build["VITE_APP_ENV"], "production")
 
     def test_ops_render_needs_only_ops_config_and_excludes_app_secrets(self):
         values = {

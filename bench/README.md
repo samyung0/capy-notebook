@@ -38,8 +38,14 @@ place (Epo 2026-10-10).
 
 The only CI-wired suite, run manually via the `Performance` workflow
 (`.github/workflows/perf.yml`, formerly `Editor perf`) and on
-production promotion. Budgets are regression tripwires, not UX targets; snapshot
-deltas stay warn-only. Details: [editor-perf.md](../openwiki/editor-perf.md).
+production promotion. `pnpm bench:editor` measures the Plate editor on a
+production build (Vite's production mode) with MSW in the page, turned on by the
+benches' switch `VITE_BENCH_MSW` that deploys pin off (`vite build` through
+`editor/scripts/vite.cap.config.ts`, served by `vite preview`; the Vite dev server
+until 2026-11-24). Budgets are
+regression tripwires, not UX targets, and wait on recalibration from three CI
+runs of that build; snapshot deltas stay warn-only and compare only snapshots of
+the same build. Details: [editor-perf.md](../openwiki/editor-perf.md).
 Results land in the gitignored `editor/.results/`; the family's committed
 reports (`editor/reports/`) are from runs made by hand.
 
@@ -74,9 +80,12 @@ contexts, through the mock room on the Canvas page and with no room on
 every element, the end of the last long frame before 3 s with none, the JS
 heap after a forced GC, and, on the settled board, wheel pans, a pen stroke
 and one write under a sampling profile (the mock room's share of it apart).
-Its build (`editor/scripts/vite.cap.config.ts`) is the app's with any
-BetterOffice artifact that is not built resolved to an empty module, so it
-runs in a checkout without `pnpm office:prepare`. Results land in the
+Its build (`editor/scripts/vite.cap.config.ts`) is `bench:editor`'s: Vite's
+production mode with the benches' switch `VITE_BENCH_MSW` since 2026-11-24
+(its development mode before, as in the 2026-11-18 report), the benches' own
+service worker for chunks, and any BetterOffice artifact that is not built
+resolved to an empty module, so it runs in a checkout without `pnpm
+office:prepare`. Results land in the
 gitignored `editor/.results/board-cap/`. Findings:
 [`editor/reports/2026-11-18-board-open-at-cap.md`](editor/reports/2026-11-18-board-open-at-cap.md),
 its record in `editor/reports/2026-11-18-mac-m1/board-open-at-cap.json`.

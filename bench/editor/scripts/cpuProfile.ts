@@ -25,12 +25,11 @@ export interface CpuProfile {
   timeDeltas: number[];
 }
 
+const BUNDLE_RENAME = /\$\d+$/;
+
 export function shortUrl(url: string) {
   if (!url) return '';
-  return url
-    .replace(/^https?:\/\/[^/]+/, '')
-    .replace(/\?.*$/, '')
-    .replace('/node_modules/.vite/deps/', 'dep:');
+  return url.replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, '');
 }
 
 export function label(frame: CallFrame) {
@@ -95,19 +94,17 @@ export function analyze(
         ([name, ms]) => `${Math.round(ms).toString().padStart(7)}ms  ${name}`
       );
 
+  // A bundle renames a function whose name another module also uses
+  // (`Element$1`); both count as the watched name.
   const sumMatching = (map: Map<string, number>, name: string) => {
     let total = 0;
     for (const [key, ms] of map) {
-      if (key.split('  ')[0] === name) total += ms;
+      if (key.split('  ')[0].replace(BUNDLE_RENAME, '') === name) total += ms;
     }
     return total;
   };
 
   return {
-    appTotals: format(
-      new Map([...totalByLabel].filter(([n]) => n.includes('/src/'))),
-      20
-    ),
     busyMs: Math.round(
       sampled -
         (selfByLabel.get('(idle)  ') ?? 0) -
@@ -197,8 +194,6 @@ export function profileSection(
     `######## ${name}`,
     `wall ${stats.wallMs}ms · busy ${stats.busyMs}ms · dom +${dom.added}/-${dom.removed} nodes, ${dom.attrs} attr writes`,
     ...watch,
-    '-- app components (inclusive) --',
-    ...stats.appTotals,
     '-- top self time --',
     ...stats.self,
     '-- top inclusive time --',

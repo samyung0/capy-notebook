@@ -8,7 +8,7 @@ import '../../../e2e/i18n/compile';
  * server, as the input for its per-connection rate limit. Run with:
  * pnpm bench:rates
  *
- * The Vite dev server with MSW, as the editor perf harness: the editors and
+ * The Vite dev server with MSW: the editors and
  * the Office runtime are the real ones, and the mock rooms receive exactly the
  * Yjs updates the room provider would send, one message per update.
  *

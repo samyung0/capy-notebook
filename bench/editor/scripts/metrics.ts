@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { CDPSession, Page, TestInfo } from '@playwright/test';
+import { BUILD_FILE } from './snapshot';
 
 /** CPU slowdown applied while measuring (not during page load). 4x roughly
  * approximates a mid-tier laptop; use PERF_CPU=6 or higher for low-end
@@ -280,5 +281,9 @@ export async function reportMetrics(
   if (snapshotDir) {
     await mkdir(snapshotDir, { recursive: true });
     await writeFile(path.join(snapshotDir, `${name}.json`), body, 'utf8');
+    // What the run measured, for assembleSnapshot (playwright.perf.config.ts).
+    const { build } = testInfo.config.metadata;
+    if (typeof build === 'string')
+      await writeFile(path.join(snapshotDir, BUILD_FILE), build, 'utf8');
   }
 }
