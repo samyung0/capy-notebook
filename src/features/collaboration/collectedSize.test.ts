@@ -103,6 +103,14 @@ it.each(shapes)(
   }
 );
 
+it('takes an encode below where the size is acted on as it is, with no walk', () => {
+  const [, make] = shapes[0];
+  const doc = make();
+  const size = encoded(doc);
+  expect(collectedSize(doc, size + 1)).toBe(size);
+  expect(collectedSize(doc, size)).toBeLessThan(size);
+});
+
 it('sizes a document with nothing kept of its deletions as its encode', () => {
   const doc = new Y.Doc();
   const blocks = doc.getMap<unknown>('blocks');

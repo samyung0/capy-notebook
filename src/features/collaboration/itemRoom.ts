@@ -324,6 +324,12 @@ const restoredMeanwhile = (error: unknown) =>
 /** About how long a first token's 409 waits before asking again. */
 const START_AGAIN_MS = 1000;
 
+/** The least board size anything acts on: the menu shows the size from
+ * `BOARD_SIZE_SHOWN` of the cap, and the board takes only removals from the
+ * cap less `BOARD_OFFLINE_MARGIN` (`drawingBoard.ts`). */
+const boardActsFrom = (max: number) =>
+  Math.min(max * BOARD_SIZE_SHOWN, max - BOARD_OFFLINE_MARGIN);
+
 export class ItemRoom {
   /** The document the page shows and edits, for the room's whole life. */
   readonly doc: Y.Doc;
@@ -699,10 +705,16 @@ export class ItemRoom {
    * (`collectedSize`; an encode, about 40 ms at 4 MiB on an M1, and a walk of
    * its deleted items). Not the encode's length: the board's undo history
    * keeps what it deleted in this document, while the room's state is
-   * collected, so a cleared board would still read full. */
+   * collected, so a cleared board would still read full. An encode below
+   * where anything acts on the size is taken as it is, with no walk (it is
+   * an upper bound too): most boards, and most first syncs. */
   private measure() {
-    if (!this.options.board || this.snapshot.access === 'read') return;
-    this.measured = { base: collectedSize(this.doc), since: 0 };
+    const { board } = this.options;
+    if (!board || this.snapshot.access === 'read') return;
+    this.measured = {
+      base: collectedSize(this.doc, boardActsFrom(board.max)),
+      since: 0,
+    };
     this.deletedSince = false;
   }
 
@@ -720,8 +732,7 @@ export class ItemRoom {
       !size ||
       !this.deletedSince ||
       this.measuring ||
-      size.bytes <
-        Math.min(size.max * BOARD_SIZE_SHOWN, size.max - BOARD_OFFLINE_MARGIN)
+      size.bytes < boardActsFrom(size.max)
     )
       return;
     this.measuring = true;

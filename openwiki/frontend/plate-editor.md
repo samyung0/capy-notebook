@@ -6880,7 +6880,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       GC struct, any other keeps its header with its content shrunk to its
       length), an upper bound since collected neighbours merge (1.6% over at half
       of a 2.9 MB board erased); the walk adds 25-35 ms to the encode's 40 at
-      that size on an M1, and reads Yjs internals in that one file. A device copy
+      that size on an M1, and reads Yjs internals in that one file. An encode
+      below where anything acts on the size (the lower of the menu's 75% line
+      and the cap less the 64 KiB margin) stands with no walk, an upper bound
+      too: most boards and most first syncs skip it. A device copy
       is that tab's encode, so a copy-opened board takes deletions as pending
       and its first check measures. A board with no copy is measured once as it
       first syncs, at once rather than when idle, so a full board takes only

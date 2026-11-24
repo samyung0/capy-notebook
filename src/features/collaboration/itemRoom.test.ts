@@ -1320,7 +1320,8 @@ it('checks a full board at once after deletions, its listeners hearing the exact
 // board's undo history (BlockSuite's, a Y.UndoManager) keeps what a tracked
 // transaction deleted, so the document's encode still reads a cleared board
 // full; the check measures what a collected copy holds, as the room's state
-// is. Fails if the measure reads the encode's length.
+// is. Fails if the measure reads the encode's length. Below where anything
+// acts on the size, the encode stands with no walk (also an upper bound).
 it('frees a full board cleared under its undo history at the next check, sized as a collected copy', async () => {
   const max = 100_000;
   const line = max - BOARD_OFFLINE_MARGIN;
@@ -1328,6 +1329,14 @@ it('frees a full board cleared under its undo history at the next check, sized a
   const blocks = room.doc.getMap('blocks');
   const history = new Y.UndoManager(blocks);
   provider.config.onSynced?.({ state: true });
+  room.doc.transact(() => {
+    for (let at = 0; at < 5; at++) blocks.set(`d${at}`, 'x'.repeat(2000));
+  });
+  room.doc.transact(() => blocks.clear());
+  room.checkSize();
+  expect(room.size()).toEqual({ bytes: exact(room.doc), max });
+  expect(room.size()?.bytes).toBeGreaterThan(collectedSize(room.doc));
+  expect(room.size()?.bytes).toBeLessThan(line);
   room.doc.transact(() => {
     for (let at = 0; at < 40; at++) blocks.set(`e${at}`, 'x'.repeat(2000));
   });

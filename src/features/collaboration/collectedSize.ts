@@ -12,15 +12,17 @@ import * as Y from 'yjs';
  * header and its content shrinks to its length. It is an upper bound, since
  * collected neighbours merge and save more: 1.6% over at half of a 2.9 MB
  * board erased, 45% over (of a small size) at all of it. The walk costs
- * 25-35 ms beside the encode at 2.9 MB on an M1.
+ * 25-35 ms beside the encode at 2.9 MB on an M1, so an encode below `from`
+ * (where nothing acts on the size) is taken as it is: also an upper bound.
  *
  * The Yjs internals it reads, here only: the struct store
  * (`doc.store.clients`), a parent type's own item (`parent._item`), and the
  * v1 encoding of an item and of its content (`Item.write`,
  * `AbstractContent.write`).
  */
-export function collectedSize(doc: Y.Doc) {
+export function collectedSize(doc: Y.Doc, from = 0) {
   let size = Y.encodeStateAsUpdate(doc).byteLength;
+  if (size < from) return size;
   for (const structs of doc.store.clients.values()) {
     for (const struct of structs) {
       if (
