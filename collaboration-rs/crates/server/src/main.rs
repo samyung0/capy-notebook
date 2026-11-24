@@ -31,6 +31,7 @@ mod seats;
 mod sessions;
 mod socket;
 mod source_rooms;
+mod trim;
 
 use std::sync::Arc;
 use std::time::Duration;

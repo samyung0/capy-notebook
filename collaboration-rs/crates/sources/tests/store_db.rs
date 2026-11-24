@@ -28,6 +28,7 @@ use sources::edit::{EditInput, SentBack};
 use sources::engine::PoolConfig;
 use sources::handoff::{Handoff, PUBLICATION_HOLD_MARKER, SourcePublish};
 use sources::pending::OFFICE_CHANGES_BUDGET;
+use sources::pool::LARGE_ROW_BYTES;
 use sources::store::ResolveInput;
 use sources::text::{TEXT_ROOT, text_doc};
 use sources::{
@@ -552,6 +553,39 @@ async fn a_text_room_appends_rows_reloads_and_folds() {
     let folded = text_doc(102);
     h.sources.load(&room, &h.user, &folded).await.unwrap();
     assert_eq!(text(&folded), "Xhello\nYworld\n");
+}
+
+/// A load that read rows over `LARGE_ROW_BYTES` closes its pooled
+/// connection instead of giving it back, while a small load gives it back
+/// (each connection kept buffers twice its largest message:
+/// `bench/collaboration/reports/2026-11-24-room-memory-prod-2.md`). Every
+/// call here runs
+/// one at a time, the stand-in gateway's on the same pool, so a load changes
+/// the pool's size only by what it closes. Fails without the guard (the
+/// large load leaves the size as it was).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_load_that_read_a_large_row_closes_its_connection() {
+    let h = harness().await;
+    let room = h.file("text", "notes.md", b"hello\n").await;
+    let doc = text_doc(100);
+    let size = h.fake.db.status().size;
+    h.sources.load(&room, &h.user, &doc).await.unwrap();
+    assert_eq!(h.fake.db.status().size, size, "a small load's connection");
+    let mut durable = doc.transact().state_vector();
+    type_into(&doc, 7, 0, &"x".repeat(LARGE_ROW_BYTES + 1024));
+    save_text(&h, &room, &doc, &mut durable).await.unwrap();
+    let size = h.fake.db.status().size;
+    assert!(size > 0);
+    h.sources
+        .load(&room, &h.user, &text_doc(101))
+        .await
+        .unwrap();
+    assert_eq!(
+        h.fake.db.status().size,
+        size - 1,
+        "a large load's connection"
+    );
 }
 
 // Every text save carries the opening characters the file's list card

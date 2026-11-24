@@ -200,7 +200,14 @@ names everything a canvas room's yrs document holds, by kind of content, on
 the Mac and on Linux glibc, and prototyped the cuts that landed after it (the
 load into one document, board note sizes saved on a pause, the fork's yrs
 decoding value lists without spare capacity). Its scratch crate builds on a
-patched copy of yrs and is not in the repository.
+patched copy of yrs and is not in the repository. The
+[2026-11-23 production-box run](collaboration/reports/2026-11-23-room-memory-prod.md)
+measures the server itself before and after those cuts, and
+[pass 2](collaboration/reports/2026-11-24-room-memory-prod-2.md) traces what
+stays after a room unloads (pooled Postgres connections' buffers) and what
+`malloc_trim` gives back, behind the trim after each unload and the closing of
+large-message connections. Their scripts and raw records stay in the
+side-session notes.
 
 `bench/collaboration/scripts/update-rates.rates.ts` (`pnpm bench:rates`,
 `playwright.rates.config.ts`) measures what one user's editing sends: the
