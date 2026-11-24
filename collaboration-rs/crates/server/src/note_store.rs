@@ -822,8 +822,8 @@ pub struct Folded {
     pub log_bytes: i64,
     pub base_bytes: i64,
     pub collected: Option<(Window, IdSet)>,
-    /// A board's new base and the indexes stored with it, for the board
-    /// room's swap (`board::Board::folded`).
+    /// A board's new base, at its length, and the indexes stored with it,
+    /// for the board room's swap (`board::Board::folded`).
     pub board: Option<(Vec<u8>, Indexes)>,
 }
 
@@ -995,7 +995,14 @@ pub async fn fold(
                     (indexes, stored)
                 });
                 drop(txn);
-                return Ok((whole(&scratch), None, None, None, 0, indexes));
+                let mut state = whole(&scratch);
+                // A board's base is its room's until the next fold, so it is
+                // kept at its length: the encoder doubled its buffer as it
+                // grew (an 8 MiB allocation for a 4.3 MB base).
+                if board {
+                    state.shrink_to_fit();
+                }
+                return Ok((state, None, None, None, 0, indexes));
             };
             let now = Window::of(&txn, last);
             drop(txn);

@@ -794,17 +794,42 @@ impl Units {
         Cow::Owned(whole)
     }
 
-    /// At a fold: the newer runs and `more` (the fold's own) join the base.
+    /// At a fold: the newer runs and `more` (the fold's own) join the base,
+    /// rebuilt at its length ([compact]).
     fn settle(&mut self, more: IdSet) {
         let newer = self.newer_set();
         self.newer.clear();
         self.base.merge_with(newer);
         self.base.merge_with(more);
+        self.base = compact(&self.base);
     }
 
     fn encode_v1(&self) -> Vec<u8> {
         self.whole().encode_v1()
     }
+}
+
+/// `set` with each client's runs in an array of their count, one more for a
+/// client of several. A merge's array reserves the runs of both sides, so a
+/// settled set kept 1.4 to 1.9 times its runs. yrs offers no way to size the
+/// array, but its merge of two clients' runs reserves exactly their sum: the
+/// client's first run, merged with all of them. Holding one run, a client
+/// keeps it inline.
+fn compact(set: &IdSet) -> IdSet {
+    let mut compact = IdSet::default();
+    for client in set.client_ids() {
+        let Some(runs) = set.get(&client) else {
+            continue;
+        };
+        let Some(first) = runs.ranges().next() else {
+            continue;
+        };
+        compact.insert(ID::new(client, first.start), first.end - first.start);
+        if runs.len() > 1 {
+            compact.range_mut(client).merge(runs);
+        }
+    }
+    compact
 }
 
 /// The depth of the held type `item` ([Depths]), noting it and every type
@@ -1154,6 +1179,8 @@ impl<'a> Items<'a> {
 
 pub struct Board {
     /// The stored base: the last fold's compacted state, or the first state.
+    /// At its length: a load's as its row holds it, a fold's shrunk by
+    /// `note_store::fold`.
     base: Vec<u8>,
     /// The base's state vector: a joiner at or past it holds every struct of
     /// the base.
@@ -1164,6 +1191,8 @@ pub struct Board {
     /// How many folds began.
     folds: u64,
     /// The rows stored past the base, or past a running fold's start, merged.
+    /// Kept at its length wherever it is replaced (`shrink_to_fit`): yrs's
+    /// encoder doubles its buffer as it grows.
     tail: Vec<u8>,
     /// The writers' updates since the last committed store, trimmed.
     recent: Vec<Vec<u8>>,
@@ -1263,6 +1292,7 @@ impl Board {
         }
         if !rows.is_empty() {
             board.tail = bytes::merge_chunked(&rows)?;
+            board.tail.shrink_to_fit();
         }
         let room_client = loop {
             let client = ClientID::random();
@@ -1547,6 +1577,7 @@ impl Board {
             } else {
                 bytes::merge(&[self.tail.as_slice(), row.writers.as_slice()])?
             };
+            self.tail.shrink_to_fit();
         }
         self.recent.drain(..row.count);
         self.markers_durable = row.markers;
@@ -1594,6 +1625,14 @@ impl Board {
         else {
             return Err(BoardError::StaleFold);
         };
+        // `note_store::fold` shrinks the base to its length on its blocking
+        // thread. No unit test reaches that (the fold needs Postgres), so
+        // debug builds check it here, at each fold of the rooms tests.
+        debug_assert_eq!(
+            base.capacity(),
+            base.len(),
+            "a fold's base comes at its length"
+        );
         let Indexes {
             sv,
             deleted,
@@ -1614,7 +1653,11 @@ impl Board {
             ..
         } = origins;
         self.origins.keys.rebase(keys);
-        self.origins.heads.extend(heads);
+        // One by one: `extend` reserves room for half the fold's heads,
+        // which doubled the map though the room holds nearly all of them.
+        for (id, place) in heads {
+            self.origins.heads.insert(id, place);
+        }
         if self.last_clear.is_none_or(|at| at < from) {
             for (place, first) in firsts {
                 if self.last_put.get(&place).is_none_or(|&at| at < from) {
@@ -1637,7 +1680,10 @@ impl Board {
             self.tail = folding.rows;
         } else if !folding.rows.is_empty() {
             match bytes::merge(&[folding.rows.as_slice(), self.tail.as_slice()]) {
-                Ok(merged) => self.tail = merged,
+                Ok(merged) => {
+                    self.tail = merged;
+                    self.tail.shrink_to_fit();
+                }
                 Err(error) => {
                     self.folding = Some(folding);
                     return Err(error.into());
@@ -1907,7 +1953,7 @@ mod tests {
     };
 
     use super::{
-        Board, BoardError, Check, EMPTY_UPDATE, Fold, Indexes, Read, StoredIndexes, bytes,
+        Board, BoardError, Check, EMPTY_UPDATE, Fold, Indexes, Read, StoredIndexes, bytes, compact,
     };
     use crate::model::{BOARD_DEPTH, BOARD_ROOT, Model};
 
@@ -1939,7 +1985,8 @@ mod tests {
     fn compacted<B: AsRef<[u8]>>(updates: &[B]) -> (Vec<u8>, Indexes) {
         let doc = replica(updates);
         let txn = doc.transact();
-        let state = txn.encode_state_as_update_v1(&StateVector::default());
+        let mut state = txn.encode_state_as_update_v1(&StateVector::default());
+        state.shrink_to_fit();
         (state, Indexes::of_doc(&txn))
     }
 
@@ -2544,6 +2591,41 @@ mod tests {
         assert!(room.board.join(&since).unwrap().updates.is_empty());
         room.catch_up(&early);
         assert!(held(&early) == held(&room.reference));
+    }
+
+    /// Stores, a failed fold and a load each replace the tail, which stays
+    /// at its length.
+    #[test]
+    fn the_tail_is_kept_at_its_length() {
+        let at_length = |room: &Room| room.board.tail.capacity() == room.board.tail.len();
+        let updates = session(2, 80, 17);
+        let mut room = Room::new();
+        for sent in updates[..60].chunks(10) {
+            for sent in sent {
+                room.deliver(sent);
+            }
+            room.store();
+            assert!(at_length(&room));
+        }
+        let (failed, _) = room.begin_fold();
+        for sent in &updates[60..] {
+            room.deliver(sent);
+        }
+        room.store();
+        room.board.fold_failed(failed).unwrap();
+        assert!(at_length(&room));
+        assert!(at_length(&room.reload()));
+    }
+
+    /// A settled set holds the same runs once compacted: a client's one run,
+    /// another's several.
+    #[test]
+    fn a_compacted_set_holds_the_same_runs() {
+        let mut set = IdSet::default();
+        for (client, start, len) in [(1, 4, 5), (2, 0, 2), (2, 5, 4), (2, 12, 1)] {
+            set.insert(ID::new(ClientID::new(client), start), len);
+        }
+        assert_eq!(compact(&set), set);
     }
 
     /// A reconnect's step 2, built against the room's state vector of a
