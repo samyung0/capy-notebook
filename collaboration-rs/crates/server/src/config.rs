@@ -508,8 +508,9 @@ mod tests {
     /// The silent window and a group's slack each hold two of the clients'
     /// 20 s heartbeats (`HEARTBEAT_MS`): 40 s and 40,000 ms start, a second or
     /// a millisecond less is refused at start; a debug build's scaled
-    /// heartbeat (the rooms tests') scales the bound, and a release build
-    /// refuses the knob. Fails without the bounds (a tab beating through a
+    /// heartbeat (the rooms tests') scales the bound, and its scaled writer
+    /// recheck is taken; a release build refuses both knobs. Fails without
+    /// the bounds (a tab beating through a
     /// long send would close as silent, or lose a group waiting on its first
     /// acknowledgement).
     #[test]
@@ -530,18 +531,29 @@ mod tests {
             refused(&[("COLLABORATION_GROUP_SLACK_MS", "39999")]),
             "COLLABORATION_GROUP_SLACK_MS must be at least twice the clients' heartbeat (20000 ms)"
         );
+        let recheck = ("COLLABORATION_IT_RECHECK_MS", "1000");
         let scaled = [
             ("COLLABORATION_IT_HEARTBEAT_MS", "100"),
             ("COLLABORATION_PING_SECONDS", "1"),
             ("COLLABORATION_SILENT_SECONDS", "2"),
             ("COLLABORATION_GROUP_SLACK_MS", "300"),
+            recheck,
         ];
         #[cfg(debug_assertions)]
-        assert!(Config::load(&env(&scaled)).is_ok());
-        #[cfg(not(debug_assertions))]
         assert_eq!(
-            refused(&scaled),
-            "COLLABORATION_IT_HEARTBEAT_MS is for debug builds only"
+            Config::load(&env(&scaled)).unwrap().recheck,
+            Duration::from_secs(1)
         );
+        #[cfg(not(debug_assertions))]
+        {
+            assert_eq!(
+                refused(&scaled),
+                "COLLABORATION_IT_HEARTBEAT_MS is for debug builds only"
+            );
+            assert_eq!(
+                refused(&[recheck]),
+                "COLLABORATION_IT_RECHECK_MS is for debug builds only"
+            );
+        }
     }
 }
