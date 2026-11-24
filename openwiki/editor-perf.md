@@ -415,29 +415,45 @@ the engine workers. Every file fails on unpainted keys, typing that sends no
 edit to the room, a viewer `ready` without timings, a worker fallback, or a
 missed budget (open, View to Edit, key p50 and p90 per fixture); the
 50,000-row sheet fails on its scroll ceiling. The spec
-keeps the medians (`MEDIANS`) and derives each budget (`budgetOf`): 1.3x the
-median, rounded up to 5 ms below a second and 50 ms above, and no keystroke
-budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a one-frame wobble fails
-anything smaller. The medians come from three runs of the `office` job below
-on 69be9249e, 2026-11-23 (Q832 A, recalibrated after the Google gap round's
-landings, DOCX first paint to `painted`, the ~250-page DOCX gated):
-45174430580, 45174458165 and 45174485643, two on AMD EPYC 7763 and one on
-Intel Xeon 6975P-C runners. The Xeon run was the fastest on most figures, so
-the medians are mostly the EPYC runs'. Per fixture, the three runs and their
-median (ms):
+keeps what each budget is taken from (`MEDIANS`) and derives each budget
+(`budgetOf`): 1.3x that figure, rounded up to 5 ms below a second and 50 ms
+above, and no keystroke budget below `KEY_BUDGET_FLOOR_MS` (30 ms), since a
+one-frame wobble fails anything smaller. The figures come from two builds and
+both of the pool's runners (Q839 B, after the move to a production build on
+2026-11-24). The production build's three `office` jobs (45330694331,
+45330707441 and 45330721726 on 5b054df3a, 2026-11-24) all drew the fast Intel
+Xeon 6975P-C, where they match Q832's Xeon run of the earlier build (the
+250-page DOCX's View to Edit 5,818-5,948 ms against 6,205, `exchange-plan.docx`'s
+open 2,723-2,980 against 2,968). A budget from them would fail on the AMD EPYC
+7763, which in Q832 took up to 1.3 times as long as the Xeon to open and 1.3
+to 1.5 times as long from View to Edit. So:
 
-| Fixture | Open | View to Edit | Key p50 | Key p90 |
-|---|---|---|---|---|
-| exchange-plan.docx | 3699/3467/2968 -> 3467 | 2531/2717/1882 -> 2531 | 24/26/21 -> 24 | 34/35/28 -> 34 |
-| long-handbook.docx | 3875/3885/3087 -> 3875 | 3881/3989/2741 -> 3881 | 95/98/72 -> 95 | 113/120/81 -> 113 |
-| long-handbook-250.docx | 5063/5215/3953 -> 5063 | 9271/9496/6205 -> 9271 | 137/155/170 -> 155 | 182/197/180 -> 182 |
-| lecture.pptx | 2024/2298/1834 -> 2024 | 835/852/653 -> 835 | 11/11/8 -> 11 | 14/15/9 -> 14 |
-| jp_llm2.pptx | 4468/4463/3560 -> 4463 | 1982/1977/1472 -> 1977 | 49/52/37 -> 49 | 54/56/40 -> 54 |
-| course-guide.xlsx | 1932/2168/1958 -> 1958 | 975/1040/762 -> 975 | 4/6/4 -> 4 | 8/14/9 -> 9 |
-| large-gradebook.xlsx | 2373/2326/2145 -> 2326 | 2948/3026/2122 -> 2948 | 5/6/4 -> 5 | 9/10/8 -> 9 |
+- open and View to Edit (an open too) are 1.3x the slower of Q832's two EPYC
+  7763 runs (45174430580 and 45174458165 on 69be9249e, 2026-11-23, the build
+  in Vite's development mode), a safety net on the slow runner;
+- keys, which differ little between runners, are 1.3x the medians of the
+  three production runs.
 
-The bench's earlier medians (2026-11-20 on 65bdfc1e8, Q757 A; 2026-11-07 on
-97e63a68a, Q692; 2026-10-04 before the 0.5.1 pin) are in its history; the PC baseline the second BetterOffice
+The fast runner's medians sit beside the gate (`RUNNER_MEDIANS`, by the
+result's `cpuModel`; the slow runner's figures are the gate's own). Each
+result's `runnerDelta` is the run less its runner's figures (negative is
+faster), report-only, so a gain shows on either runner; another CPU model gets
+the gate and `runnerDelta: null`. Per fixture, the runs, the figure taken and
+the budgets (ms; open, View to Edit, key p50, key p90):
+
+| Fixture | Open, EPYC 7763 | Open, Xeon 6975P-C | View to Edit, EPYC 7763 | View to Edit, Xeon 6975P-C | Key p50, Xeon 6975P-C | Key p90, Xeon 6975P-C | Budgets |
+|---|---|---|---|---|---|---|---|
+| exchange-plan.docx | 3699/3467 -> 3699 | 2723/2880/2980 -> 2880 | 2531/2717 -> 2717 | 1901/1956/1640 -> 1901 | 23/24/23 -> 23 | 28/37/28 -> 28 | 4850, 3550, 30, 40 |
+| long-handbook.docx | 3875/3885 -> 3885 | 3135/3167/2942 -> 3135 | 3881/3989 -> 3989 | 2643/2788/2728 -> 2728 | 74/76/76 -> 76 | 82/86/84 -> 84 | 5100, 5200, 100, 110 |
+| long-handbook-250.docx | 5063/5215 -> 5215 | 3837/4131/4049 -> 4049 | 9271/9496 -> 9496 | 5818/5948/5890 -> 5890 | 173/181/173 -> 173 | 180/194/182 -> 182 | 6800, 12350, 225, 240 |
+| lecture.pptx | 2024/2298 -> 2298 | 1769/2221/1855 -> 1855 | 835/852 -> 852 | 660/687/674 -> 674 | 8/11/11 -> 11 | 9/14/12 -> 12 | 3000, 1150, 30, 30 |
+| jp_llm2.pptx | 4468/4463 -> 4468 | 3656/3647/3586 -> 3647 | 1982/1977 -> 1982 | 1425/1509/1444 -> 1444 | 36/42/36 -> 36 | 41/45/41 -> 41 | 5850, 2600, 50, 55 |
+| course-guide.xlsx | 1932/2168 -> 2168 | 1685/1734/1833 -> 1734 | 975/1040 -> 1040 | 798/829/798 -> 798 | 5/5/5 -> 5 | 11/9/11 -> 11 | 2850, 1400, 30, 30 |
+| large-gradebook.xlsx | 2373/2326 -> 2373 | 2122/2301/2360 -> 2301 | 2948/3026 -> 3026 | 2186/2168/2184 -> 2184 | 5/5/6 -> 5 | 9/11/10 -> 10 | 3100, 3950, 30, 30 |
+
+The bench's earlier medians (2026-11-23 on 69be9249e, Q832 A; 2026-11-20 on
+65bdfc1e8, Q757 A; 2026-11-07 on 97e63a68a, Q692; 2026-10-04 before the 0.5.1
+pin) are in its history; the PC baseline the second BetterOffice
 sync is compared against is
 harness 2026-11-06-office-track/office-baseline/REPORT.md.
 
