@@ -32,6 +32,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use notes::edit::{DocumentCommand, EditError, EditOutcome};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use sources::pool::{Largest, Measured, Pooled};
 use tokio::sync::oneshot;
 use ydoc::undo::Captured;
 use yrs::updates::decoder::Decode;
@@ -454,11 +455,13 @@ async fn material_blocks(
     schema: i64,
 ) -> Result<Vec<notes::edit::InspectedBlock>, DocumentError> {
     let room = format!("material:{material_id}:schema:{schema}");
-    let mut client = app
-        .db
-        .get()
-        .await
-        .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+    let mut pooled = Pooled::new(
+        app.db
+            .get()
+            .await
+            .map_err(|error| DocumentError::Unknown(error.to_string()))?,
+    );
+    let (client, largest) = pooled.parts();
     // One snapshot of the base and its rows (a fold may commit between them).
     let tx = client
         .build_transaction()
@@ -480,7 +483,9 @@ async fn material_blocks(
     let mut keys: Option<(Vec<u8>, Vec<Vec<u8>>)> = None;
     let (base, mut rows) = match found.first() {
         Some(row) => {
+            largest.note(row.get::<_, &[u8]>("state").len());
             if i64::from(row.get::<_, i32>("room_schema")) != schema {
+                let _ = tx.rollback().await;
                 return Err(DocumentError::edit(
                     "stale_target",
                     "the material was rebuilt since it was opened",
@@ -491,8 +496,9 @@ async fn material_blocks(
                 .into_iter()
                 .map(|(_, row)| row)
                 .collect();
+            largest.note(note_store::longest(&rows));
             if kind == "quiz" {
-                keys = Some(quiz_keys(&tx, material_id).await?);
+                keys = Some(quiz_keys(&tx, material_id, largest).await?);
             }
             (row.get::<_, Vec<u8>>("state"), rows)
         }
@@ -510,13 +516,17 @@ async fn material_blocks(
                 ));
             };
             kind = row.get("kind");
-            let content: Value = row.get("content");
-            let value = note_store::envelope_value(&content).map_err(|_| {
-                DocumentError::edit(
+            // Its content, read: the states built from it never cross the
+            // connection.
+            let content: Measured<Value> = row.get("content");
+            largest.note(content.bytes);
+            let Ok(value) = note_store::envelope_value(&content.value) else {
+                let _ = tx.rollback().await;
+                return Err(DocumentError::edit(
                     "unavailable_target",
                     "material content is not a valid Plate envelope",
-                )
-            })?;
+                ));
+            };
             if kind == "quiz" {
                 let (content, quiz_keys) = items::quiz::states_from_value(value, 0);
                 keys = Some((quiz_keys, Vec::new()));
@@ -527,6 +537,7 @@ async fn material_blocks(
         }
     };
     tx.commit().await?;
+    drop(pooled);
     // A live room's state replays after the rows. A room stores its document
     // when it loads, so only a stored one can have a room; with none loaded,
     // this reads nothing more.
@@ -849,6 +860,7 @@ async fn assigned_ids<C: deadpool_postgres::GenericClient>(
 async fn quiz_keys(
     tx: &deadpool_postgres::Transaction<'_>,
     material_id: &str,
+    largest: &Largest,
 ) -> Result<(Vec<u8>, Vec<Vec<u8>>), DocumentError> {
     let found = tx
         .query(
@@ -859,12 +871,15 @@ async fn quiz_keys(
     let Some(row) = found.first() else {
         return Err(DocumentError::Unknown("quiz keys document missing".into()));
     };
-    let rows = note_store::doc_rows(tx, note_store::Doc::Keys, material_id, None)
+    let state: Vec<u8> = row.get("state");
+    largest.note(state.len());
+    let rows: Vec<Vec<u8>> = note_store::doc_rows(tx, note_store::Doc::Keys, material_id, None)
         .await?
         .into_iter()
         .map(|(_, row)| row)
         .collect();
-    Ok((row.get("state"), rows))
+    largest.note(note_store::longest(&rows));
+    Ok((state, rows))
 }
 
 /// A quiz's two documents for a server edit.
@@ -1298,11 +1313,13 @@ async fn material_stored(
     #[cfg(debug_assertions)]
     it_hold(app, room).await;
     let actor = request.actor_user_id.clone();
-    let mut client = app
-        .db
-        .get()
-        .await
-        .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+    let mut pooled = Pooled::new(
+        app.db
+            .get()
+            .await
+            .map_err(|error| DocumentError::Unknown(error.to_string()))?,
+    );
+    let (client, largest) = pooled.parts();
     let tx = client.transaction().await?;
     tx.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
@@ -1373,7 +1390,7 @@ async fn material_stored(
                   WHERE d.material_id=$1 FOR UPDATE OF d";
     let mut found = tx.query(select, &[&material_id]).await?;
     if found.is_empty() {
-        note_store::bootstrap(&tx, material_id, schema).await?;
+        note_store::bootstrap(&tx, material_id, schema, largest).await?;
         found = tx.query(select, &[&material_id]).await?;
     }
     let Some(current) = found.first() else {
@@ -1382,16 +1399,18 @@ async fn material_stored(
             "material not found",
         ));
     };
+    largest.note(current.get::<_, &[u8]>("state").len());
     let rebuilt = i64::from(current.get::<_, i32>("room_schema"));
     if undo.is_some() && ydoc::undo::refused_across_compaction(schema, rebuilt) {
+        let _ = tx.rollback().await;
         return Err(undo_unavailable(UNDO_GONE));
     }
     if rebuilt != schema {
         // Its blocks as they are now, as a gone block's refusal lists them,
         // so the retry needs no inspect; read after the lock is let go. The
         // refusal stands without them when they cannot be read.
-        drop(tx);
-        drop(client);
+        let _ = tx.rollback().await;
+        drop(pooled);
         return Err(DocumentError::Edit {
             code: "stale_target".into(),
             message: "the material was rebuilt since it was inspected".into(),
@@ -1409,9 +1428,10 @@ async fn material_stored(
         .into_iter()
         .map(|(_, row)| row)
         .collect();
+    largest.note(note_store::longest(&rows));
     let quiz = if kind == "quiz" {
         Some(QuizInput {
-            keys: quiz_keys(&tx, material_id).await?,
+            keys: quiz_keys(&tx, material_id, largest).await?,
             live_keys: live_state(app, keys_room).await,
         })
     } else {
@@ -1425,34 +1445,41 @@ async fn material_stored(
     })
     .await
     .map_err(|error| DocumentError::Unknown(error.to_string()))?;
-    // A note Undo past a size limit is refused as a source's is (r1 L2).
     let computed = match computed {
-        Err(DocumentError::Quota(_)) if undo.is_some() => {
-            return Err(undo_unavailable(UNDO_TOO_LARGE));
+        // A note Undo past a size limit is refused as a source's is (r1 L2).
+        Err(DocumentError::Quota(_)) if undo.is_some() => Err(undo_unavailable(UNDO_TOO_LARGE)),
+        // A payload applied before with no receipt for its step: nothing to
+        // write or answer (its step's receipt commits with the write, r1 M2).
+        Ok(computed) if computed.writes.is_empty() && undo.is_some() => {
+            Err(undo_unavailable(UNDO_GONE))
         }
-        other => other?,
+        Ok(computed) if over_update_cap(&computed.writes) => Err(if undo.is_some() {
+            undo_unavailable(UNDO_TOO_LARGE)
+        } else {
+            DocumentError::Quota(UPDATE_TOO_LARGE.into())
+        }),
+        other => other,
     };
-    // A payload applied before with no receipt for its step: nothing to
-    // write or answer (its step's receipt commits with the write, r1 M2).
-    if computed.writes.is_empty() && undo.is_some() {
-        return Err(undo_unavailable(UNDO_GONE));
-    }
-    if over_update_cap(&computed.writes) {
-        if undo.is_some() {
-            return Err(undo_unavailable(UNDO_TOO_LARGE));
+    let computed = match computed {
+        Ok(computed) => computed,
+        Err(refused) => {
+            let _ = tx.rollback().await;
+            return Err(refused);
         }
-        return Err(DocumentError::Quota(UPDATE_TOO_LARGE.into()));
-    }
+    };
     // A room loaded before the material's lock was taken (it opened since
     // the first look) admits it instead (Q826 A); one loading from here
-    // waits on the lock and loads the rows.
+    // waits on the lock and loads the rows. Rolled back before the
+    // connection may close (`Pooled`).
     if opened(app, room) || opened(app, keys_room) {
+        let _ = tx.rollback().await;
         return Ok(None);
     }
     let mut version = stored;
     let mut versions = Vec::new();
     for write in &computed.writes {
         version += 1;
+        largest.note(write.row.len());
         note_store::append_row(&tx, write.doc, material_id, version, &write.row).await?;
         versions.push(version);
     }
@@ -1479,7 +1506,7 @@ async fn material_stored(
     note_store::write_receipt(&tx, material_id, &receipt).await?;
     let mut receipt = receipt.answer();
     tx.commit().await?;
-    drop(client);
+    drop(pooled);
     if let Some(payload) = payload {
         receipt["undoPayload"] = json!(payload);
     }
@@ -1885,11 +1912,13 @@ async fn edit_in_room(
     let undo = request.undo.is_some();
     // The step an Undo names, and who asks (Q451).
     let undo_of = (request.undo_of.as_deref(), request.actor_user_id.as_str());
-    let mut client = app
-        .db
-        .get()
-        .await
-        .map_err(|error| DocumentError::Unknown(error.to_string()))?;
+    let mut pooled = Pooled::new(
+        app.db
+            .get()
+            .await
+            .map_err(|error| DocumentError::Unknown(error.to_string()))?,
+    );
+    let (client, largest) = pooled.parts();
     let tx = client.transaction().await?;
     if let Some(known) = known(app, &tx, room, operation, undo_of).await? {
         return Ok(Some(known));
@@ -1918,12 +1947,12 @@ async fn edit_in_room(
     // it hears of the fold), and the room's rows load onto that base (Q419).
     // Read here, replayed once the transaction is done (Q451).
     let stored = match &change {
-        Change::Undo(_) if kind == "note" => Some(stored_note(&tx, material_id).await?),
+        Change::Undo(_) if kind == "note" => Some(stored_note(&tx, material_id, largest).await?),
         _ => None,
     };
     let mut assigned = assigned_ids(&tx, material_id).await?;
     tx.commit().await?;
-    drop(client);
+    drop(pooled);
     if let (Some(stored), Change::Undo(updates)) = (stored, &change) {
         // Debug builds only: the integration test's slow replay, which must
         // hold neither the pooled connection nor the operation's lock.
@@ -2069,6 +2098,7 @@ struct StoredNote {
 async fn stored_note(
     tx: &deadpool_postgres::Transaction<'_>,
     material_id: &str,
+    largest: &Largest,
 ) -> Result<StoredNote, DocumentError> {
     let base: Vec<u8> = tx
         .query_one(
@@ -2077,11 +2107,13 @@ async fn stored_note(
         )
         .await?
         .get(0);
+    largest.note(base.len());
     let rows: Vec<Vec<u8>> = note_store::rows(tx, material_id, None)
         .await?
         .into_iter()
         .map(|(_, row)| row)
         .collect();
+    largest.note(note_store::longest(&rows));
     Ok(StoredNote { base, rows })
 }
 
@@ -2287,7 +2319,8 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
         return Err(CANVAS_REFUSED.into());
     }
     let live = live_state(app, &command.room).await;
-    let mut client = app.db.get().await.map_err(|error| error.to_string())?;
+    let mut pooled = Pooled::new(app.db.get().await.map_err(|error| error.to_string())?);
+    let (client, largest) = pooled.parts();
     let tx = client
         .transaction()
         .await
@@ -2331,7 +2364,7 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
         .await
         .map_err(|error| error.to_string())?;
     if found.is_empty() {
-        note_store::bootstrap(&tx, &material_id, schema)
+        note_store::bootstrap(&tx, &material_id, schema, largest)
             .await
             .map_err(|error| error.to_string())?;
         found = tx
@@ -2342,11 +2375,13 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     let Some(current) = found.first() else {
         return Err("target block no longer exists".into());
     };
+    largest.note(current.get::<_, &[u8]>("state").len());
     let stored: i64 = current.get("stored_version");
     if i64::from(current.get::<_, i32>("room_schema")) != schema
         || (command.expected_revision.is_some()
             && stored != current.get::<_, i64>("projected_version"))
     {
+        let _ = tx.rollback().await;
         return Err("material changed concurrently".into());
     }
     let base: Vec<u8> = current.get("state");
@@ -2357,11 +2392,12 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
         .into_iter()
         .map(|(_, row)| row)
         .collect();
+    largest.note(note_store::longest(&rows));
     let room = format!("material:{material_id}:schema:{schema}");
     let keys_room = format!("keys:{material_id}:schema:{schema}");
     let quiz = if kind == "quiz" {
         Some(QuizInput {
-            keys: quiz_keys(&tx, &material_id)
+            keys: quiz_keys(&tx, &material_id, largest)
                 .await
                 .map_err(|error| error.message().to_owned())?,
             live_keys: live_state(app, &keys_room).await,
@@ -2378,26 +2414,35 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
         replace_on(base, rows, live, kind, &command, quiz, &assigned)
     })
     .await
-    .map_err(|error| error.to_string())??;
+    .map_err(|error| error.to_string())?;
+    let computed = match computed {
+        Ok(Some(computed)) if over_update_cap(&computed.writes) => Err(UPDATE_TOO_LARGE.into()),
+        other => other,
+    };
+    let computed = match computed {
+        Ok(computed) => computed,
+        Err(refused) => {
+            let _ = tx.rollback().await;
+            return Err(refused);
+        }
+    };
     // Nothing to change (the block already holds the replacement).
     let Some(computed) = computed else {
         tx.commit().await.map_err(|error| error.to_string())?;
         return Ok(());
     };
-    if over_update_cap(&computed.writes) {
-        return Err(UPDATE_TOO_LARGE.into());
-    }
     let mut version = stored;
     let mut versions = Vec::new();
     for write in &computed.writes {
         version += 1;
+        largest.note(write.row.len());
         note_store::append_row(&tx, write.doc, &material_id, version, &write.row)
             .await
             .map_err(|error| error.to_string())?;
         versions.push(version);
     }
     tx.commit().await.map_err(|error| error.to_string())?;
-    drop(client);
+    drop(pooled);
     send_writes(app, &room, &keys_room, computed.writes, &versions).await;
     let content = json!({ "schemaVersion": 1, "value": computed.value });
     projection::project(app, &material_id, version, &content, computed.asset_ids).await?;

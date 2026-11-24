@@ -2026,9 +2026,15 @@ timers of a page hidden for 5 minutes once a minute (intensive wake-up
 throttling, which its documentation scopes to the page's `setTimeout` and
 `setInterval`), right at the silent window, and a hidden tab that keeps its
 socket (unsent edits, an Office or text file) is the one with a group to
-lose. A worker that cannot start or fails is reported to Sentry (an
-`Error` saying so; a load failure's event has no message) and no heartbeat
-goes; no page timer stands in. The bench's Node clients pass their own
+lose. Measured 2026-11-24 in Chrome for Testing 151 on macOS with a local
+probe: in a tab behind another tab of its window, the page's own 20 s
+`setInterval` came at gaps of 52, 60 and 60 s once the tab had been hidden
+about 5 minutes, while a dedicated worker's 20 s ticks, and the page's
+message handler for them (where the heartbeat is sent), stayed at 20 s
+throughout, 25 ticks over 8.5 minutes. No automation was attached, since
+Playwright keeps its pages focused and visible. A worker that cannot start
+or fails is reported to Sentry (an `Error` saying so; a load failure's
+event has no message) and no heartbeat goes; no page timer stands in. The bench's Node clients pass their own
 `setInterval` clock to `CollabSocket.create` (`nodeHeartbeat.ts`), a
 dependency the bench gives, not an app fallback. Each socket logs one Info
 line at close, `socket heartbeats`, with its `beats` and

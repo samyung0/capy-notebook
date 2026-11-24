@@ -8,6 +8,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use deadpool_postgres::{Pool, Transaction};
 use serde_json::Value;
+use sources::pool::{Largest, Measured, Pooled};
 use ydoc::gc::Window;
 use yrs::block::ClientID;
 use yrs::updates::decoder::Decode;
@@ -131,11 +132,13 @@ pub(crate) fn envelope_value(content: &Value) -> Result<&Vec<Value>, StoreError>
 }
 
 /// First open, agent edit or command on a material without a Yjs row: seed
-/// the document from its projection under the lock the caller holds.
+/// the document from its projection under the lock the caller holds. The
+/// content read and the states written are noted on `largest`.
 pub(crate) async fn bootstrap(
     tx: &Transaction<'_>,
     material_id: &str,
     schema: i64,
+    largest: &Largest,
 ) -> Result<(), StoreError> {
     let rows = tx
         .query(
@@ -147,6 +150,8 @@ pub(crate) async fn bootstrap(
         // A trashed material keeps its content but nothing may open it.
         return Err(StoreError::Other("material not found".into()));
     };
+    let content: Measured<Value> = row.get("content");
+    largest.note(content.bytes);
     // A material without a Yjs row lives at schema 1 + trash_restores
     // (store.MaterialRoom). A token for an older room (minted before a trash
     // and restore, or before the cutover reset raised the floor) must not seed
@@ -154,9 +159,8 @@ pub(crate) async fn bootstrap(
     if schema < 1 + i64::from(row.get::<_, i32>("trash_restores")) {
         return Err(StoreError::Other("stale collaboration room schema".into()));
     }
-    let content: Value = row.get("content");
     let kind: String = row.get("kind");
-    let value = envelope_value(&content)?;
+    let value = envelope_value(&content.value)?;
     // A quiz's two documents seed together from the stored questions.
     let (state, keys) = if kind == "quiz" {
         let (content, keys) = items::quiz::states_from_value(value, 0);
@@ -164,6 +168,8 @@ pub(crate) async fn bootstrap(
     } else {
         (Model::of(&kind).state_from_value(value), None)
     };
+    largest.note(state.len());
+    largest.note(keys.as_ref().map_or(0, Vec::len));
     let schema = i32::try_from(schema)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
     let inserted = tx
@@ -225,7 +231,8 @@ pub async fn load(
     schema: i64,
     doc: Doc,
 ) -> Result<Loaded, StoreError> {
-    let mut client = pool.get().await?;
+    let mut pooled = Pooled::new(pool.get().await?);
+    let (client, largest) = pooled.parts();
     let tx = client.transaction().await?;
     access::lock_material(&tx, material_id).await?;
     let select = match doc {
@@ -250,22 +257,26 @@ pub async fn load(
     };
     let mut found = tx.query(select, &[&material_id]).await?;
     if found.is_empty() {
-        bootstrap(&tx, material_id, schema).await?;
+        bootstrap(&tx, material_id, schema, largest).await?;
         found = tx.query(select, &[&material_id]).await?;
     }
     let Some(row) = found.first() else {
         return Err(StoreError::Other("material not found".into()));
     };
+    largest.note(row.get::<_, &[u8]>("state").len());
     if i64::from(row.get::<_, i32>("room_schema")) != schema {
+        let _ = tx.rollback().await;
         return Err(StoreError::Other("stale collaboration room schema".into()));
     }
+    let rows: Vec<Vec<u8>> = doc_rows(&tx, doc, material_id, None)
+        .await?
+        .into_iter()
+        .map(|(_, update)| update)
+        .collect();
+    largest.note(longest(&rows));
     let loaded = Loaded {
         base: row.get("state"),
-        rows: doc_rows(&tx, doc, material_id, None)
-            .await?
-            .into_iter()
-            .map(|(_, update)| update)
-            .collect(),
+        rows,
         stored_version: row.get("stored_version"),
         projected_version: row.get("projected_version"),
         log_bytes: row.get("log_bytes"),
@@ -275,6 +286,11 @@ pub async fn load(
     };
     tx.commit().await?;
     Ok(loaded)
+}
+
+/// The bytes of a document's longest row.
+pub(crate) fn longest(rows: &[Vec<u8>]) -> usize {
+    rows.iter().map(Vec::len).max().unwrap_or(0)
 }
 
 /// A content document's delete set of the window the latest collection
@@ -314,7 +330,8 @@ pub async fn append(
     if cfg!(debug_assertions) && material_id.contains(IT_STORE_LATER) {
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     }
-    let mut client = pool.get().await?;
+    let mut pooled = Pooled::new(pool.get().await?);
+    let (client, largest) = pooled.parts();
     let tx = client.transaction().await?;
     lock_operations(&tx, receipts.iter().map(|receipt| receipt.id.as_str())).await?;
     access::lock_material(&tx, material_id).await?;
@@ -345,6 +362,7 @@ pub async fn append(
         return Err(StoreError::Other("stale collaboration room schema".into()));
     }
     let version = current.get::<_, i64>("stored_version") + 1;
+    largest.note(row.len());
     append_row(&tx, doc, material_id, version, row).await?;
     save_sessions(&tx, material_id, sessions).await?;
     write_receipts(&tx, material_id, receipts).await?;
@@ -806,7 +824,8 @@ pub async fn fold(
     if cfg!(debug_assertions) && material_id.contains(IT_FOLD_LATER) {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
-    let mut client = pool.get().await?;
+    let mut pooled = Pooled::new(pool.get().await?);
+    let (client, largest) = pooled.parts();
     let tx = client.transaction().await?;
     access::lock_material(&tx, material_id).await?;
     let (state_table, log) = doc.tables();
@@ -825,7 +844,9 @@ pub async fn fold(
     let Some(current) = current.first() else {
         return Ok(None);
     };
+    largest.note(current.get::<_, &[u8]>("state").len());
     if i64::from(current.get::<_, i32>("room_schema")) != schema {
+        let _ = tx.rollback().await;
         return Ok(None);
     }
     let base: Vec<u8> = current.get("state");
@@ -857,6 +878,9 @@ pub async fn fold(
         }
     }
     let rows = doc_rows(&tx, doc, material_id, through).await?;
+    for (_, row) in &rows {
+        largest.note(row.len());
+    }
     let Some(&(last, _)) = rows.last() else {
         // Nothing to fold; a dropped holds record still commits.
         tx.commit().await?;
@@ -920,6 +944,7 @@ pub async fn fold(
         .await
         .map_err(|error| StoreError::Other(error.to_string()))??;
     let after_bytes = state.len() as i64;
+    largest.note(state.len());
     tx.execute(
         &format!(
             "UPDATE {state_table}
@@ -946,6 +971,7 @@ pub async fn fold(
         .await?;
     }
     tx.commit().await?;
+    drop(pooled);
     if let Some(why) = refused {
         report_refusal(material_id, doc, "fold", &why);
     }
@@ -1244,7 +1270,8 @@ pub struct Durable {
 /// The base and the whole log of a material, for a projection or an edit of
 /// a room not loaded here. `None` when the material has no Yjs row.
 pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, StoreError> {
-    let mut client = pool.get().await?;
+    let mut pooled = Pooled::new(pool.get().await?);
+    let (client, largest) = pooled.parts();
     // One snapshot: a fold committing between the base and the rows would
     // otherwise pair the old base with no rows.
     let tx = client
@@ -1266,12 +1293,14 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, 
     };
     let version: i64 = row.get("stored_version");
     let base: Vec<u8> = row.get("state");
+    largest.note(base.len());
     let kind: String = row.get("kind");
-    let log = rows(&tx, material_id, Some(version))
+    let log: Vec<Vec<u8>> = rows(&tx, material_id, Some(version))
         .await?
         .into_iter()
         .map(|(_, update)| update)
         .collect();
+    largest.note(longest(&log));
     let keys = if kind == "quiz" {
         let found = tx
             .query(
@@ -1279,17 +1308,18 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, 
                 &[&material_id],
             )
             .await?;
-        match found.first() {
-            Some(row) => Some((
-                row.get::<_, Vec<u8>>("state"),
-                doc_rows(&tx, Doc::Keys, material_id, Some(version))
-                    .await?
-                    .into_iter()
-                    .map(|(_, update)| update)
-                    .collect(),
-            )),
-            None => return Err(StoreError::Other("quiz keys document missing".into())),
-        }
+        let Some(row) = found.first() else {
+            return Err(StoreError::Other("quiz keys document missing".into()));
+        };
+        let state: Vec<u8> = row.get("state");
+        largest.note(state.len());
+        let rows: Vec<Vec<u8>> = doc_rows(&tx, Doc::Keys, material_id, Some(version))
+            .await?
+            .into_iter()
+            .map(|(_, update)| update)
+            .collect();
+        largest.note(longest(&rows));
+        Some((state, rows))
     } else {
         None
     };
@@ -1445,5 +1475,132 @@ mod tests {
             .map(|event| event.tags.get("file_id").map(String::as_str))
             .collect();
         assert_eq!(files, [Some("m_refused_once"), Some("m_refused_other")]);
+    }
+
+    /// The rooms tests' Postgres (`CAPY_IT_DATABASE_URL`, migrated): none
+    /// skips the test, unless `CAPY_IT_REQUIRED` is set (CI).
+    fn it_pool() -> Option<Pool> {
+        let Ok(url) = std::env::var("CAPY_IT_DATABASE_URL") else {
+            assert!(
+                std::env::var_os("CAPY_IT_REQUIRED").is_none(),
+                "CAPY_IT_REQUIRED is set but CAPY_IT_DATABASE_URL is not"
+            );
+            return None;
+        };
+        let config: tokio_postgres::Config = url.parse().unwrap();
+        let manager = deadpool_postgres::Manager::new(config, tokio_postgres::NoTls);
+        Some(Pool::builder(manager).max_size(10).build().unwrap())
+    }
+
+    /// A note of a fresh user's holding `text`, as the rooms tests make one.
+    async fn it_note(pool: &Pool, text: &str) -> String {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let next = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let (user, material) = (
+            format!("u_it_{nanos:x}{next:x}"),
+            format!("m_it_{nanos:x}{next:x}"),
+        );
+        let value = [serde_json::json!({"type": "p", "id": "b1", "children": [{"text": text}]})];
+        let content = serde_json::json!({ "schemaVersion": 1, "value": value });
+        let client = pool.get().await.unwrap();
+        client
+            .execute("INSERT INTO users (id, name) VALUES ($1, 'IT')", &[&user])
+            .await
+            .unwrap();
+        client
+            .execute(
+                "INSERT INTO materials (id, created_by, kind, title, content) VALUES ($1, $2, 'note', 'IT', $3)",
+                &[&material, &user, &content],
+            )
+            .await
+            .unwrap();
+        material
+    }
+
+    /// `text` typed at the start of `doc`'s first block by `client`: the
+    /// row, applied to `doc` too.
+    fn typed(doc: &yrs::Doc, client: u64, text: &str) -> Vec<u8> {
+        let writer = yrs::Doc::with_options(ydoc::doc_options(client));
+        ydoc::replay(&writer, &state(doc), &[] as &[&[u8]]).unwrap();
+        let before = writer.transact().state_vector();
+        first_block(&writer).insert(&mut writer.transact_mut(), 0, text);
+        let row = writer.transact().encode_state_as_update_v1(&before);
+        doc.transact_mut()
+            .apply_update(yrs::Update::decode_v1(&row).unwrap())
+            .unwrap();
+        row
+    }
+
+    /// The pool's one idle connection, made if there is none.
+    async fn idle(pool: &Pool) -> deadpool_postgres::ObjectId {
+        let id = deadpool_postgres::Object::id(&pool.get().await.unwrap());
+        assert_eq!(pool.status().size, 1);
+        id
+    }
+
+    /// A pooled connection that carried a row over `LARGE_ROW_BYTES` (a
+    /// load, a store, a fold) is closed instead of going back to the pool,
+    /// while one that carried smaller rows goes back and serves the next
+    /// call, however many it read (each connection kept buffers twice its
+    /// largest message: `bench/collaboration/reports/2026-11-24-room-memory-prod-2.md`).
+    /// Against the rooms tests' Postgres, with a pool of
+    /// its own (one call at a time, so the pool holds the one connection or
+    /// none). Fails without the guard (the large calls leave the pool at
+    /// one), if every connection closes, or if the guard sums the rows.
+    #[tokio::test]
+    async fn a_connection_that_carried_a_large_row_leaves_the_pool() {
+        let Some(pool) = it_pool() else { return };
+        let small = it_note(&pool, "small").await;
+        let kept = idle(&pool).await;
+        let loaded = load(&pool, &small, 1, Doc::Content).await.unwrap();
+        assert_eq!(idle(&pool).await, kept, "a small load's connection");
+        // The stored document (Postgres reorders the content's keys, and the
+        // first state follows their order).
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(&doc, &loaded.base, &loaded.rows).unwrap();
+        let row = typed(&doc, 7, "x");
+        let none = sessions::Unsaved::default();
+        append(&pool, &small, 1, Doc::Content, &row, &[], &none, &[])
+            .await
+            .unwrap();
+        assert_eq!(idle(&pool).await, kept, "a small store's connection");
+        fold(&pool, &small, 1, Doc::Content, None, None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(idle(&pool).await, kept, "a small fold's connection");
+        // Rows over the limit together, none alone: the buffers follow the
+        // largest message, so the connection goes back.
+        let part = "p".repeat(sources::pool::LARGE_ROW_BYTES * 3 / 5);
+        for client in [9, 10] {
+            let row = typed(&doc, client, &part);
+            append(&pool, &small, 1, Doc::Content, &row, &[], &none, &[])
+                .await
+                .unwrap();
+        }
+        load(&pool, &small, 1, Doc::Content).await.unwrap();
+        assert_eq!(idle(&pool).await, kept, "a load of rows large together");
+
+        let large = "w".repeat(sources::pool::LARGE_ROW_BYTES + 1024);
+        let row = typed(&doc, 8, &large);
+        append(&pool, &small, 1, Doc::Content, &row, &[], &none, &[])
+            .await
+            .unwrap();
+        assert_eq!(pool.status().size, 0, "a large store's connection");
+        idle(&pool).await;
+        fold(&pool, &small, 1, Doc::Content, None, None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(pool.status().size, 0, "a large fold's connection");
+        let big = it_note(&pool, &large).await;
+        idle(&pool).await;
+        let loaded = load(&pool, &big, 1, Doc::Content).await.unwrap();
+        assert!(loaded.base.len() > sources::pool::LARGE_ROW_BYTES);
+        assert_eq!(pool.status().size, 0, "a large load's connection");
     }
 }

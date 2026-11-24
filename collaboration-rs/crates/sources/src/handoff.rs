@@ -19,6 +19,7 @@ use tokio::sync::oneshot;
 
 use crate::engine::CALL_TIMEOUT;
 use crate::gateway::{SourceSession, encode};
+use crate::pool::Pooled;
 use crate::store::{Job, SourceRebase, Sources, rebase_refused};
 use crate::{ChannelId, Rooms, SourceError, SourceFormat, SourceRoom};
 
@@ -713,12 +714,14 @@ impl Handoff {
         let session = self.sources.current(&input.file_id).await?;
         let publication = input.publication();
         let gateway = self.sources.gateway();
-        let client = self
-            .sources
-            .db()
-            .get()
-            .await
-            .map_err(|error| SourceError::Other(error.to_string()))?;
+        let mut pooled = Pooled::new(
+            self.sources
+                .db()
+                .get()
+                .await
+                .map_err(|error| SourceError::Other(error.to_string()))?,
+        );
+        let (client, largest) = pooled.parts();
         let fenced: bool = client
             .query_one(
                 "SELECT EXISTS(SELECT 1 FROM jobs WHERE id=$1 AND payload->>'fileId'=$2 AND payload->>'sourceEpoch'=$3 AND payload->>'sourceCheckpoint'=$4 AND payload->>'sourceLeaseToken'=$5 AND payload->>'sourcePublishedCheckpoint'=$4 AND payload->>'sourcePublishedAttemptId'=$6) AS published",
@@ -754,7 +757,13 @@ impl Handoff {
             .await
             .map_err(|error| SourceError::Other(error.to_string()))?
             .map(|row| (row.get::<_, Option<Vec<u8>>>(0), row.get::<_, Option<String>>(1)));
-        drop(client);
+        largest.note(
+            captured
+                .as_ref()
+                .and_then(|(state, _)| state.as_ref())
+                .map_or(0, Vec::len),
+        );
+        drop(pooled);
         if session.format == SourceFormat::Text {
             let Some((state, _)) = captured else {
                 return Err(SourceError::request(409, "Source candidate changed", None));
@@ -1042,12 +1051,14 @@ impl Handoff {
         session: &SourceSession,
         input: &SourcePublish,
     ) -> Result<SourceRebase, SourceError> {
-        let client = self
-            .sources
-            .db()
-            .get()
-            .await
-            .map_err(|error| SourceError::Other(error.to_string()))?;
+        let mut pooled = Pooled::new(
+            self.sources
+                .db()
+                .get()
+                .await
+                .map_err(|error| SourceError::Other(error.to_string()))?,
+        );
+        let (client, largest) = pooled.parts();
         let candidate = client
             .query_opt(
                 "SELECT c.state,c.state_seed_sha256,c.source_sha256 FROM source_refresh_candidates c WHERE c.file_id=$1 AND c.job_id=$2 AND c.lease_token=$3 AND c.epoch=$4 AND c.checkpoint=$5",
@@ -1062,7 +1073,8 @@ impl Handoff {
             .await
             .map_err(|error| SourceError::Other(error.to_string()))?
             .ok_or_else(|| SourceError::request(409, "Source candidate changed", None))?;
-        drop(client);
+        largest.note(candidate.get::<_, Option<&[u8]>>(0).map_or(0, <[u8]>::len));
+        drop(pooled);
         if session.checkpoint == input.checkpoint {
             return Ok(SourceRebase::default());
         }

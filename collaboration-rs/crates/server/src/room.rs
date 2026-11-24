@@ -6297,6 +6297,7 @@ impl Room {
                     app.sources.forget(&room, generation).await;
                     if let Some(cause) = discarded {
                         crate::eviction::move_lineage(&app, &room.name(), cause).await;
+                        crate::trim::after_unload();
                         return;
                     }
                     // The log folds while the room is empty (DESIGN.md 3.5);
@@ -6309,6 +6310,8 @@ impl Room {
                         );
                     }
                     app.handoff().schedule_rebuild(&room.file_id);
+                    // What the room and its fold freed goes back.
+                    crate::trim::after_unload();
                 });
                 return;
             }
@@ -6343,6 +6346,9 @@ impl Room {
         tokio::spawn(async move {
             if let Some(cause) = discarded {
                 crate::eviction::move_lineage(&app, &room, cause).await;
+                // Usually the document's last reference: freed before the trim.
+                drop(doc);
+                crate::trim::after_unload();
                 return;
             }
             // The projection reads the unloaded document, the fold the rows:
@@ -6390,6 +6396,8 @@ impl Room {
                 }
             };
             tokio::join!(projecting, folding);
+            // What the room, its fold and its projection freed goes back.
+            crate::trim::after_unload();
         });
     }
 }

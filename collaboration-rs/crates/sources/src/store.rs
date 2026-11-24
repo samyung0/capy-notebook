@@ -30,6 +30,7 @@ use crate::engine::office::calls::On;
 use crate::engine::{EngineError, EnginePool, FailureKind, PoolConfig};
 use crate::gateway::{CheckpointBody, CheckpointSaved, Gateway, RefreshCandidate, SourceSession};
 use crate::pending::Edits;
+use crate::pool::{Largest, Pooled};
 use crate::text::{TEXT_ROOT, TextSave, TextWindow, full_text_effects, text_doc, text_seed};
 use crate::{BoxFuture, MAX_SOURCE_STATE_BYTES, SourceError, SourceFormat, SourceRoom};
 
@@ -289,6 +290,18 @@ impl From<PutError> for SourceError {
 
 pub(crate) fn db_error(error: impl std::fmt::Display) -> SourceError {
     SourceError::Other(format!("source database: {error}"))
+}
+
+/// The bytes of a row's state column (none: 0).
+fn state_bytes(row: &tokio_postgres::Row, column: usize) -> usize {
+    row.get::<_, Option<&[u8]>>(column).map_or(0, <[u8]>::len)
+}
+
+/// Notes each update of `checkpoint,update` rows on `largest`.
+fn note_updates(largest: &Largest, rows: &[tokio_postgres::Row]) {
+    for row in rows {
+        largest.note(row.get::<_, &[u8]>(1).len());
+    }
 }
 
 pub(crate) fn office(format: SourceFormat) -> Option<Format> {
@@ -566,7 +579,8 @@ impl Sources {
         file_id: &str,
         after: Option<u64>,
     ) -> Result<Stored, SourceError> {
-        let mut client = self.db.get().await.map_err(db_error)?;
+        let mut pooled = Pooled::new(self.db.get().await.map_err(db_error)?);
+        let (client, largest) = pooled.parts();
         let txn = client
             .build_transaction()
             .isolation_level(tokio_postgres::IsolationLevel::RepeatableRead)
@@ -582,6 +596,7 @@ impl Sources {
             .await
             .map_err(db_error)?
             .ok_or_else(|| SourceError::request(404, "Source no longer exists", None))?;
+        largest.note(state_bytes(&row, 0));
         let epoch: i64 = row.get(3);
         let rows = txn
             .query(
@@ -590,6 +605,7 @@ impl Sources {
             )
             .await
             .map_err(db_error)?;
+        note_updates(largest, &rows);
         txn.commit().await.map_err(db_error)?;
         Ok(Stored {
             state: row.get(0),
@@ -1313,7 +1329,8 @@ impl Sources {
         const DOCUMENT: &str = "SELECT d.format,d.state,d.state_seed_sha256,d.checkpoint,d.epoch,COALESCE(d.base_source_sha256,''),(SELECT MIN(c.checkpoint) FROM source_refresh_candidates c WHERE c.file_id=d.file_id AND c.epoch=d.epoch AND c.source_sha256 IS NULL),sha256(d.state) FROM source_documents d WHERE d.file_id=$1";
         // One snapshot of the document and its rows.
         let (row, rows) = {
-            let mut client = self.db.get().await.map_err(db_error)?;
+            let mut pooled = Pooled::new(self.db.get().await.map_err(db_error)?);
+            let (client, largest) = pooled.parts();
             let txn = client
                 .build_transaction()
                 .isolation_level(tokio_postgres::IsolationLevel::RepeatableRead)
@@ -1328,9 +1345,11 @@ impl Sources {
             else {
                 return Ok(Folded::default());
             };
+            largest.note(state_bytes(&row, 1));
             let (epoch, checkpoint, captured): (i64, i64, Option<i64>) =
                 (row.get(4), row.get(3), row.get(6));
             if epoch as u64 != room.epoch {
+                let _ = txn.rollback().await;
                 return Ok(Folded::default());
             }
             let upto = captured.map_or(checkpoint, |captured| captured.min(checkpoint));
@@ -1341,6 +1360,7 @@ impl Sources {
                 )
                 .await
                 .map_err(db_error)?;
+            note_updates(largest, &rows);
             txn.commit().await.map_err(db_error)?;
             (row, rows)
         };
@@ -1391,7 +1411,8 @@ impl Sources {
         .map_err(|error| SourceError::Other(format!("fold: {error}")))??;
         // The write: only if the epoch, base, state and folded rows are as read
         // and no candidate captured since needs a folded row.
-        let mut client = self.db.get().await.map_err(db_error)?;
+        let mut pooled = Pooled::new(self.db.get().await.map_err(db_error)?);
+        let (client, largest) = pooled.parts();
         let txn = client.transaction().await.map_err(db_error)?;
         let Some(now) = txn
             .query_opt(&format!("{DOCUMENT} FOR UPDATE OF d"), &[&room.file_id])
@@ -1400,6 +1421,7 @@ impl Sources {
         else {
             return Ok(Folded::default());
         };
+        largest.note(state_bytes(&now, 1));
         let (now_rows, now_bytes): (i64, i64) = {
             let counted = txn
                 .query_one(
@@ -1418,8 +1440,10 @@ impl Sources {
             && now_bytes == folded_bytes
             && captured.is_none_or(|captured| captured >= last);
         if !unchanged {
+            let _ = txn.rollback().await;
             return Ok(Folded::default());
         }
+        largest.note(state.len());
         txn.execute(
             "UPDATE source_documents SET state=$2,log_bytes=log_bytes-$3,log_rows=log_rows-$4 WHERE file_id=$1",
             &[&room.file_id, &state, &folded_bytes, &(folded_rows as i32)],
