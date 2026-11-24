@@ -1306,14 +1306,18 @@ impl Sources {
     }
 
     /// Whether the maintenance pause covers this room: an Office file while
-    /// a pause row exists. Text rooms keep editing.
+    /// a pause row exists. Text rooms keep editing. Every writer's JOIN asks,
+    /// so the statement is prepared once per pooled connection.
     pub async fn editing_paused(&self, room: &SourceRoom) -> Result<bool, SourceError> {
         let client = self.db.get().await.map_err(db_error)?;
-        let row = client
-            .query_one(
+        let paused = client
+            .prepare_cached(
                 "SELECT EXISTS(SELECT 1 FROM office_editing_pause) AND EXISTS(SELECT 1 FROM source_documents WHERE file_id=$1 AND format<>'text') AS paused",
-                &[&room.file_id],
             )
+            .await
+            .map_err(db_error)?;
+        let row = client
+            .query_one(&paused, &[&room.file_id])
             .await
             .map_err(db_error)?;
         Ok(row.get(0))

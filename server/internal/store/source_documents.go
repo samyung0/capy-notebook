@@ -477,10 +477,10 @@ func (s *Store) viewSourceSession(ctx context.Context, fileID, trashed string) (
 // owner it reads is the one whose account state it tests. The save that
 // persists the edit rechecks every contributor's locked account (deleted,
 // deletion pending, suspended) under sourceLockTx; the role, frozen accounts
-// and the storage limit are enforced at admission only, so they rely on this
-// 5 s recheck window (and a lost role on the room closing that person, the
-// eviction outbox's revoke). Locking here serialized every writer's recheck
-// with every write in the workspace.
+// and the storage limit are enforced at admission only, so they rely on the
+// collaboration server's 30 s writer recheck through this check (and a lost
+// role on the room closing that person, the eviction outbox's revoke). Locking
+// here serialized every writer's recheck with every write in the workspace.
 func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epoch int64, edit bool) error {
 	if actor == "" {
 		return ErrForbidden
@@ -569,7 +569,8 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	}
 	defer tx.Rollback(ctx)
 	// A room's save stores what its room admitted: a role lost since does not
-	// refuse it (up to about 5 s of edits, Epo 2026-11-05), since that would
+	// refuse it (Epo 2026-11-05; the edits until the revoke closes that person,
+	// at most the writer recheck's 30 s, Epo 2026-11-24), since that would
 	// discard the room under everyone else. An agent edit with no room to hold
 	// it (its one Operation) is admitted by this save, so its actor's role counts.
 	ws, _, err := s.sourceLockTx(ctx, tx, fileID, in.ActorIDs, true, &in.WorkspaceID, in.Operation == nil)

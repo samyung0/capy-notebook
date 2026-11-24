@@ -131,6 +131,16 @@ async fn start_with(env: &Env, api: Option<&str>) -> Server {
     start_configured(env, api, &[]).await
 }
 
+/// The writer recheck scaled down from production's 30 s (debug builds only),
+/// for the tests that write past it, and how long they wait for it.
+const RECHECKED: &[(&str, &str)] = &[("COLLABORATION_IT_RECHECK_MS", "1000")];
+const PAST_RECHECK: Duration = Duration::from_millis(1100);
+
+/// `start` with the writer recheck scaled down ([RECHECKED]).
+async fn start_rechecked(env: &Env, api: Option<&str>) -> Server {
+    start_configured(env, api, RECHECKED).await
+}
+
 /// The server with `api` as its gateway and `extra` settings.
 async fn start_configured(env: &Env, api: Option<&str>, extra: &[(&str, &str)]) -> Server {
     let stdout = if std::env::var_os("CAPY_IT_LOGS").is_some() {
@@ -3278,6 +3288,62 @@ async fn a_suspended_owners_note_is_not_found_for_its_readers() {
     }
 }
 
+/// Security regression (migration 0194): suspending a workspace's owner
+/// discards the room of a note another member made there and pays for, as it
+/// does the owner's own, so its writer and its reader close at once and the
+/// reader's rejoin is not found. Fails if the owner's lock evicts only what
+/// the owner pays for, leaving the member's room open.
+#[tokio::test]
+async fn a_suspended_owners_workspace_closes_a_members_note_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, owners_room) = shared_note(&env, "shared").await;
+    let owners_note = material_of(&owners_room);
+    let client = db(&env).await;
+    let reader = user(&env).await;
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role)
+             SELECT workspace_id, $2, 'viewer' FROM materials WHERE id=$1",
+            &[&owners_note, &reader],
+        )
+        .await
+        .expect("viewer");
+    let material = format!("m_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content)
+             SELECT $1, $2, workspace_id, 'IT', 'note', 'IT', content FROM materials WHERE id=$3",
+            &[&material, &editor, &owners_note],
+        )
+        .await
+        .expect("the member's note");
+    let room = format!("material:{material}:schema:1");
+    let mut writer = Client::open(server.port).await;
+    assert_eq!(
+        writer.joined(&room, &token(&room, &editor, "write")).await,
+        1
+    );
+    let read = token(&room, &reader, "read");
+    let mut watcher = Client::open(server.port).await;
+    assert_eq!(watcher.joined(&room, &read).await, 0);
+    client
+        .execute(
+            "UPDATE users SET suspended_at=now(), suspended_reason='it' WHERE id=$1",
+            &[&owner],
+        )
+        .await
+        .expect("suspend");
+    deliver_evictions(&env, &room).await;
+    for tab in [&mut writer, &mut watcher] {
+        tab.until(4).await.expect("closed");
+    }
+    assert_eq!(
+        refused_join(&mut watcher, &room, &read).await,
+        "collaboration-not-found"
+    );
+}
+
 /// Security regression (uploader-pays review M4, N4): an agent edit charges
 /// the note's payer (its creator), so it stops once only the payer is being
 /// deleted, the workspace owner and the actor staying healthy. Fails if the
@@ -6394,7 +6460,7 @@ async fn channels_close_quietly(socket: &mut Client, channels: u64) {
 #[tokio::test]
 async fn a_removed_persons_rooms_of_every_kind_on_one_socket_close_and_the_owner_keeps_typing() {
     let Some(env) = env() else { return };
-    let server = start(&env).await;
+    let server = start_rechecked(&env, env.api.as_deref()).await;
     let (owner, removed, note_room) = shared_note(&env, "note").await;
     let note = material_of(&note_room).to_owned();
     let quiz = quiz_material(&env, &owner, "private").await;
@@ -6542,7 +6608,7 @@ async fn a_removed_persons_rooms_of_every_kind_on_one_socket_close_and_the_owner
             assert!(tab.until(6).await.is_some(), "{mark} acknowledged");
             assert_no_notice(tab);
         }
-        tokio::time::sleep(Duration::from_millis(5100)).await;
+        tokio::time::sleep(PAST_RECHECK).await;
     }
     let tabs = [
         &mut note_tab,
@@ -7261,13 +7327,14 @@ async fn a_lowered_editor_stops_writing_and_a_rejoin_comes_back_read_only() {
 
 /// Security regression (Q634, review F3): a lowered editor's write stops even
 /// if the outbox never delivers: the writer's recheck reads the database every
-/// 5 s, and closes as the revoke would (4403, no strip, no incident). So what the
-/// lowering leaves is the edits of those 5 s, Epo's accepted window. Fails if an
-/// update past the recheck is admitted, or the close differs from the revoke's.
+/// 30 s (scaled down here), and closes as the revoke would (4403, no strip, no
+/// incident). So what the lowering leaves is at most the edits of that window.
+/// Fails if an update past the recheck is admitted, or the close differs from
+/// the revoke's.
 #[tokio::test]
 async fn a_lowered_editor_stops_writing_at_the_recheck_with_nothing_delivered() {
     let Some(env) = env() else { return };
-    let server = start(&env).await;
+    let server = start_rechecked(&env, env.api.as_deref()).await;
     let (owner, editor, room) = shared_note(&env, "hello").await;
     let mut olive = Client::open(server.port).await;
     olive.joined(&room, &token(&room, &owner, "write")).await;
@@ -7284,7 +7351,7 @@ async fn a_lowered_editor_stops_writing_at_the_recheck_with_nothing_delivered() 
         )
         .await
         .expect("lowered");
-    tokio::time::sleep(Duration::from_millis(5100)).await;
+    tokio::time::sleep(PAST_RECHECK).await;
     desk.type_text("?").await;
     closes_quietly(&mut desk).await;
     assert!(olive.settle(|c| c.block_text() == "hello!").await);
@@ -7299,7 +7366,7 @@ async fn a_lowered_editor_stops_writing_at_the_recheck_with_nothing_delivered() 
 #[tokio::test]
 async fn a_removed_person_typing_closes_with_4403_whichever_arrives_first() {
     let Some(env) = env() else { return };
-    let server = start(&env).await;
+    let server = start_rechecked(&env, env.api.as_deref()).await;
     let (owner, editor, room) = shared_note(&env, "hello").await;
     let third = member(&env, &room, "editor").await;
     let mut olive = synced(server.port, &room, &owner, "hello").await;
@@ -7314,7 +7381,7 @@ async fn a_removed_person_typing_closes_with_4403_whichever_arrives_first() {
 
     // The recheck first: nothing delivered yet.
     client.execute(removed, &[&editor]).await.expect("removed");
-    tokio::time::sleep(Duration::from_millis(5100)).await;
+    tokio::time::sleep(PAST_RECHECK).await;
     desk.type_text("?").await;
     closes_quietly(&mut desk).await;
 
@@ -7349,7 +7416,7 @@ async fn type_source(client: &mut Client, text: &str) {
 async fn a_source_writers_recheck_closes_a_lost_role_with_4403_and_keeps_the_strip() {
     let Some(env) = env() else { return };
     let gateway = gateway(&env).await;
-    let server = start_with(&env, Some(&gateway.url)).await;
+    let server = start_rechecked(&env, Some(&gateway.url)).await;
     let (owner, file) = text_file(&env, &gateway, "hello").await;
     let room = format!("source:{file}:epoch:1");
     let (lost, gone, frozen) = (user(&env).await, user(&env).await, user(&env).await);
@@ -7374,7 +7441,7 @@ async fn a_source_writers_recheck_closes_a_lost_role_with_4403_and_keeps_the_str
         (gone.clone(), 404, ""),
         (frozen.clone(), 403, "account_over_quota"),
     ]);
-    tokio::time::sleep(Duration::from_millis(5100)).await;
+    tokio::time::sleep(PAST_RECHECK).await;
 
     type_source(&mut lost_tab, "b").await;
     closes_quietly(&mut lost_tab).await;
@@ -7544,7 +7611,7 @@ async fn a_lowered_share_role_closes_the_visitors_it_took_editing_from() {
 #[tokio::test]
 async fn an_ownership_transfer_closes_nobody() {
     let Some(env) = env() else { return };
-    let server = start(&env).await;
+    let server = start_rechecked(&env, env.api.as_deref()).await;
     let (owner, editor, room) = shared_note(&env, "hello").await;
     let mut olive = synced(server.port, &room, &owner, "hello").await;
     let mut eddie = synced(server.port, &room, &editor, "hello").await;
@@ -7570,7 +7637,7 @@ async fn an_ownership_transfer_closes_nobody() {
     deliver_evictions(&env, &room).await;
     stays_connected(&mut olive).await;
     stays_connected(&mut eddie).await;
-    tokio::time::sleep(Duration::from_millis(5100)).await;
+    tokio::time::sleep(PAST_RECHECK).await;
     olive.type_text("!").await;
     olive.until(6).await.expect("the old owner's ack");
     eddie.type_text("?").await;
@@ -7586,7 +7653,7 @@ async fn an_ownership_transfer_closes_nobody() {
 async fn a_full_or_frozen_writer_is_a_bystander_of_a_revoke() {
     for frozen in [false, true] {
         let Some(env) = env() else { return };
-        let server = start(&env).await;
+        let server = start_rechecked(&env, env.api.as_deref()).await;
         let (owner, editor, room) = shared_note(&env, "hello").await;
         let mut olive = synced(server.port, &room, &owner, "hello").await;
         let mut desk = synced(server.port, &room, &editor, "hello").await;
@@ -7621,7 +7688,7 @@ async fn a_full_or_frozen_writer_is_a_bystander_of_a_revoke() {
         deliver_evictions(&env, &room).await;
         closes_quietly(&mut desk).await;
         stays_connected(&mut olive).await;
-        tokio::time::sleep(Duration::from_millis(5100)).await;
+        tokio::time::sleep(PAST_RECHECK).await;
         olive.type_text("?").await;
         let (notice, _) = olive.stateless("room-read-only").await;
         assert_eq!(notice["room"], room.as_str());
@@ -8203,7 +8270,7 @@ async fn a_revoke_retries_until_it_can_check_and_reaches_every_server() {
 #[tokio::test]
 async fn a_plan_lapse_turns_the_rooms_read_only_at_the_next_update() {
     let Some(env) = env() else { return };
-    let server = start(&env).await;
+    let server = start_rechecked(&env, env.api.as_deref()).await;
     let (owner, material) = note(&env, "hello").await;
     let room = format!("material:{material}:schema:1");
     let client = db(&env).await;
@@ -8274,7 +8341,7 @@ async fn a_plan_lapse_turns_the_rooms_read_only_at_the_next_update() {
     assert_eq!(lapse_queued, 0, "the lapse queued something");
     stays_connected(&mut desk).await;
 
-    tokio::time::sleep(Duration::from_millis(5100)).await;
+    tokio::time::sleep(PAST_RECHECK).await;
     desk.type_text("?").await;
     let (notice, _) = desk.stateless("room-read-only").await;
     assert_eq!(notice["room"], room.as_str());
