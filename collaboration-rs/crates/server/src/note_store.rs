@@ -16,6 +16,7 @@ use yrs::updates::encoder::Encode;
 use yrs::{IdSet, ReadTxn, StateVector, Transact};
 
 use crate::access::{self, AccessError};
+use crate::board::{Indexes, StoredIndexes};
 use crate::model::Model;
 use crate::observe::{self, Level, log};
 use crate::sessions;
@@ -119,6 +120,11 @@ pub struct Loaded {
     /// That window's delete set: every unit a collection discarded from this
     /// document is in it (empty: none yet; Q446).
     pub collected: IdSet,
+    /// A board base's indexes as stored beside it (`board::Board::load`);
+    /// none for every other document, and for a board saved before they
+    /// were stored. Read once the board room loads on bytes.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub indexes: Option<StoredIndexes>,
 }
 
 /// The Plate envelope of `materials.content`, refused unless canonical in shape.
@@ -174,24 +180,35 @@ pub(crate) async fn bootstrap(
     let schema = i32::try_from(schema)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
     // A board's seed (a few hundred bytes) is stored with its indexes.
-    let (state_vector, delete_set) = match model {
+    let (state_vector, delete_set, indexes) = match model {
         Model::Board => {
             let seed = ydoc::scratch_doc();
             ydoc::replay(&seed, &state, &[] as &[&[u8]])
                 .map_err(|error| StoreError::Other(error.to_string()))?;
-            let (state_vector, delete_set) = base_indexes(&seed.transact());
-            (Some(state_vector), Some(delete_set))
+            let stored = Indexes::of_doc(&seed.transact()).stored();
+            (
+                Some(stored.state_vector),
+                Some(stored.delete_set),
+                Some(stored.rest),
+            )
         }
-        _ => (None, None),
+        _ => (None, None, None),
     };
     let inserted = tx
         .execute(
             "INSERT INTO material_yjs_documents
                (material_id, room_schema, state, stored_version, projected_version, projected_at,
-                base_state_vector, base_delete_set)
-             VALUES ($1,$2,$3,1,1,now(),$4,$5)
+                base_state_vector, base_delete_set, base_indexes)
+             VALUES ($1,$2,$3,1,1,now(),$4,$5,$6)
              ON CONFLICT (material_id) DO NOTHING",
-            &[&material_id, &schema, &state, &state_vector, &delete_set],
+            &[
+                &material_id,
+                &schema,
+                &state,
+                &state_vector,
+                &delete_set,
+                &indexes,
+            ],
         )
         .await?;
     if let Some(keys) = keys
@@ -204,19 +221,6 @@ pub(crate) async fn bootstrap(
         .await?;
     }
     Ok(())
-}
-
-/// A board base's state vector and delete set, encoded (v1), as stored in
-/// `base_state_vector` and `base_delete_set` beside its state.
-type BaseIndexes = (Vec<u8>, Vec<u8>);
-
-/// The indexes of the document `txn` reads: those of its whole state.
-fn base_indexes<T: ReadTxn>(txn: &T) -> BaseIndexes {
-    let snapshot = txn.snapshot();
-    (
-        snapshot.state_map.encode_v1(),
-        snapshot.delete_set.encode_v1(),
-    )
 }
 
 pub(crate) async fn rows(
@@ -268,13 +272,16 @@ pub async fn load(
                     (SELECT w.delete_set FROM material_yjs_windows w
                      WHERE w.material_id=d.material_id AND w.document='content'
                        AND d.collected_window > 0 AND w.stored_version >= d.collected_window
-                     ORDER BY w.stored_version LIMIT 1) AS collected
+                     ORDER BY w.stored_version LIMIT 1) AS collected,
+                    d.base_state_vector, d.base_delete_set, d.base_indexes
              FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
              WHERE d.material_id=$1 FOR UPDATE OF d"
         }
         Doc::Keys => {
             "SELECT k.state, d.room_schema, d.stored_version, d.projected_version, k.log_bytes,
-                    d.collected_window, m.kind, NULL::bytea AS collected
+                    d.collected_window, m.kind, NULL::bytea AS collected,
+                    NULL::bytea AS base_state_vector, NULL::bytea AS base_delete_set,
+                    NULL::bytea AS base_indexes
              FROM material_yjs_keys k
              JOIN material_yjs_documents d ON d.material_id=k.material_id
              JOIN materials m ON m.id=k.material_id
@@ -289,7 +296,19 @@ pub async fn load(
     let Some(row) = found.first() else {
         return Err(StoreError::Other("material not found".into()));
     };
-    largest.note(row.get::<_, &[u8]>("state").len());
+    let indexes = match (
+        row.get("base_state_vector"),
+        row.get("base_delete_set"),
+        row.get("base_indexes"),
+    ) {
+        (Some(state_vector), Some(delete_set), Some(rest)) => Some(StoredIndexes {
+            state_vector,
+            delete_set,
+            rest,
+        }),
+        _ => None,
+    };
+    largest.note(row.get::<_, &[u8]>("state").len() + indexes.as_ref().map_or(0, stored_len));
     if i64::from(row.get::<_, i32>("room_schema")) != schema {
         let _ = tx.rollback().await;
         return Err(StoreError::Other("stale collaboration room schema".into()));
@@ -309,9 +328,15 @@ pub async fn load(
         material_kind: row.get("kind"),
         window: row.get("collected_window"),
         collected: collected_deletes(row, doc)?,
+        indexes,
     };
     tx.commit().await?;
     Ok(loaded)
+}
+
+/// The bytes a base's stored indexes add to its row.
+fn stored_len(stored: &StoredIndexes) -> usize {
+    stored.state_vector.len() + stored.delete_set.len() + stored.rest.len()
 }
 
 /// The bytes of a document's longest row.
@@ -798,6 +823,10 @@ pub struct Folded {
     pub log_bytes: i64,
     pub base_bytes: i64,
     pub collected: Option<(Window, IdSet)>,
+    /// A board's new base and the indexes stored with it, for the board
+    /// room's swap (`board::Board::folded`), once it runs on bytes.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub board: Option<(Vec<u8>, Indexes)>,
 }
 
 /// What a fold's collection must keep (`ydoc::gc`), from the room's
@@ -851,9 +880,10 @@ const IT_FOLDED_LATER: &str = "capy-it-folded-later";
 /// the folded document is stored as a later window candidate. A collection
 /// the guard refuses, or that panics, folds uncollected and is reported once
 /// per material (human/ 2026-10-24); the next fold collects again. A board's
-/// new base is stored with its state vector and delete set. A board's fold
-/// brings its board work `permit` (`work.rs`), taken before the material's
-/// lock, and gives it back once the new base is stored and freed.
+/// new base is stored with its indexes (`board::Indexes::stored`) and
+/// returned with them (`Folded::board`). A board's fold brings its board
+/// work `permit` (`work.rs`), taken before the material's lock, and gives it
+/// back once the new base is stored and the replay freed.
 #[allow(clippy::too_many_arguments)]
 pub async fn fold(
     pool: &Pool,
@@ -940,14 +970,14 @@ pub async fn fold(
     let board = model == Model::Board;
     // The state, the folded document as a window candidate, the window and
     // held set of a collection, why the guard refused one, the units it
-    // discarded, and a board's base indexes.
+    // discarded, and a board's base indexes, as built and as stored.
     type Built = (
         Vec<u8>,
         Option<Window>,
         Option<(Window, IdSet)>,
         Option<String>,
         u64,
-        Option<BaseIndexes>,
+        Option<(Indexes, StoredIndexes)>,
     );
     let (state, window, collected, refused, discarded, indexes) =
         tokio::task::spawn_blocking(move || -> Result<Built, StoreError> {
@@ -961,7 +991,12 @@ pub async fn fold(
             // A board keeps no sessions, so it never collects: its base is
             // the whole scratch document, whose indexes go with it.
             let Some(holds) = holds else {
-                let indexes = board.then(|| base_indexes(&txn));
+                let indexes = board.then(|| {
+                    let indexes = Indexes::of_doc(&txn);
+                    let stored = indexes.stored();
+                    (indexes, stored)
+                });
+                drop(txn);
                 return Ok((whole(&scratch), None, None, None, 0, indexes));
             };
             let now = Window::of(&txn, last);
@@ -1000,29 +1035,32 @@ pub async fn fold(
         .await
         .map_err(|error| StoreError::Other(error.to_string()))??;
     let after_bytes = state.len() as i64;
-    largest.note(state.len());
-    if board {
-        let Some((state_vector, delete_set)) = indexes else {
+    let indexes = if board {
+        let Some((indexes, stored)) = indexes else {
             return Err(StoreError::Other(
                 "a board's fold built no base indexes".into(),
             ));
         };
+        largest.note(state.len() + stored_len(&stored));
         tx.execute(
             "UPDATE material_yjs_documents
              SET state=$2, log_bytes=log_bytes-$3, log_rows=log_rows-$4,
-                 base_state_vector=$5, base_delete_set=$6
+                 base_state_vector=$5, base_delete_set=$6, base_indexes=$7
              WHERE material_id=$1",
             &[
                 &material_id,
                 &state,
                 &folded_bytes,
                 &(count as i32),
-                &state_vector,
-                &delete_set,
+                &stored.state_vector,
+                &stored.delete_set,
+                &stored.rest,
             ],
         )
         .await?;
+        Some(indexes)
     } else {
+        largest.note(state.len());
         tx.execute(
             &format!(
                 "UPDATE {state_table}
@@ -1032,7 +1070,8 @@ pub async fn fold(
             &[&material_id, &state, &folded_bytes, &(count as i32)],
         )
         .await?;
-    }
+        None
+    };
     tx.execute(
         &format!("DELETE FROM {log} WHERE material_id=$1 AND seq <= $2"),
         &[&material_id, &last],
@@ -1050,10 +1089,17 @@ pub async fn fold(
         .await?;
     }
     tx.commit().await?;
-    // The new base and the connection's buffers go before the permit, whose
-    // drop asks for a trim.
+    // The connection's buffers and a note's new base go before the permit,
+    // whose drop asks for a trim; a board's new base is the board room's
+    // next base.
     drop(pooled);
-    drop(state);
+    let board = match indexes {
+        Some(indexes) => Some((state, indexes)),
+        None => {
+            drop(state);
+            None
+        }
+    };
     drop(permit);
     if let Some(why) = refused {
         report_refusal(material_id, doc, "fold", &why);
@@ -1066,6 +1112,7 @@ pub async fn fold(
         log_bytes: folded_bytes,
         base_bytes: after_bytes,
         collected,
+        board,
     }))
 }
 
@@ -1609,36 +1656,48 @@ mod tests {
         material
     }
 
-    /// A board's stored base, checked against its stored indexes: they are
-    /// the state vector and delete set the state decodes to. Returns that
-    /// delete set.
-    async fn stored_indexes_match(pool: &Pool, material_id: &str) -> IdSet {
+    /// A board's stored base and its stored indexes, checked against the
+    /// state: they read back as the indexes of the document the state
+    /// decodes to (`board::Indexes::of_doc`), its state vector and delete
+    /// set those the state itself names.
+    async fn stored_indexes_match(pool: &Pool, material_id: &str) -> (Vec<u8>, Indexes) {
         let row = pool
             .get()
             .await
             .unwrap()
             .query_one(
-                "SELECT state, base_state_vector, base_delete_set FROM material_yjs_documents
-                 WHERE material_id=$1",
+                "SELECT state, base_state_vector, base_delete_set, base_indexes
+                 FROM material_yjs_documents WHERE material_id=$1",
                 &[&material_id],
             )
             .await
             .unwrap();
-        let state = yrs::Update::decode_v1(row.get::<_, &[u8]>(0)).unwrap();
-        let state_vector = StateVector::decode_v1(row.get::<_, &[u8]>(1)).unwrap();
-        let delete_set = IdSet::decode_v1(row.get::<_, &[u8]>(2)).unwrap();
-        assert_eq!(state_vector, state.state_vector());
-        assert_eq!(&delete_set, state.delete_set());
-        delete_set
+        let state: Vec<u8> = row.get(0);
+        let indexes = StoredIndexes {
+            state_vector: row.get(1),
+            delete_set: row.get(2),
+            rest: row.get(3),
+        }
+        .decode()
+        .unwrap();
+        let update = yrs::Update::decode_v1(&state).unwrap();
+        assert_eq!(indexes.sv, update.state_vector());
+        assert_eq!(&indexes.deleted, update.delete_set());
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(&doc, &state, &[] as &[&[u8]]).unwrap();
+        assert_eq!(indexes, Indexes::of_doc(&doc.transact()));
+        (state, indexes)
     }
 
-    /// Bytes-room step 1b: a board's base is stored with its state vector
-    /// and delete set, at its seed and after each fold, equal to those its
-    /// state decodes to (a later board room loads from them without decoding
-    /// the base). Against the rooms tests' Postgres. Fails if the seed or a
-    /// fold leaves them out or stores another document's.
+    /// Bytes-room steps 1b and 2: a board's base is stored with all its
+    /// indexes (the state vector and delete set, and the rest in
+    /// `base_indexes`), at its seed and after each fold, equal to those of
+    /// the document its state decodes to (the board room loads from them
+    /// without decoding the base); a load reads them and the fold returns
+    /// its new base with them. Against the rooms tests' Postgres. Fails if
+    /// the seed or a fold leaves one out or stores another document's.
     #[tokio::test]
-    async fn a_boards_base_is_stored_with_its_state_vector_and_delete_set() {
+    async fn a_boards_base_is_stored_with_its_indexes() {
         let Some(pool) = it_pool() else { return };
         let block = serde_json::json!({
             "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
@@ -1646,7 +1705,8 @@ mod tests {
         });
         let board = it_material(&pool, "canvas", block).await;
         let loaded = load(&pool, &board, 1, Doc::Content).await.unwrap();
-        stored_indexes_match(&pool, &board).await;
+        let (_, seeded) = stored_indexes_match(&pool, &board).await;
+        assert_eq!(loaded.indexes.unwrap().decode().unwrap(), seeded);
         // A block drawn and erased by another client: the fold's base holds
         // a deletion too.
         let doc = ydoc::scratch_doc();
@@ -1662,12 +1722,16 @@ mod tests {
         append(&pool, &board, 1, Doc::Content, &row, &[], &none, &[])
             .await
             .unwrap();
-        fold(&pool, &board, 1, Doc::Content, None, None, None)
+        let folded = fold(&pool, &board, 1, Doc::Content, None, None, None)
             .await
             .unwrap()
             .unwrap();
-        let deleted = stored_indexes_match(&pool, &board).await;
-        assert!(deleted.contains(&yrs::ID::new(ClientID::new(7), 0)));
+        let (state, indexes) = stored_indexes_match(&pool, &board).await;
+        assert!(indexes.deleted.contains(&yrs::ID::new(ClientID::new(7), 0)));
+        assert_eq!(folded.board, Some((state, indexes)));
+        let note = it_note(&pool, "no indexes").await;
+        let loaded = load(&pool, &note, 1, Doc::Content).await.unwrap();
+        assert!(loaded.indexes.is_none());
     }
 
     /// `text` typed at the start of `doc`'s first block by `client`: the

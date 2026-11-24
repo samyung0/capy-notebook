@@ -4732,3 +4732,26 @@ a canvas's first open and each board fold fail. The deploy's own order
 columns are nullable, null for every other kind and for a board seeded
 before 0193 and not folded since; the migration backfills nothing and refuses
 nothing.
+
+## Board base indexes, the rest (migration 0195)
+
+[`0195_board_base_indexes_rest.sql`](../server/migrations/0195_board_base_indexes_rest.sql)
+(the bytes-room plan, step 2, Epo 2026-11-24) adds `base_indexes` to
+`material_yjs_documents`: the rest of a board base's indexes (the origins
+the board room's flag rule reads, the place hashes, each type's depth and the
+clients that wrote contributor markers), one versioned binary value that
+`board::Indexes::stored` in
+[`board.rs`](../collaboration-rs/crates/server/src/board.rs) documents. As
+with 0193, it must be applied before the new collaboration server starts,
+which writes it with 0193's two columns at every canvas's first seed and
+every board fold (a canvas's first open and each board fold fail without
+it); the deploy's own order does this. It is nullable, null for every other
+kind and for a board seeded before 0195 and not folded since; the migration
+backfills nothing and refuses nothing.
+
+The board room on bytes (step 2's room tasks) loads a board from these three
+columns and never decodes its base, so a canvas whose row lacks any of them
+fails its load with "a board's base has no stored indexes" (Epo 2026-11-24:
+canvases saved before the stored indexes are deleted, not migrated). Before
+that server reaches UAT, delete the UAT canvases by hand as 0181 to 0183's
+section above does; until then the live-document room still opens them.

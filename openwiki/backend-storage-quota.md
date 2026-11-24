@@ -383,10 +383,11 @@ workspace or not (who holds it:
   content writes, so the charge is the board's stored bytes as of its last
   projection (each projection changes the content, since the block carries the
   stored version); a fold between projections is not charged again, and a
-  rename, a share or a trash charges nothing. The board's base state vector
-  and delete set (`base_state_vector`, `base_delete_set`, migration 0193,
-  ids only, written at the seed and each fold) are not charged. The seeded
-  board is charged
+  rename, a share or a trash charges nothing. The board's base indexes
+  (`base_state_vector` and `base_delete_set`, migration 0193, and
+  `base_indexes`, migration 0195: ids and place hashes only, written at the
+  seed and each fold, about 0.6 MB beside a 6,000-stroke, 4.7 MiB pen
+  board) are not charged. The seeded board is charged
   once its room first seeds it, at its first open (migration 0184, Epo
   2026-11-20): a canvas is made with no Yjs row, and its room seeds the
   `material_yjs_documents` row on the first open (`load` → `bootstrap` in

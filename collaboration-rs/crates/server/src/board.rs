@@ -19,7 +19,15 @@
 //! * merges take at most 256 updates a call, then 64 merged ones
 //!   ([bytes::merge_chunked]);
 //! * a joiner takes the base's part first, as an update, and the step 2 last
-//!   ([Board::join]).
+//!   ([Board::join]);
+//! * a type nested [BOARD_DEPTH] deep below its root is refused, read from
+//!   the type-depth index ([Depths]), and a type the index cannot place is
+//!   tried first;
+//! * a struct written under, naming or deleting units of an earlier room
+//!   life's marker client is refused: every struct of theirs is a
+//!   contributor marker ([Indexes::markers]);
+//! * a load takes the base's indexes as stored beside it, never decoding the
+//!   base, and a base stored without them fails ([Board::load]).
 
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
@@ -28,11 +36,13 @@ use std::sync::Arc;
 use sha2::{Digest, Sha256};
 use yrs::block::{ClientID, Item, ItemContent, UpdateParent};
 use yrs::branch::BranchID;
+use yrs::encoding::read::{Cursor, Read as _};
+use yrs::encoding::write::Write as _;
 use yrs::updates::decoder::Decode;
 use yrs::updates::encoder::Encode;
 use yrs::{Any, Doc, ID, IdSet, Map, Out, ReadTxn, StateVector, Transact, Update, UpdateBlock};
 
-use crate::model::BOARD_ROOT;
+use crate::model::{BOARD_DEPTH, BOARD_ROOT};
 
 /// An update holding nothing: no structs, no deletions.
 const EMPTY_UPDATE: &[u8] = &[0, 0];
@@ -103,6 +113,15 @@ pub enum BoardError {
     /// The end of a fold that is not the running one.
     #[error("a fold ended that is not the running one")]
     StaleFold,
+    /// A base stored without its indexes: a canvas saved before they were
+    /// stored, which is deleted, not migrated (Epo 2026-11-24).
+    #[error("a board's base has no stored indexes, so it cannot load without decoding it")]
+    NoIndexes,
+    #[error("a board's stored indexes cannot be read: {0}")]
+    Indexes(String),
+    /// A stored row the base and the rows before it cannot place.
+    #[error("a stored board row names structs its base and earlier rows do not hold")]
+    Unplaced,
 }
 
 /// What [Board::read] found of a writer's update.
@@ -138,6 +157,8 @@ pub struct Fresh {
     /// The deletions the index lacks.
     deleted: IdSet,
     taken: Taken,
+    /// Its new types' depths, where known.
+    types: Vec<(ID, u32)>,
 }
 
 impl Fresh {
@@ -191,17 +212,36 @@ pub struct Row {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Fold(u64);
 
-/// A base's indexes, which a load takes instead of decoding the base (T5
-/// stores them with it): its state vector, its whole delete set and its
-/// items' [Origins]. A load takes the rows stored past the base into them
-/// too, their origins and keys included: the base's alone would pass an
-/// update the rows make unsafe.
-#[derive(Clone, Debug, Default)]
+/// The running fold: which, the rows it covers (those committed when it
+/// began), merged, and the first append those rows do not hold (the oldest
+/// recent update then, or the next one).
+struct Folding {
+    fold: Fold,
+    rows: Vec<u8>,
+    from: u64,
+}
+
+/// A base's indexes, which a load takes instead of decoding the base,
+/// stored beside it ([Indexes::stored]): its state vector, its whole delete
+/// set, its items' [Origins], its types' [Depths] and the clients that wrote
+/// its contributor markers. A load takes the rows stored past the base into
+/// them too ([Board::load]): the base's alone would pass an update the rows
+/// make unsafe.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Indexes {
     pub sv: StateVector,
     pub deleted: IdSet,
     pub origins: Origins,
+    pub depths: Depths,
+    /// The clients holding items in the contributor-marker root: each
+    /// earlier room life's own client (`room.rs` draws it outside every
+    /// stored client), which writes nothing else on a board, so every
+    /// struct of theirs is a marker.
+    pub markers: HashSet<ClientID>,
 }
+
+/// The layout of `base_indexes` ([Indexes::stored]).
+const STORED_VERSION: u8 = 1;
 
 impl Indexes {
     /// A fold's indexes, read from the document it encodes the base from:
@@ -210,26 +250,34 @@ impl Indexes {
         let snapshot = txn.snapshot();
         let store = txn.store();
         let (mut origins, mut taken) = (Origins::default(), Taken::default());
+        let (mut places, mut depths, mut markers) = (Vec::new(), HashMap::new(), HashSet::new());
         for (client, end) in snapshot.state_map.iter() {
             for (_, item) in store.blocks_in(client, 0..*end) {
                 let Some(item) = item else {
                     continue;
                 };
                 taken.add(&item);
+                let Some(parent) = item.parent_branch() else {
+                    continue;
+                };
+                if matches!(item.content(), ItemContent::Type(_)) {
+                    held_depth(&item, &mut depths);
+                }
+                let parent = parent.id();
+                if matches!(&parent, BranchID::Root(name) if &**name == ydoc::CONTRIBUTORS_ROOT) {
+                    markers.insert(*client);
+                }
                 // Every key or sequence holding items holds one with no
                 // origin: its first. A collected one's parent is deleted,
                 // where an insert costs nothing.
                 if item.origin().is_some() {
                     continue;
                 }
-                let Some(parent) = item.parent_branch() else {
-                    continue;
-                };
-                let place = match parent.id() {
+                let place = match parent {
                     BranchID::Nested(id) => place(Parent::Nested(id), item.parent_sub()),
                     BranchID::Root(name) => place(Parent::Root(&name), item.parent_sub()),
                 };
-                origins.keys.insert(place);
+                places.push(place);
                 if item.parent_sub().is_none() {
                     origins.heads.insert(*item.id(), place);
                     if item.left().is_none() {
@@ -239,18 +287,394 @@ impl Indexes {
             }
         }
         origins.take(taken);
+        origins.keys = Keys::sorted(places);
         Indexes {
             sv: snapshot.state_map,
             deleted: snapshot.delete_set,
             origins,
+            depths: Depths::sorted(depths.into_iter().collect()),
+            markers,
+        }
+    }
+
+    /// The indexes as stored beside the base (`material_yjs_documents`):
+    /// the state vector and delete set v1-encoded (`base_state_vector`,
+    /// `base_delete_set`, migration 0193) and the rest in `base_indexes`
+    /// (migration 0195), laid out as version 1:
+    /// * the version, one byte (1);
+    /// * `named`, then `continued`, each a length-prefixed delete-set
+    ///   encoding (v1);
+    /// * the keys: a count, then each place's 8 bytes little-endian,
+    ///   ascending (the sorted array a load searches);
+    /// * the heads: a count, then each item's client and clock and its
+    ///   place's 8 bytes, by id;
+    /// * the firsts: a count, then each place's 8 bytes and its first
+    ///   item's client and clock, by place;
+    /// * the depths: a count, then each type's client, clock and depth, by
+    ///   id;
+    /// * the marker clients: a count, then each client, ascending.
+    ///
+    /// Counts, clients, clocks and depths are unsigned varints, as yrs
+    /// writes them.
+    pub fn stored(&self) -> StoredIndexes {
+        let Origins {
+            named,
+            continued,
+            keys,
+            heads,
+            firsts,
+        } = &self.origins;
+        let mut rest = Vec::new();
+        rest.write_u8(STORED_VERSION);
+        rest.write_buf(named.encode_v1());
+        rest.write_buf(continued.encode_v1());
+        let keys = keys.sorted_all();
+        rest.write_var(keys.len());
+        for place in keys.iter() {
+            rest.write_all(&place.to_le_bytes());
+        }
+        let mut heads: Vec<_> = heads.iter().collect();
+        heads.sort_unstable();
+        rest.write_var(heads.len());
+        for (id, place) in heads {
+            write_id(&mut rest, id);
+            rest.write_all(&place.to_le_bytes());
+        }
+        let mut firsts: Vec<_> = firsts.iter().collect();
+        firsts.sort_unstable();
+        rest.write_var(firsts.len());
+        for (place, id) in firsts {
+            rest.write_all(&place.to_le_bytes());
+            write_id(&mut rest, id);
+        }
+        let depths = self.depths.sorted_all();
+        rest.write_var(depths.len());
+        for (id, depth) in depths.iter() {
+            write_id(&mut rest, id);
+            rest.write_var(*depth);
+        }
+        let mut markers: Vec<u64> = self.markers.iter().map(ClientID::get).collect();
+        markers.sort_unstable();
+        rest.write_var(markers.len());
+        for client in markers {
+            rest.write_var(client);
+        }
+        StoredIndexes {
+            state_vector: self.sv.encode_v1(),
+            delete_set: self.deleted.encode_v1(),
+            rest,
         }
     }
 }
 
-/// What the one-held-side rule reads of the held items ([Board::placed]).
-/// T5 stores them with the base's other indexes; the room's take each
-/// appended update's items.
-#[derive(Clone, Debug, Default)]
+/// A base's indexes as stored beside it ([Indexes::stored]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StoredIndexes {
+    pub state_vector: Vec<u8>,
+    pub delete_set: Vec<u8>,
+    pub rest: Vec<u8>,
+}
+
+impl StoredIndexes {
+    /// The indexes [Indexes::stored] wrote.
+    pub fn decode(&self) -> Result<Indexes, BoardError> {
+        let wrong = |why: &str| BoardError::Indexes(why.to_owned());
+        let mut rest = Cursor::new(&self.rest);
+        let version = rest.read_u8()?;
+        if version != STORED_VERSION {
+            return Err(BoardError::Indexes(format!("unknown version {version}")));
+        }
+        let named = IdSet::decode_v1(rest.read_buf()?)?;
+        let continued = IdSet::decode_v1(rest.read_buf()?)?;
+        let count = read_count(&mut rest, 8)?;
+        let mut keys = Vec::with_capacity(count);
+        for _ in 0..count {
+            keys.push(read_place(&mut rest)?);
+        }
+        if !keys.is_sorted_by(|a, b| a < b) {
+            return Err(wrong("the keys are not ascending"));
+        }
+        let count = read_count(&mut rest, 10)?;
+        let mut heads = HashMap::with_capacity(count);
+        for _ in 0..count {
+            let id = read_id(&mut rest)?;
+            heads.insert(id, read_place(&mut rest)?);
+        }
+        let count = read_count(&mut rest, 10)?;
+        let mut firsts = HashMap::with_capacity(count);
+        for _ in 0..count {
+            let place = read_place(&mut rest)?;
+            firsts.insert(place, read_id(&mut rest)?);
+        }
+        let count = read_count(&mut rest, 3)?;
+        let mut depths = Vec::with_capacity(count);
+        for _ in 0..count {
+            let id = read_id(&mut rest)?;
+            depths.push((id, rest.read_var()?));
+        }
+        if !depths.is_sorted_by(|(a, _), (b, _)| a < b) {
+            return Err(wrong("the depths are not in id order"));
+        }
+        let count = read_count(&mut rest, 1)?;
+        let mut markers = HashSet::with_capacity(count);
+        for _ in 0..count {
+            markers.insert(read_client(&mut rest)?);
+        }
+        if rest.has_content() {
+            return Err(wrong("bytes follow the marker clients"));
+        }
+        Ok(Indexes {
+            sv: StateVector::decode_v1(&self.state_vector)?,
+            deleted: IdSet::decode_v1(&self.delete_set)?,
+            origins: Origins {
+                named,
+                continued,
+                keys: Keys {
+                    base: keys,
+                    newer: HashSet::new(),
+                },
+                heads,
+                firsts,
+            },
+            depths: Depths {
+                base: depths,
+                newer: HashMap::new(),
+            },
+            markers,
+        })
+    }
+}
+
+fn write_id(out: &mut Vec<u8>, id: &ID) {
+    out.write_var(id.client.get());
+    out.write_var(id.clock);
+}
+
+/// A count of entries at least `least` bytes each, refused past what is
+/// left, so a damaged count allocates nothing.
+fn read_count(cursor: &mut Cursor, least: usize) -> Result<usize, BoardError> {
+    let count: usize = cursor.read_var()?;
+    if count.saturating_mul(least) > cursor.buf.len() - cursor.next {
+        return Err(BoardError::Indexes(
+            "a count past the bytes stored".to_owned(),
+        ));
+    }
+    Ok(count)
+}
+
+fn read_place(cursor: &mut Cursor) -> Result<u64, BoardError> {
+    let mut bytes = [0; 8];
+    bytes.copy_from_slice(cursor.read_exact(8)?);
+    Ok(u64::from_le_bytes(bytes))
+}
+
+fn read_client(cursor: &mut Cursor) -> Result<ClientID, BoardError> {
+    let client: u64 = cursor.read_var()?;
+    if client >= 1 << 53 {
+        return Err(BoardError::Indexes(format!("client {client} past 53 bits")));
+    }
+    Ok(ClientID::new(client))
+}
+
+fn read_id(cursor: &mut Cursor) -> Result<ID, BoardError> {
+    let client = read_client(cursor)?;
+    Ok(ID::new(client, cursor.read_var()?))
+}
+
+/// The places holding items ([Origins::keys]): the base's in one sorted
+/// array (8 bytes a place, searched by halves), those taken since in a set.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Keys {
+    base: Vec<u64>,
+    newer: HashSet<u64>,
+}
+
+impl Keys {
+    /// A base's places, in any order and with repeats.
+    fn sorted(mut places: Vec<u64>) -> Keys {
+        places.sort_unstable();
+        places.dedup();
+        places.shrink_to_fit();
+        Keys {
+            base: places,
+            newer: HashSet::new(),
+        }
+    }
+
+    pub fn contains(&self, place: &u64) -> bool {
+        self.base.binary_search(place).is_ok() || self.newer.contains(place)
+    }
+
+    /// Whether `place` was new.
+    fn insert(&mut self, place: u64) -> bool {
+        self.base.binary_search(&place).is_err() && self.newer.insert(place)
+    }
+
+    /// A fold's places become the base's. The base's it lacks are under
+    /// types deleted since, where an insert costs nothing; those taken
+    /// since stay unless it holds them.
+    fn rebase(&mut self, fold: Keys) {
+        let Keys { base, newer } = fold;
+        self.newer
+            .retain(|place| base.binary_search(place).is_err());
+        self.newer.extend(newer);
+        self.base = base;
+    }
+
+    /// Every place, ascending.
+    fn sorted_all(&self) -> Cow<'_, [u64]> {
+        if self.newer.is_empty() {
+            return Cow::Borrowed(&self.base);
+        }
+        let mut all: Vec<u64> = self.base.iter().chain(&self.newer).copied().collect();
+        all.sort_unstable();
+        Cow::Owned(all)
+    }
+}
+
+/// Each held type's depth below its root: 0 in a root, one more than its
+/// parent type's. With every admitted type under [BOARD_DEPTH], yrs's
+/// recursion through nested types stays shallow (a chain of 8,000 maps and
+/// the deletion of its top overflowed a worker's stack). The base's in one
+/// sorted array, those taken since in a map. A type under an implicit
+/// parent among held items has none until a fold's index names it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Depths {
+    base: Vec<(ID, u32)>,
+    newer: HashMap<ID, u32>,
+}
+
+impl Depths {
+    fn sorted(mut all: Vec<(ID, u32)>) -> Depths {
+        all.sort_unstable();
+        all.dedup_by_key(|(id, _)| *id);
+        all.shrink_to_fit();
+        Depths {
+            base: all,
+            newer: HashMap::new(),
+        }
+    }
+
+    pub fn get(&self, id: &ID) -> Option<u32> {
+        match self.base.binary_search_by_key(id, |(id, _)| *id) {
+            Ok(at) => Some(self.base[at].1),
+            Err(_) => self.newer.get(id).copied(),
+        }
+    }
+
+    fn insert(&mut self, id: ID, depth: u32) {
+        if self.base.binary_search_by_key(&id, |(id, _)| *id).is_err() {
+            self.newer.insert(id, depth);
+        }
+    }
+
+    /// As [Keys::rebase].
+    fn rebase(&mut self, fold: Depths) {
+        let Depths { base, newer } = fold;
+        self.newer
+            .retain(|id, _| base.binary_search_by_key(id, |(id, _)| *id).is_err());
+        self.newer.extend(newer);
+        self.base = base;
+    }
+
+    fn sorted_all(&self) -> Cow<'_, [(ID, u32)]> {
+        if self.newer.is_empty() {
+            return Cow::Borrowed(&self.base);
+        }
+        let mut all: Vec<(ID, u32)> = self
+            .base
+            .iter()
+            .copied()
+            .chain(self.newer.iter().map(|(id, depth)| (*id, *depth)))
+            .collect();
+        all.sort_unstable();
+        Cow::Owned(all)
+    }
+}
+
+/// The depth of the held type `item` ([Depths]), noting it and every type
+/// above it the walk passes in `depths`. Iterative.
+fn held_depth(item: &Item, depths: &mut HashMap<ID, u32>) {
+    let mut walked = vec![*item.id()];
+    let mut branch = item.parent_branch();
+    // The depth of the last type walked.
+    let top = loop {
+        let Some(holder) = branch.and_then(|branch| branch.item()) else {
+            break branch.is_some().then_some(0);
+        };
+        if let Some(known) = depths.get(holder.id()) {
+            break Some(known + 1);
+        }
+        walked.push(*holder.id());
+        branch = holder.parent_branch();
+    };
+    let Some(top) = top else {
+        return;
+    };
+    for (above, id) in walked.into_iter().rev().enumerate() {
+        depths.insert(id, top + above as u32);
+    }
+}
+
+/// How deep an update's `item` sits ([Depths]): 0 in a root, one below the
+/// type its update names as its parent, beside the item its implicit parent
+/// follows (its origin, else its right origin), through the update's own
+/// items to a held type the index knows. None past a held item that is not
+/// one (an implicit parent among held items). Iterative: an update may
+/// chain its own structs to any length (`ydoc::nesting`). `memo` holds
+/// each of the update's items read so far, by its first unit.
+fn depth(
+    item: &Item,
+    items: &Items,
+    held: &impl Fn(&ID) -> bool,
+    depths: &Depths,
+    memo: &mut HashMap<ID, Option<u32>>,
+) -> Option<u32> {
+    // Each link: an item, and how much deeper it sits than the one it
+    // refers to (1 below a parent, 0 beside a sibling).
+    let mut chain: Vec<(ID, u32)> = Vec::new();
+    let mut current = item;
+    let mut found = loop {
+        if let Some(known) = memo.get(current.id()) {
+            break *known;
+        }
+        // A cycle reads none.
+        memo.insert(*current.id(), None);
+        let (reference, below) = match current.update_parent() {
+            UpdateParent::Root(_) => break Some(0),
+            UpdateParent::Item(parent) => (Some(*parent), 1),
+            UpdateParent::Unknown => (current.origin().or(current.right_origin()).copied(), 0),
+            UpdateParent::Branch(_) => (None, 0),
+        };
+        let Some(reference) = reference else {
+            break None;
+        };
+        if held(&reference) {
+            break match below {
+                1 => depths.get(&reference).map(|depth| depth + 1),
+                _ => None,
+            };
+        }
+        match items.at(&reference) {
+            Some(next) => {
+                chain.push((*current.id(), below));
+                current = next;
+            }
+            None => break None,
+        }
+    };
+    memo.insert(*current.id(), found);
+    for (id, below) in chain.into_iter().rev() {
+        found = found.map(|depth| depth + below);
+        memo.insert(id, found);
+    }
+    found
+}
+
+/// What the one-held-side rule reads of the held items ([Board::placed]),
+/// stored with the base's other indexes; the room's take each appended
+/// update's items.
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Origins {
     /// Units a held item names as its origin, except an item's own client's
     /// previous unit: something was placed right after them. Compressed per
@@ -260,21 +684,40 @@ pub struct Origins {
     /// on past them.
     pub continued: IdSet,
     /// The places ([place]) holding at least one item: every map key set,
-    /// every sequence written. One hash each (8 bytes, about 10 to 20 in the
-    /// set).
-    pub keys: HashSet<u64>,
+    /// every sequence written.
+    pub keys: Keys,
     /// Each held sequence item with no origin, by its first unit, and its
     /// sequence's place.
     pub heads: HashMap<ID, u64>,
     /// Each sequence's first item while the room knows it. An item with no
     /// origin appended to the sequence without naming its first (two tabs
     /// typing at its start at once, or crafted) may land before it, and the
-    /// sequence has none until a load takes a later fold's indexes.
+    /// sequence has none until a fold's indexes name it again
+    /// ([Board::folded]).
     pub firsts: HashMap<u64, ID>,
 }
 
+/// The sequences whose first an update's items with no origin may have
+/// changed: their places, or all of them after a clear.
+#[derive(Default)]
+struct Touched {
+    places: Vec<u64>,
+    all: bool,
+}
+
+/// Where [Origins::take] stands with an item with no origin.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Visit {
+    Waiting,
+    Open,
+    Done,
+}
+
 impl Origins {
-    fn take(&mut self, taken: Taken) {
+    /// Takes an update's items, each item with no origin once the item it
+    /// is put before has a place: one of the same update first, in whatever
+    /// order the update holds them.
+    fn take(&mut self, taken: Taken) -> Touched {
         let Taken {
             named,
             continued,
@@ -282,35 +725,69 @@ impl Origins {
         } = taken;
         self.named.merge_with(units(named));
         self.continued.merge_with(continued);
-        for (id, anchor) in unanchored {
-            let (place, first) = match anchor {
-                Anchor::At { place, sequence } => {
-                    let empty = self.keys.insert(place);
-                    if !sequence {
-                        continue;
-                    }
-                    (place, empty)
-                }
-                Anchor::Before(right) => match self.heads.get(&right) {
-                    Some(&place) => (place, self.firsts.get(&place) == Some(&right)),
-                    // No sequence the room knows (a map key's value, an item
-                    // with an origin): never from an editor.
-                    None => {
-                        self.firsts.clear();
-                        continue;
-                    }
-                },
-                Anchor::Unknown => {
-                    self.firsts.clear();
+        let mut touched = Touched::default();
+        let at: HashMap<ID, usize> = unanchored
+            .iter()
+            .enumerate()
+            .map(|(at, (id, _))| (*id, at))
+            .collect();
+        let mut visits = vec![Visit::Waiting; unanchored.len()];
+        for start in 0..unanchored.len() {
+            let mut stack = vec![start];
+            while let Some(&now) = stack.last() {
+                if visits[now] == Visit::Done {
+                    stack.pop();
                     continue;
                 }
-            };
-            self.heads.insert(id, place);
-            if first {
-                self.firsts.insert(place, id);
-            } else {
-                self.firsts.remove(&place);
+                visits[now] = Visit::Open;
+                if let (_, Anchor::Before { head, .. }) = unanchored[now]
+                    && !self.heads.contains_key(&head)
+                    && let Some(&before) = at.get(&head)
+                    && visits[before] == Visit::Waiting
+                {
+                    stack.push(before);
+                    continue;
+                }
+                self.put(unanchored[now], &mut touched);
+                visits[now] = Visit::Done;
+                stack.pop();
             }
+        }
+        touched
+    }
+
+    fn put(&mut self, (id, anchor): (ID, Anchor), touched: &mut Touched) {
+        let (place, first) = match anchor {
+            Anchor::At { place, sequence } => {
+                let empty = self.keys.insert(place);
+                if !sequence {
+                    return;
+                }
+                (place, empty)
+            }
+            Anchor::Before { right, head } => match self.heads.get(&head) {
+                Some(&place) => (place, self.firsts.get(&place) == Some(&right)),
+                // No sequence the room knows (a map key's value, an item
+                // with an origin, a unit inside an item): never from an
+                // editor.
+                None => {
+                    self.firsts.clear();
+                    touched.all = true;
+                    return;
+                }
+            },
+            Anchor::Unknown => {
+                self.firsts.clear();
+                touched.all = true;
+                return;
+            }
+        };
+        touched.places.push(place);
+        self.heads.insert(id, place);
+        if first {
+            self.firsts.insert(place, id);
+        } else {
+            self.firsts.remove(&place);
         }
     }
 }
@@ -326,13 +803,34 @@ struct Taken {
 }
 
 /// Where an item with no origin was put.
+#[derive(Clone, Copy)]
 enum Anchor {
     /// With no right origin: the key or sequence its parent names.
     At { place: u64, sequence: bool },
-    /// Before its right origin.
-    Before(ID),
+    /// Before its right origin, in the sequence of `head`: the item of its
+    /// update holding the right origin when that has no origin, else the
+    /// right origin itself.
+    Before { right: ID, head: ID },
     /// Nowhere it names (never from yrs's decoder).
     Unknown,
+}
+
+/// Where an update's `item`, which has no origin, is put.
+fn anchor(item: &Item, items: &Items) -> Anchor {
+    match (item.right_origin(), named_place(item)) {
+        (Some(right), _) => Anchor::Before {
+            right: *right,
+            head: items
+                .at(right)
+                .filter(|item| item.origin().is_none())
+                .map_or(*right, |item| *item.id()),
+        },
+        (None, Some(place)) => Anchor::At {
+            place,
+            sequence: item.parent_sub().is_none(),
+        },
+        (None, None) => Anchor::Unknown,
+    }
 }
 
 impl Taken {
@@ -374,7 +872,7 @@ enum Parent<'a> {
 
 /// A map key, or a sequence (no key), of a parent type, as 64 bits of
 /// SHA-256 over both, each part tagged and the root's name length-prefixed:
-/// stable across processes and releases, since T5 stores it. Two places
+/// stable across processes and releases, since it is stored. Two places
 /// sharing a hash only flag an update ([Board::placed] takes a held hash as
 /// a place holding items), never pass one.
 fn place(parent: Parent, key: Option<&Arc<str>>) -> u64 {
@@ -445,7 +943,7 @@ pub struct Board {
     base_sv: StateVector,
     /// While a fold runs: which, and the rows stored before it began (the
     /// ones it covers), merged.
-    folding: Option<(Fold, Vec<u8>)>,
+    folding: Option<Folding>,
     /// How many folds began.
     folds: u64,
     /// The rows stored past the base, or past a running fold's start, merged.
@@ -464,6 +962,17 @@ pub struct Board {
     deleted: IdSet,
     /// The base's and every appended item's origins and places.
     origins: Origins,
+    /// The base's and every appended type's depth.
+    depths: Depths,
+    /// Earlier room lives' marker clients ([Indexes::markers]).
+    marker_clients: HashSet<ClientID>,
+    /// How many updates were appended.
+    appended: u64,
+    /// The last append that put an item with no origin in each sequence, and
+    /// the last that cleared every first ([Board::folded] trusts a fold's
+    /// first only where none came since its rows end).
+    last_put: HashMap<u64, u64>,
+    last_clear: Option<u64>,
     /// This life's contributor markers, the only structs the room writes, in
     /// a document of their own under the room's client.
     markers: Doc,
@@ -480,6 +989,8 @@ impl Board {
             sv,
             deleted,
             origins,
+            depths,
+            markers,
         } = indexes;
         Board {
             base,
@@ -492,8 +1003,95 @@ impl Board {
             rows_made: 0,
             deleted,
             origins,
+            depths,
+            marker_clients: markers,
+            appended: 0,
+            last_put: HashMap::new(),
+            last_clear: None,
             markers: Doc::with_options(ydoc::doc_options(room_client.get())),
             markers_durable: ydoc::Durable::default(),
+        }
+    }
+
+    /// A board on its stored base, the indexes stored with it and the rows
+    /// stored past it (`note_store::load`), with an upper bound of its
+    /// state's bytes: the base's length and each row's most growth
+    /// (`model::board_growth`). The base is never decoded: its indexes come
+    /// as stored, and each row's structs, deletions, origins, places, type
+    /// depths and marker clients are taken into them (the rows stay under
+    /// the fold threshold). The rows join the tail, merged in chunks. A base
+    /// stored without indexes fails (Epo 2026-11-24: canvases saved before
+    /// them are deleted, not migrated). The room's client, which writes the
+    /// markers ([Board::markers]), is drawn at random outside every client a
+    /// stored struct or deletion names and every id `taken` refuses (the
+    /// assigned ones), as a document room's is.
+    pub fn load(
+        base: Vec<u8>,
+        stored: Option<&StoredIndexes>,
+        rows: Vec<Vec<u8>>,
+        taken: impl Fn(u64) -> bool,
+    ) -> Result<(Board, u64), BoardError> {
+        let indexes = stored.ok_or(BoardError::NoIndexes)?.decode()?;
+        let mut bound = base.len() as u64;
+        // The marker document is redrawn below, once every stored client
+        // is known; nothing is written to it before.
+        let mut board = Board::new(base, indexes, ClientID::random());
+        for row in &rows {
+            let update = Update::decode_v1(row)?;
+            if unheld(&board.sv, &update) {
+                return Err(BoardError::Unplaced);
+            }
+            bound += crate::model::board_growth(&update, row.len());
+            board.take_row(&update);
+        }
+        if !rows.is_empty() {
+            board.tail = bytes::merge_chunked(&rows)?;
+        }
+        let room_client = loop {
+            let client = ClientID::random();
+            let named = board.sv.get(&client) > 0 || board.deleted.get(&client).is_some();
+            if !named && !taken(client.get()) {
+                break client;
+            }
+        };
+        board.markers = Doc::with_options(ydoc::doc_options(room_client.get()));
+        Ok((board, bound))
+    }
+
+    /// A stored row's structs, deletions and items taken into the indexes.
+    fn take_row(&mut self, update: &Update) {
+        let items = Items::of(update);
+        let (mut ends, mut taken, mut memo) =
+            (StateVector::default(), Taken::default(), HashMap::new());
+        let mut types = Vec::new();
+        {
+            let held = |id: &ID| id.clock < self.sv.get(&id.client);
+            for block in update.blocks() {
+                let (client, end) = ydoc::struct_end(&block);
+                ends.set_max(client, end);
+                let UpdateBlock::Item(item) = block else {
+                    continue;
+                };
+                if matches!(item.update_parent(), UpdateParent::Root(name) if &**name == ydoc::CONTRIBUTORS_ROOT)
+                {
+                    self.marker_clients.insert(client);
+                }
+                if matches!(item.content(), ItemContent::Type(_))
+                    && let Some(depth) = depth(item, &items, &held, &self.depths, &mut memo)
+                {
+                    types.push((*item.id(), depth));
+                }
+                taken.add(item);
+                if item.origin().is_none() {
+                    taken.unanchored.push((*item.id(), anchor(item, &items)));
+                }
+            }
+        }
+        self.sv.merge(ends);
+        self.deleted.merge_with(update.delete_set().clone());
+        self.origins.take(taken);
+        for (id, depth) in types {
+            self.depths.insert(id, depth);
         }
     }
 
@@ -530,8 +1128,13 @@ impl Board {
     /// apply it. A small edit is at most [ydoc::SMALL_EDIT] new structs and
     /// as many fresh delete ranges, covering at most [ydoc::MAX_WORK] units
     /// (the bound `few_new_deletions` puts on the blocks its ranges cover),
-    /// of one writing client, with no new type whose parent is implicit (it
-    /// has no depth) and every new item placed by [Board::placed].
+    /// of one writing client, with no new type whose parent is implicit or
+    /// whose depth the index cannot give, and every new item placed by
+    /// [Board::placed]. Refused too: a new type [BOARD_DEPTH] deep, and a
+    /// new struct under, or naming a unit of, an earlier room life's marker
+    /// client, or a fresh deletion naming one (its markers all hold deleted,
+    /// so no honest update deletes one anew; this life's are the marker
+    /// document's, which `markers::check` reads).
     pub fn read(&self, sent: &[u8], update: &Update) -> Result<Read, BoardError> {
         refuse_malformed(update)?;
         let state = self.state_vector();
@@ -552,10 +1155,21 @@ impl Board {
         let trimmed = Update::decode_v1(&kept)?;
         let items = Items::of(&trimmed);
         let held = |id: &ID| id.clock < state.get(&id.client);
+        let earlier = |client: &ClientID| self.marker_clients.contains(client);
+        let marker = || {
+            BoardError::Refused("a board update names an earlier room's contributor marker".into())
+        };
+        if deleted.iter().any(|(client, _)| earlier(client)) {
+            return Err(marker());
+        }
         let (mut ends, mut taken) = (StateVector::default(), Taken::default());
         let (mut count, mut writer, mut flagged) = (0, None, false);
+        let (mut memo, mut types) = (HashMap::new(), Vec::new());
         for block in trimmed.blocks() {
             let (client, end) = ydoc::struct_end(&block);
+            if earlier(&client) {
+                return Err(marker());
+            }
             ends.set_max(client, end);
             count += 1;
             flagged |= writer.is_some_and(|writer| writer != client);
@@ -563,6 +1177,9 @@ impl Board {
             let UpdateBlock::Item(item) = block else {
                 continue;
             };
+            if references(item).any(|id| earlier(&id.client)) {
+                return Err(marker());
+            }
             match item.update_parent() {
                 UpdateParent::Root(name) if &**name != BOARD_ROOT => {
                     return Err(BoardError::Refused(
@@ -574,22 +1191,23 @@ impl Board {
                 }
                 _ => {}
             }
+            if matches!(item.content(), ItemContent::Type(_)) {
+                match depth(item, &items, &held, &self.depths, &mut memo) {
+                    Some(depth) if depth >= BOARD_DEPTH => {
+                        return Err(BoardError::Refused(format!(
+                            "a type nested more than {BOARD_DEPTH} deep"
+                        )));
+                    }
+                    Some(depth) => types.push((*item.id(), depth)),
+                    None => flagged = true,
+                }
+            }
             flagged |= !self.placed(item, &held, &items);
             taken.add(item);
             if item.origin().is_none() {
-                let anchor = match (item.right_origin(), named_place(item)) {
-                    (Some(right), _) => Anchor::Before(*right),
-                    (None, Some(place)) => Anchor::At {
-                        place,
-                        sequence: item.parent_sub().is_none(),
-                    },
-                    (None, None) => Anchor::Unknown,
-                };
-                taken.unanchored.push((*item.id(), anchor));
+                taken.unanchored.push((*item.id(), anchor(item, &items)));
             }
         }
-        // T5: the depth index refuses a type past 64 levels here, and the
-        // earlier lives' marker clients any struct or deletion naming one.
         let (mut ranges, mut covered) = (0, 0u64);
         for (_, of) in deleted.iter() {
             ranges += of.len();
@@ -598,7 +1216,8 @@ impl Board {
                 .map(|range| u64::from(range.end - range.start))
                 .sum::<u64>();
         }
-        // T5: a fresh range that covers a type is flagged (the type index).
+        // Open, for a decision (not in the approved flag rule): flag a fresh
+        // range that covers a type, whose content yrs deletes unnamed.
         flagged |=
             count > ydoc::SMALL_EDIT || ranges > ydoc::SMALL_EDIT || covered > ydoc::MAX_WORK;
         Ok(Read::New(Fresh {
@@ -611,6 +1230,7 @@ impl Board {
             ends,
             deleted,
             taken,
+            types,
         }))
     }
 
@@ -624,11 +1244,23 @@ impl Board {
             ends,
             deleted,
             taken,
+            types,
             ..
         } = fresh;
         self.sv.merge(ends);
         self.deleted.merge_with(deleted);
-        self.origins.take(taken);
+        let touched = self.origins.take(taken);
+        for (id, depth) in types {
+            self.depths.insert(id, depth);
+        }
+        let now = self.appended;
+        self.appended += 1;
+        for place in touched.places {
+            self.last_put.insert(place, now);
+        }
+        if touched.all {
+            self.last_clear = Some(now);
+        }
         let at = self.recent.len();
         self.recent.push(bytes);
         &self.recent[at]
@@ -694,16 +1326,25 @@ impl Board {
         }
         self.folds += 1;
         let fold = Fold(self.folds);
-        self.folding = Some((fold, std::mem::take(&mut self.tail)));
+        self.folding = Some(Folding {
+            fold,
+            rows: std::mem::take(&mut self.tail),
+            from: self.appended - self.recent.len() as u64,
+        });
         Some(fold)
     }
 
-    /// The running fold's new base and its indexes replace the base and the
-    /// rows it covered. The index keeps what it held and takes the implicit
-    /// deletions the new base names; the origins hold the base's items
-    /// already. A live marker the new base deletes (one a committed row hid
-    /// and the room has not cleared since) is written again as a new item,
-    /// since a joiner holding the deleted struct would skip the marker
+    /// The running fold's new base and its indexes (`note_store::fold`)
+    /// replace the base and the rows it covered. The index keeps what it
+    /// held and takes the implicit deletions the new base names; the fold's
+    /// places and depths become the base's part of theirs, its heads and
+    /// marker clients join the room's, and its first of each sequence is
+    /// trusted again where no item with no origin was put since its rows
+    /// end (anywhere, after a clear): a sequence an unplaceable insert or
+    /// two tabs typing at its start at once left untrusted is trusted from
+    /// the next fold on. A live marker the new base deletes (one a committed
+    /// row hid and the room has not cleared since) is written again as a new
+    /// item, since a joiner holding the deleted struct would skip the marker
     /// document's copy: that update, to relay.
     pub fn folded(
         &mut self,
@@ -711,33 +1352,55 @@ impl Board {
         base: Vec<u8>,
         indexes: Indexes,
     ) -> Result<Option<Vec<u8>>, BoardError> {
-        if !self.running(fold) {
+        let Some(Folding { from, .. }) = self.folding.take_if(|folding| folding.fold == fold)
+        else {
             return Err(BoardError::StaleFold);
-        }
-        let rewritten = self.rewrite_markers(&indexes.deleted);
+        };
+        let Indexes {
+            sv,
+            deleted,
+            origins,
+            depths,
+            markers,
+        } = indexes;
+        let rewritten = self.rewrite_markers(&deleted);
         self.base = base;
-        self.folding = None;
-        self.sv.merge(indexes.sv.clone());
-        self.base_sv = indexes.sv;
-        self.deleted.merge_with(indexes.deleted);
+        self.sv.merge(sv.clone());
+        self.base_sv = sv;
+        self.deleted.merge_with(deleted);
+        let Origins {
+            keys,
+            heads,
+            firsts,
+            ..
+        } = origins;
+        self.origins.keys.rebase(keys);
+        self.origins.heads.extend(heads);
+        if self.last_clear.is_none_or(|at| at < from) {
+            for (place, first) in firsts {
+                if self.last_put.get(&place).is_none_or(|&at| at < from) {
+                    self.origins.firsts.insert(place, first);
+                }
+            }
+        }
+        self.last_put.retain(|_, at| *at >= from);
+        self.depths.rebase(depths);
+        self.marker_clients.extend(markers);
         Ok(rewritten)
     }
 
     /// The running fold failed: the rows it covered go back to the tail.
     pub fn fold_failed(&mut self, fold: Fold) -> Result<(), BoardError> {
-        if !self.running(fold) {
+        let Some(folding) = self.folding.take_if(|folding| folding.fold == fold) else {
             return Err(BoardError::StaleFold);
-        }
-        let Some((fold, folding)) = self.folding.take() else {
-            return Ok(());
         };
         if self.tail.is_empty() {
-            self.tail = folding;
-        } else if !folding.is_empty() {
-            match bytes::merge(&[folding.as_slice(), self.tail.as_slice()]) {
+            self.tail = folding.rows;
+        } else if !folding.rows.is_empty() {
+            match bytes::merge(&[folding.rows.as_slice(), self.tail.as_slice()]) {
                 Ok(merged) => self.tail = merged,
                 Err(error) => {
-                    self.folding = Some((fold, folding));
+                    self.folding = Some(folding);
                     return Err(error.into());
                 }
             }
@@ -772,7 +1435,7 @@ impl Board {
         for rows in self
             .folding
             .iter()
-            .map(|(_, rows)| rows)
+            .map(|folding| &folding.rows)
             .chain([&self.tail])
         {
             if rows.is_empty() {
@@ -806,7 +1469,7 @@ impl Board {
         let rows: Vec<&[u8]> = self
             .folding
             .iter()
-            .map(|(_, rows)| rows)
+            .map(|folding| &folding.rows)
             .chain([&self.tail])
             .filter(|rows| !rows.is_empty())
             .chain(&self.recent)
@@ -816,12 +1479,6 @@ impl Board {
         let doc = ydoc::scratch_doc();
         ydoc::replay(&doc, &self.base, &rows)?;
         Ok(doc)
-    }
-
-    fn running(&self, fold: Fold) -> bool {
-        self.folding
-            .as_ref()
-            .is_some_and(|(running, _)| *running == fold)
     }
 
     fn holds_base(&self, since: &StateVector) -> bool {
@@ -1030,8 +1687,10 @@ mod tests {
         Text, TextPrelim, TextRef, Transact, TransactionMut, Update, UpdateBlock,
     };
 
-    use super::{Board, BoardError, Check, EMPTY_UPDATE, Fold, Indexes, Read, bytes};
-    use crate::model::{BOARD_ROOT, Model};
+    use super::{
+        Board, BoardError, Check, EMPTY_UPDATE, Fold, Indexes, Read, StoredIndexes, bytes,
+    };
+    use crate::model::{BOARD_DEPTH, BOARD_ROOT, Model};
 
     /// The room's client: it writes the markers.
     const ROOM: u64 = 900;
@@ -1108,13 +1767,15 @@ mod tests {
         }
     }
 
-    /// A board room under test: the board, the rows its stores committed
-    /// past the stored base, a reference document that applied every
-    /// delivered update in turn (a live document room), a peer that heard
-    /// only what the board relayed, and the updates waiting on a resync.
+    /// A board room under test: the board, the stored base and its indexes,
+    /// the rows its stores committed past the base, a reference document
+    /// that applied every delivered update in turn (a live document room), a
+    /// peer that heard only what the board relayed, and the updates waiting
+    /// on a resync.
     struct Room {
         board: Board,
         stored_base: Vec<u8>,
+        stored_indexes: StoredIndexes,
         rows: Vec<Vec<u8>>,
         reference: Doc,
         peer: Doc,
@@ -1127,6 +1788,7 @@ mod tests {
             let first = first_state();
             let (base, indexes) = compacted(&[&first]);
             Room {
+                stored_indexes: indexes.stored(),
                 board: Board::new(base.clone(), indexes, ClientID::new(ROOM)),
                 stored_base: base,
                 rows: Vec::new(),
@@ -1201,6 +1863,7 @@ mod tests {
             parts.extend(self.rows.drain(..through));
             let (base, indexes) = compacted(&parts);
             self.stored_base = base.clone();
+            self.stored_indexes = indexes.stored();
             let rewritten = self.board.folded(fold, base, indexes).unwrap();
             if let Some(update) = &rewritten {
                 self.relay(update);
@@ -1211,6 +1874,34 @@ mod tests {
         fn fold(&mut self) -> Option<Vec<u8>> {
             let (fold, through) = self.begin_fold();
             self.end_fold(fold, through)
+        }
+
+        /// The stored board: its base and rows, live markers hidden.
+        fn stored(&self) -> Doc {
+            let mut stored = vec![self.stored_base.clone()];
+            stored.extend(self.rows.iter().cloned());
+            replica(&stored)
+        }
+
+        /// The room's next life, loaded from what it stored
+        /// (`Board::load`), its reference and peer the stored board.
+        fn reload(&self) -> Room {
+            let (board, _) = Board::load(
+                self.stored_base.clone(),
+                Some(&self.stored_indexes),
+                self.rows.clone(),
+                |_| false,
+            )
+            .unwrap();
+            Room {
+                board,
+                stored_base: self.stored_base.clone(),
+                stored_indexes: self.stored_indexes.clone(),
+                rows: self.rows.clone(),
+                reference: self.stored(),
+                peer: self.stored(),
+                waiting: Vec::new(),
+            }
         }
 
         /// A joiner holding nothing, synced by the room's answer.
@@ -2359,8 +3050,8 @@ mod tests {
 
     /// A five-tab session read as it arrives, stored every 50 and folded
     /// twice: each small update costs a peer's yrs at most [ydoc::SMALL_EDIT]
-    /// squared steps, and the room's origins and keys cover the document's,
-    /// each sequence first it trusts the document's own.
+    /// squared steps, and the room's origins, keys and type depths cover the
+    /// document's, each sequence first it trusts the document's own.
     #[test]
     fn small_stays_small_and_the_indexes_cover_the_document() {
         let updates = session(5, 600, 77);
@@ -2402,12 +3093,398 @@ mod tests {
         );
         assert!(document.named.diff(&ours.named).is_empty());
         assert!(document.continued.diff(&ours.continued).is_empty());
-        assert!(document.keys.is_subset(&ours.keys));
+        assert!(
+            document
+                .keys
+                .sorted_all()
+                .iter()
+                .all(|place| ours.keys.contains(place))
+        );
+        assert!(
+            Indexes::of_doc(&doc.transact())
+                .depths
+                .sorted_all()
+                .iter()
+                .all(|(id, depth)| room.board.depths.get(id) == Some(*depth))
+        );
         // A sequence the document no longer holds is under a deleted block.
         assert!(
             ours.firsts.iter().all(|(place, first)| {
                 document.firsts.get(place).is_none_or(|own| own == first)
             })
         );
+    }
+    /// What a loaded board holds, as a fresh joiner and the replica read it.
+    fn loaded_holds(board: &Board) -> (StateVector, IdSet, Vec<Option<Any>>) {
+        let joiner = ydoc::scratch_doc();
+        let answer = board.join(&StateVector::default()).unwrap();
+        for update in answer.updates.iter().chain([&answer.step2]) {
+            apply(&joiner, update);
+        }
+        assert!(held(&board.replica().unwrap()) == held(&joiner));
+        held(&joiner)
+    }
+
+    /// A board loads from its stored base, the indexes stored with it and
+    /// the rows stored past it (a fold halfway, stores every 25, a writer's
+    /// marker hidden in the rows): it holds the stored board, its bound is
+    /// at least the board's bytes, and its indexes cover the stored board's
+    /// as the live room's do: the same clocks, every deletion the live room
+    /// named, its origins, places and type depths, and the earlier life's
+    /// marker client. It goes on taking the session's later updates, and
+    /// every joiner holds what a live document holds.
+    #[test]
+    fn a_loaded_board_holds_the_stored_board() {
+        let updates = session(4, 400, 31);
+        let mut room = Room::new();
+        room.mark("writer");
+        for (at, sent) in updates[..300].iter().enumerate() {
+            room.deliver(sent);
+            if at % 25 == 13 {
+                room.store();
+            }
+            if at == 150 {
+                room.store();
+                room.fold();
+            }
+        }
+        room.store();
+        assert!(room.rows.len() > 1);
+        let mut next = room.reload();
+        let stored = room.stored();
+        assert!(loaded_holds(&next.board) == held(&stored));
+        let (_, bound) = Board::load(
+            room.stored_base.clone(),
+            Some(&room.stored_indexes),
+            room.rows.clone(),
+            |_| false,
+        )
+        .unwrap();
+        let bytes = stored
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default())
+            .len();
+        assert!(bound >= bytes as u64, "bound {bound}, board {bytes}");
+        let document = Indexes::of_doc(&stored.transact());
+        let loaded = &next.board;
+        assert_eq!(loaded.sv, document.sv);
+        assert!(room.board.deleted.diff(&loaded.deleted).is_empty());
+        assert!(
+            document
+                .origins
+                .named
+                .diff(&loaded.origins.named)
+                .is_empty()
+        );
+        assert!(
+            document
+                .origins
+                .continued
+                .diff(&loaded.origins.continued)
+                .is_empty()
+        );
+        assert!(
+            document
+                .origins
+                .keys
+                .sorted_all()
+                .iter()
+                .all(|place| loaded.origins.keys.contains(place))
+        );
+        assert!(
+            document
+                .depths
+                .sorted_all()
+                .iter()
+                .all(|(id, depth)| loaded.depths.get(id) == Some(*depth))
+        );
+        assert!(loaded.marker_clients.contains(&ClientID::new(ROOM)));
+        let client = loaded.markers().client_id();
+        assert!(document.sv.get(&client) == 0 && document.deleted.get(&client).is_none());
+        for sent in &updates[300..] {
+            next.deliver(sent);
+        }
+        next.store();
+        next.fold();
+        assert!(next.waiting.is_empty());
+        let replica = next.board.replica().unwrap();
+        for doc in [&next.join(), &next.peer, &replica] {
+            assert!(held(doc) == held(&next.reference));
+        }
+    }
+
+    /// A load reads the base's indexes as stored and never decodes the base:
+    /// bytes no decoder reads, standing in for it, load to the stored
+    /// board's clocks and deletions. A base stored without its indexes fails
+    /// the load (Epo 2026-11-24: such canvases are deleted, not migrated).
+    #[test]
+    fn a_board_load_never_decodes_its_base() {
+        let updates = session(3, 160, 9);
+        let mut room = Room::new();
+        for (at, sent) in updates.iter().enumerate() {
+            room.deliver(sent);
+            if at == 80 {
+                room.store();
+                room.fold();
+            }
+        }
+        room.store();
+        let unreadable = vec![0xff; 64];
+        assert!(Update::decode_v1(&unreadable).is_err());
+        let (board, _) = Board::load(
+            unreadable,
+            Some(&room.stored_indexes),
+            room.rows.clone(),
+            |_| false,
+        )
+        .unwrap();
+        let stored = held(&room.stored());
+        assert_eq!(board.sv, stored.0);
+        assert!(board.deleted.diff(&stored.1).is_empty());
+        assert!(matches!(
+            Board::load(room.stored_base.clone(), None, room.rows.clone(), |_| false),
+            Err(BoardError::NoIndexes)
+        ));
+    }
+
+    /// The indexes stored beside a base read back as they were built: the
+    /// state vector, the delete set, the origins (named and continued
+    /// units, places, heads and firsts), the type depths and the marker
+    /// clients of a board with texts, lists, nested element maps, deletions
+    /// and a contributor marker; and the same indexes store the same bytes.
+    #[test]
+    fn the_stored_indexes_read_back_as_built() {
+        let mut room = Room::new();
+        room.mark("writer");
+        for sent in &session(4, 300, 5) {
+            room.deliver(sent);
+        }
+        room.store();
+        let stored = room.stored();
+        let indexes = Indexes::of_doc(&stored.transact());
+        assert!(!indexes.origins.firsts.is_empty() && !indexes.origins.heads.is_empty());
+        assert!(
+            indexes
+                .depths
+                .sorted_all()
+                .iter()
+                .any(|(_, depth)| *depth > 1)
+        );
+        assert!(indexes.markers.contains(&ClientID::new(ROOM)));
+        assert!(!indexes.deleted.is_empty());
+        let written = indexes.stored();
+        assert_eq!(written, indexes.stored());
+        assert_eq!(written.decode().unwrap(), indexes);
+    }
+
+    /// Security regression (the depth limit, board review 2, finding 1): a
+    /// type [BOARD_DEPTH] levels below its root is refused, read from the
+    /// type-depth index alone: a chain of [BOARD_DEPTH] nested maps and a
+    /// value in its deepest are taken, a map in the deepest (the 65th level)
+    /// is refused, by the live room's index, after a fold by the base's, by
+    /// a loaded board's stored one, and as one update chaining all 65.
+    /// Fails if the index gives a type another depth than its parent's + 1.
+    #[test]
+    fn a_type_past_the_depth_limit_is_refused() {
+        let mut room = Room::new();
+        let writer = synced(&room, 11);
+        let mut deepest = None;
+        let chain = edited(&writer, |txn, blocks| {
+            let mut current = blocks.insert(txn, "deep", MapPrelim::default());
+            for _ in 1..BOARD_DEPTH {
+                current = current.insert(txn, "k", MapPrelim::default());
+            }
+            deepest = Some(current);
+        });
+        let deepest = deepest.unwrap();
+        assert_eq!(checked(&room.board, &chain), Check::Flagged);
+        room.deliver(&chain);
+        let value = {
+            let mut txn = writer.doc.transact_mut();
+            deepest.insert(&mut txn, "text", "abc");
+            ydoc::committed_update(txn)
+        };
+        assert_eq!(checked(&room.board, &value), Check::Small);
+        room.deliver(&value);
+        let deeper = {
+            let mut txn = writer.doc.transact_mut();
+            deepest.insert(&mut txn, "k", MapPrelim::default());
+            ydoc::committed_update(txn)
+        };
+        let too_deep = format!("nested more than {BOARD_DEPTH} deep");
+        assert!(refusal(&room.board, &deeper).contains(&too_deep));
+        room.store();
+        room.fold();
+        assert!(refusal(&room.board, &deeper).contains(&too_deep));
+        assert!(refusal(&room.reload().board, &deeper).contains(&too_deep));
+        let whole = edited(&synced(&room, 12), |txn, blocks| {
+            let mut current = blocks.insert(txn, "whole", MapPrelim::default());
+            for _ in 0..BOARD_DEPTH {
+                current = current.insert(txn, "k", MapPrelim::default());
+            }
+        });
+        assert!(refusal(&room.board, &whole).contains(&too_deep));
+    }
+
+    /// Security regression (the bytes-room plan's root-by-induction rule):
+    /// a later room life holds an earlier one's markers only as stored, and
+    /// its marker document knows none of them, so the board refuses a struct
+    /// naming one (an editor's map set on the old marker's key, its origin
+    /// that marker) and one written under that life's client, where a write
+    /// to the marker root would pass as an implicit parent. Fails without
+    /// the earlier lives' marker clients, stored or taken from the rows.
+    #[test]
+    fn an_earlier_lives_marker_is_refused() {
+        let mut room = Room::new();
+        room.mark("writer");
+        for sent in &session(2, 60, 3) {
+            room.deliver(sent);
+        }
+        room.store();
+        let next = room.reload();
+        let tab = synced(&next, 12);
+        let markers = tab.doc.get_or_insert_map(ydoc::CONTRIBUTORS_ROOT);
+        let named = {
+            let mut txn = tab.doc.transact_mut();
+            markers.insert(&mut txn, "writer", "forged");
+            ydoc::committed_update(txn)
+        };
+        assert!(decode(&named).blocks().all(|block| match block {
+            UpdateBlock::Item(item) => item.origin().is_some_and(|id| id.client.get() == ROOM),
+            _ => false,
+        }));
+        let marker = "an earlier room's contributor marker";
+        assert!(refusal(&next.board, &named).contains(marker));
+        let impostor = synced(&next, ROOM);
+        assert!(refusal(&next.board, &edited(&impostor, drag_new("v"))).contains(marker));
+        // After a fold the base's stored set names it too.
+        room.fold();
+        let next = room.reload();
+        assert!(refusal(&next.board, &named).contains(marker));
+    }
+
+    /// A new block written with its position.
+    fn drag_new(to: &'static str) -> impl Fn(&mut TransactionMut, &MapRef) {
+        move |txn, blocks| {
+            blocks
+                .insert(txn, "n", MapPrelim::default())
+                .insert(txn, "prop:xywh", to);
+        }
+    }
+
+    /// The review's case: one crafted insert whose right origin is a unit
+    /// inside an item, not a sequence's head, leaves the room trusting no
+    /// sequence's first, so typing at the start of any text is tried. The
+    /// next fold trusts its own firsts again, except where an item with no
+    /// origin was put since its rows end: a text two tabs typed at the start
+    /// of meanwhile stays untrusted (its stored first is no longer first).
+    /// Fails if trust never comes back, or if it comes back for that text.
+    #[test]
+    fn a_fold_trusts_the_sequence_starts_nothing_touched_since() {
+        let mut room = Room::new();
+        let writer = synced(&room, 11);
+        room.deliver(&edited(&writer, |txn, blocks| {
+            blocks.insert(txn, "x", MapPrelim::default()).insert(
+                txn,
+                "prop:text",
+                TextPrelim::new("ab"),
+            );
+        }));
+        room.deliver(&edited(&writer, |txn, blocks| {
+            blocks.insert(txn, "y", MapPrelim::default()).insert(
+                txn,
+                "prop:text",
+                TextPrelim::new("hello"),
+            );
+        }));
+        let at_start = |id: &'static str| {
+            move |txn: &mut TransactionMut, blocks: &MapRef| {
+                text(txn, blocks, id, "prop:text").insert(txn, 0, "s");
+            }
+        };
+        let mut client = 40;
+        let mut start_of = |room: &Room, id: &'static str| {
+            client += 1;
+            checked(&room.board, &edited(&synced(room, client), at_start(id)))
+        };
+        assert_eq!(start_of(&room, "y"), Check::Small);
+        // x's text "ab" is client 11's clocks 2 and 3: the right origin (11,
+        // 2) of an insert at its start moved to (11, 3).
+        let mut sent = edited(&synced(&room, 60), at_start("x"));
+        let at = sent
+            .windows(3)
+            .position(|bytes| bytes == [0x44, 0x0b, 0x02])
+            .unwrap();
+        sent[at + 2] = 0x03;
+        let Read::New(fresh) = read(&room.board, &sent) else {
+            panic!("nothing new");
+        };
+        assert_eq!(fresh.check, Check::Flagged);
+        apply(&room.reference, &sent);
+        apply(&room.peer, room.board.append(fresh));
+        assert_eq!(start_of(&room, "y"), Check::Flagged);
+        room.store();
+        room.fold();
+        assert_eq!(start_of(&room, "x"), Check::Small);
+        assert_eq!(start_of(&room, "y"), Check::Small);
+        // While a fold runs, two tabs type at y's start at once.
+        room.store();
+        let stale = synced(&room, 70);
+        let (fold, through) = room.begin_fold();
+        let (one, other) = (synced(&room, 71), synced(&room, 72));
+        room.deliver(&edited(&one, at_start("y")));
+        room.deliver(&edited(&other, at_start("y")));
+        room.end_fold(fold, through);
+        assert_eq!(start_of(&room, "x"), Check::Small);
+        assert_eq!(
+            checked(&room.board, &edited(&stale, at_start("y"))),
+            Check::Flagged
+        );
+        for doc in [&room.join(), &room.peer] {
+            assert!(held(doc) == held(&room.reference));
+        }
+    }
+
+    /// Items with no origin in one update, one put before another: the
+    /// room takes the one put first before the one before it, in whatever
+    /// order the update holds them, and clears no sequence's first: a tab
+    /// typing at another text's start is still a small edit, and so is one
+    /// typing before both.
+    #[test]
+    fn a_head_of_the_same_update_places_an_insert_before_it() {
+        for (a, b) in [(30, 20), (20, 30)] {
+            let mut room = Room::new();
+            let writer = synced(&room, 11);
+            room.deliver(&edited(&writer, |txn, blocks| {
+                for id in ["x", "y"] {
+                    blocks.insert(txn, id, MapPrelim::default()).insert(
+                        txn,
+                        "prop:text",
+                        TextPrelim::new("ab"),
+                    );
+                }
+            }));
+            let (first, second) = (synced(&room, a), synced(&room, b));
+            let typed = edited(&first, typing_in("y"));
+            apply(&second.doc, &typed);
+            let both = bytes::merge(&[typed, edited(&second, typing_in("y"))]).unwrap();
+            room.deliver(&both);
+            assert!(!room.board.origins.firsts.is_empty(), "clients {a}, {b}");
+            for id in ["x", "y"] {
+                let tab = synced(&room, 50);
+                assert_eq!(
+                    checked(&room.board, &edited(&tab, typing_in(id))),
+                    Check::Small,
+                    "clients {a}, {b}, text {id}"
+                );
+            }
+        }
+    }
+
+    /// Typing "s" at the start of `id`'s text.
+    fn typing_in(id: &'static str) -> impl Fn(&mut TransactionMut, &MapRef) {
+        move |txn, blocks| {
+            text(txn, blocks, id, "prop:text").insert(txn, 0, "s");
+        }
     }
 }

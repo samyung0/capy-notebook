@@ -33,7 +33,7 @@ const REPLACED: u64 = 25;
 /// editor's deepest today is 5 (blocks, the surface block, its elements'
 /// holder and map, an element, the element's own text or map), measured on
 /// the first state (3) and a saved board with a plane card (5).
-const BOARD_DEPTH: u32 = 64;
+pub(crate) const BOARD_DEPTH: u32 = 64;
 
 // A joiner takes a board's whole state in one sync message.
 const _: () = assert!(CANVAS_BOARD_MAX <= crate::room::NOTE_MAX_SYNC_BYTES);
@@ -302,7 +302,7 @@ fn board_metrics(content_bytes: u64) -> Metrics {
 /// deleted only shrinks beyond that. What yrs deletes unnamed, the content
 /// of a deleted type, may grow (each isolated piece becomes a collected
 /// block with a deleted range of its own): `Inspection::unnamed`, measured.
-fn board_growth(update: &yrs::Update, bytes: usize) -> u64 {
+pub(crate) fn board_growth(update: &yrs::Update, bytes: usize) -> u64 {
     let (mut structs, mut sides) = (0u64, 0u64);
     for block in update.blocks() {
         structs += 1;
