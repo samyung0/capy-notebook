@@ -84,18 +84,24 @@ export class PageKeyboardManager {
   constructor(public rootComponent: BlockComponent) {
     this.rootComponent.bindHotKey(
       {
+        // Capy (local change 78): each returns true once it handled the key.
+        // Off a Mac, Ctrl+Shift+Z arrives as a lowercase z with Shift, so a
+        // falsy return let the keymap try it again without Shift ('Mod-z'),
+        // which undid the redo at once.
         'Mod-z': ctx => {
           ctx.get('defaultState').event.preventDefault();
 
           if (this._doc.canUndo) {
             this._doc.undo();
           }
+          return true;
         },
         'Shift-Mod-z': ctx => {
           ctx.get('defaultState').event.preventDefault();
           if (this._doc.canRedo) {
             this._doc.redo();
           }
+          return true;
         },
         'Control-y': ctx => {
           if (!IS_WINDOWS && !IS_LINUX) return;
@@ -104,6 +110,7 @@ export class PageKeyboardManager {
           if (this._doc.canRedo) {
             this._doc.redo();
           }
+          return true;
         },
         'Mod-Backspace': () => true,
         Backspace: this._handleDelete,

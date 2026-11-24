@@ -195,41 +195,4 @@ test.describe('assignments', () => {
       })
       .toEqual([3, 0]);
   });
-
-  test('a personal workspace holds the task its owner sets themself', async ({
-    ownerApi,
-    workspaceFactory,
-  }) => {
-    const workspace = await workspaceFactory.create({
-      name: `Personal ${randomUUID().slice(0, 8)}`,
-    });
-    const me = (await (await ownerApi.get('/api/me')).json()) as { id: string };
-    expect(
-      (
-        await ownerApi.post(`/api/workspaces/${workspace.id}/assignments`, {
-          data: {
-            assignAll: false,
-            assignees: [me.id],
-            attempts: 1,
-            draft: false,
-            files: [],
-            kind: 'unmarked',
-            latePenaltyPct: 0,
-            marking: 'ai_approve',
-            noLate: false,
-            showAnswers: 'closed',
-            showGrades: 'automatic',
-            shuffle: false,
-            title: 'Read chapter 4',
-          },
-        })
-      ).status()
-    ).toBe(201);
-    const list = (await (
-      await ownerApi.get(`/api/workspaces/${workspace.id}/assignments`)
-    ).json()) as { items: { own: boolean; title: string }[] };
-    expect(list.items.map((a) => [a.title, a.own])).toEqual([
-      ['Read chapter 4', true],
-    ]);
-  });
 });

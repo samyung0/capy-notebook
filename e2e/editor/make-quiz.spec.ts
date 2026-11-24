@@ -261,9 +261,11 @@ test('an edit on the page reaches the question list', async ({ page }) => {
   // The rail holds numbers; its outline lists each question's text (Canvas's
   // rail, Epo 2026-11-15).
   await page.getByRole('button', { name: m.quiz_editor_navigator() }).click();
-  await expect(
-    page.getByRole('dialog').getByRole('button').nth(1)
-  ).toContainText('Name it.');
+  // The outline, not the hidden quiz's tip, which is a dialog too.
+  const outline = page
+    .getByRole('dialog')
+    .filter({ hasText: m.quiz_editor_questions({ count: 12 }) });
+  await expect(outline.getByRole('button').nth(1)).toContainText('Name it.');
 });
 
 test('a failed run says so in the panel and goes back to the pages', async ({

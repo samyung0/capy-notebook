@@ -1071,6 +1071,15 @@ Outside this directory, for BlockSuite:
     showed the app's hidden file inputs (Tailwind's `hidden` is layered, the
     injected rule is not).
 
+78. Undo and redo keys stop at their own handler
+    (`affine/blocks/root/src/keyboard/keyboard-manager.ts`, marked `Capy (local
+    change 78)`): 'Mod-z', 'Shift-Mod-z' and 'Control-y' return true. Off a Mac,
+    Ctrl+Shift+Z arrives as a lowercase `z` with Shift, so the keymap, finding the
+    redo handler's return falsy, tried the key again without Shift and ran
+    'Mod-z': every Ctrl+Shift+Z on Windows and Linux redid and undid at once.
+    `e2e/editor/drawing-board.spec.ts` ("a teacher's area moves by its label")
+    redoes with it on CI's Linux.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

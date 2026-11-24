@@ -62,16 +62,15 @@ export const pickExtract = (page: Page) =>
     .getByRole('button', { name: m.practice_tab_convert() })
     .click({ timeout: 30_000 });
 
-/** Upload a file, from Extract from file's first menu. */
+/** Upload a file, from the question paper's box (Epo 2026-11-22). */
 export async function uploadPaper(page: Page, name: string, buffer: Buffer) {
   await pickExtract(page);
+  const chooser = page.waitForEvent('filechooser');
+  // The box waits for the workspace's upload policy.
   await quizDialog(page)
-    .getByRole('button', { name: m.file_choose() })
+    .getByRole('button', { name: m.make_quiz_upload_file() })
     .first()
     .click({ timeout: 30_000 });
-  const chooser = page.waitForEvent('filechooser');
-  // Upload a file waits for the workspace's upload policy.
-  await page.getByRole('button', { name: m.make_quiz_upload_file() }).click();
   await (await chooser).setFiles({
     buffer,
     mimeType: 'application/octet-stream',
