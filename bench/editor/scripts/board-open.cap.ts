@@ -6,6 +6,7 @@ import { gzipSync } from 'node:zlib';
 import { type Browser, expect, type Page, test } from '@playwright/test';
 import * as Y from 'yjs';
 import { BOARD_CATALOG } from '../../../src/api/board.generated';
+import { encodeStrokePoints } from '../../../src/features/blocksuite/strokePoints';
 import { cdpSession, percentile, throttleCpu } from './metrics';
 
 /**
@@ -554,10 +555,7 @@ function mixWriter(template: Uint8Array, firstState: Uint8Array) {
     made.set('id', key);
     made.set('index', order());
     made.set('seed', Math.floor(random() * 2 ** 31));
-    made.set(
-      'points',
-      points.map(([px, py]) => [px - left, py - top])
-    );
+    made.set('points', encodeStrokePoints(points, [left, top]));
     made.set(
       'xywh',
       `[${left},${top},${Math.max(...xs) - left + 2},${Math.max(...ys) - top + 2}]`

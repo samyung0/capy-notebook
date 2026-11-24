@@ -15,6 +15,7 @@ import { BOARD_CATALOG } from '@/api/board.generated';
 import { qk } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import type { Material } from '@/api/types';
+import { encodeStrokePoints } from '@/features/blocksuite/strokePoints';
 import {
   encodeCaret,
   readBoardPresence,
@@ -3236,10 +3237,9 @@ export function mockDrawBoardStrokes(materialId: string, short: number) {
           color: '#000000',
           index: 'a0',
           lineWidth: 4,
-          points: Array.from({ length: 120 }, (_, at) => [
-            at % 40,
-            (at * 7) % 20,
-          ]),
+          points: encodeStrokePoints(
+            Array.from({ length: 120 }, (_, at) => [at % 40, (at * 7) % 20])
+          ),
           rotate: 0,
           seed: drawn,
           type: 'brush',
