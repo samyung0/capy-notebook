@@ -19955,15 +19955,55 @@ async fn a_fold_while_writers_keep_writing_keeps_every_row() {
     assert!(reopened.settle(|c| c.board_blocks() == drawn).await);
 }
 
+/// Waits until a store of `material` taken while its room's fold ran has
+/// committed and is held (the debug hook `capy-it-hold-stored` says so in
+/// Redis; bounded).
+async fn store_held(env: &Env, material: &str) {
+    let mut redis = redis_at(&env.redis).await;
+    let key = format!("capy-it-hold-stored:{material}:held");
+    for _ in 0..300 {
+        let held: Option<String> = redis::AsyncCommands::get(&mut redis, &key)
+            .await
+            .expect("the hold");
+        if held.is_some() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("no store of {material} was held");
+}
+
+/// Lets the held store of `material` tell its room it committed, and every
+/// later one at once.
+async fn store_released(env: &Env, material: &str) {
+    let mut redis = redis_at(&env.redis).await;
+    let key = format!("capy-it-hold-stored:{material}:release");
+    let _: () = redis::AsyncCommands::set_ex(&mut redis, key, 1, 600)
+        .await
+        .expect("the release");
+}
+
+/// Reads (applying syncs) until `check` holds, for up to 20 s.
+async fn settled_long(client: &mut Client, check: impl Fn(&Client) -> bool) -> bool {
+    for _ in 0..4 {
+        if client.settle(&check).await {
+            return true;
+        }
+    }
+    false
+}
+
 /// Bytes-room step 2, markers across a fold: every store begins a fold
-/// (one row is enough here) that reads its rows 5 s later, and every store
-/// waits 3 s before it writes (debug builds: `capy-it-fold-later`,
-/// `capy-it-store-later`). The writer draws twice after the first store:
-/// the next store takes the first drawing and claims its marker, and the
-/// second, drawn meanwhile, writes a new marker that store leaves live. The
-/// fold swaps in before that marker's own store commits; a tab joining then
-/// holds it live and the board as the writer does. Fails if a join after a
-/// fold loses the live markers.
+/// (one row is enough here) that reads its rows 5 s later (debug builds:
+/// `capy-it-fold-later`), and a store taken while one runs commits but
+/// tells its room only once the test lets it (`capy-it-hold-stored`). The
+/// writer's second drawing goes in such a store: its row hides the live
+/// marker, and the fold reads that row, so the new base deletes a marker
+/// the room has not cleared. The swap writes it again and relays that to
+/// the writer; a tab joining then holds it live, the marker map and the
+/// board as the writer does; once the store is let go its clear removes the
+/// marker on both. Fails if a join after a fold loses the live markers, or
+/// the swap does not write them again.
 #[tokio::test]
 async fn a_joiner_after_a_fold_sees_live_markers() {
     let Some(env) = env() else { return };
@@ -19973,33 +20013,33 @@ async fn a_joiner_after_a_fold_sees_live_markers() {
         &[("COLLABORATION_FOLD_MAX_ROWS", "1")],
     )
     .await;
-    let prefix = "capy-it-fold-later-capy-it-store-later";
+    let prefix = "capy-it-fold-later-capy-it-hold-stored";
     let (user, material, room) = canvas_named(&env, prefix).await;
     let mut writer = Client::at_board(server.port, &room, &user).await;
     writer.draw("one", "affine:note", &[]).await;
     persisted(&mut writer, "one").await;
-    // The fold began. The next store takes "two" 200 ms after it lands and
-    // writes 3 s later; "three" lands while it waits.
-    tokio::time::sleep(Duration::from_millis(300)).await;
     writer.draw("two", "affine:note", &[]).await;
-    tokio::time::sleep(Duration::from_millis(700)).await;
-    writer.draw("three", "affine:note", &[]).await;
-    writer.until(6).await.expect("ack");
     writer.until(6).await.expect("ack");
     assert!(writer.settle(|c| live_markers(c) == 1).await);
-    let mut folded = false;
-    for _ in 0..200 {
-        if board_base(&env, &material).await != BOARD_FIRST_STATE {
-            folded = true;
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
-    assert!(folded, "the fold never swapped in");
+    store_held(&env, &material).await;
+    let written = writer.doc.transact().state_vector();
+    let own = yrs::block::ClientID::new(writer.id());
+    let rewritten = |c: &Client| {
+        c.doc
+            .transact()
+            .state_vector()
+            .iter()
+            .any(|(client, clock)| *client != own && *clock > written.get(client))
+    };
+    assert!(
+        settled_long(&mut writer, rewritten).await,
+        "the swap wrote no marker again"
+    );
+    assert_eq!(live_markers(&writer), 1);
     let mut joiner = Client::at_board(server.port, &room, &user).await;
     assert!(
         joiner
-            .settle(|c| c.board_blocks().contains(&"three".to_owned()))
+            .settle(|c| c.board_blocks().contains(&"two".to_owned()))
             .await
     );
     assert_eq!(live_markers(&joiner), 1);
@@ -20010,9 +20050,150 @@ async fn a_joiner_after_a_fold_sees_live_markers() {
             .get_or_insert_map(ydoc::CONTRIBUTORS_ROOT)
             .to_json(&client.doc.transact())
     };
-    let held = markers(&joiner);
-    assert!(writer.settle(|c| markers(c) == held).await);
+    assert_eq!(markers(&joiner), markers(&writer));
     assert_eq!(board_json(&joiner.doc), board_json(&writer.doc));
+    store_released(&env, &material).await;
+    assert!(settled_long(&mut writer, |c| live_markers(c) == 0).await);
+    assert!(settled_long(&mut joiner, |c| live_markers(c) == 0).await);
+}
+
+/// A checkpoint's receipt, asked for under `id`.
+async fn receipt(client: &mut Client, id: &str) -> serde_json::Value {
+    checkpoint_requested(client, id).await;
+    loop {
+        let (receipt, _) = client.stateless("checkpoint-persisted").await;
+        if receipt["checkpointIds"]
+            .as_array()
+            .is_some_and(|ids| ids.iter().any(|known| known == id))
+        {
+            return receipt;
+        }
+    }
+}
+
+/// Bytes-room step 2, the size the receipts carry (review of 177bf8aec,
+/// finding 1): a board drawn to about 920 KB in 150 elements of six values
+/// (strokes' shape), then erased but for ten by small deletions, folds once
+/// what no measure has seen of its size (the deletions' estimated bytes)
+/// passes 256 KiB, and its receipts come back down to within that of its
+/// state. Fails if the bound keeps the erased bytes until a fold the log
+/// alone would ask for (`metrics.contentBytes` stays near 920 KB, and an
+/// offline editor stops that much early).
+#[tokio::test]
+async fn an_erased_boards_receipts_come_back_down() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, _, room) = canvas(&env).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    let value = "x".repeat(1_000);
+    let props: Vec<(String, &str)> = (0..6)
+        .map(|n| (format!("prop:p{n}"), value.as_str()))
+        .collect();
+    let props: Vec<(&str, &str)> = props
+        .iter()
+        .map(|(key, value)| (key.as_str(), *value))
+        .collect();
+    for at in 0..150 {
+        writer
+            .draw(&format!("s{at:03}"), "affine:note", &props)
+            .await;
+    }
+    persisted(&mut writer, "drawn").await;
+    for at in 0..140 {
+        let id = format!("s{at:03}");
+        let erased = writer.edited(|doc| {
+            use yrs::Map as _;
+            doc.get_or_insert_map("blocks")
+                .remove(&mut doc.transact_mut(), &id);
+        });
+        writer.send(5, &sync(2, &erased)).await;
+    }
+    persisted(&mut writer, "erased").await;
+    let tail = 256 * 1024;
+    let mut reported = Vec::new();
+    for at in 0..10 {
+        let id = format!("t{at}");
+        writer.draw(&id, "affine:note", &[]).await;
+        let bytes = receipt(&mut writer, &id).await["metrics"]["contentBytes"]
+            .as_u64()
+            .expect("a size");
+        let state = writer
+            .doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default())
+            .len() as u64;
+        reported.push((bytes, state));
+        if bytes >= state && bytes <= state + tail {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(300)).await;
+    }
+    panic!("the receipts stayed high: {reported:?}");
+}
+
+/// Bytes-room step 2, a rejoin behind the base: a tab that left with the
+/// board before another writer's block was folded into the base holds part
+/// of it, so its answer diffs the whole base under the board work permit
+/// (`WorkKind::Rejoin`). While another board's load holds the permit (3 s,
+/// `capy-it-hold-work`) its join waits on `/metrics`, and once the permit
+/// is back it holds the whole board. Fails if a rejoin behind the base
+/// diffs it beside other whole-board work, or misses what the fold took in.
+#[tokio::test]
+async fn a_tab_behind_a_boards_base_rejoins_under_the_board_work() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged_with(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    let (user, material, room) = canvas(&env).await;
+    let mut behind = Client::at_board(server.port, &room, &user).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    behind.draw("mine", "affine:note", &[]).await;
+    persisted(&mut behind, "mine").await;
+    // Gone with an edit unsent, so its id stays its own.
+    behind.leave(true).await;
+    writer.draw("theirs", "affine:note", &[]).await;
+    persisted(&mut writer, "theirs").await;
+    let mut folded = false;
+    for _ in 0..100 {
+        let base = Doc::new();
+        ydoc::replay(&base, &board_base(&env, &material).await, &[] as &[Vec<u8>])
+            .expect("the base");
+        let blocks = base.get_or_insert_map("blocks");
+        if yrs::Map::contains_key(&blocks, &base.transact(), "theirs") {
+            folded = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(folded, "no fold took the other block in");
+    assert!(!behind.board_blocks().contains(&"theirs".to_owned()));
+
+    let mut held = hold_board_work(&env, server.port, &logs, 1).await;
+    let asked = std::time::Instant::now();
+    behind.join(&room, &token(&room, &user, "write")).await;
+    assert_eq!(behind.until(1).await.expect("joined")[0], 1);
+    let sv = behind.doc.transact().state_vector().encode_v1();
+    behind.send(5, &sync(0, &sv)).await;
+    let waits = |(held, waiting): (u64, u64)| held == 1 && waiting >= 1;
+    let gauges = board_work(server.port, waits).await;
+    assert!(waits(gauges), "the rejoin waits: {gauges:?}");
+    assert!(
+        behind
+            .settle(|c| c.board_blocks().contains(&"theirs".to_owned()))
+            .await
+    );
+    assert!(
+        asked.elapsed() >= Duration::from_secs(2),
+        "{:?}",
+        asked.elapsed()
+    );
+    assert!(
+        writer
+            .settle(|c| c.board_blocks() == behind.board_blocks())
+            .await
+    );
+    assert_eq!(board_json(&behind.doc), board_json(&writer.doc));
+    board_synced(&mut held).await;
+    let gauges = board_work(server.port, |gauges| gauges == (0, 0)).await;
+    assert_eq!(gauges, (0, 0), "every permit given back");
 }
 
 /// A stand-in for the Go API's projection route: the bodies it was sent,

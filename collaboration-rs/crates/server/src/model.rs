@@ -283,7 +283,8 @@ pub fn names_asset(update: &yrs::Update) -> bool {
     })
 }
 
-fn state_bytes<T: ReadTxn>(txn: &T) -> u64 {
+/// A document's whole state in bytes, as a board's cap counts it.
+pub(crate) fn state_bytes<T: ReadTxn>(txn: &T) -> u64 {
     txn.encode_state_as_update_v1(&StateVector::default()).len() as u64
 }
 
@@ -335,15 +336,9 @@ pub(crate) fn board_growth(update: &yrs::Update, bytes: usize) -> u64 {
 /// without it: the cap is never passed, deletions that split items count
 /// like any growth, a board at its cap can always be thinned, and no update
 /// is refused by a stale estimate (a person who cleared half a full board
-/// draws again at once). `changes`: whether the update tells the room
-/// anything new; one that does not (a joiner's step 2) leaves the size alone.
-fn admit_board(
-    doc: &yrs::Doc,
-    update: &yrs::Update,
-    bytes: &[u8],
-    changes: bool,
-    bound: &mut u64,
-) -> Admitted {
+/// draws again at once). The room tries only updates that tell the board
+/// something new (`board::Board::read`).
+fn admit_board(doc: &yrs::Doc, update: &yrs::Update, bytes: &[u8], bound: &mut u64) -> Admitted {
     let cap = CANVAS_BOARD_MAX as u64;
     let txn = doc.transact();
     let incoming = ydoc::Incoming::new(update);
@@ -361,9 +356,6 @@ fn admit_board(
         .any(|found| &*found.root != BOARD_ROOT)
     {
         return Admitted::Refused("a board update writes only the blocks root".into());
-    }
-    if !changes {
-        return Admitted::Accepted;
     }
     let growth = board_growth(update, bytes.len());
     if !inspection.unnamed && *bound + growth <= cap {
@@ -419,8 +411,7 @@ pub enum RoomValidator {
 
 impl RoomValidator {
     /// `bytes`: the update as it was sent (a board's size is counted in
-    /// them). `changes`: whether it tells the room anything new
-    /// (`ydoc::contains_changes`). `draft`: a draft send's update, refused
+    /// them). `draft`: a draft send's update, refused
     /// when a note's typing would be hidden in a deleted block (live typing
     /// there is collaboration). A board's `doc` is its replica
     /// (`board::Board::replica`), built for the trial of an update past a
@@ -431,7 +422,6 @@ impl RoomValidator {
         doc: &yrs::Doc,
         update: &yrs::Update,
         bytes: &[u8],
-        changes: bool,
         draft: bool,
     ) -> Admitted {
         match self {
@@ -454,7 +444,7 @@ impl RoomValidator {
                 Err(items::Refusal::Limit { code, metrics }) => Admitted::Limit(code, metrics),
                 Err(error) => Admitted::Refused(error.to_string()),
             },
-            RoomValidator::Board(bound) => admit_board(doc, update, bytes, changes, bound),
+            RoomValidator::Board(bound) => admit_board(doc, update, bytes, bound),
         }
     }
 
@@ -479,6 +469,14 @@ impl RoomValidator {
                 true
             }
             _ => false,
+        }
+    }
+
+    /// A board's bound, set to its state's `exact` bytes (a trial measured
+    /// the replica with the update in it).
+    pub fn board_measured(&mut self, exact: u64) {
+        if let RoomValidator::Board(bound) = self {
+            *bound = exact;
         }
     }
 
@@ -589,8 +587,7 @@ mod tests {
     /// lower than the state.
     fn send(room: &yrs::Doc, validator: &mut RoomValidator, bytes: &[u8]) -> Admitted {
         let update = ydoc::decode(bytes).unwrap();
-        let changes = ydoc::contains_changes(&room.transact(), &update);
-        let admitted = validator.admit(room, &update, bytes, changes, false);
+        let admitted = validator.admit(room, &update, bytes, false);
         if matches!(admitted, Admitted::Accepted) {
             ydoc::apply(room, update).unwrap();
         }
@@ -905,43 +902,6 @@ mod tests {
         }
     }
 
-    /// An update that tells the room nothing new (a joiner's step 2: what
-    /// the room holds, its whole delete set) is taken without sizing the
-    /// board, at its cap too.
-    #[test]
-    fn an_update_with_nothing_new_is_not_sized() {
-        let (room, mut validator) = board();
-        let writer = tab(&room, 11);
-        let drawn = update(&writer, |doc| stroke(doc, "s"));
-        assert!(matches!(
-            send(&room, &mut validator, &drawn),
-            Admitted::Accepted
-        ));
-        let erased = update(&writer, |doc| {
-            doc.get_or_insert_map(super::BOARD_ROOT)
-                .remove(&mut doc.transact_mut(), "s");
-        });
-        assert!(matches!(
-            send(&room, &mut validator, &erased),
-            Admitted::Accepted
-        ));
-        validator.invalidate();
-        assert_eq!(bound(&validator), CANVAS_BOARD_MAX as u64);
-        let step2 = whole(&tab(&room, 12));
-        assert!(matches!(
-            send(&room, &mut validator, &step2),
-            Admitted::Accepted
-        ));
-        assert_eq!(bound(&validator), CANVAS_BOARD_MAX as u64);
-        // The next update that changes the board measures it.
-        let more = update(&writer, |doc| stroke(doc, "t"));
-        assert!(matches!(
-            send(&room, &mut validator, &more),
-            Admitted::Accepted
-        ));
-        assert_eq!(bound(&validator), whole(&room).len() as u64);
-    }
-
     /// An update whose placement costs yrs more than `ydoc::MAX_WORK` steps
     /// is refused: 1,500 items each placed before a tombstone, from the last
     /// back, scan 1,500 * 1,499 / 2 units.
@@ -1112,7 +1072,7 @@ mod tests {
         for (name, (room, mut validator)) in rooms {
             let bytes = collected(11, 0, ydoc::MAX_CLOCK + 1);
             let update = Update::decode_v1(&bytes).unwrap();
-            let verdict = match validator.admit(&room, &update, &bytes, true, false) {
+            let verdict = match validator.admit(&room, &update, &bytes, false) {
                 Admitted::Accepted => "accepted",
                 Admitted::Unheld => "unheld",
                 Admitted::Limit(..) => "limit",
@@ -1187,7 +1147,7 @@ mod tests {
         let bytes = scattered(&state);
         let update = Update::decode_v1(&bytes).unwrap();
         assert!(matches!(
-            validator.admit(&note, &update, &bytes, true, false),
+            validator.admit(&note, &update, &bytes, false),
             Admitted::Accepted
         ));
     }

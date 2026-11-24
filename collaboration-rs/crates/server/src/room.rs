@@ -728,8 +728,8 @@ struct Note {
     /// The first gap below a store the room could not announce, and whether
     /// it was warned of (`announce_stored`).
     stall: Option<(i64, bool)>,
-    /// A board's growth its stored rows and folds do not hold yet.
-    growth: BoardGrowth,
+    /// A board's size between exact measures.
+    size: BoardSize,
 }
 
 impl Note {
@@ -867,28 +867,70 @@ impl Answer {
     }
 }
 
-/// What a board's size bound took that its stored rows and folds do not
-/// hold yet, so a fold's exact base can tighten it (`RoomValidator::tighten`):
-/// the bound otherwise only grows between trials near the cap, and the
-/// receipts' `metrics.contentBytes` carry it.
+/// A board's size between exact measures (a trial's replica, a fold's new
+/// base, the base at load). The validator's bound holds the state and the
+/// receipts' `metrics.contentBytes` carry it; what no measure has seen is
+/// the bound past the last exact size and the bytes the deletions since are
+/// estimated to free (their units at that measure's bytes per undeleted
+/// unit). Past [BOARD_TAIL] of that the board folds (`maybe_fold`), so the
+/// receipts stay near the state: an erased board comes back down. The
+/// changes no stored row or fold holds yet are kept apart, for the
+/// tightening at a fold's end ([BoardSize::folded]).
 #[derive(Default)]
-struct BoardGrowth {
-    /// The growth appended since the running store took its row (or the
-    /// last one did).
-    unstored: u64,
-    /// The growth in the running store's row.
-    storing: u64,
+struct BoardSize {
+    /// The last exact size.
+    exact: u64,
+    /// Bytes per undeleted unit at that measure.
+    per_unit: u64,
+    /// What the deletions since are estimated to free.
+    freed: u64,
+    /// Appended since the running store took its row (or the last one did).
+    unstored: Change,
+    /// In the running store's row.
+    storing: Change,
     /// While a fold runs: what its new base will not hold (the updates no
-    /// committed row held when it began, and all growth since).
-    unfolded: Option<u64>,
+    /// committed row held when it began, and all since).
+    unfolded: Option<Change>,
 }
 
-impl BoardGrowth {
-    fn grew(&mut self, growth: u64) {
-        self.unstored += growth;
+/// Growth and estimated freed bytes ([BoardSize]).
+#[derive(Clone, Copy, Default)]
+struct Change {
+    grown: u64,
+    freed: u64,
+}
+
+impl Change {
+    fn add(&mut self, other: Change) {
+        self.grown += other.grown;
+        self.freed += other.freed;
+    }
+}
+
+impl BoardSize {
+    /// The board was `exact` bytes holding `live` undeleted units.
+    fn measured(&mut self, exact: u64, live: u64) {
+        self.exact = exact;
+        self.per_unit = exact / live.max(1);
+        self.freed = 0;
+    }
+
+    /// An update growing the board by at most `grown` and deleting `units`.
+    fn appended(&mut self, grown: u64, units: u64) {
+        let change = Change {
+            grown,
+            freed: units.saturating_mul(self.per_unit),
+        };
+        self.freed = self.freed.saturating_add(change.freed);
+        self.unstored.add(change);
         if let Some(unfolded) = &mut self.unfolded {
-            *unfolded += growth;
+            unfolded.add(change);
         }
+    }
+
+    /// What no measure has seen of a board whose bound is `bound`.
+    fn unmeasured(&self, bound: u64) -> u64 {
+        bound.saturating_sub(self.exact).saturating_add(self.freed)
     }
 
     fn row_taken(&mut self) {
@@ -898,17 +940,28 @@ impl BoardGrowth {
     fn row_ended(&mut self, committed: bool) {
         let storing = std::mem::take(&mut self.storing);
         if !committed {
-            self.unstored += storing;
+            self.unstored.add(storing);
         }
     }
 
     fn fold_began(&mut self) {
-        self.unfolded = Some(self.unstored + self.storing);
+        let mut unfolded = self.unstored;
+        unfolded.add(self.storing);
+        self.unfolded = Some(unfolded);
     }
 
-    /// What the ended fold's base does not hold.
-    fn fold_ended(&mut self) -> Option<u64> {
+    /// The running fold ended, failed or found nothing.
+    fn fold_ended(&mut self) -> Option<Change> {
         self.unfolded.take()
+    }
+
+    /// A fold's new base swapped in, the bound tightened to it with what it
+    /// does not hold (`unfolded`, `RoomValidator::tighten`) and now `bound`,
+    /// the board holding `live` undeleted units: what the base does not hold
+    /// stays unmeasured.
+    fn folded(&mut self, bound: u64, unfolded: Change, live: u64) {
+        self.measured(bound.saturating_sub(unfolded.grown), live);
+        self.freed = unfolded.freed;
     }
 }
 
@@ -1021,6 +1074,33 @@ const IT_PANIC_LIVE: &str = "capy-it-panic-live";
 /// past taking it for its load, in debug builds only.
 #[cfg(debug_assertions)]
 const IT_HOLD_WORK: &str = "capy-it-hold-work";
+
+/// See `start_store`: a store of a material whose id holds this, taken while
+/// its room's fold runs, commits and then tells its room so only once the
+/// test releases it (Redis `capy-it-hold-stored:<material>:release`; it
+/// sets `:held` meanwhile), so the fold can swap in before the store's
+/// marker clear, in debug builds only.
+#[cfg(debug_assertions)]
+const IT_HOLD_STORED: &str = "capy-it-hold-stored";
+
+/// [IT_HOLD_STORED]'s wait, at most a minute.
+#[cfg(debug_assertions)]
+async fn it_hold_stored(app: &Shared, material_id: &str) {
+    let key = format!("{IT_HOLD_STORED}:{material_id}");
+    let mut redis = app.redis.clone();
+    let _: Result<(), _> =
+        redis::AsyncCommands::set_ex(&mut redis, format!("{key}:held"), 1, 600).await;
+    for _ in 0..600 {
+        let released: Option<String> =
+            redis::AsyncCommands::get(&mut redis, format!("{key}:release"))
+                .await
+                .unwrap_or(None);
+        if released.is_some() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
 
 #[cfg(debug_assertions)]
 static IT_PANICKED_LOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -1247,7 +1327,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 );
                 tokio::time::sleep(Duration::from_secs(3)).await;
             }
-            let (state, durable, metrics, mut refused) =
+            let (state, durable, metrics, mut refused, size) =
                 tokio::task::spawn_blocking(move || -> Result<_, String> {
                     let _permit = permit;
                     // A board loads on its stored bytes and the indexes stored
@@ -1255,18 +1335,22 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                     // without them fails here (Epo 2026-11-24). Its size is
                     // the bound the load gives, its markers a document of
                     // their own, and it holds whatever its editors wrote
-                    // (`Model::stored`).
+                    // (`Model::stored`). Its base is the last exact size.
                     if model == crate::model::Model::Board {
+                        let base = loaded.base.len() as u64;
                         let (board, bound) =
                             Board::load(loaded.base, indexes.as_ref(), loaded.rows, |id| {
                                 assigned.contains(&id)
                             })
                             .map_err(|error| error.to_string())?;
+                        let mut size = BoardSize::default();
+                        size.measured(base, board.live_units());
                         return Ok((
                             State::Board(Box::new(board)),
                             ydoc::Durable::default(),
                             crate::model::board_metrics(bound),
                             None,
+                            size,
                         ));
                     }
                     let doc = loaded_doc(loaded.base, loaded.rows, &assigned)?;
@@ -1277,7 +1361,13 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                     let refused = model.stored(&material_kind, &txn)?;
                     let durable = ydoc::Durable::of(&txn);
                     drop(txn);
-                    Ok((State::Doc(doc), durable, metrics, refused))
+                    Ok((
+                        State::Doc(doc),
+                        durable,
+                        metrics,
+                        refused,
+                        BoardSize::default(),
+                    ))
                 })
                 .await
                 .map_err(|error| error.to_string())??;
@@ -1340,7 +1430,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 collected,
                 gaps: std::collections::BTreeSet::new(),
                 stall: None,
-                growth: BoardGrowth::default(),
+                size,
             };
             // A note's content room keeps its sessions (Q274: notes only).
             let sessions = if note.sessioned() {
@@ -3165,9 +3255,16 @@ impl Room {
                 return;
             }
         };
+        // A board folds at a shorter tail, and once what no measure has seen
+        // of its size passes it too ([BoardSize]).
         let mut threshold = min_bytes.max(note.base_bytes);
+        let mut unmeasured = false;
         if let State::Board(_) = self.state {
             threshold = threshold.min(BOARD_TAIL);
+            unmeasured = note
+                .validator
+                .board_bound()
+                .is_some_and(|bound| note.size.unmeasured(bound) > BOARD_TAIL as u64);
         }
         // A committed row the room has not applied (a direct write racing its
         // load): no fold until it arrives, so the window never holds a row the
@@ -3175,7 +3272,7 @@ impl Room {
         // (Q419); `service_edit()` folds once the gap closes.
         if note.folding
             || !note.gaps.is_empty()
-            || (note.log_bytes < threshold && note.log_rows < max_rows)
+            || (note.log_bytes < threshold && note.log_rows < max_rows && !unmeasured)
         {
             return;
         }
@@ -3185,7 +3282,7 @@ impl Room {
         let fold = match &mut self.state {
             State::Board(board) => match board.begin_fold() {
                 Some(fold) => {
-                    note.growth.fold_began();
+                    note.size.fold_began();
                     Some(fold)
                 }
                 None => return,
@@ -3262,17 +3359,18 @@ impl Room {
     /// since it began staying in the tail, and the live markers its base
     /// deletes, written again, go to every channel, joins still waiting for
     /// their answer included. The size bound takes the base's exact bytes
-    /// with what it does not hold ([BoardGrowth]). A fold that failed (the
-    /// task reported why) or found nothing gives its rows back to the tail
-    /// ([Board::fold_failed]).
+    /// with what it does not hold ([BoardSize::folded]). A fold that failed
+    /// (the task reported why) or found nothing gives its rows back to the
+    /// tail ([Board::fold_failed]). Both rework the board's indexes or tail,
+    /// off the async workers.
     fn board_folded(&mut self, fold: board::Fold, folded: Option<Box<BoardFold>>) {
         let (State::Board(board), Kindly::Note(note)) = (&mut self.state, &mut self.kind) else {
             return;
         };
         note.folding = false;
-        let unfolded = note.growth.fold_ended();
+        let unfolded = note.size.fold_ended();
         let Some(folded) = folded else {
-            if let Err(error) = board.fold_failed(fold) {
+            if let Err(error) = tokio::task::block_in_place(|| board.fold_failed(fold)) {
                 observe::capture(
                     &error.to_string(),
                     None,
@@ -3292,15 +3390,22 @@ impl Room {
         note.log_bytes -= log_bytes;
         note.base_bytes = base_bytes;
         let base_len = base.len() as u64;
-        let rewritten = match board.folded(fold, base, indexes) {
-            Ok(rewritten) => {
-                let markers = board
-                    .markers()
-                    .transact()
-                    .encode_state_as_update_v1(&StateVector::default())
-                    .len() as u64;
+        let swapped = tokio::task::block_in_place(|| {
+            let rewritten = board.folded(fold, base, indexes)?;
+            let markers = board
+                .markers()
+                .transact()
+                .encode_state_as_update_v1(&StateVector::default())
+                .len() as u64;
+            Ok::<_, board::BoardError>((rewritten, markers, board.live_units()))
+        });
+        let rewritten = match swapped {
+            Ok((rewritten, markers, live)) => {
                 if let Some(unfolded) = unfolded {
-                    note.validator.tighten(base_len + unfolded + markers);
+                    note.validator.tighten(base_len + markers + unfolded.grown);
+                    if let Some(bound) = note.validator.board_bound() {
+                        note.size.folded(bound, unfolded, live);
+                    }
                 }
                 rewritten
             }
@@ -3427,9 +3532,14 @@ impl Room {
         }
         let user = member.context.user_id.clone();
         let small = crate::rate::SMALL_ANSWER;
+        // A board's answer is large when it diffs the base under the board
+        // work permit, or sends a base of that size whole.
         let large = match &self.state {
             State::Doc(doc) => ydoc::answer_at_least(&doc.transact(), &since, small),
-            State::Board(board) => board.behind_base(&since),
+            State::Board(board) => {
+                board.behind_base(&since)
+                    || (!board.holds_base(&since) && board.base_len() >= small)
+            }
         };
         if self.app.allowances.small_skips(&user, Instant::now()) && !large {
             let Some(answer) = self.step1_answer(key, since.clone()).await else {
@@ -4589,9 +4699,10 @@ impl Room {
     /// take the bound past the cap, is first tried on the board's replica
     /// under the board work permit ([Room::board_trial]), the room's queue
     /// waiting with it, as for any trial. Read, tried and appended in this
-    /// one command, the update finds the board as its read did. An update
-    /// past `ydoc::INLINE_BYTES` (a small edit by its structs, large by its
-    /// bytes) is read and appended off the async workers.
+    /// one command, the update finds the board as its read did. A trial
+    /// leaves the board measured ([BoardSize]). An update past
+    /// `ydoc::INLINE_BYTES` (a small edit by its structs, large by its bytes)
+    /// is read and appended off the async workers.
     async fn admit_board_update(
         &mut self,
         writer: Option<MemberKey>,
@@ -4617,10 +4728,23 @@ impl Room {
         };
         let small =
             fresh.check == board::Check::Small && note.validator.board_grows(fresh.growth());
-        if !small && let Err(outcome) = self.board_trial(context, bytes.len(), &mut fresh).await {
-            return outcome;
-        }
-        self.append_board(writer, context, fresh, written, names_asset, large)
+        let measured = if small {
+            None
+        } else {
+            match self.board_trial(context, bytes.len(), &mut fresh).await {
+                Ok(measured) => Some(measured),
+                Err(outcome) => return outcome,
+            }
+        };
+        self.append_board(
+            writer,
+            context,
+            fresh,
+            written,
+            names_asset,
+            large,
+            measured,
+        )
     }
 
     /// [Room::admit_board_update]'s checks, with no await (the decoded update
@@ -4700,16 +4824,18 @@ impl Room {
     /// again (the wait lasts as long as the permit's queue), then the board's
     /// replica is built and the update, as the board lacks it, tried on it and,
     /// near the cap or deleting content it does not name, measured
-    /// (`model::admit_board`), off the async workers. The depths of new types
-    /// the board's index could not give are read from the replica with the
-    /// update applied ([board::Fresh::take_depths]). The replica and the
-    /// permit go before anything is appended or sent.
+    /// (`model::admit_board`), off the async workers. Admitted, the update is
+    /// applied to the replica, which is measured: the size bound becomes its
+    /// exact bytes, returned with the board's undeleted units once it is appended
+    /// ([BoardSize::measured]), and the depths of new types the board's index
+    /// could not give are read from it ([board::Fresh::take_depths]). The
+    /// replica and the permit go before anything is appended or sent.
     async fn board_trial(
         &mut self,
         context: &Context,
         sent: usize,
         fresh: &mut board::Fresh,
-    ) -> Result<(), Outcome> {
+    ) -> Result<(u64, u64), Outcome> {
         let permit = self
             .app
             .board_work
@@ -4721,12 +4847,12 @@ impl Room {
         let (State::Board(board), Kindly::Note(note)) = (&self.state, &mut self.kind) else {
             return Err(Outcome::refused(Class::Unavailable, "not a board room"));
         };
-        let tried = tokio::task::block_in_place(|| -> Result<Verdict, String> {
+        let tried = tokio::task::block_in_place(|| -> Result<(Verdict, (u64, u64)), String> {
             let replica = board.replica().map_err(|error| error.to_string())?;
             let update = ydoc::decode(fresh.bytes()).map_err(|error| error.to_string())?;
             let verdict = match note
                 .validator
-                .admit(&replica, &update, fresh.bytes(), true, false)
+                .admit(&replica, &update, fresh.bytes(), false)
             {
                 crate::model::Admitted::Accepted => Verdict::Accept,
                 crate::model::Admitted::Unheld => Verdict::Unheld,
@@ -4734,22 +4860,27 @@ impl Room {
                 crate::model::Admitted::Refused(message) => Verdict::Refused(message),
                 crate::model::Admitted::Hidden => Verdict::Hidden,
             };
-            if matches!(verdict, Verdict::Accept) && fresh.unplaced_types() {
-                ydoc::apply(&replica, update).map_err(|error| error.to_string())?;
+            if !matches!(verdict, Verdict::Accept) {
+                return Ok((verdict, (0, 0)));
+            }
+            ydoc::apply(&replica, update).map_err(|error| error.to_string())?;
+            if fresh.unplaced_types() {
                 fresh.take_depths(&replica);
             }
-            Ok(verdict)
+            let exact = crate::model::state_bytes(&replica.transact());
+            note.validator.board_measured(exact);
+            Ok((verdict, (exact, board.live_units_with(fresh))))
         });
         drop(permit);
         match tried {
-            Ok(Verdict::Accept) => Ok(()),
-            Ok(Verdict::Unheld) => Err(Outcome::Unheld),
-            Ok(Verdict::Limit(code, metrics)) => {
+            Ok((Verdict::Accept, measured)) => Ok(measured),
+            Ok((Verdict::Unheld, _)) => Err(Outcome::Unheld),
+            Ok((Verdict::Limit(code, metrics), _)) => {
                 Err(self.limit_refused(context, code, metrics, sent))
             }
-            Ok(Verdict::Refused(message)) => Err(self.refused_on_entry(message)),
+            Ok((Verdict::Refused(message), _)) => Err(self.refused_on_entry(message)),
             // A note draft's verdict alone.
-            Ok(Verdict::Hidden | Verdict::Source(_)) => Err(Outcome::refused(
+            Ok((Verdict::Hidden | Verdict::Source(_), _)) => Err(Outcome::refused(
                 Class::Malformed,
                 "a board update was refused",
             )),
@@ -4774,7 +4905,9 @@ impl Room {
     /// contributor marker, both relayed, peers hearing what the board lacked
     /// of it; then what any admitted write does: the ids it wrote recorded,
     /// its acknowledgement, the store due and, when it names an asset, a
-    /// projection after that store.
+    /// projection after that store. `measured`: the exact size and
+    /// undeleted units its trial found, the update included.
+    #[allow(clippy::too_many_arguments)]
     fn append_board(
         &mut self,
         writer: Option<MemberKey>,
@@ -4783,6 +4916,7 @@ impl Room {
         written: Vec<u64>,
         names_asset: bool,
         large: bool,
+        measured: Option<(u64, u64)>,
     ) -> Outcome {
         self.placed(writer, context);
         self.applying = true;
@@ -4792,7 +4926,7 @@ impl Room {
             }
             self.broadcast_update(None, marker);
         }
-        let growth = fresh.growth();
+        let (growth, units) = (fresh.growth(), fresh.deleted_units());
         let State::Board(board) = &mut self.state else {
             self.applying = false;
             return Outcome::refused(Class::Unavailable, "not a board room");
@@ -4804,7 +4938,10 @@ impl Room {
         };
         self.applying = false;
         if let Kindly::Note(note) = &mut self.kind {
-            note.growth.grew(growth);
+            note.size.appended(growth, units);
+            if let Some((exact, live)) = measured {
+                note.size.measured(exact, live);
+            }
             note.project_soon |= names_asset;
         }
         if context.token_id != AGENT_TOKEN
@@ -5018,10 +5155,7 @@ impl Room {
         };
         let mut admit = || match &mut self.kind {
             Kindly::Note(note) => {
-                match note
-                    .validator
-                    .admit(&doc, &update, bytes, changes, writer.is_none())
-                {
+                match note.validator.admit(&doc, &update, bytes, writer.is_none()) {
                     crate::model::Admitted::Accepted => Verdict::Accept,
                     crate::model::Admitted::Unheld => Verdict::Unheld,
                     crate::model::Admitted::Hidden => Verdict::Hidden,
@@ -5944,7 +6078,7 @@ impl Room {
             }
         };
         if let (Some(_), Kindly::Note(note)) = (&board_row, &mut self.kind) {
-            note.growth.row_taken();
+            note.size.row_taken();
         }
         let row_bytes = board_row.as_ref().map_or(row.len(), |row| row.bytes.len());
         // The sessions as of this snapshot go in its transaction, their held
@@ -5966,7 +6100,7 @@ impl Room {
                 self.store.dirty = true;
                 self.store.first_change.get_or_insert(started);
                 if let (Some(_), Kindly::Note(note)) = (&board_row, &mut self.kind) {
-                    note.growth.row_ended(false);
+                    note.size.row_ended(false);
                 }
                 self.store_failed(StoreFailure::Note(error), started, row_bytes, claimed);
                 return;
@@ -5976,6 +6110,8 @@ impl Room {
             return;
         };
         let (material_id, schema, doc_kind) = (note.material_id.clone(), note.schema, note.doc);
+        #[cfg(debug_assertions)]
+        let hold = note.folding && material_id.contains(IT_HOLD_STORED);
         let Some(handle) = self.own_handle() else {
             return;
         };
@@ -6014,6 +6150,13 @@ impl Room {
             )
             .await
             .map_err(StoreFailure::Note);
+            // Debug builds only: the integration tests' store taken while a
+            // fold runs, its room told it committed only once the test lets
+            // it (`IT_HOLD_STORED`).
+            #[cfg(debug_assertions)]
+            if hold && result.is_ok() {
+                it_hold_stored(&app, &material_id).await;
+            }
             let done = StoreDone {
                 result,
                 started,
@@ -6516,7 +6659,7 @@ impl Room {
             board_row,
         } = done;
         if let (Some(_), Kindly::Note(note)) = (&board_row, &mut self.kind) {
-            note.growth.row_ended(result.is_ok());
+            note.size.row_ended(result.is_ok());
         }
         let version = match result {
             Ok(version) => version,

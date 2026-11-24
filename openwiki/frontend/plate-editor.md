@@ -6859,10 +6859,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       into it. The status turns compact below 640 px, as a note's header.
       The room keeps the board's size (`size`, `subscribeSize`): the room's own
       bound in each receipt (`metrics.contentBytes`: at least the Yjs v1 encoding the
-      server caps, exact after a fold or a trial near the cap, above it between folds
-      by what was deleted since, as the room holds the board as its stored bytes and
-      never encodes it whole), one encode of this tab's document when idle before the
-      first, plus the
+      server caps, exact after a fold or a trial, as the room holds the board as its
+      stored bytes and never encodes it whole; it folds once its growth past the last
+      exact size and the bytes its deletions since are estimated to free, at that
+      measure's bytes per undeleted unit, pass 256 KiB, so the receipts stay near the
+      state), one encode of this tab's document when idle before the first, plus the
       bytes of every update applied since; the page hands it to the board
       (`setRoomSize`), whose menu ends with the size from 75% and, at the cap, "Only
       edits that remove content will be saved." The server is the judge of what

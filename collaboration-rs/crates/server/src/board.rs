@@ -179,6 +179,11 @@ impl Fresh {
         self.growth
     }
 
+    /// How many units its fresh deletions cover.
+    pub fn deleted_units(&self) -> u64 {
+        units_of(&self.deleted)
+    }
+
     /// Whether it holds new types whose depth the index cannot give.
     pub fn unplaced_types(&self) -> bool {
         !self.unplaced.is_empty()
@@ -782,6 +787,11 @@ impl Units {
             set.insert(ID::new(client, start), end - start);
         }
         set
+    }
+
+    /// How many units it holds.
+    fn count(&self) -> u64 {
+        units_of(&self.whole())
     }
 
     /// Every unit held, as one set.
@@ -1722,7 +1732,32 @@ impl Board {
         Ok(doc)
     }
 
-    fn holds_base(&self, since: &StateVector) -> bool {
+    /// The units the board holds undeleted: its clocks less the deletions
+    /// its index names (implicit ones join it at the next fold). With an
+    /// exact size, what a deleted unit frees on average (`room.rs`).
+    pub fn live_units(&self) -> u64 {
+        let written: u64 = self.sv.iter().map(|(_, clock)| u64::from(*clock)).sum();
+        written.saturating_sub(self.deleted.count())
+    }
+
+    /// [Board::live_units] once `fresh` is appended: its clocks past the
+    /// board's added, its fresh deletions taken.
+    pub fn live_units_with(&self, fresh: &Fresh) -> u64 {
+        let added: u64 = fresh
+            .ends
+            .iter()
+            .map(|(client, end)| u64::from(end.saturating_sub(self.sv.get(client))))
+            .sum();
+        (self.live_units() + added).saturating_sub(fresh.deleted_units())
+    }
+
+    /// The bytes of its base, which a joiner holding none of it is sent.
+    pub fn base_len(&self) -> usize {
+        self.base.len()
+    }
+
+    /// Whether a joiner at `since` holds the whole base.
+    pub fn holds_base(&self, since: &StateVector) -> bool {
         self.base_sv
             .iter()
             .all(|(client, clock)| since.get(client) >= *clock)
@@ -1911,6 +1946,14 @@ fn unheld(state: &StateVector, update: &Update) -> bool {
         }
         UpdateBlock::Gc(_) | UpdateBlock::Skip(_) => false,
     })
+}
+
+/// How many units `set` covers.
+fn units_of(set: &IdSet) -> u64 {
+    set.iter()
+        .flat_map(|(_, runs)| runs.iter())
+        .map(|run| u64::from(run.end - run.start))
+        .sum()
 }
 
 #[cfg(test)]
@@ -3006,6 +3049,33 @@ mod tests {
         for doc in [&room.join(), &room.peer] {
             assert!(held(doc) == held(&room.reference));
         }
+    }
+
+    /// A trial counts the board's undeleted units before the update is
+    /// appended (`room.rs`'s exact size per unit): they are the units the
+    /// board holds once it is.
+    #[test]
+    fn the_units_with_an_update_are_the_appended_boards() {
+        let mut room = Room::new();
+        let first = synced(&room, 11);
+        room.deliver(&edited(&first, |txn, blocks| {
+            blocks
+                .insert(txn, "x", MapPrelim::default())
+                .insert(txn, "prop:xywh", "v0");
+        }));
+        let sent = edited(&synced(&room, 12), |txn, blocks| {
+            blocks.remove(txn, "x");
+            let y = blocks.insert(txn, "y", MapPrelim::default());
+            y.insert(txn, "prop:xywh", "v1");
+            y.insert(txn, "prop:index", "a0");
+        });
+        let Read::New(fresh) = read(&room.board, &sent) else {
+            panic!("nothing new");
+        };
+        let (before, with) = (room.board.live_units(), room.board.live_units_with(&fresh));
+        room.board.append(fresh);
+        assert!(with != before);
+        assert_eq!(with, room.board.live_units());
     }
 
     /// Two tabs write one key at once: yrs deletes the loser where the
