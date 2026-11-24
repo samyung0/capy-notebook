@@ -2946,6 +2946,13 @@ design, option d), and the nudge's release file on 2026-10-17.
   `OFFICE_PROTOCOL_VERSION` stays 15. It took the next number after the
   groups of pieces (the first of the two to land takes the next number).
   Its deploy request names "client protocol 41 -> 42, source 41 -> 42".
+  Canvas questions (the Canvas part type, a part's `answer.shared` canvas
+  graded once, drawings stored under the shared canvas's lead part, and the
+  room's question validator capping images and canvases; Epo 2026-11-23,
+  the Canvas questions picks) raised `CLIENT_PROTOCOL` to 43 and
+  `MIN_MATERIAL` to 43, so material tabs from before the format (protocol
+  42) reload; `MIN_SOURCE` stays 42 and `OFFICE_PROTOCOL_VERSION` stays 15.
+  Its deploy request names "client protocol 42 -> 43, material 41 -> 43".
 
 #### When to bump
 
