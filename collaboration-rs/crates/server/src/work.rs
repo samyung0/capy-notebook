@@ -52,8 +52,6 @@ pub enum WorkKind {
     /// The answer to a joiner holding part of a board's base: a diff of
     /// the whole base (`board::Board::join`).
     Rejoin,
-    /// A board's whole state merged for a server read of the live room.
-    Snapshot,
 }
 
 impl WorkKind {
@@ -65,7 +63,6 @@ impl WorkKind {
             WorkKind::Projection => "projection",
             WorkKind::Trial => "trial",
             WorkKind::Rejoin => "rejoin",
-            WorkKind::Snapshot => "snapshot",
         }
     }
 }

@@ -4089,33 +4089,21 @@ impl Room {
     }
 
     /// The room's whole state for a server read of the live room (an agent
-    /// edit's snapshot): a board's merged from its parts under the board
-    /// work permit, whose stored bytes, if unreadable, answer nothing
-    /// (reported).
+    /// edit's snapshot). A board has none: every server read and edit
+    /// refuses a canvas before it asks (`edits.rs`), so the ask is reported
+    /// and answers nothing.
     async fn snapshot(&self) -> Option<Vec<u8>> {
-        let board = match &self.state {
-            State::Doc(doc) => return Some(encoded(doc.clone(), StateVector::default()).await),
-            State::Board(board) => board,
-        };
-        let permit = self
-            .app
-            .board_work
-            .acquire(WorkKind::Snapshot, &self.name)
-            .await;
-        let merged = tokio::task::block_in_place(|| {
-            let join = board.join(&StateVector::default())?;
-            Ok::<_, board::BoardError>(board::bytes::merge_chunked(&join.updates)?)
-        });
-        drop(permit);
-        merged
-            .map_err(|error| {
+        match &self.state {
+            State::Doc(doc) => Some(encoded(doc.clone(), StateVector::default()).await),
+            State::Board(_) => {
                 observe::capture(
-                    &error.to_string(),
+                    "a board room was asked for a server snapshot",
                     None,
                     &[("room", &self.name), ("stage", "board_snapshot")],
                 );
-            })
-            .ok()
+                None
+            }
+        }
     }
 
     async fn sync_message(&mut self, key: MemberKey, payload: &[u8]) {
