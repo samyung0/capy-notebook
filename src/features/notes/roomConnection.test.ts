@@ -75,7 +75,7 @@ describe('roomReconnector', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.stubGlobal('navigator', { onLine: true });
-    // No jitter: factor 1.
+    // Half of each ceiling (`reconnectDelay`): 500 ms, then 1 s, 2 s...
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
   });
   afterEach(() => {
@@ -114,6 +114,23 @@ describe('roomReconnector', () => {
     reconnector.refused();
     vi.advanceTimersByTime(500);
     expect(provider.connect).toHaveBeenCalledTimes(1);
+  });
+
+  // Epo 2026-11-24 ("Add jitter"): a room's clients spread their rejoins
+  // over the first second, then over growing ceilings.
+  it('rejoins at a random time up to the ceiling, which doubles', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.999);
+    const { provider, reconnector } = setup();
+    reconnector.refused();
+    vi.advanceTimersByTime(998);
+    expect(provider.connect).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(provider.connect).toHaveBeenCalledTimes(1);
+    reconnector.refused();
+    vi.advanceTimersByTime(1997);
+    expect(provider.connect).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(provider.connect).toHaveBeenCalledTimes(2);
   });
 
   it('leaves a dropped socket to the provider', () => {

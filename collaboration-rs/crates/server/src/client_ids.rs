@@ -95,47 +95,48 @@ enum Change {
 impl Rows {
     pub async fn run(&self, db: &Pool) -> Result<(), String> {
         let connection = db.get().await.map_err(|error| error.to_string())?;
-        let changed = match (&self.document, &self.change) {
-            (Document::Material { material_id, keys }, Change::Written) => {
+        // Every session's first write and clean Leave come here, so the
+        // statements are prepared once per pooled connection.
+        let sql = match (&self.document, &self.change) {
+            (Document::Material { .. }, Change::Written) => {
+                "INSERT INTO material_yjs_client_ids (material_id, document, client_id, user_id)
+                 SELECT $1, $2, unnest($3::bigint[]), $4
+                 ON CONFLICT (material_id, document, client_id) DO UPDATE
+                 SET last_write_at=now(), expired=false
+                 WHERE material_yjs_client_ids.user_id=EXCLUDED.user_id"
+            }
+            (Document::Source { .. }, Change::Written) => {
+                "INSERT INTO source_document_client_ids (file_id, client_id, user_id)
+                 SELECT $1, unnest($2::bigint[]), $3
+                 ON CONFLICT (file_id, client_id) DO UPDATE
+                 SET last_write_at=now(), expired=false
+                 WHERE source_document_client_ids.user_id=EXCLUDED.user_id"
+            }
+            (Document::Material { .. }, Change::Expired) => {
+                "UPDATE material_yjs_client_ids SET expired=true
+                 WHERE material_id=$1 AND document=$2 AND client_id=ANY($3) AND user_id=$4"
+            }
+            (Document::Source { .. }, Change::Expired) => {
+                "UPDATE source_document_client_ids SET expired=true
+                 WHERE file_id=$1 AND client_id=ANY($2) AND user_id=$3"
+            }
+        };
+        let statement = connection
+            .prepare_cached(sql)
+            .await
+            .map_err(|error| error.to_string())?;
+        let changed = match &self.document {
+            Document::Material { material_id, keys } => {
                 connection
                     .execute(
-                        "INSERT INTO material_yjs_client_ids (material_id, document, client_id, user_id)
-                         SELECT $1, $2, unnest($3::bigint[]), $4
-                         ON CONFLICT (material_id, document, client_id) DO UPDATE
-                         SET last_write_at=now(), expired=false
-                         WHERE material_yjs_client_ids.user_id=EXCLUDED.user_id",
+                        &statement,
                         &[material_id, &document_name(*keys), &self.ids, &self.user],
                     )
                     .await
             }
-            (Document::Source { file_id }, Change::Written) => {
+            Document::Source { file_id } => {
                 connection
-                    .execute(
-                        "INSERT INTO source_document_client_ids (file_id, client_id, user_id)
-                         SELECT $1, unnest($2::bigint[]), $3
-                         ON CONFLICT (file_id, client_id) DO UPDATE
-                         SET last_write_at=now(), expired=false
-                         WHERE source_document_client_ids.user_id=EXCLUDED.user_id",
-                        &[file_id, &self.ids, &self.user],
-                    )
-                    .await
-            }
-            (Document::Material { material_id, keys }, Change::Expired) => {
-                connection
-                    .execute(
-                        "UPDATE material_yjs_client_ids SET expired=true
-                         WHERE material_id=$1 AND document=$2 AND client_id=ANY($3) AND user_id=$4",
-                        &[material_id, &document_name(*keys), &self.ids, &self.user],
-                    )
-                    .await
-            }
-            (Document::Source { file_id }, Change::Expired) => {
-                connection
-                    .execute(
-                        "UPDATE source_document_client_ids SET expired=true
-                         WHERE file_id=$1 AND client_id=ANY($2) AND user_id=$3",
-                        &[file_id, &self.ids, &self.user],
-                    )
+                    .execute(&statement, &[file_id, &self.ids, &self.user])
                     .await
             }
         }

@@ -878,7 +878,7 @@ it('opens offline, then joins with its stored edits once back online', async () 
 // unavailable with no retry; one that fails (a 5xx, the network) retries
 // with a note room's growing delay, not every 1.5 s forever.
 it('stops on a refused token and backs off on a failing one', async () => {
-  // No jitter: the delays are 500 ms, then 1 s, 2 s...
+  // Half of each ceiling (`reconnectDelay`): 500 ms, then 1 s, 2 s...
   vi.spyOn(Math, 'random').mockReturnValue(0.5);
   const { room } = await started();
   const [provider] = providers;

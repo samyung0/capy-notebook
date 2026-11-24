@@ -3,6 +3,7 @@ import { type HeartbeatClock, onHeartbeat } from './heartbeat';
 import { setHeld } from './held';
 import { watchIdle } from './idle';
 import { decodeFrame, HEARTBEAT, type Message, MessageKind } from './protocol';
+import { reconnectDelay } from './reconnectDelay';
 
 /** One room on the socket (a RoomProvider). */
 export interface ChannelHandler {
@@ -25,8 +26,6 @@ export interface ChannelHandler {
 
 export type SocketStatus = 'connecting' | 'connected' | 'disconnected';
 
-const RETRY_BASE_MS = 1000;
-const RETRY_MAX_MS = 30_000;
 /** A socket with no room left closes after this long (a quick remount reuses it). */
 const IDLE_CLOSE_MS = 5000;
 /** How long `warm` holds a socket open for the room expected on it: under
@@ -41,7 +40,7 @@ const MAX_PENDING_JOINS = 8;
 /**
  * The tab's socket to one collaboration URL, shared by every room open in
  * the tab (capy-sync 1 multiplexes them by channel). It connects while a room
- * wants it and reconnects with backoff after a drop.
+ * wants it and reconnects after a drop, waiting `reconnectDelay`.
  */
 export class CollabSocket {
   private static readonly sockets = new Map<string, CollabSocket>();
@@ -140,7 +139,10 @@ export class CollabSocket {
     this.url = url;
     this.heartbeat = heartbeat;
     this.allowance = allowance;
-    // Back online: reconnect now instead of waiting out the backoff.
+    // Back online: the backoff starts over, so the socket opens within the
+    // first attempt's random 0–1 s instead of waiting out a long wait, and a
+    // network that comes back for a whole school does not bring every tab
+    // back at once (Epo 2026-11-24, "Add jitter").
     if (typeof window !== 'undefined')
       window.addEventListener('online', () => {
         if (
@@ -150,9 +152,8 @@ export class CollabSocket {
         )
           return;
         clearTimeout(this.retry);
-        this.retry = undefined;
         this.attempts = 0;
-        this.open();
+        this.scheduleRetry();
       });
   }
 
@@ -448,10 +449,7 @@ export class CollabSocket {
   }
 
   private scheduleRetry() {
-    // Jittered, so a server's clients do not all return at the same instant.
-    const delay =
-      Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** this.attempts++) *
-      (0.5 + Math.random());
+    const delay = reconnectDelay(this.attempts++);
     this.retry = setTimeout(() => {
       this.retry = undefined;
       if (

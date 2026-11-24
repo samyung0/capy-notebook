@@ -1493,7 +1493,12 @@ access and re-arms both timers. A channel that cannot answer is closed at
 expiry with code 4401. A room closed on an open
 socket (expiry, eviction, an access recheck, one person's access change) only emits the provider's `close`,
 never `disconnect`, so `roomReconnector` (`src/features/notes/roomConnection.ts`)
-reconnects at once with a fresh token and backs off while refusals repeat.
+rejoins with a fresh token after `reconnectDelay`
+(`src/features/collaboration/reconnectDelay.ts`, Epo 2026-11-24): a random
+wait up to a ceiling of 1 s, doubling to 30 s while refusals repeat ("full
+jitter"), so the clients one close cut off do not all join at once. The tab's
+socket waits the same way after a drop, and the browser's `online` event
+starts its backoff over: it opens within the first attempt's random 0–1 s.
 Authentication refusals carry reasons: `collaboration-read-only` drops to view
 under the read-only strip (it names no reason: a demoted viewer, a frozen
 account and a full owner all see it, and the account banner explains the

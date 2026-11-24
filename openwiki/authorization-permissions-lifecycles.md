@@ -1840,9 +1840,11 @@ transfer's recipient. The caller gets a plain not found, never that
 account's lifecycle state or suspension reason; the caller's own lock and a
 frozen payer (view-only, no reason) still read as such. The collaboration
 server's internal checkpoint keeps the payer's lock, as it reaches no person. Becoming locked evicts
-the owner's note and source rooms with `discard` (`user_acl_eviction_trigger`,
-source rooms since migration 0090), so open viewers reconnect through that
-check. A member's unsynced edits in that owner's notes and files are dropped
+with `discard` the rooms of the materials the owner pays for, of every
+material in the workspaces they own (what other members made and pay for
+too, and canvases drawn there; migration 0194) and of their source files
+(migration 0090) (`user_acl_eviction_trigger`), so open viewers and writers
+reconnect through that check. A member's unsynced edits in that owner's notes and files are dropped
 on the 404, as for a deleted owner: the browser cannot tell it from a
 deletion. The owner keeps the locked-account answer of their own session, so
 their own drafts are kept. Copies other users already made belong to them and

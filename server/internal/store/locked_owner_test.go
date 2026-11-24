@@ -147,6 +147,53 @@ func TestLockedOwnerHidesWorkspaceContentFromMembers(t *testing.T) {
 	}
 }
 
+// A locked owner's workspace holds nothing for anyone, what its members made
+// included, so becoming suspended or deletion-pending discards the rooms of a
+// note and a canvas a member made there and pays for, as it does the owner's
+// own (migration 0194). Security regression: fails if the lifecycle trigger
+// evicts only what the owner pays for, leaving members' rooms open to their
+// readers and, until the writer recheck, their writers.
+func TestLockedOwnerEvictsMembersRoomsInTheirWorkspaces(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	for _, state := range []string{"suspended", "deletion_pending"} {
+		t.Run(state, func(t *testing.T) {
+			owner := newBlobTestUser(t, s, "u_evict_ws_owner")
+			member := newBlobTestUser(t, s, "u_evict_ws_member")
+			ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Locked workspace", Tags: []TagRef{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			addWorkspaceEditor(t, s, ws.ID, member)
+			note, err := s.CreateMaterial(ctx, Material{
+				CreatedBy: member, WorkspaceID: ws.ID, WorkspaceName: ws.Name,
+				Kind: "note", Title: "Member note", Content: noteWithImages(t),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			canvas, err := s.CreateCanvas(ctx, member, "Member board", ws.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ids := []string{note.ID, canvas.ID}
+			if _, err := s.pool.Exec(ctx, `DELETE FROM collaboration_eviction_outbox
+				WHERE payload->>'materialId'=ANY($1)`, ids); err != nil {
+				t.Fatal(err)
+			}
+			lockOwner(t, s, owner, state)
+			for _, id := range ids {
+				var discards int
+				if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM collaboration_eviction_outbox
+					WHERE channel='capy:collaboration:evict' AND payload->>'materialId'=$1
+					AND payload->>'mode'='discard'`, id).Scan(&discards); err != nil || discards != 1 {
+					t.Fatalf("discards of %s's room = %d (%v), want 1", id, discards, err)
+				}
+			}
+		})
+	}
+}
+
 // A suspended or deletion-pending owner's source rooms are evicted with
 // discard, as their note rooms are, so a viewer holding one open reconnects
 // through the access check and gets not found (Epo 2026-10-16, migration

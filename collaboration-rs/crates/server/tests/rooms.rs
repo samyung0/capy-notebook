@@ -3278,6 +3278,62 @@ async fn a_suspended_owners_note_is_not_found_for_its_readers() {
     }
 }
 
+/// Security regression (migration 0194): suspending a workspace's owner
+/// discards the room of a note another member made there and pays for, as it
+/// does the owner's own, so its writer and its reader close at once and the
+/// reader's rejoin is not found. Fails if the owner's lock evicts only what
+/// the owner pays for, leaving the member's room open.
+#[tokio::test]
+async fn a_suspended_owners_workspace_closes_a_members_note_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, owners_room) = shared_note(&env, "shared").await;
+    let owners_note = material_of(&owners_room);
+    let client = db(&env).await;
+    let reader = user(&env).await;
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role)
+             SELECT workspace_id, $2, 'viewer' FROM materials WHERE id=$1",
+            &[&owners_note, &reader],
+        )
+        .await
+        .expect("viewer");
+    let material = format!("m_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content)
+             SELECT $1, $2, workspace_id, 'IT', 'note', 'IT', content FROM materials WHERE id=$3",
+            &[&material, &editor, &owners_note],
+        )
+        .await
+        .expect("the member's note");
+    let room = format!("material:{material}:schema:1");
+    let mut writer = Client::open(server.port).await;
+    assert_eq!(
+        writer.joined(&room, &token(&room, &editor, "write")).await,
+        1
+    );
+    let read = token(&room, &reader, "read");
+    let mut watcher = Client::open(server.port).await;
+    assert_eq!(watcher.joined(&room, &read).await, 0);
+    client
+        .execute(
+            "UPDATE users SET suspended_at=now(), suspended_reason='it' WHERE id=$1",
+            &[&owner],
+        )
+        .await
+        .expect("suspend");
+    deliver_evictions(&env, &room).await;
+    for tab in [&mut writer, &mut watcher] {
+        tab.until(4).await.expect("closed");
+    }
+    assert_eq!(
+        refused_join(&mut watcher, &room, &read).await,
+        "collaboration-not-found"
+    );
+}
+
 /// Security regression (uploader-pays review M4, N4): an agent edit charges
 /// the note's payer (its creator), so it stops once only the payer is being
 /// deleted, the workspace owner and the actor staying healthy. Fails if the

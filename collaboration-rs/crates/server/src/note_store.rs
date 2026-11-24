@@ -345,16 +345,17 @@ pub async fn append(
     // since (up to about 5 s of them, Epo 2026-11-05): refusing them would
     // discard the room under everyone else.
     access::lock_boundary(&tx, material_id, actors, &session_users).await?;
+    // Every store's statements are prepared once per pooled connection.
     let current = tx
-        .query(
+        .prepare_cached(
             // No key update: a client id's first-write insert checks its key
             // against this row (FOR KEY SHARE) and may race the sessions'
             // write below, so a stronger lock would deadlock with it (review
             // r2 M1).
             "SELECT room_schema, stored_version FROM material_yjs_documents WHERE material_id=$1 FOR NO KEY UPDATE",
-            &[&material_id],
         )
         .await?;
+    let current = tx.query(&current, &[&material_id]).await?;
     let Some(current) = current.first() else {
         return Err(StoreError::Other("material not found".into()));
     };
@@ -609,8 +610,9 @@ pub(crate) async fn save_sessions(
             changed.push(row.held_changed);
             held.push(row.held.as_deref());
         }
-        tx.execute(
-            "INSERT INTO material_yjs_client_ids
+        let upsert = tx
+            .prepare_cached(
+                "INSERT INTO material_yjs_client_ids
                (material_id, document, client_id, user_id, acked_version, seen_at, held)
              SELECT $1, 'content', r.client, r.user_id, r.version, r.seen, r.held
              FROM unnest($2::bigint[], $3::text[], $4::bigint[], $5::timestamptz[],
@@ -624,6 +626,10 @@ pub(crate) async fn save_sessions(
                                    AS c(client, changed) WHERE c.client=EXCLUDED.client_id)
                       THEN EXCLUDED.held ELSE material_yjs_client_ids.held END
              WHERE material_yjs_client_ids.user_id=EXCLUDED.user_id",
+            )
+            .await?;
+        tx.execute(
+            &upsert,
             &[
                 &material_id,
                 &clients,
@@ -716,37 +722,43 @@ pub(crate) async fn append_row(
     row: &[u8],
 ) -> Result<(), StoreError> {
     let (_, log) = doc.tables();
-    tx.execute(
-        &format!("INSERT INTO {log} (material_id, seq, update) VALUES ($1,$2,$3)"),
-        &[&material_id, &version, &row],
-    )
-    .await?;
+    // A store's statements, prepared once per pooled connection.
+    let insert = tx
+        .prepare_cached(&format!(
+            "INSERT INTO {log} (material_id, seq, update) VALUES ($1,$2,$3)"
+        ))
+        .await?;
+    tx.execute(&insert, &[&material_id, &version, &row]).await?;
     let bytes = row.len() as i64;
     match doc {
         Doc::Content => {
-            tx.execute(
-                "UPDATE material_yjs_documents
-                 SET stored_version=$2, log_bytes=log_bytes+$3, log_rows=log_rows+1,
-                     projection_error=NULL, updated_at=now()
-                 WHERE material_id=$1",
-                &[&material_id, &version, &bytes],
-            )
-            .await?;
+            let advance = tx
+                .prepare_cached(
+                    "UPDATE material_yjs_documents
+                     SET stored_version=$2, log_bytes=log_bytes+$3, log_rows=log_rows+1,
+                         projection_error=NULL, updated_at=now()
+                     WHERE material_id=$1",
+                )
+                .await?;
+            tx.execute(&advance, &[&material_id, &version, &bytes])
+                .await?;
         }
         Doc::Keys => {
-            tx.execute(
-                "UPDATE material_yjs_documents
-                 SET stored_version=$2, projection_error=NULL, updated_at=now()
-                 WHERE material_id=$1",
-                &[&material_id, &version],
-            )
-            .await?;
-            tx.execute(
-                "UPDATE material_yjs_keys SET log_bytes=log_bytes+$2, log_rows=log_rows+1
-                 WHERE material_id=$1",
-                &[&material_id, &bytes],
-            )
-            .await?;
+            let advance = tx
+                .prepare_cached(
+                    "UPDATE material_yjs_documents
+                     SET stored_version=$2, projection_error=NULL, updated_at=now()
+                     WHERE material_id=$1",
+                )
+                .await?;
+            tx.execute(&advance, &[&material_id, &version]).await?;
+            let counters = tx
+                .prepare_cached(
+                    "UPDATE material_yjs_keys SET log_bytes=log_bytes+$2, log_rows=log_rows+1
+                     WHERE material_id=$1",
+                )
+                .await?;
+            tx.execute(&counters, &[&material_id, &bytes]).await?;
         }
     }
     Ok(())
