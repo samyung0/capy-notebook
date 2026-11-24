@@ -28,6 +28,7 @@ use crate::presence::Fields;
 use crate::projection;
 use crate::protocol::{self, Kind, awareness, sync};
 use crate::sessions::Sessions;
+use crate::work::WorkKind;
 
 /// Broadcasts merge over this window (approved by Epo, 2026-10-04).
 pub const FLUSH_WINDOW: Duration = Duration::from_millis(30);
@@ -448,6 +449,31 @@ struct Checked {
     update: yrs::Update,
     written: Vec<u64>,
     heavy: bool,
+}
+
+/// What a writer's update's checks found before its admission: the update,
+/// whether it tells the room anything new, the client ids it writes under,
+/// and whether its admission and apply run off the async workers.
+struct Screened {
+    update: yrs::Update,
+    changes: bool,
+    written: Vec<u64>,
+    heavy: bool,
+}
+
+/// Where [Room::check_now] stopped without an update to apply.
+enum Stop {
+    Outcome(Outcome),
+    /// A board's heavy update: its admission waits for the board work permit
+    /// (`work.rs`, [Room::trial]).
+    Trial(Trial),
+}
+
+/// A board's heavy update before its trial: what its checks found, without
+/// the decoded update, which may not cross an await.
+struct Trial {
+    changes: bool,
+    written: Vec<u64>,
 }
 
 struct Member {
@@ -881,6 +907,11 @@ const IT_REFUSE_LIVE: &str = "capy-it-refuse-live";
 #[cfg(debug_assertions)]
 const IT_PANIC_LIVE: &str = "capy-it-panic-live";
 
+/// See `load`: a board whose id holds this keeps the board work permit 3 s
+/// past taking it for its load, in debug builds only.
+#[cfg(debug_assertions)]
+const IT_HOLD_WORK: &str = "capy-it-hold-work";
+
 #[cfg(debug_assertions)]
 static IT_PANICKED_LOAD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
@@ -1090,8 +1121,24 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
             );
             let collected = std::mem::take(&mut loaded.collected);
             let material_kind = kind.clone();
+            // A board's replay waits for the board work limit (`work.rs`),
+            // taken once the load committed, so no material lock is held
+            // while it waits.
+            let permit = board_permit(app, model, WorkKind::Load, &name.to_string()).await;
+            // Debug builds only: the integration tests' board load holding
+            // the permit 3 s.
+            #[cfg(debug_assertions)]
+            if permit.is_some() && material_id.contains(IT_HOLD_WORK) {
+                log(
+                    Level::Info,
+                    "it holds board work",
+                    json!({ "room": name.to_string() }),
+                );
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
             let (doc, durable, metrics, mut refused) =
                 tokio::task::spawn_blocking(move || -> Result<_, String> {
+                    let _permit = permit;
                     let doc = loaded_doc(loaded.base, loaded.rows, &assigned)?;
                     let txn = doc.transact();
                     model.assert_roots(&txn)?;
@@ -1689,7 +1736,7 @@ impl Room {
             }
             RoomCmd::Sync(key, payload) => match self.step1_vector(key, &payload) {
                 Some(since) => self.on_step1(key, since).await,
-                None => self.on_sync(key, &payload),
+                None => self.on_sync(key, &payload).await,
             },
             RoomCmd::Awareness(key, payload) => self.on_awareness(key, &payload),
             RoomCmd::QueryAwareness(key) => self.on_query(key),
@@ -1937,8 +1984,9 @@ impl Room {
                 }
                 let context = agent_context(&actor);
                 let granted = self.server_ids(&update);
-                let outcome =
-                    self.admit_update(None, &context, false, &update, None, &granted, None);
+                let outcome = self
+                    .admit_update(None, &context, false, &update, &granted, None)
+                    .await;
                 let admitted = matches!(outcome, Outcome::Admitted);
                 let _ = reply.send(match outcome {
                     Outcome::Admitted => Ok(()),
@@ -2027,7 +2075,9 @@ impl Room {
                 }
             },
         };
-        let admitted = self.admit_draft(&context, &update, &granted, version, charged, pieces);
+        let admitted = self
+            .admit_draft(&context, &update, &granted, version, charged, pieces)
+            .await;
         let answer = match admitted {
             // Held in full, or admitted: the receipt waits for the store.
             Ok(None | Some(Outcome::Admitted)) => Ok(self.durable().await),
@@ -2041,16 +2091,16 @@ impl Room {
         let _ = reply.send(answer);
     }
 
-    /// A draft's admission, decoding it once (no await: a decoded update
-    /// may not cross one). None for a group the room already holds in full
-    /// (the sweep, an opening editor and another tab may all send it): a
-    /// no-op, with no allowance charge and no new store (Epo 2026-10-24,
-    /// Q321), whose answer still waits for the store that holds the group
-    /// (Q360), since the browser deletes its rows on it. The room handles
-    /// writes in order, so back-to-back duplicates count once. `charged`: a
-    /// group's whole, whose pieces were charged to the allowance as they came;
-    /// `pieces`: a source group's, for peers ([Room::tell]).
-    fn admit_draft(
+    /// A draft's admission, through the channels' chain ([Room::admit_update]).
+    /// None for a group the room already holds in full (the sweep, an opening
+    /// editor and another tab may all send it): a no-op, with no allowance
+    /// charge and no new store (Epo 2026-10-24, Q321), whose answer still
+    /// waits for the store that holds the group (Q360), since the browser
+    /// deletes its rows on it. The room handles writes in order, so
+    /// back-to-back duplicates count once. `charged`: a group's whole, whose
+    /// pieces were charged to the allowance as they came; `pieces`: a source
+    /// group's, for peers ([Room::tell]).
+    async fn admit_draft(
         &mut self,
         context: &Context,
         update: &[u8],
@@ -2059,15 +2109,15 @@ impl Room {
         charged: bool,
         pieces: Option<Vec<Vec<u8>>>,
     ) -> Result<Option<Outcome>, Refused> {
-        let decoded = ydoc::decode(update).ok();
+        use futures::FutureExt;
         // A group older than the window, or under a lost session's id, is
         // tried clean like any other (Q436): one naming nothing the room
         // holds collected is admitted as an ordinary draft; one naming
-        // collected units is answered late at admission (Q443).
-        if decoded
-            .as_ref()
-            .is_some_and(|decoded| !ydoc::contains_changes(&self.doc.transact(), decoded))
-        {
+        // collected units is answered late at admission (Q443). Decoded for
+        // this check alone: admission decodes it again.
+        let held = ydoc::decode(update)
+            .is_ok_and(|decoded| !ydoc::contains_changes(&self.doc.transact(), &decoded));
+        if held {
             return Ok(None);
         }
         if !charged {
@@ -2075,14 +2125,17 @@ impl Room {
         }
         self.app.stats.updates.fetch_add(1, Ordering::Relaxed);
         let read_only = context.access != Access::Write;
-        let checked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let checked = std::panic::AssertUnwindSafe(async {
             // Debug builds only: the integration tests' panicking update.
             #[cfg(debug_assertions)]
             if update == IT_PANIC_UPDATE {
                 panic!("integration test panic");
             }
-            self.admit_update(None, context, read_only, update, decoded, granted, pieces)
-        }));
+            self.admit_update(None, context, read_only, update, granted, pieces)
+                .await
+        })
+        .catch_unwind()
+        .await;
         let outcome = checked.unwrap_or_else(|_| {
             self.update_panicked(None, update.len());
             Outcome::refused(Class::Malformed, "update cannot be checked")
@@ -2348,7 +2401,10 @@ impl Room {
             // holds (Q403).
             if let Some(update) = &update {
                 let granted = self.server_ids(update);
-                match self.check_update(None, &context, false, update, None, &granted, &mut None) {
+                match self
+                    .check_update(None, &context, false, update, &granted, &mut None)
+                    .await
+                {
                     Ok(_) | Err(Outcome::Admitted) => {}
                     Err(outcome) => return Err(agent_refusal(outcome, undoing)),
                 }
@@ -2394,7 +2450,9 @@ impl Room {
             // dropped a unit it names, answered late at admission (Q419,
             // Q432, Q443).
             let granted = self.server_ids(&update);
-            let outcome = self.admit_update(None, &context, false, &update, None, &granted, None);
+            let outcome = self
+                .admit_update(None, &context, false, &update, &granted, None)
+                .await;
             if !matches!(outcome, Outcome::Admitted) {
                 // The check above passed on this same state; logged if the
                 // keys landed alone all the same.
@@ -2974,12 +3032,13 @@ impl Room {
             return;
         }
         note.folding = true;
-        let (app, material_id, schema, through, doc_kind) = (
+        let (app, material_id, schema, through, doc_kind, model) = (
             self.app.clone(),
             note.material_id.clone(),
             note.schema,
             note.stored_version,
             note.doc,
+            note.model,
         );
         let holds = self.fold_holds(Some(self.doc.client_id()));
         // The fold's window is at most the version every counted session
@@ -2990,6 +3049,9 @@ impl Room {
         }
         tokio::spawn(async move {
             let holds = one_process(&app, &material_id, holds).await;
+            // The fold gives the permit back before it returns, so none is
+            // held while `Folded` waits for room in the room's queue.
+            let permit = board_permit(&app, model, WorkKind::Fold, &material_id).await;
             let (folded, collected) = match note_store::fold(
                 &app.db,
                 &material_id,
@@ -2997,6 +3059,7 @@ impl Room {
                 doc_kind,
                 Some(through),
                 holds,
+                permit,
             )
             .await
             {
@@ -3603,10 +3666,11 @@ impl Room {
 
     // ------------------------------------------------------------- sync and updates
 
-    fn on_sync(&mut self, key: MemberKey, payload: &[u8]) {
-        let checked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            self.sync_message(key, payload)
-        }));
+    async fn on_sync(&mut self, key: MemberKey, payload: &[u8]) {
+        use futures::FutureExt;
+        let checked = std::panic::AssertUnwindSafe(self.sync_message(key, payload))
+            .catch_unwind()
+            .await;
         if checked.is_err() {
             self.update_panicked(Some(key), payload.len());
         }
@@ -3682,7 +3746,7 @@ impl Room {
             .unwrap_or_else(|error| std::panic::resume_unwind(error.into_panic()))
     }
 
-    fn sync_message(&mut self, key: MemberKey, payload: &[u8]) {
+    async fn sync_message(&mut self, key: MemberKey, payload: &[u8]) {
         if !self.members.contains_key(&key) {
             return;
         }
@@ -3707,10 +3771,11 @@ impl Room {
             panic!("integration test panic");
         }
         if kind == sync::PIECE {
-            self.on_piece(key, body);
+            self.on_piece(key, body).await;
             return;
         }
-        self.on_update(key, body, kind == sync::STEP2, 1, None);
+        self.on_update(key, body, kind == sync::STEP2, 1, None)
+            .await;
     }
 
     /// A piece of a step 2 or update its client cut in pieces: kept on its
@@ -3739,7 +3804,7 @@ impl Room {
     ///   past twice its group cap (round 3, finding 6): the channel hears
     ///   [GROUP_BUSY_TYPE] and the group's pieces are acknowledged and let
     ///   go; no one is timed out for it.
-    fn on_piece(&mut self, key: MemberKey, body: &[u8]) {
+    async fn on_piece(&mut self, key: MemberKey, body: &[u8]) {
         let Some(piece) = sync::piece(body) else {
             self.refuse(key, &[], "malformed sync message");
             return;
@@ -3749,7 +3814,7 @@ impl Room {
             return;
         };
         if member.read_only {
-            self.on_update(key, piece.update, step2, 1, None);
+            self.on_update(key, piece.update, step2, 1, None).await;
             return;
         }
         let user = member.context.user_id.clone();
@@ -3882,7 +3947,8 @@ impl Room {
         // Peers of a source room hear the pieces, each on its own, at the
         // allowance's pace (finding 6).
         let pieces = matches!(self.kind, Kindly::Source(_)).then_some(pieces);
-        self.on_update(key, &update, step2, count - acked, pieces);
+        self.on_update(key, &update, step2, count - acked, pieces)
+            .await;
     }
 
     /// The most one group of pieces may gather: what one sync message may
@@ -4084,7 +4150,7 @@ impl Room {
     /// `messages`: the messages it came in (a group's, or 1), each of which
     /// the client counts until acknowledged; `pieces`: a source group's, for
     /// peers ([Room::tell]).
-    fn on_update(
+    async fn on_update(
         &mut self,
         key: MemberKey,
         bytes: &[u8],
@@ -4097,7 +4163,9 @@ impl Room {
         };
         let (context, read_only) = (member.context.clone(), member.read_only);
         self.in_step2 = step2;
-        let outcome = self.admit_update(Some(key), &context, read_only, bytes, None, &[], pieces);
+        let outcome = self
+            .admit_update(Some(key), &context, read_only, bytes, &[], pieces)
+            .await;
         self.in_step2 = false;
         // Admission acknowledged one message; a group's others go with it.
         let rest = messages.saturating_sub(1);
@@ -4133,14 +4201,12 @@ impl Room {
     /// send or an agent edit (Q402): nothing to acknowledge or tell of a
     /// children refusal, and every editor receives the update. `pieces`: an
     /// admitted source group's, which peers hear instead ([Room::tell]).
-    #[allow(clippy::too_many_arguments)]
-    fn admit_update(
+    async fn admit_update(
         &mut self,
         writer: Option<MemberKey>,
         context: &Context,
         read_only: bool,
         bytes: &[u8],
-        decoded: Option<yrs::Update>,
         granted: &[u64],
         mut pieces: Option<Vec<Vec<u8>>>,
     ) -> Outcome {
@@ -4154,15 +4220,9 @@ impl Room {
         {
             panic!("integration test panic");
         }
-        let checked = self.check_update(
-            writer,
-            context,
-            read_only,
-            bytes,
-            decoded,
-            granted,
-            &mut pieces,
-        );
+        let checked = self
+            .check_update(writer, context, read_only, bytes, granted, &mut pieces)
+            .await;
         match checked {
             Ok(checked) => self.apply_update(writer, context, bytes, checked, pieces),
             Err(outcome) => outcome,
@@ -4171,32 +4231,122 @@ impl Room {
 
     /// [Room::admit_update]'s checks: the update to apply, or the outcome
     /// (an update with nothing new is admitted without an apply, and told
-    /// with `pieces` when it deletes).
-    #[allow(clippy::too_many_arguments)]
-    fn check_update(
+    /// with `pieces` when it deletes). A board's heavy update waits for the
+    /// board work permit first ([Room::trial]); the room's queue waits with
+    /// it, as for any trial.
+    async fn check_update(
         &mut self,
         writer: Option<MemberKey>,
         context: &Context,
         read_only: bool,
         bytes: &[u8],
-        decoded: Option<yrs::Update>,
         granted: &[u64],
         pieces: &mut Option<Vec<Vec<u8>>>,
     ) -> Result<Checked, Outcome> {
+        let trial = match self.check_now(writer, context, read_only, bytes, granted, pieces) {
+            Ok(checked) => return Ok(checked),
+            Err(Stop::Outcome(outcome)) => return Err(outcome),
+            Err(Stop::Trial(trial)) => trial,
+        };
+        self.trial(writer, context, bytes, trial, pieces).await
+    }
+
+    /// [Room::check_update] up to a board's trial, with no await: the decoded
+    /// update may not cross one.
+    fn check_now(
+        &mut self,
+        writer: Option<MemberKey>,
+        context: &Context,
+        read_only: bool,
+        bytes: &[u8],
+        granted: &[u64],
+        pieces: &mut Option<Vec<Vec<u8>>>,
+    ) -> Result<Checked, Stop> {
+        let screened = self
+            .screen(writer, context, read_only, bytes, granted)
+            .map_err(Stop::Outcome)?;
+        if screened.heavy
+            && matches!(&self.kind, Kindly::Note(note) if note.model == crate::model::Model::Board)
+        {
+            let Screened {
+                changes, written, ..
+            } = screened;
+            return Err(Stop::Trial(Trial { changes, written }));
+        }
+        self.admit_screened(writer, context, bytes, screened, None, pieces)
+            .map_err(Stop::Outcome)
+    }
+
+    /// A board's heavy update, once the board work permit is free (`work.rs`,
+    /// its warnings included): the room and the writer's token are checked
+    /// again (the wait lasts as long as the permit's queue), then the update
+    /// is decoded again and admitted as any heavy update, both off the async
+    /// workers. The permit goes back as soon as the admission ends, before
+    /// anything is sent or applied.
+    async fn trial(
+        &mut self,
+        writer: Option<MemberKey>,
+        context: &Context,
+        bytes: &[u8],
+        trial: Trial,
+        pieces: &mut Option<Vec<Vec<u8>>>,
+    ) -> Result<Checked, Outcome> {
+        let permit = self
+            .app
+            .board_work
+            .acquire(WorkKind::Trial, &self.name)
+            .await;
+        if let Some(refused) = self.closed_to(context) {
+            return Err(refused);
+        }
+        let Trial { changes, written } = trial;
+        // The admission's own `block_in_place` runs inline in this one.
+        tokio::task::block_in_place(|| {
+            let Ok(update) = ydoc::decode(bytes) else {
+                return Err(Outcome::refused(Class::Malformed, "malformed update"));
+            };
+            let screened = Screened {
+                update,
+                changes,
+                written,
+                heavy: true,
+            };
+            self.admit_screened(writer, context, bytes, screened, Some(permit), pieces)
+        })
+    }
+
+    /// The refusal of any update while the room is being reset or the
+    /// writer's token has expired.
+    fn closed_to(&self, context: &Context) -> Option<Outcome> {
         if self.app.evictions.blocks(&self.name, false) {
-            return Err(Outcome::refused(
+            return Some(Outcome::refused(
                 Class::Unavailable,
                 "collaboration room is being reset",
             ));
         }
         if context.expires_at <= crate::auth::now_seconds() {
-            return Err(Outcome::refused(
+            return Some(Outcome::refused(
                 Class::Permission,
                 "collaboration token expired",
             ));
         }
-        // A draft send decoded its update already (the no-op check).
-        let Some(update) = decoded.or_else(|| ydoc::decode(bytes).ok()) else {
+        None
+    }
+
+    /// The checks of a writer's update that read the room, up to whether its
+    /// admission is heavy.
+    fn screen(
+        &mut self,
+        writer: Option<MemberKey>,
+        context: &Context,
+        read_only: bool,
+        bytes: &[u8],
+        granted: &[u64],
+    ) -> Result<Screened, Outcome> {
+        if let Some(refused) = self.closed_to(context) {
+            return Err(refused);
+        }
+        let Ok(update) = ydoc::decode(bytes) else {
             return Err(Outcome::refused(Class::Malformed, "malformed update"));
         };
         let changes = ydoc::contains_changes(&self.doc.transact(), &update);
@@ -4332,6 +4482,32 @@ impl Room {
                     > sources::admission_cap(source.state_cap)
             }
         };
+        Ok(Screened {
+            update,
+            changes,
+            written,
+            heavy,
+        })
+    }
+
+    /// A screened update's admission, under `permit` for a board's trial
+    /// (given back as soon as the admission ends), then what it needs before
+    /// its apply.
+    fn admit_screened(
+        &mut self,
+        writer: Option<MemberKey>,
+        context: &Context,
+        bytes: &[u8],
+        screened: Screened,
+        permit: Option<crate::work::Permit>,
+        pieces: &mut Option<Vec<Vec<u8>>>,
+    ) -> Result<Checked, Outcome> {
+        let Screened {
+            update,
+            changes,
+            written,
+            heavy,
+        } = screened;
         // A quiz document counts with the other one's bound as it stands, and
         // its growth is taken against it again once admitted.
         let peer = self.peer_bound();
@@ -4372,11 +4548,13 @@ impl Room {
                 }
             }
         };
-        let verdict = match if heavy {
+        let verdict = if heavy {
             tokio::task::block_in_place(admit)
         } else {
             admit()
-        } {
+        };
+        drop(permit);
+        let verdict = match verdict {
             Verdict::Accept => match self.take_quiz_bound(peer, before) {
                 Ok(()) => Verdict::Accept,
                 Err((code, metrics)) => Verdict::Limit(code, metrics),
@@ -6385,8 +6563,10 @@ impl Room {
                     );
                 }
                 let holds = one_process(&app, &material_id, holds).await;
+                let permit = board_permit(&app, model, WorkKind::UnloadFold, &material_id).await;
                 if let Err(error) =
-                    note_store::fold(&app.db, &material_id, schema, doc_kind, None, holds).await
+                    note_store::fold(&app.db, &material_id, schema, doc_kind, None, holds, permit)
+                        .await
                 {
                     observe::capture(
                         &error.to_string(),
@@ -6399,6 +6579,21 @@ impl Room {
             // What the room, its fold and its projection freed goes back.
             crate::trim::after_unload();
         });
+    }
+}
+
+/// The board work permit (`work.rs`) for a board's `kind` of work on `room`
+/// (a room or material, for the logs); none for any other model, which does
+/// not take it.
+async fn board_permit(
+    app: &crate::app::App,
+    model: crate::model::Model,
+    kind: WorkKind,
+    room: &str,
+) -> Option<crate::work::Permit> {
+    match model {
+        crate::model::Model::Board => Some(app.board_work.acquire(kind, room).await),
+        _ => None,
     }
 }
 

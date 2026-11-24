@@ -163,6 +163,7 @@ atomic increment, nothing allocates):
 | `connections`, `rooms` | Open connections and loaded rooms at the line |
 | `log_bytes` | Bytes in the loaded rooms' update logs not yet folded |
 | `office` | The Office engine processes per lane, `save` and `background`: `processes` running, `restarts`, `crashes`, `timeouts`, `calls` finished, `busy_ms` running, `queue`/`queue_max` calls waiting, `run_p95_ms`/`run_max_ms`, `wait_p95_ms`/`wait_max_ms`, `rss_mib`; and the XLSX room replicas the save processes keep ([office files](frontend/office-files.md)): `replicas`, `replica_mib` (estimated), `replica_hits`/`replica_misses`/`replica_evictions` in the interval |
+| `board_work` | The board work limit (`work.rs`, Epo 2026-11-24: one whole-board operation at a time in the process, a canvas room's load, a board fold, a board's durable projection or a heavy board update's admission): `held` and `queue` (acquires waiting) at the line, and over the interval `calls` (permits given), `wait_max_ms` and `run_max_ms`. `/metrics` carries the two counts as the gauges `capy_collaboration_board_work_held` and `capy_collaboration_board_work_queue`; a `queue` that stays above 0 or a `wait_max_ms` in seconds means boards are waiting for each other |
 
 Read it from the delay first. Every room shares the server's async runtime,
 so a lag p99 near or above about 100 ms means something holds its threads:
@@ -183,7 +184,9 @@ again:
 | --- | --- | --- |
 | `slow_save` (warn) | a material or source save took 2 s or more (`SLOW_SAVE_MS`, `health.ts`), failed ones included | `room`, `kind` (`material`, `source`), `ms`, `ok`, `bytes` (the saved state) |
 | `slow_office_call` (warn) | an Office engine call ran 2 s or more (`SLOW_OFFICE_CALL_MS`, `officeRuntime.ts`), a timeout included | `method`, `ms` (running), `wait_ms` (queued before it), `bytes` (its byte arguments: the base or exported file) |
-| `room_load` / `room_unload` (info) | a room loaded or unloaded on this instance | `room`, `bytes` (the room's stored bytes, its base and log rows, as the room knows them; no encode of the document), `ms` (load only); a source room's load adds `stages` in ms: `session` (the gateway's source session), `base` (the base bytes, a bucket read unless this instance holds them), `stored` (state and rows), `seed` (seed(base), an Office engine call unless cached, the first after a start also warming the engine process) and `replay` |
+| `room_load` / `room_unload` (info) | a room loaded or unloaded on this instance | `room`, `bytes` (the room's stored bytes, its base and log rows, as the room knows them; no encode of the document), `ms` (load only; a board's includes its wait for the board work permit); a source room's load adds `stages` in ms: `session` (the gateway's source session), `base` (the base bytes, a bucket read unless this instance holds them), `stored` (state and rows), `seed` (seed(base), an Office engine call unless cached, the first after a start also warming the engine process) and `replay` |
+| `board work still waiting` (warn) | a board work acquire (`work.rs`) has waited 5 s (`SLOW_WAIT`); it keeps its place and keeps waiting, with no timeout | `kind` (`load`, `fold`, `unload_fold`, `projection`, `trial`: a heavy update's admission), `room` (the room for a load or an admission, the material for a fold or a projection), `waited_ms` |
+| `board work waited` (warn) | that acquire got its permit | the same, `waited_ms` the whole wait |
 
 PostHog gets nothing from editing.
 
