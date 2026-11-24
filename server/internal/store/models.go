@@ -308,6 +308,9 @@ type Quiz struct {
 	Hidden bool `json:"-"`
 	// SharePath is the signed share link of a standalone quiz.
 	SharePath string `json:"sharePath,omitempty"`
+	// OnlyYou is a class member's own practice quiz (Make my own practice),
+	// which only they can reach: its attempt page says so (Epo 2026-11-20).
+	OnlyYou bool `json:"onlyYou,omitempty"`
 	// ParentMaterialID is the note a quiz is embedded in (a quick check).
 	ParentMaterialID string `json:"parentMaterialId,omitempty"`
 	// Provenance is the source material's attribution record; the attempt page
@@ -632,12 +635,12 @@ type Comment struct {
 // markdown materials plus the workspace's quizzes and flashcardSets. TopicID lets the
 // tree group refs under their topic (null = unfiled).
 type MaterialRef struct {
-	ID        string          `json:"id"`
-	Type      MaterialRefType `json:"type"`
-	Title     string          `json:"title"`
-	TopicID   *string         `json:"topicId"`
-	Position  int64           `json:"position"`
-	CreatedAt time.Time       `json:"createdAt"`
+	ID        string       `json:"id"`
+	Kind      MaterialKind `json:"kind"`
+	Title     string       `json:"title"`
+	TopicID   *string      `json:"topicId"`
+	Position  int64        `json:"position"`
+	CreatedAt time.Time    `json:"createdAt"`
 	// SizeBytes lets the client decide how to open a document before paying to
 	// fetch it. Maintained by the materials trigger as octet_length(content).
 	SizeBytes int64 `json:"sizeBytes"`

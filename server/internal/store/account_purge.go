@@ -243,17 +243,12 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM attempts WHERE user_id=$1`, userID); err != nil {
 		return err
 	}
-	// The tasks they set themself are theirs alone, and one with no workspace
-	// has no cascade to go with.
-	if _, err := tx.Exec(ctx, `DELETE FROM assignments WHERE own AND created_by=$1`, userID); err != nil {
-		return err
-	}
 	// Private marks on files in other people's workspaces outlive the files'
 	// cascade, and the tombstone row never fires the author FK cascade.
 	if _, err := tx.Exec(ctx, `DELETE FROM pdf_annotations WHERE author_id=$1`, userID); err != nil {
 		return err
 	}
-	for _, table := range []string{"review_sessions", "study_progress", "review_states", "review_log", "answer_events", "bank_progress", "edit_incidents", "workspace_link_grants", "material_link_grants", "bank_comment_notices",
+	for _, table := range []string{"review_sessions", "study_progress", "review_states", "review_log", "answer_events", "question_answers", "bank_progress", "edit_incidents", "workspace_link_grants", "material_link_grants", "bank_comment_notices",
 		// Open Checkout pages and the daily grading and invite counters
 		// (Q315).
 		"credit_checkouts", "grading_usage", "invite_usage",

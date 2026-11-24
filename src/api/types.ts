@@ -50,6 +50,7 @@ import type {
   Material as GenMaterial,
   MaterialListItem as GenMaterialListItem,
   MaterialPage as GenMaterialPage,
+  MemberAnswer as GenMemberAnswer,
   Message as GenMessage,
   Quiz as GenQuiz,
   ResourceEffectOperation as GenResourceEffectOperation,
@@ -58,6 +59,7 @@ import type {
   ReviewResult as GenReviewResult,
   ReviewSession as GenReviewSession,
   SearchResult as GenSearchResult,
+  StudyQuestion as GenStudyQuestion,
   StudySummary as GenStudySummary,
   SubmittedPaper as GenSubmittedPaper,
   TrashItem as GenTrashItem,
@@ -204,7 +206,6 @@ export type {
 export { AccountState } from './gen/model/accountState';
 export { FileStatus } from './gen/model/fileStatus';
 export { MaterialKind } from './gen/model/materialKind';
-export { MaterialRefType } from './gen/model/materialRefType';
 export { NotificationKind } from './gen/model/notificationKind';
 export { PlanTier } from './gen/model/planTier';
 export { Privacy } from './gen/model/privacy';
@@ -355,6 +356,17 @@ export type {
 export type ReviewItem = Omit<GenReviewItem, 'question'> & {
   question?: LearnerQuestion;
 };
+/** A topic page's or Frequently wrong's question with its latest result;
+ * `question` is its answer-free content where it can be practised. */
+export type StudyQuestion = Omit<GenStudyQuestion, 'question'> & {
+  question?: LearnerQuestion;
+};
+/** A member's latest answer to a question for a class's staff: the question
+ * as checked, key and marks included, and the answers given. */
+export type MemberAnswer = Omit<GenMemberAnswer, 'question' | 'answers'> & {
+  question: Question;
+  answers: Answers;
+};
 /** An item answered earlier in a resumed session, with its record; a
  * question is the graded one, key included, with the answers given. */
 export type ReviewAnswer = Omit<GenReviewAnswer, 'question' | 'answers'> & {
@@ -405,7 +417,6 @@ export type {
   MemberProgress,
   MembersProgress,
   MembersTopic,
-  MissedQuestion,
   PaperFileReq,
   PastReview,
   Practice,
@@ -714,6 +725,8 @@ export interface GenerateOptions {
   fileIds: string[];
   /** A graded quiz's settings: made with the quiz (GenerateReq.gradedQuiz). */
   gradedQuiz?: GenAssignmentFormReq;
+  /** The user's own words to the model (GenerateReq.instructions). */
+  instructions?: string;
   mix?: boolean;
   title: string;
   topics: string[]; // topic ids

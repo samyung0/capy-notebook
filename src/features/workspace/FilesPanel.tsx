@@ -343,7 +343,7 @@ export function FilesPanel({
         color="purple"
         data={mt}
         indent={grouped}
-        key={`${mt.type}:${mt.id}`}
+        key={`${mt.kind}:${mt.id}`}
         menu={rowMenus}
         onDeleted={() => {
           if (openItem?.kind === 'material' && openItem.id === mt.id) {

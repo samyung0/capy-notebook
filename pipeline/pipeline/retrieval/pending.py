@@ -230,14 +230,6 @@ class PendingSources:
             body = (body + "\n" + NOTICE).strip()
         return body
 
-    def message(self) -> dict[str, Any] | None:
-        """Generation's message with every scoped change: it reads its whole
-        scope."""
-        if not self.pending:
-            return None
-        body = self._evidence(self.shown_files, self.shown_notes, self._unread_shown)
-        return {"role": "user", "content": body, "_kind": "pending_sources"}
-
     def unindexed_counts(self) -> dict[str, int]:
         """Each scoped document's edit count not in the index yet, but for
         documents this turn read (their changes came with the read): what a

@@ -1,11 +1,4 @@
-import {
-  type MouseEvent,
-  type ReactNode,
-  type RefObject,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { useMarkAssignmentAnswer } from '@/api/hooks';
 import type {
   Assignment,
@@ -15,13 +8,15 @@ import type {
 } from '@/api/types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
-import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import { formatFileSize } from '@/features/files/fileUtils';
 import { AiWarning } from '@/features/questions/AiWarning';
-import { answerLabels } from '@/features/questions/editorFields';
-import { QuestionBlockView, TextView } from '@/features/questions/QuestionView';
+import {
+  QuestionBlockView,
+  QuestionView,
+  TextView,
+} from '@/features/questions/QuestionView';
 import { hasSample, SampleView } from '@/features/questions/SampleBlock';
 import type {
   Question,
@@ -29,13 +24,14 @@ import type {
   QuestionPart,
 } from '@/features/questions/types';
 import { modelMarked, questionMarks } from '@/features/questions/types';
-import { ReviewedDrawing } from '@/features/quizzes/drawing/DrawingAnswer';
+import { ReviewedDrawing } from '@/features/quizzes/drawing/CanvasAnswer';
+import { partAnswer } from '@/features/quizzes/drawing/canvasParts';
 import { type Answer, formatPoints } from '@/features/quizzes/grade';
-import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
+import { GapText, QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
-import { blockText, questionLine } from '../practice/practiceText';
+import { questionLine } from '../practice/practiceText';
 import { PracticeFrame } from '../practice/studyPage';
 import { studyLink } from '../studyRoutes';
 import { BackToAssignments, type ProfileOrigin } from './AssignmentAttemptPage';
@@ -49,7 +45,6 @@ import {
   percentText,
   questionOutcome,
   questionPaperOf,
-  questionRowName,
 } from './assignmentText';
 import { SubmissionFileList, useOpenSubmissionFile } from './HandIns';
 import { LateBadge } from './LateBadge';
@@ -122,7 +117,7 @@ function HiddenResults({
   const questions = attempt.questions as AssignmentGradedQuestion[];
   const answered = (q: AssignmentGradedQuestion) =>
     q.parts.some((part) => {
-      const value = attempt.answers[part.id];
+      const value = partAnswer(q, attempt.answers, part);
       return value !== undefined && value !== null && value !== '';
     });
   return (
@@ -380,29 +375,26 @@ function MarkedResults({
   fromProfile?: ProfileOrigin;
 }) {
   const staff = !!assignment.manage;
-  // A task's maker runs it and takes it: the attempt here is their own.
-  const taker = !staff || !!assignment.own;
   // A file's graded quiz reads as a hand-in, to its member and its staff.
   const paperQuiz = assignment.paperFile;
   const { dialog, start, starting } = useAssignmentStart(
     assignment.workspaceId
   );
-  const rows = resultRows(attempt.questions as AssignmentGradedQuestion[]);
-  const [opened, setOpened] = useState<string[]>(() => {
-    const first = rows.find((row) => questionOutcome(row.shown) === 'waiting');
-    return first ? [first.id] : [];
-  });
+  const questions = attempt.questions as AssignmentGradedQuestion[];
+  // Counted by part, as each part shows its own outcome (Epo 2026-11-18).
   const counts: Record<Outcome, number> = {
     partly: 0,
     right: 0,
     waiting: 0,
     wrong: 0,
   };
-  for (const row of rows) counts[questionOutcome(row.shown)]++;
+  for (const question of questions)
+    for (const part of question.parts)
+      counts[questionOutcome({ ...question, parts: [part] })]++;
   const decided = attempt.total - attempt.waitingMarks;
   const when = attempt.submittedAt ? dayLabel(attempt.submittedAt) : '';
   const left =
-    taker &&
+    !staff &&
     !assignment.closedAt &&
     assignment.mine &&
     assignment.attempts - assignment.mine.attemptsUsed > 0;
@@ -528,298 +520,24 @@ function MarkedResults({
             staff={staff}
           />
         ) : (
-          <ol className="mt-4 border-divider border-t">
-            {rows.map((row) => (
-              <ResultRow
-                assignment={assignment}
-                attempt={attempt}
-                key={row.id}
-                onToggle={() =>
-                  setOpened((list) =>
-                    list.includes(row.id)
-                      ? list.filter((id) => id !== row.id)
-                      : [...list, row.id]
-                  )
-                }
-                open={opened.includes(row.id)}
-                row={row}
-                staff={staff}
-              />
+          // Every question whole, as By question draws them (Epo 2026-11-22).
+          <ol className="mx-auto mt-4 w-full max-w-3xl border-divider border-t">
+            {questions.map((question, i) => (
+              <li className="border-divider border-b py-6" key={question.id}>
+                <ResultBody
+                  assignment={assignment}
+                  attempt={attempt}
+                  commentHere
+                  question={question}
+                  questionNumber={i + 1}
+                  staff={staff}
+                />
+              </li>
             ))}
           </ol>
         )}
       </div>
     </PracticeFrame>
-  );
-}
-
-/** A row of a member's result: a whole question, or one part of a question
- * of several, laid flat as the report's Questions tab lays them (Epo
- * 2026-11-18): "Q19 (a)" with its own mark and, open, its question's stem and
- * group above its answer. */
-type ResultRowItem = {
-  id: string;
-  /** "Q19", "Q19 (a)(i)". */
-  name: string;
-  /** The row's one line: the part's first text, else the question's. */
-  line: string;
-  /** The question, or for a part's row the question narrowed to that part
-   * with its stem moved to `context`. */
-  shown: AssignmentGradedQuestion;
-  /** A part's row: its question's stem and its group's text and figures. */
-  context: QuestionBlock[];
-  number: number;
-  /** The question's last row, which holds its comment. */
-  last: boolean;
-};
-
-function resultRows(questions: AssignmentGradedQuestion[]): ResultRowItem[] {
-  return questions.flatMap((question, i): ResultRowItem[] => {
-    const number = i + 1;
-    const line = questionLine(question as Question);
-    if (question.parts.length < 2)
-      return [
-        {
-          context: [],
-          id: question.id,
-          last: true,
-          line,
-          name: `Q${number}`,
-          number,
-          shown: question,
-        },
-      ];
-    return question.parts.map((part, j) => {
-      const group = part.group
-        ? question.groups?.find((g) => g.id === part.group)
-        : undefined;
-      return {
-        context: [...question.stem, ...(group?.blocks ?? [])],
-        id: part.id,
-        last: j === question.parts.length - 1,
-        line: blockText(part.blocks) || line,
-        name: questionRowName(number, question, part.id),
-        number,
-        shown: { ...question, parts: [part], stem: [] },
-      };
-    });
-  });
-}
-
-function ResultRow({
-  assignment,
-  attempt,
-  onToggle,
-  open,
-  row,
-  staff,
-}: {
-  assignment: Assignment;
-  attempt: AssignmentAttempt;
-  onToggle: () => void;
-  open: boolean;
-  row: ResultRowItem;
-  staff: boolean;
-}) {
-  const question = row.shown;
-  const outcome = questionOutcome(question);
-  const awarded = question.parts.reduce((n, p) => n + (p.awarded ?? 0), 0);
-  const marks = questionMarks(question as Question);
-  // Folding swaps the row's toggle for another: the keyboard's focus follows.
-  const toggleButton = useRef<HTMLButtonElement>(null);
-  const refocus = useRef(false);
-  const toggle = () => {
-    refocus.current = document.activeElement === toggleButton.current;
-    onToggle();
-  };
-  useEffect(() => {
-    if (!refocus.current) return;
-    refocus.current = false;
-    toggleButton.current?.focus();
-  }, [open]);
-  if (open)
-    return (
-      <OpenResultRow
-        assignment={assignment}
-        attempt={attempt}
-        awarded={awarded}
-        marks={marks}
-        onToggle={toggle}
-        outcome={outcome}
-        row={row}
-        staff={staff}
-        toggleRef={toggleButton}
-      />
-    );
-  const score = (
-    <span className="whitespace-nowrap text-right font-bold">
-      {outcome === 'waiting' ? (
-        <span className="t-meta font-semibold text-fg-muted">
-          {`– / ${formatPoints(marks)}`}
-        </span>
-      ) : (
-        <>
-          {formatPoints(awarded)}{' '}
-          <span className="font-semibold text-fg-muted">
-            / {formatPoints(marks)}
-          </span>
-        </>
-      )}
-    </span>
-  );
-  return (
-    <li className="border-divider border-b">
-      <button
-        aria-expanded={false}
-        // The number at least its column, wider for a part's "Q18 (a)(i)",
-        // pushing the text right rather than under it (Epo 2026-11-19).
-        className="grid min-h-9 w-full grid-cols-[10px_minmax(30px,auto)_minmax(0,1fr)_auto_20px] items-center gap-2 py-1 text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset sm:grid-cols-[92px_minmax(34px,auto)_minmax(0,1fr)_60px_20px] sm:gap-2.5"
-        onClick={toggle}
-        ref={toggleButton}
-        type="button"
-      >
-        <span className="t-meta flex items-center gap-1.75 font-semibold text-fg-secondary">
-          <span
-            className={cn(
-              'size-2.5 shrink-0 rounded-xs',
-              OUTCOME_SQUARE[outcome]
-            )}
-          />
-          <span className="truncate max-sm:sr-only">
-            {OUTCOME_LABEL[outcome]()}
-          </span>
-        </span>
-        <span className="t-meta whitespace-nowrap font-bold text-fg-muted">
-          {row.name}
-        </span>
-        <span className="truncate">
-          <TextView className="whitespace-nowrap" marks text={row.line} />
-        </span>
-        {score}
-        <Icon
-          className="justify-self-end text-fg-muted"
-          name="chevronDown"
-          size={16}
-        />
-      </button>
-    </li>
-  );
-}
-
-/** An open question as the report's Questions tab lays one out (Epo
- * 2026-11-17): the question and its mark on the left, the answer and its
- * marking on the right; under lg, where the shell leaves too little room
- * for both, they stack. */
-function OpenResultRow({
-  assignment,
-  attempt,
-  awarded,
-  marks,
-  onToggle,
-  outcome,
-  row,
-  staff,
-  toggleRef,
-}: {
-  assignment: Assignment;
-  attempt: AssignmentAttempt;
-  awarded: number;
-  marks: number;
-  onToggle: () => void;
-  outcome: Outcome;
-  row: ResultRowItem;
-  staff: boolean;
-  toggleRef: RefObject<HTMLButtonElement | null>;
-}) {
-  const question = row.shown;
-  const type =
-    question.parts.length === 1 ? question.parts[0].answer.type : undefined;
-  const meta = [
-    row.name,
-    type && answerLabels[type](),
-    marks === 1
-      ? m.question_ui_one_mark()
-      : m.question_ui_marks({ count: marks }),
-  ]
-    .filter(Boolean)
-    .join(' · ');
-  // A click on the question's side folds it, as on the report; the answer's
-  // side holds fields and menus, so its clicks never do. Where the press
-  // began counts: a mark picked from a menu by touch can land its click on
-  // whatever is under the menu once it closes.
-  const pressedAnswer = useRef(false);
-  const press = (event: MouseEvent) => {
-    const target = event.target as Element;
-    pressedAnswer.current =
-      !event.currentTarget.contains(target) ||
-      !!target.closest('[data-result-body]');
-  };
-  const fold = (event: MouseEvent) => {
-    const target = event.target as Element;
-    if (pressedAnswer.current || !event.currentTarget.contains(target)) return;
-    if (target.closest('a, button, [data-result-body]')) return;
-    if (window.getSelection()?.toString()) return;
-    onToggle();
-  };
-  return (
-    // The click is a shortcut; its fold button is the keyboard's way.
-    <li
-      className="grid cursor-pointer grid-cols-[minmax(0,1fr)_20px] gap-x-3 border-divider border-b py-5 lg:grid-cols-[320px_minmax(0,1fr)_20px] lg:gap-x-10"
-      onClick={fold}
-      onPointerDown={press}
-    >
-      <div className="min-w-0">
-        <p className="t-meta text-fg-secondary">{meta}</p>
-        <p className="mt-2 text-[1.0625rem] leading-snug">
-          <TextView marks text={row.line} />
-        </p>
-        <p className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className={cn(CHIP, OUTCOME_CHIP[outcome])}>
-            {OUTCOME_LABEL[outcome]()}
-          </span>
-          <span className="whitespace-nowrap">
-            <b className="font-bold text-xl">
-              {outcome === 'waiting' ? '–' : formatPoints(awarded)}
-            </b>{' '}
-            <span className="font-semibold text-fg-muted">
-              / {formatPoints(marks)}
-            </span>
-          </span>
-        </p>
-      </div>
-      <button
-        aria-expanded
-        aria-label={row.name}
-        className="col-start-2 row-start-1 grid size-5 place-items-center self-start justify-self-end text-fg-muted outline-none focus-visible:ring-2 focus-visible:ring-action lg:col-start-3"
-        onClick={onToggle}
-        ref={toggleRef}
-        type="button"
-      >
-        <Icon className="rotate-180" name="chevronDown" size={16} />
-      </button>
-      <div
-        className="col-span-2 mt-4 min-w-0 cursor-auto lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:mt-0"
-        data-result-body
-      >
-        {row.context.length > 0 && (
-          <div className="mb-5 grid gap-3">
-            <p className="t-meta text-fg-secondary">
-              {m.assignment_from_question({ number: row.number })}
-            </p>
-            {row.context.map((block, i) => (
-              <QuestionBlockView block={block} key={i} />
-            ))}
-          </div>
-        )}
-        <ResultBody
-          assignment={assignment}
-          attempt={attempt}
-          commentHere={row.last}
-          question={question}
-          staff={staff}
-        />
-      </div>
-    </li>
   );
 }
 
@@ -844,14 +562,19 @@ export function ResultBody({
   attempt,
   commentHere,
   question,
+  questionNumber,
   staff,
 }: {
   assignment: Assignment;
   attempt: AssignmentAttempt;
-  /** The question's comment shows and is written on its last row; a part
-   * row before it saves its marks keeping the comment as it is. */
+  /** The question's comment shows and is written here; without it its marks
+   * save keeping the comment as it is. */
   commentHere: boolean;
   question: AssignmentGradedQuestion;
+  /** A member's Results: the question drawn whole as the Questions tab draws
+   * it, each part's answer and marks where its answer would be (Epo
+   * 2026-11-22). Without it, Grading's answer alone. */
+  questionNumber?: number;
   staff: boolean;
 }) {
   const { mutate, isPending } = useMarkAssignmentAnswer(
@@ -908,6 +631,117 @@ export function ResultBody({
           userToast({ title: m.assignment_mark_saved(), variant: 'success' }),
       }
     );
+  const whole = questionNumber !== undefined;
+  const partView = (part: AssignmentGradedPart) =>
+    modelMarked(part.answer.type) ? (
+      <OpenPart
+        // A part answered in the canvas above shows its drawing.
+        answer={partAnswer(question, attempt.answers, part)}
+        editing={staff}
+        items={items[part.id] ?? []}
+        key={part.id}
+        onItem={(i, value) =>
+          setItems((all) => ({
+            ...all,
+            [part.id]: (all[part.id] ?? []).map((v, j) =>
+              j === i ? value : v
+            ),
+          }))
+        }
+        part={part}
+        showKeys={attempt.showAnswers}
+      />
+    ) : (
+      <ClosedPart
+        answers={attempt.answers}
+        editing={staff}
+        key={part.id}
+        mark={closed[part.id] ?? null}
+        onMark={(value) => setClosed((all) => ({ ...all, [part.id]: value }))}
+        part={part}
+        question={question}
+        showKeys={attempt.showAnswers}
+        whole={whole}
+      />
+    );
+  const graded = (id: string) => question.parts.find((p) => p.id === id);
+  const footer = staff ? (
+    <div className="flex flex-col gap-2">
+      {commentHere && (
+        <Input
+          aria-label={m.assignment_comment_for({ name: attempt.userName })}
+          onChange={(event) => setComment(event.target.value)}
+          placeholder={m.assignment_comment_for({
+            name: attempt.userName,
+          })}
+          value={comment}
+        />
+      )}
+      <div className="flex justify-end">
+        {/* The mark fields' height, as Grade's Save (GradeField). */}
+        <Button
+          className="h-8"
+          disabled={isPending || !complete}
+          onClick={save}
+          size="sm"
+        >
+          {m.assignment_save_marks()}
+        </Button>
+      </div>
+    </div>
+  ) : (
+    commentHere && question.comment && <CommentLine question={question} />
+  );
+  if (whole) {
+    const awarded = question.parts.reduce((n, p) => n + (p.awarded ?? 0), 0);
+    return (
+      <div className="flex flex-col gap-5">
+        <QuestionView
+          question={question as unknown as Question}
+          questionNumber={questionNumber}
+          renderAnswer={(shown) => {
+            const part = graded(shown.id);
+            return (
+              part && (
+                <div className="col-[2/-1] flex min-w-0 flex-col gap-5">
+                  {partView(part)}
+                </div>
+              )
+            );
+          }}
+          // A gaps part's text with the member's answers in its blanks.
+          renderBlock={(block, _, section) => {
+            const part = graded(section.partId ?? '');
+            return part?.answer.type === 'gaps' &&
+              block.type === 'text' &&
+              !section.solution ? (
+              <GapText
+                block={block}
+                disabled
+                part={part}
+                review={attempt.showAnswers}
+                value={attempt.answers[part.id] as Answer}
+              />
+            ) : (
+              <QuestionBlockView block={block} />
+            );
+          }}
+          renderMarks={(shown) => {
+            const part = graded(shown.id);
+            return part && <PartMark part={part} question={question} />;
+          }}
+          totalMarks={
+            <MarkOf
+              awarded={awarded}
+              marks={questionMarks(question as Question)}
+              waiting={question.parts.some((p) => p.pending)}
+            />
+          }
+        />
+        {footer}
+      </div>
+    );
+  }
   const extra = extraBlocks(question);
   return (
     <div className="flex flex-col gap-5">
@@ -918,67 +752,57 @@ export function ResultBody({
           ))}
         </div>
       )}
-      {question.parts.map((part) =>
-        modelMarked(part.answer.type) ? (
-          <OpenPart
-            answer={attempt.answers[part.id]}
-            editing={staff}
-            items={items[part.id] ?? []}
-            key={part.id}
-            onItem={(i, value) =>
-              setItems((all) => ({
-                ...all,
-                [part.id]: (all[part.id] ?? []).map((v, j) =>
-                  j === i ? value : v
-                ),
-              }))
-            }
-            part={part}
-            showKeys={attempt.showAnswers}
-          />
-        ) : (
-          <ClosedPart
-            answers={attempt.answers}
-            editing={staff}
-            key={part.id}
-            mark={closed[part.id] ?? null}
-            onMark={(value) =>
-              setClosed((all) => ({ ...all, [part.id]: value }))
-            }
-            part={part}
-            question={question}
-            showKeys={attempt.showAnswers}
-          />
-        )
-      )}
-      {staff ? (
-        <div className="flex flex-col gap-2">
-          {commentHere && (
-            <Input
-              aria-label={m.assignment_comment_for({ name: attempt.userName })}
-              onChange={(event) => setComment(event.target.value)}
-              placeholder={m.assignment_comment_for({
-                name: attempt.userName,
-              })}
-              value={comment}
-            />
-          )}
-          <div className="flex justify-end">
-            {/* The mark fields' height, as Grade's Save (GradeField). */}
-            <Button
-              className="h-8"
-              disabled={isPending || !complete}
-              onClick={save}
-              size="sm"
-            >
-              {m.assignment_save_marks()}
-            </Button>
-          </div>
-        </div>
-      ) : (
-        commentHere && question.comment && <CommentLine question={question} />
-      )}
+      {question.parts.map(partView)}
+      {footer}
     </div>
+  );
+}
+
+/** A part's outcome and mark beside it: its square, its word (gone on narrow
+ * questions) and "1 / 2". */
+function PartMark({
+  part,
+  question,
+}: {
+  part: AssignmentGradedPart;
+  question: AssignmentGradedQuestion;
+}) {
+  const outcome = questionOutcome({ ...question, parts: [part] });
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      <span
+        aria-hidden
+        className={cn('size-2.5 shrink-0 rounded-xs', OUTCOME_SQUARE[outcome])}
+      />
+      <span className="@max-[36rem]/question:sr-only">
+        {OUTCOME_LABEL[outcome]()}
+      </span>
+      <MarkOf
+        awarded={part.awarded ?? 0}
+        marks={part.marks}
+        waiting={outcome === 'waiting'}
+      />
+    </span>
+  );
+}
+
+/** "1 / 2", the mark bold; "– / 2" while it waits. */
+function MarkOf({
+  awarded,
+  marks,
+  waiting,
+}: {
+  awarded: number;
+  marks: number;
+  waiting: boolean;
+}) {
+  return (
+    <span>
+      <b className="font-bold text-fg">
+        {waiting ? '–' : formatPoints(awarded)}
+      </b>
+      {` / ${formatPoints(marks)}`}
+    </span>
   );
 }
 
@@ -1006,10 +830,9 @@ function CommentLine({ question }: { question: AssignmentGradedQuestion }) {
 
 /** A written answer: the answer, the marking points with their marks, and the
  * worked solution folded away. Grading shows its answers the same way (Epo
- * 2026-11-19), with the AI's marks in a column of their own (`aiColumn`) and
- * a paper's pages in place of a typed answer (`paper`). */
+ * 2026-11-19), its Awarded marks starting as the AI's (Epo 2026-11-23: no AI
+ * column), and a paper's pages in place of a typed answer (`paper`). */
 export function OpenPart({
-  aiColumn = false,
   answer,
   editing,
   items,
@@ -1018,7 +841,6 @@ export function OpenPart({
   part,
   showKeys,
 }: {
-  aiColumn?: boolean;
   answer: unknown;
   editing: boolean;
   items: (number | null)[];
@@ -1036,7 +858,7 @@ export function OpenPart({
         <p className={label}>{m.assignment_your_answer()}</p>
         {paper ? (
           <div className="mt-1.5">{paper}</div>
-        ) : part.answer.type === 'drawing' ? (
+        ) : part.answer.type === 'canvas' ? (
           // Drawn from its board, with no frame (R2).
           <div className="mt-1.5">
             {answer ? (
@@ -1096,24 +918,12 @@ export function OpenPart({
         // across both columns with no gap (Epo 2026-11-18); the Awarded
         // column pads itself.
         // By its own width, as Grading's pane is narrower than the screen:
-        // under 448px the chips go and the AI's marks take only their width.
+        // under 448px the chips go and the mark takes only its width.
         <div className="@container">
-          <div
-            className={cn(
-              'grid items-center',
-              aiColumn
-                ? '@md:grid-cols-[minmax(0,1fr)_72px_210px] grid-cols-[minmax(0,1fr)_auto_auto]'
-                : '@md:grid-cols-[minmax(0,1fr)_210px] grid-cols-[minmax(0,1fr)_auto]'
-            )}
-          >
+          <div className="grid @md:grid-cols-[minmax(0,1fr)_210px] grid-cols-[minmax(0,1fr)_auto] items-center">
             <p className={cn(label, 'border-divider border-b pb-1.5')}>
               {m.assignment_marking_points()}
             </p>
-            {aiColumn && (
-              <p className={cn(label, 'border-divider border-b pb-1.5 pl-3')}>
-                {m.assignment_col_ai()}
-              </p>
-            )}
             <p className={cn(label, 'border-divider border-b pb-1.5 pl-3')}>
               {m.assignment_awarded()}
             </p>
@@ -1124,13 +934,6 @@ export function OpenPart({
                   <div className="flex items-center self-stretch border-divider border-b py-2.5">
                     <TextView marks text={item.text} />
                   </div>
-                  {aiColumn && (
-                    <div className="t-meta flex items-center self-stretch whitespace-nowrap border-divider border-b pl-3 text-fg-muted">
-                      {part.aiAwards
-                        ? markText(part.aiAwards[i] ?? 0, item.marks)
-                        : '–'}
-                    </div>
-                  )}
                   <div className="flex min-h-11 items-center gap-2 self-stretch border-divider border-b py-2 pl-3">
                     {editing ? (
                       <MarkField
@@ -1198,6 +1001,7 @@ function ClosedPart({
   part,
   question,
   showKeys,
+  whole = false,
 }: {
   answers: AssignmentAttempt['answers'];
   editing: boolean;
@@ -1206,22 +1010,34 @@ function ClosedPart({
   part: AssignmentGradedPart;
   question: AssignmentGradedQuestion;
   showKeys: boolean;
+  /** The question is drawn whole around it, its blocks and groups drawn. */
+  whole?: boolean;
 }) {
   const single = question.parts.length === 1;
   const shown = {
     ...question,
+    ...(whole && { groups: [] }),
     parts: [
       {
         ...part,
-        // A single part's blocks head the row (extraBlocks); a gaps part keeps
-        // its text, the gaps being in it.
-        blocks: single && part.answer.type !== 'gaps' ? [] : part.blocks,
+        // A single part's blocks head the row (extraBlocks), a whole
+        // question's draws them all; else a gaps part keeps its text, the
+        // gaps being in it.
+        blocks:
+          whole || (single && part.answer.type !== 'gaps') ? [] : part.blocks,
+        ...(whole && { group: undefined }),
       },
     ],
     stem: [],
   } as unknown as Question;
   return (
-    <div className="flex flex-col gap-2">
+    <div
+      className={cn(
+        'flex flex-col gap-2',
+        // The question's view draws its text, so its own header is empty.
+        whole && '[&>article>header]:hidden'
+      )}
+    >
       <QuestionRunner
         answers={answers}
         disabled

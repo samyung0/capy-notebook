@@ -56,8 +56,15 @@ const (
 	QuestionID        = 128
 	QuestionParts     = 26
 	QuestionBlocks    = 40
-	QuestionText      = 12_000
-	QuestionMetadata  = 1_000
+	// QuestionImages caps a question's images, its stem, groups and parts
+	// (not solutions): each goes to the grader with the part (Epo 2026-11-23,
+	// 4 from 5). A drawn canvas is no image: QuestionCanvases caps those.
+	QuestionImages = 4
+	// QuestionCanvases caps a question's canvases (Epo 2026-11-23): its canvas
+	// blocks in the stem, groups and parts and its drawn sample answers.
+	QuestionCanvases = 4
+	QuestionText     = 12_000
+	QuestionMetadata = 1_000
 	// QuestionDescription bounds an image's or graph's description outside
 	// the bank (quizzes and notes); bank questions take QuestionText.
 	QuestionDescription  = 500
@@ -123,9 +130,11 @@ const (
 	// count (Epo 2026-11-15, todo-question-topics.md).
 	QuestionTopics = 5
 	// A Make a quiz run reads at most ExtractionPaperFiles question files and
-	// ExtractionAnswerFiles answer files, and at most ExtractionPages picked pages across
-	// them (Epo 2026-11-05). Each saved question costs ExtractionQuestionCredits.
-	ExtractionPages           = 40
+	// ExtractionAnswerFiles answer files (Epo 2026-11-05), and at most ExtractionPages
+	// picked pages across them (Epo 2026-11-21, down from 40): one call carries every
+	// page image, and Cloudflare refuses one over 32. Each saved question costs
+	// ExtractionQuestionCredits.
+	ExtractionPages           = 30
 	ExtractionPaperFiles      = 5
 	ExtractionAnswerFiles     = 3
 	ExtractionQuestionCredits = 4
@@ -133,11 +142,19 @@ const (
 	// Make a quiz question paper (Epo 2026-11-14). apimodel.GenerateReq's
 	// maxItems repeats it.
 	GenerateFiles = 5
-	// A drawing answer's saved board (undo history stripped) and its marking
-	// image, each at most this many bytes (Epo 2026-11-06: 250 KB and 300 KB),
-	// the image at most DrawingImageSide px on its longer side, as the browser
-	// makes it (Epo 2026-11-06, "go with 1568px").
-	DrawingBoardBytes = 250 << 10
+	// A Generate run reads at most GenerateScopeFiles indexed items of its
+	// scope, files then notes in topic order (Epo 2026-11-21); the dialog says
+	// so past it.
+	GenerateScopeFiles = 20
+	// GenerateInstructions bounds the optional instructions a Generate run
+	// sends the model as the user's own words, in characters (Epo 2026-11-21).
+	GenerateInstructions = 1_000
+	// A saved board (undo history stripped) and its marking image, each at
+	// most this many bytes (Epo 2026-11-06: 250 KB and 300 KB; the board 400 KB
+	// since 2026-11-23, as a student's canvas answer holds the teacher's canvas
+	// too), the image at most DrawingImageSide px on its longer side, as the
+	// browser makes it (Epo 2026-11-06, "go with 1568px").
+	DrawingBoardBytes = 400 << 10
 	DrawingImageBytes = 300 << 10
 	DrawingImageSide  = 1_568
 	// A picture pasted on a drawing answer's board, after the browser's
@@ -165,6 +182,8 @@ var QuestionBounds = map[string]int{
 	"QUESTION_ID_MAX":                QuestionID,
 	"QUESTION_PARTS_MAX":             QuestionParts,
 	"QUESTION_BLOCKS_MAX":            QuestionBlocks,
+	"QUESTION_IMAGES_MAX":            QuestionImages,
+	"QUESTION_CANVASES_MAX":          QuestionCanvases,
 	"QUESTION_TEXT_MAX":              QuestionText,
 	"QUESTION_METADATA_MAX":          QuestionMetadata,
 	"QUESTION_DESCRIPTION_MAX":       QuestionDescription,

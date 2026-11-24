@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import json
-
 import pytest
 
-from pipeline.registry import ModelConfig
-from pipeline.retrieval import accounting, compact, pending
+from pipeline.retrieval import pending
 
 
 def _sources(after="latest exact source"):
@@ -27,26 +24,6 @@ def _sources(after="latest exact source"):
                 ],
             }
         ]
-    )
-
-
-@pytest.fixture
-def budget(monkeypatch):
-    monkeypatch.setattr(compact, "usable_input_limit", lambda _spec, **_kwargs: 1000)
-
-    def measure(messages, _spec, **_kwargs):
-        return accounting.ContextComposition(
-            conversation_tokens=len(json.dumps(messages, ensure_ascii=False)) // 4
-        )
-
-    monkeypatch.setattr(compact, "request_context", measure)
-    return ModelConfig(
-        version=1,
-        provider_name="Test",
-        model_name="Test",
-        provider_slug="test",
-        model_slug="test",
-        context_window_tokens=20000,
     )
 
 
@@ -93,136 +70,6 @@ def test_a_reload_carries_what_the_turn_read_except_the_changed_document():
     again = _sources()
     again.carry(previous, "f_1")
     assert "latest exact source" in again.for_read("f_1")
-
-
-async def test_generation_accepts_pending_only_sources_and_refuses_oversized_evidence(
-    budget, monkeypatch
-):
-    from pipeline.retrieval import workflows
-
-    changes = _sources()
-
-    async def load(*_args):
-        return changes
-
-    async def gather(**_kwargs):
-        return "", []
-
-    monkeypatch.setattr(pending, "load", load)
-    monkeypatch.setattr(workflows, "gather_context", gather)
-    args = {
-        "workspace_id": "ws",
-        "file_ids": ["f_1"],
-        "instruction": "make cards",
-        "scope": "source",
-        "model": budget,
-        "locale": "en",
-    }
-    assert (await workflows.generation_context(**args))[2] is changes
-    changes.files = _sources("exact" * 2000).files
-    with pytest.raises(workflows.PendingSourceContextTooLarge) as raised:
-        await workflows.generation_context(**args)
-    assert raised.value.file_ids == ["f_1"]
-
-
-@pytest.mark.parametrize("with_pending", [False, True])
-async def test_generation_fits_full_provider_request_without_trimming_pending(
-    monkeypatch, with_pending
-):
-    from pipeline.prompts import generate as generate_prompts
-    from pipeline.retrieval import workflows
-
-    spec = ModelConfig(
-        version=1,
-        provider_name="OpenAI",
-        model_name="Test",
-        provider_slug="openai",
-        model_slug="test",
-        context_window_tokens=20_000,
-        thinking_levels=("instant",),
-        default_thinking="instant",
-    )
-    changes = (
-        _sources("Exact current facts. " * 50)
-        if with_pending
-        else pending.PendingSources()
-    )
-    expected_changes = changes.message()
-    read_rows = []
-    sent = []
-
-    async def load(*_args):
-        return changes
-
-    async def outline(_workspace_id):
-        return {
-            "topics": [],
-            "files": [{"id": "f_1", "name": "Source", "chunks": 100}],
-        }
-
-    async def read(**kwargs):
-        read_rows.extend(
-            {
-                "id": str(i),
-                "file_id": "f_1",
-                "file_name": "Source",
-                "chunk_idx": i,
-                "section_path": [],
-                "text": "Ordinary source passage. " * 60,
-                "page_start": None,
-                "page_end": None,
-                "regions": [],
-            }
-            for i in range(kwargs["count"])
-        )
-        return read_rows
-
-    async def complete(messages, **_kwargs):
-        sent.extend(messages)
-        return "Generated cards"
-
-    monkeypatch.setattr(pending, "load", load)
-    monkeypatch.setattr(workflows.store, "workspace_outline", outline)
-    monkeypatch.setattr(workflows.store, "read_file_range", read)
-    monkeypatch.setattr(workflows.models, "complete_text", complete)
-    context, passages, captured = await workflows.generation_context(
-        workspace_id="ws",
-        file_ids=None,
-        instruction="Make cards",
-        scope="",
-        model=spec,
-        locale="en",
-    )
-    assert 0 < len(passages) < len(read_rows)
-    assert (
-        await workflows.produce(
-            instruction="Make cards",
-            context=context,
-            scope="",
-            model=spec,
-            locale="en",
-            pending_sources=captured,
-        )
-        == "Generated cards"
-    )
-    assert compact.fits_request(sent, spec)
-    # Measuring keeps each message's estimate on it under "_tokens".
-    assert [
-        {k: v for k, v in message.items() if k != "_tokens"}
-        for message in sent
-        if message.get("_kind") == "pending_sources"
-    ] == ([expected_changes] if with_pending else [])
-    next_passage = workflows.Passage.from_row(read_rows[len(passages)])
-    larger = context + "\n\n" + next_passage.as_context(len(passages) + 1)
-    assert not compact.fits_request(
-        pending.inject(
-            generate_prompts.generate_messages(
-                instruction="Make cards", context=larger, scope="", locale="en"
-            ),
-            expected_changes,
-        ),
-        spec,
-    )
 
 
 def _png() -> bytes:
@@ -395,9 +242,9 @@ async def test_note_changes_ride_with_the_turn_and_a_new_note_index_invalidates_
             {"workspaceId": "ws", "materialIds": ["m_1"]},
         )
     ]
-    message = sources.message()
-    assert sources.pending and '"blockId":"p2"' in message["content"]
-    assert "nuclei" in message["content"] and pending.NOTICE not in message["content"]
+    shown = sources.for_read("m_1")
+    assert sources.pending and '"blockId":"p2"' in shown
+    assert "nuclei" in shown and pending.NOTICE not in shown
     await sources.validate()
     gateway["identities"] = [("m_1", "rgc_b")]
     with pytest.raises(pending.SourceChanged):
@@ -434,7 +281,7 @@ async def test_an_unreadable_note_change_says_sources_may_be_outdated(gateway):
     gateway["notes"] = pending.requests.HTTPError("502")
     sources = await pending.load("ws")
     assert sources.notes_unread and not sources.notes
-    assert sources.message()["content"] == pending.NOTICE
+    assert sources.for_read("m_1") == pending.NOTICE
 
 
 async def test_a_note_data_placeholder_resolves_to_its_block_text(gateway, monkeypatch):
@@ -574,7 +421,7 @@ async def test_only_documents_read_are_validated_and_resolvable(monkeypatch):
     sources._baseline = pending._identities(await snapshot("ws", None, evidence=False))
     sources.notes = [_note_change("data", "ch")]
     sources.read_ids = set()
-    assert sources.message() is None and not sources.pending
+    assert not sources.pending
 
     published["f_2"] = "rgc_b"  # never read: not checked
     await sources.validate()
@@ -588,7 +435,7 @@ async def test_only_documents_read_are_validated_and_resolvable(monkeypatch):
         )
     sources.read("f_1")
     await sources.validate()
-    assert "latest exact source" in sources.message()["content"]
+    assert [f["fileId"] for f in sources.shown_files] == ["f_1"]
     sources.read("f_2")  # read, but no changes passed on: not checked
     await sources.validate()
     published["f_1"] = "rgc_b"

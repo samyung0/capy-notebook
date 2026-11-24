@@ -1,0 +1,68 @@
+{
+  "name": "canvas-shared-stem",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "layout": "paper",
+    "labels": "letters",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Both parts are answered on this canvas."
+      },
+      {
+        "type": "canvas",
+        "board": "asset_board_1",
+        "image": "asset_image_1"
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Mark the right angle."
+          }
+        ],
+        "answer": {
+          "type": "canvas",
+          "shared": true
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Right angle marked",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      },
+      {
+        "id": "p2",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Label the hypotenuse."
+          },
+          {
+            "type": "canvas"
+          }
+        ],
+        "answer": {
+          "type": "canvas",
+          "shared": true
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Hypotenuse labelled",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      }
+    ]
+  }
+}

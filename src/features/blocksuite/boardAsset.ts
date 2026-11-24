@@ -4,7 +4,8 @@ import { fromBase64, toBase64 } from './base64';
 import type { BoardImages } from './boardImages';
 
 /** A board kept as a material's `board` editor asset: its saved document gzipped
- * (a drawn sample answer, Q3). Fetched and inflated in the browser. */
+ * (a drawn sample answer, Q3; a quiz's drawn canvas, Epo 2026-11-23). Fetched
+ * and inflated in the browser. */
 
 export const gzipBoard = (doc: string) =>
   new Response(
@@ -23,23 +24,29 @@ const fetched = new Map<string, Promise<string>>();
 export const rememberBoardAsset = (assetId: string, doc: string) =>
   fetched.set(assetId, Promise.resolve(doc));
 
-/** A board asset's document, base64, as `mountDrawingBoard` takes it. A failure is
- * fetched again on the next ask, not retried here. */
-export function boardFromAsset(assetId: string): Promise<string> {
+/** A board asset's document, base64, as `mountDrawingBoard` takes it: from
+ * `url` where the page names one (a shared page's asset route), else through
+ * the signed-in resolve. A failure is fetched again on the next ask, not
+ * retried here. */
+export function boardFromAsset(assetId: string, url?: string): Promise<string> {
   let board = fetched.get(assetId);
   if (!board) {
-    board = assetLink(assetId, new AbortController().signal, false)
-      .then((link) => fetch(link.url))
-      .then(async (response) => {
-        if (!response.ok || !response.body)
-          throw new Error(`board asset fetch failed: ${response.status}`);
-        const inflated = response.body.pipeThrough(
-          new DecompressionStream('gzip')
-        );
-        return toBase64(
-          new Uint8Array(await new Response(inflated).arrayBuffer())
-        );
-      });
+    board = (
+      url
+        ? fetch(url)
+        : assetLink(assetId, new AbortController().signal, false).then((link) =>
+            fetch(link.url)
+          )
+    ).then(async (response) => {
+      if (!response.ok || !response.body)
+        throw new Error(`board asset fetch failed: ${response.status}`);
+      const inflated = response.body.pipeThrough(
+        new DecompressionStream('gzip')
+      );
+      return toBase64(
+        new Uint8Array(await new Response(inflated).arrayBuffer())
+      );
+    });
     board.catch(() => fetched.delete(assetId));
     fetched.set(assetId, board);
   }

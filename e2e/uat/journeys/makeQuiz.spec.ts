@@ -16,6 +16,7 @@ import {
   makeQuizFromPanel,
   pageSheet,
   panelTakesUpload,
+  pickExtract,
   QUIZ_PAPERS,
   quizDialog,
   quizPanel,
@@ -309,6 +310,7 @@ for (const { format, name } of QUIZ_PAPERS) {
     await page
       .getByRole('button', { name: m.dashboard_make_quiz() })
       .click({ timeout: 30_000 });
+    await pickExtract(page);
     await quizDialog(page)
       .getByRole('button', { name: m.file_choose() })
       .first()

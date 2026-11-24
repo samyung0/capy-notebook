@@ -386,3 +386,33 @@ language of the reason.
 
 The small compatibility pilot is in [`PILOT_RESULTS.md`](reports/2026-09-05-pilot.md).
 Its result files are separate from the larger test set.
+
+## Typed answers in batches, and question figures (2026-11-23)
+
+Two small tests against the production prompt, read from
+`pipeline/pipeline/retrieval/grading.py`, on the grading pin. Neither needs a model download.
+
+- `scripts/online_batching.py <env file> <out dir>` grades 68 fixture answers one part a call, then four parts a call with a drafted batch section.
+- `uv run --with pillow python scripts/question_figures.py <env file> <out dir> [conditions]` draws eight figure questions (`fixtures/question-figures.json`) and grades their answers with the figure as text only, or as an image.
+
+Findings are in [2026-11-23-online-batching-and-figures.md](reports/2026-11-23-online-batching-and-figures.md).
+
+## Canvas answers (2026-11-23)
+
+A canvas part is answered on the question's own canvas, so the marking image holds the teacher's content too.
+
+- `uv run --with pillow python scripts/canvas_answers.py <env file> <out dir> [repeats]` draws three canvas questions (a labelled plant cell, a water cycle with a word bank on the canvas, a table of squares), three answers each, the third a worked example in the student's pen that the marking scheme names, and grades them with DRAWN_SECTION's line as it was, two canvas lines, the question's content faded at 40 % and at 25 % (production), and the question's canvas as a separate first image.
+
+Findings are in [2026-11-23-canvas-answers.md](reports/2026-11-23-canvas-answers.md).
+
+
+## Canvas levels (2026-11-23)
+
+Parts may answer in the stem's or a group's canvas, so one marking image holds several parts' answers.
+
+- `uv run --with pillow python scripts/canvas_levels.py <env file> <out dir> [repeats] [shared,batch] [questions]` has two studies.
+  - **shared** grades each part of five shared-canvas questions on its own, with `DRAWN_SECTION` as it was and with the shared-canvas line. One part's answer sits beside the other's, or holds its value.
+  - **batch** sends two four-part `/grade-batch` calls in the per-part format and in the format that sends each image once, and counts their images and prompt tokens.
+- `canvas_answers.py … 1 cell,cycle,squares faint` re-checks own-canvas answers with the line.
+
+Findings are in [2026-11-23-canvas-levels.md](reports/2026-11-23-canvas-levels.md).

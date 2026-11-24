@@ -162,6 +162,82 @@ it('asks for the file of an image not uploaded yet', () => {
   ]);
 });
 
+it('names the image limit past it', () => {
+  const [question] = exampleQuestions;
+  const image: QuestionBlock = {
+    height: 20,
+    image: { assetId: 'asset_1' },
+    type: 'image',
+    width: 20,
+  };
+  const stem = Array.from({ length: limits.QUESTION_IMAGES_MAX + 1 }, () => ({
+    ...image,
+  }));
+  expect(messages({ ...question, stem })).toEqual([
+    m.question_validation_images({ max: limits.QUESTION_IMAGES_MAX }),
+  ]);
+});
+
+// A canvas (Epo 2026-11-23): one in the stem, a group or a part, never an
+// explanation or the bank, which two editors' adds at once may make two; a
+// canvas part needs its own or, shared, one above; four a question.
+it('words each canvas rule', () => {
+  const [question] = exampleQuestions;
+  const [part] = question.parts;
+  const canvas = { type: 'canvas' } as const;
+  const withBlocks = (blocks: QuestionBlock[]): Question => ({
+    ...question,
+    parts: [{ ...part, blocks: [...part.blocks, ...blocks] }],
+  });
+  expect(messages(withBlocks([canvas, canvas]))).toEqual([]);
+  expect(messages(withBlocks([canvas, canvas, canvas]))).toEqual([
+    m.question_validation_canvas_count(),
+  ]);
+  expect(messages({ ...question, stem: [canvas, canvas] })).toEqual([]);
+  expect(messages({ ...question, stem: [canvas, canvas, canvas] })).toEqual([
+    m.question_validation_canvas_count(),
+  ]);
+  expect(
+    messages({ ...question, parts: [{ ...part, solution: [canvas] }] })
+  ).toEqual([m.question_validation_canvas_place()]);
+  for (const bank of [withBlocks([canvas]), { ...question, stem: [canvas] }])
+    expect(messages(bank, true)).toEqual([m.question_validation_bank_canvas()]);
+  const canvasPart = (shared: boolean): Question => ({
+    ...question,
+    parts: [
+      {
+        ...part,
+        answer: shared ? { shared: true, type: 'canvas' } : { type: 'canvas' },
+        markscheme: [{ marks: 1, text: 'Labels it.' }],
+      },
+    ],
+  });
+  expect(messages(canvasPart(false))).toEqual([
+    m.question_validation_canvas_part(),
+  ]);
+  expect(messages(canvasPart(true))).toEqual([
+    m.question_validation_canvas_shared(),
+  ]);
+  expect(messages({ ...canvasPart(true), stem: [canvas] })).toEqual([]);
+  // Four canvases pass; a drawn sample answer is a fifth.
+  const [own] = canvasPart(false).parts;
+  const four: Question = {
+    ...question,
+    parts: [{ ...own, blocks: [...own.blocks, canvas, canvas] }],
+    stem: [canvas, canvas],
+  };
+  expect(messages(four)).toEqual([]);
+  const sample = { board: 'asset_board', image: 'asset_image' };
+  expect(
+    messages({
+      ...four,
+      parts: [{ ...four.parts[0], answer: { sample, type: 'canvas' } }],
+    })
+  ).toEqual([
+    m.question_validation_canvases({ max: limits.QUESTION_CANVASES_MAX }),
+  ]);
+});
+
 // Epo 2026-11-22: an open part is worth its items' total, which two
 // editors' items merged at once may take up to twice the cap; the bank's
 // questions stay at the cap.

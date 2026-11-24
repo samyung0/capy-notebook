@@ -109,8 +109,10 @@ export function WorkspaceDashboard({
       </header>
       <AccountStatusBanner />
       {practises && <ContinueCards workspaceId={workspace.id} />}
-      {/* A class's, and anywhere the tasks its viewer set themself. */}
-      <TodoSection manages={manages} workspace={workspace} />
+      {/* A class's only: nothing is given out in a personal workspace. */}
+      {workspace.kind === 'class' && (
+        <TodoSection manages={manages} workspace={workspace} />
+      )}
       {empty && <WorkspaceEmpty onUpload={canAdd ? onUpload : undefined} />}
       {/* Recent files load as their cards' shapes (Epo 2026-11-12). */}
       {!recent && (

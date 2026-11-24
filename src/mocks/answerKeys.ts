@@ -6,6 +6,7 @@ import {
   type QuestionPart,
   shuffledOrder,
 } from '@/features/questions/types';
+import { partAnswer } from '@/features/quizzes/drawing/canvasParts';
 import { isDrawingValue } from '@/features/quizzes/drawing/drawingValue';
 import {
   type Answer,
@@ -65,8 +66,10 @@ export function learnerView(question: Question): LearnerQuestion {
         case 'open':
           learner = { type: answer.type };
           break;
-        case 'drawing':
-          learner = { type: 'drawing' };
+        case 'canvas':
+          learner = answer.shared
+            ? { shared: true, type: 'canvas' }
+            : { type: 'canvas' };
           break;
       }
       return {
@@ -116,8 +119,12 @@ export function gradeQuestions(
     parts: question.parts.map((part): QuestionPart => {
       if (part.answer.type === 'open')
         return applyItemAwards(part, mockGrader(part, answers[part.id]));
-      if (part.answer.type === 'drawing')
-        return applyItemAwards(part, mockDrawing(part, answers[part.id]));
+      // A part answered in the canvas above is marked on its drawing.
+      if (part.answer.type === 'canvas')
+        return applyItemAwards(
+          part,
+          mockDrawing(part, partAnswer(question, answers, part))
+        );
       const { awarded, items } = scorePart(part, answers[part.id]);
       return part.answer.type === 'matching' || part.answer.type === 'gaps'
         ? { ...part, awarded, itemResults: items }

@@ -166,7 +166,7 @@ it('offers Read papers again under manual marking while a paper waits to be read
   expect(again).toBeDefined();
   // Manual grading grades, it has nothing to approve (Epo 2026-11-20).
   expect(document.body.textContent).toContain(m.assignment_to_grade());
-  expect(document.body.textContent).toContain(m.assignment_next_to_grade());
+  expect(document.body.textContent).toContain(m.assignment_start_grading());
   expect(document.body.textContent).not.toContain(
     m.assignment_section_to_approve()
   );

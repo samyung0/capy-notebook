@@ -5,7 +5,7 @@ import { ItemCard, itemMenuIcon } from '@/components/app/ItemCard';
 import type { ListView } from '@/components/app/ListToolbar';
 import { Menu } from '@/components/ui/Menu';
 import { relativeTime } from '@/features/materials/MaterialListCard';
-import { assignmentPage } from '@/features/study/assignments/assignmentPage';
+import { assignmentsLink } from '@/features/study/studyRoutes';
 import { m } from '@/i18n';
 import { fileIconName } from '@/lib/fileIcons';
 import { formatFileSize } from './fileUtils';
@@ -17,9 +17,8 @@ const resultLink = (item: SubmittedPaper): LinkProps =>
         params: { attemptId: item.attemptId },
         to: '/quizzes/attempts/$attemptId',
       }
-    : assignmentPage({
-        id: item.assignmentId,
-        workspaceId: item.workspaceId ?? '',
+    : assignmentsLink(item.workspaceId ?? '', {
+        assignment: item.assignmentId,
       });
 
 /** A file the caller handed in (Epo 2026-11-08, mock F1), listed once marked

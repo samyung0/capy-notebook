@@ -53,6 +53,7 @@ clone or charged to storage.
 | `review_answers (session_id, material_id, item_id, kind, rating, correct, total, answers, graded, answered_at)` | One answered item of a session: a card's rating, or a question's rating, marks (`correct` of `total`), answers and graded question with its key. |
 | `attempts.kind`, `attempts.started_at` | Migration `0094_flashcard_attempts.sql`. Quiz and flashcard attempts share `attempts`: `kind` is `quiz` or `flashcards`; `started_at` is the browser's start time (null when not sent, and never after the end), so results show minutes. A flashcard attempt keeps its cards in `questions` (`AttemptCard`: id, front, back, image, every rating in order, cards in the order first rated), `correct` the cards whose first rating is Good or Easy, `total` the cards rated, `taken_at` the latest rating. |
 | `answer_events`, `attempts.workspace_id` | Migration `0143_answer_events.sql`: one row per graded part of every checked question, and the workspace an attempt was taken in ([Answer events](#answer-events)). `answer_events.topic_ids` (`0177_answer_event_topics.sql`): the topics at answer time. |
+| `question_answers (user_id, material_id, question_id, attempt_id, answers, graded, answered_at)` | Migration `0191_question_answers.sql`: each person's latest answer to a question, marked (the question as checked, with its key), one row per question, written with its answer events. A marking of an earlier attempt's parts replaces only that attempt's row, so a newer answer stays. Goes with its quiz and with an account purge. Staff open it from a member's lists ([Topic questions](#topic-questions)). |
 | `flashcard_cards (card_id, material_id)` | The old `card_stats` without its review columns: the card-to-set lookup card edits, deletes, listing counts and clone use. `card_id` is a global key, so clones mint new card ids. |
 
 `study_progress` cascades with its workspace;
@@ -163,6 +164,9 @@ result body resetting the session's list.
 | `GET /api/workspaces/{id}/study/topics` | `StudyTopics`, Study → Overview's Topics: each topic's standing. Refused (403) to a class's owner and editors. |
 | `GET /api/workspaces/{id}/study/members` | `MembersProgress`, Study → Members: each viewer member's marks, practice this week, full storage and topic standings, and the topic columns, read for the whole class in a fixed number of queries. A class's owner and editor members only: everyone else (its viewer members, a link editor, a nonmember) and a personal workspace 404; the store refuses a member with `ErrForbidden`, which the API answers as 404 too. |
 | `GET /api/workspaces/{id}/study/members/{memberId}` | `MemberProfile`, a member's profile: assignments, topics, questions still missed, recent work. The same rule; a `memberId` who isn't this class's viewer member (staff, removed, another class's) 404. |
+| `GET /api/workspaces/{id}/study/questions?list=&topicId=` | `StudyQuestion`s, a [topic questions](#topic-questions) page: `list` topic (with `topicId`), others or wrong, each question with the caller's latest result and, where they may practise it, its answer-free content. Refused to a class's owner and editors as Summary is; a topic not in the workspace 404. |
+| `GET /api/workspaces/{id}/study/members/{memberId}/questions?list=&topicId=` | The same list for a member, read only (no content, no own practice quizzes), for a class's owner and teaching assistants; refused as the profile is. |
+| `GET /api/workspaces/{id}/study/members/{memberId}/answers/{materialId}/{questionId}` | The member's latest answer to a question their lists show answered: the answers and the question as checked, key and marks included, and when; for the same staff. 404 when the lists don't show it answered or none was kept. |
 | `POST /api/review/ratings` | `{materialId, itemId, rating, session?, attempt?}` for a card; `attempt` (`{id, startedAt}`, minted by the study page when a run begins) adds the rating to that flashcard attempt for a workspace set, creating it with the first rating (`recordCardTx`, under the account lock, as quiz attempts, and the rating lock); another user's, another set's or a quiz attempt's id is 422 (`ErrFlashcardAttempt`); a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |
 | `POST /api/review/check` | `{materialId, itemId, answers, session?}` for a question: grades it on the server (open parts by the grading model), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
 | `POST /api/quizzes/{id}/check` | `{questionId, answers, attemptId?, startedAt?}`: grades one question on the server ([question-bank.md](question-bank.md#answer-keys-and-server-grading)) and adds it to the learner's attempt, whose `AttemptDetail` so far it returns; a missing or unknown `attemptId` (another user's, another quiz's, deleted) starts a new attempt, a question already checked in the attempt is 409. Its side effect is below. |
@@ -216,8 +220,8 @@ read by the topic labels (below) and kept for the mastery model still to come. I
 keeps partial credit, which `review_log`'s ratings drop.
 
 - **Written** by `logAnswerTx` (`server/internal/store/answer_events.go`) in
-  the check's transaction, one row per part, on the two routes that grade
-  parts:
+  the check's transaction, one row per part, with the question's answer kept
+  as its latest in `question_answers`, on the routes that grade parts:
   - `POST /api/quizzes/{id}/check` (`CheckQuizQuestion`): source `quiz`,
     with the attempt's id. Every quiz check belongs to an attempt; there is no
     separate submit.
@@ -422,7 +426,8 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   mode's label and today's reason in words (`reviewReason`),
   and Practise, which starts the suggestion's session (its mode, so due
   practised questions only). Then **Topics** (`TopicsSection.tsx`, the
-  former Summary): one row per topic with its marks squares and Practise.
+  former Summary): one row per topic with its marks squares, the row opening
+  its questions, then **Frequently wrong** ([Topic questions](#topic-questions)).
   Then **All practice** with the list pages' toolbar (`ListToolbar` with
   `inPage`, the section's title in its `before` slot for members; Epo
   2026-11-16, Filter since Epo 2026-11-13: the topics the rows hold, any number picked, no Other files)
@@ -450,32 +455,66 @@ workspace's `study` key, so `invalidateStudy` refreshes it) and the topics.
   waits for Summary. A row opens the quiz in the workspace.
 - Add practice (whoever may edit: a class's staff, a personal workspace's owner
   and editors, whose quiz rows also open the quiz; off in a frozen workspace)
-  opens Add quiz, one dialog with four tabs (Epo 2026-11-11, `AddPractice.tsx`,
+  opens New quiz (Add quiz until Epo 2026-11-20), one dialog with four ways (Epo 2026-11-11, `AddPractice.tsx`,
   at `study/practice?make=files`, so Study stays behind it and Cancel
   returns there; the Dashboard's Make a quiz opens it too, at `?make=files`
   on the workspace's own URL).
-  The tabs run Convert to quiz, Generate quiz, From the bank, Create blank
-  (Epo 2026-11-16), and share one height (680px, at most 88dvh; phones full
-  screen): a tab's body scrolls inside it, so switching tabs or adding files
-  never resizes the dialog, and From the bank's list fills what is left.
-  **Convert to quiz** comes first and opens by default (Epo 2026-11-14). **Create
+  The ways are Extract from file, Generate quiz, From question bank, Create
+  blank (Epo 2026-11-16; Extract from file and From question bank were Convert
+  to quiz and From the bank until Epo 2026-11-20). The dialog opens on them as
+  cards, in place of a tab row (Epo 2026-11-20, board B of the quiz source
+  cards mock, the cards drawn smaller): each card is the shared `Tile` with a
+  `description`, holding a line drawing (`QuizWayArt.tsx`, in theme colours so
+  dark mode follows; From question bank an open archive box with a document
+  pulled up, Create blank a wide dashed card), the way's name and a line on
+  what it does. From sm they sit in two rows (Epo 2026-11-20), three and two
+  for New graded quiz's five, two and two for New quiz's four, and phones list
+  them with the drawing beside the words; the cards' footer has Cancel. Their
+  dialog fits them (Epo 2026-11-20, `other.fit`): as tall as they are and as
+  wide as cards of about 230px (760px, or 520px for four), growing to the
+  ways' one size once one is picked.
+  Picking one opens it under its name, and Back (from sm; the header's arrow on
+  phones) returns to the cards, the way keeping what was picked in it. Every
+  way shares one size (1040px wide since Epo
+  2026-11-20, for From question bank's three columns; 88dvh tall like the pages, with a
+  compact footer, `SimpleDialog`'s `compactFooter`; phones full screen): a way's body scrolls inside it, so moving between ways or adding files
+  never resizes the dialog, and From question bank's list fills what is left.
+  **Extract from file** comes first (Epo 2026-11-14), and a link or reload
+  with files picked (`?make=files&paper=…`, or a later step) opens on it. **Create
   blank** (Create quiz until Epo 2026-11-16) is a gallery like Add file's Create tab: Blank quiz and one template
   per answer type (`quizTemplates.ts`), each tile picturing its example
   question; Create makes "{workspace} quiz {n}" holding that one complete
-  question (none for Blank) and opens it to edit. **Generate quiz** is Make my
-  own practice's form (`useMakePractice`) without Mix in, for everyone, and
-  returns to Practice once made. Its From select marks Topics and Files with
+  question (none for Blank). **Generate quiz** is Make my
+  own practice's form (`useMakePractice`) without Mix in, for everyone. Its From select marks Topics and Files with
   their icons; Files is Convert's field (Choose a file over the chosen rows,
   a searchable menu of the workspace's readable files and notes), at most 5
   (`GENERATE_FILES_MAX`, `fieldlimits.GenerateFiles`, the request's
-  `maxItems`). **Convert to quiz** is Make a quiz from a
-  file's files step: the dialog is `MakeQuizDialog` with its `tabs` slot, so
-  Continue goes on to its pages and run. The step's switch, Hide the quiz,
+  `maxItems`). A run reads at most the first 20 indexed items of its topics
+  (`GENERATE_SCOPE_FILES_MAX`, Epo 2026-11-21); past that Topics' label says
+  "Topics · Uses the first 20 of N files" (`practice_first_files`). A line
+  under the label says the topics' files are scanned, not every page may be
+  read, and individual files give more accurate questions
+  (`practice_topics_scanned`, `Picks`' `hint`). Either way
+  the run fills the model's input: short files go in whole and a longer one is
+  read in windows across its sections, not only its opening
+  ([agentic-retrieval.md](agentic-retrieval.md#generate-workflow), Epo
+  2026-11-21). An optional
+  Instructions textarea under Questions and Question types (at most 1,000
+  characters, `generateBodyInstructionsMax`, counted like other inputs) is sent
+  to the model as the user's own words (Epo 2026-11-21); past the limit Start, and New graded quiz's Next, stay off. **Extract from file** is Make a quiz from a
+  file's files step: the dialog is `MakeQuizDialog` with its `tabs` slot
+  (`onBack` to the cards, `other` for the cards or another way), so Back and
+  Continue sit at the footer's end like every way's, and Continue goes on to
+  its pages and run. The step's switch, Hide the quiz,
   starts on here too (Epo 2026-11-16, every quiz an editor makes starts
-  hidden; it was off here, so the quiz listed on members' Practice at once). **From the bank**
+  hidden; it was off here, so the quiz listed on members' Practice at once). **From question bank**
   (Epo 2026-11-14, `BankPicker.tsx`) copies picked item bank questions into a
-  new "{workspace} quiz {n}"; Create opens it, as Create blank does
-  (`question-bank.md`, Item banks).
+  new "{workspace} quiz {n}" (`question-bank.md`, Item banks). Once a way's
+  quiz is made (Extract's too, should its run end with the dialog on it) the
+  dialog closes on the page behind it and a Quiz created toast's Open opens
+  the quiz (Epo 2026-11-20, in place of opening it; `made` in
+  `AddPractice.tsx`, which is also `MakeQuizDialog`'s `onDone`). A run
+  confirmed and left to the panel ends there as before.
   Everyone else gets Make my own practice (below).
 - Below md the table becomes one row per item with its facts under the
   title (topic, questions, tried), the score and Practise on the right.
@@ -491,9 +530,87 @@ and Suggested lives on Study's Overview.
 last: its label, "9 of 10 right" (each question's latest check, full marks),
 squares for every question (right, partly, wrong by its latest answer, grey when
 not attempted, a quiz left partway included; above 10 they scale to 10 and any
-unattempted question keeps at least 1 grey; `topicSquares`), and Practise, which starts that topic's session.
+unattempted question keeps at least 1 grey; `topicSquares`). The whole row
+opens the topic's questions (Epo 2026-11-22: the row is the practise button;
+it had a Practise button starting a topic session, which Suggested and the
+learner's own topic reviews still start).
 Assignments' overall joins it once they exist. Make my own practice sits at
 the Overview's top right and preselects the weakest topic (`weakestTopicId`).
+
+### Topic questions
+
+Epo 2026-11-22 (mock Artifact KYKXRU5LGiSMGfAZrYvCUq, round 2):
+`TopicQuestions.tsx` over `GET …/study/questions`. A topic row on the
+Overview opens its page (`study/summary?topic=<id>`, `topic=others` for Other
+files) and Frequently wrong's See all opens every wrong question
+(`?wrong=true`); beside `member` they are a member's, from the profile.
+
+- **Which questions** (`studyQuestions` in `store/study_questions.go`): those
+  the standings count, in reading order. Every question of a quiz the person
+  may practise (untrashed, not hidden from them, not a graded quiz's own) is
+  listed; one of a graded quiz's own quiz, a hidden or a trashed one only once
+  answered, and it does not open. A question lists under each of its own
+  topics (`itemTopics`). Each has its latest check's result (right, partial,
+  wrong, or unattempted), its misses (checks not right) and when; an edited question starts again, parts worth no marks say nothing,
+  and an assignment's answers wait for released grades (`gradesHeldSQL`).
+  The wrong list keeps the answered ones not right, most missed then latest
+  first; the profile's Frequently wrong is its first five.
+- **Page:** back to Study (or the member's profile), the topic's name with
+  its label, "10 questions · 3 of 8 right · 2 not tried" counted from the
+  rows (the member's name first for staff), with no button. The list
+  toolbar's Sort (Most missed: wrong,
+  partly right, not tried, right, then misses and the latest; or Quiz order)
+  and Filter (Result; on Frequently wrong, its topics instead and no Sort).
+  A row has one square in its latest result's colour (grey before any
+  answer), as a topic row's squares are its questions (board H1: a square per
+  part wrapped into a block nobody could read), the prompt on up to two
+  lines, its quiz and the day of the latest answer; Frequently wrong adds the
+  topic chip. No result word and no miss count: the square shows it (Epo
+  2026-11-22). No Practise topic or Practise all: the
+  rows are the practice.
+- **Practising one question** (the mock's P1): a practisable row opens a
+  dialog (720px, full screen on phones) with the topic's name and "2 of 10",
+  "Question 2 · Ordering" and the session's runner (`QuestionItem`) with Skip
+  and Check. Check goes to `POST /api/review/check` with no session, so it
+  counts as a review does (FSRS, answer events, labels) and History gets no
+  row; the result shows with its key, then Close or Next question, which goes
+  on through the list as sorted and filtered. Closing after a check refreshes
+  study (`invalidateStudy`). The first check marks Get started's practice step.
+  "Open in <quiz>", underlined with no arrow, in place of the runner's quiz
+  name, opens the quiz at that question (`?material=…&item=…`) and closes the
+  dialog (Epo 2026-11-22).
+- **Overview:** under Topics, Frequently wrong's three most missed with an
+  underlined See all (no arrow); each row practises in the same dialog. Not
+  drawn while there are none.
+- **Staff** (a member's page): the same rows without content, and no Assign
+  quiz (Epo 2026-11-22; the profile keeps its own). An answered row opens the
+  same dialog on the member's latest answer, marked, as a member's graded quiz
+  result shows it (`QuestionRunner` `layout="list"`, `partResults={false}`:
+  Your answer and Correct answer as plain lines; Epo 2026-11-22, no new
+  component, and "just use the second one"), from
+  `GET …/members/{memberId}/answers/{materialId}/{questionId}`
+  (`question_answers`), with "Question 3 · Short answer · 19 Nov", the quiz
+  link, Close and Next question through the answered rows. A row not tried
+  opens nothing. An answer the lists show but none kept (from before
+  `0191`) reads "This answer wasn't kept". A drawing shows as its check sent
+  it: a review keeps no drawing, so its board is empty.
+
+MSW (`src/mocks/study.ts`) seeds a spread of results over each workspace's
+quizzes and moves a question's result on a check; Calculus II's quiz is filed
+under Techniques of integration so its page has questions, five of them (q31
+to q35, `leadingBlockQuestions` in `src/mocks/db.ts`) opening with a figure,
+two texts and a chart, a graph, a table or a plot before their text (Epo
+2026-11-22), as Past paper 2025 P1's Q22 to Q26 do for the report
+(`src/mocks/assignments.ts`). A member's lists
+come from `src/mocks/members.ts`: Biology questions per topic column matching
+that member's standings (right, wrong, not tried), the profile's Frequently
+wrong being the first three of the wrong list; a few stems open with a
+figure, a table, a chart or a plot, the row reading the stem's text when it
+has one, as `PromptText` does. Each answered one has a short
+answer question and the member's latest answer, graded by the mock grader:
+the model answer when right, another question's answer when wrong. Their
+quizzes are not in the mock database, so the staff dialog's quiz link opens
+nothing there.
 
 ### Members' marks (a class staff's Study)
 
@@ -567,8 +684,7 @@ under the workspace's `study` key).
   2 Sep · active today" (their latest answer or submission), then Assignments (mark of total and Submitted, In progress, Missing,
   Done or the due date; a row opens their results, whose back link then names
   the member and returns to the profile (`member` beside `attempt` in the URL,
-  Epo 2026-11-16), or the report's Members tab
-  (a graded quiz's Responses) before a submission) with Overall score, and Topics as Summary shows them; both
+  Epo 2026-11-16), or the report's Responses before a submission) with Overall score, and Topics as Summary shows them; both
   lists share one grid, an assignment's status and date over a topic's count
   and squares (Epo 2026-11-16). From
   lg that side takes what the right's 380px leaves, up to 1000px, and the gap
@@ -578,10 +694,14 @@ under the workspace's `study` key).
   On the right: Frequently wrong (Still missing until
   Epo 2026-11-11)
   (up to five questions whose latest check was not right, most missed first,
+  each its prompt and topic chip with no miss count, Epo 2026-11-22,
   from the class's own quizzes Summary counts, the prompt from
   `questions.PromptText`; a member's own practice quiz is private and stays
   out, and an assignment's answers wait for released grades as labels do,
-  `gradesHeldSQL`; Q723 findings 2 and 7); and
+  `gradesHeldSQL`; Q723 findings 2 and 7; the first five of
+  `studyQuestions`' wrong list, whose underlined See all, no arrow, opens the
+  whole list, as a topic row opens that topic's, both for the member and read
+  only: [Topic questions](#topic-questions)); and
   Recent activity (the latest five: an attempt at a class practice quiz with its
   title and question count, a day's reviews in a topic, and submissions). A
   member's own practice quiz is private, so it shows as its topic, never its
@@ -626,7 +746,15 @@ gets one only they can reach: their own standalone material, charged to them,
 linked by `materials.practice_workspace_id` and `practice_topic_id`. Those links
 count only for its maker (`reviewPool`, `newPool`, `itemCounts`,
 `Material.StudyWorkspaceID`), so it feeds their labels and reviews, shows on their
-Practice marked Only you, and lists in their own Files. Its sources are what they
+Practice marked Only you, and lists in their own Files. Its quiz read says
+`onlyYou` (the Quiz API, from `practice_workspace_id`), and its attempt page
+shows an Only you chip after the title (Epo 2026-11-20, board D of the hidden
+quiz callout mock: Practice's lock and words, icon alone on phones; no button,
+as nobody can share it: the Hidden switch needs a workspace item,
+`SetItemHidden`). The first one opened on a browser points at it in the same
+accent callout as the Hidden chip's: "Only you can see this quiz", "Your own
+quiz cannot be shared to other members." and Got it
+(`capy.tips.ownPractice`; `OnlyYouChip` in `HiddenChip.tsx`). Its sources are what they
 can read (`VisibleSourceItems`), and the pipeline reads hidden items only for an
 editor (`readsHidden`).
 
@@ -1068,25 +1196,33 @@ their own, as Practice's filter does (staff's Filter, the list pages'
 row's question topic ids are read from its JSON once (`questionTopicIDsSQL`:
 the posted questions, a draft's quiz content), for the filter, the sort and
 `topicIds` alike.
-Open ones come first by due date, then the closed ones latest due first; no due
-date goes last, newest posted first. `sort` (title, kind, topic, posted, due)
-and `dir` order by a column header's pick instead, open ones still first, a row
-without the value last; topic sorts by the first topic the row shows (its
+With no `sort` the server puts open ones first by due date, then the closed
+ones latest due first; no due date goes last, newest posted first. The page
+always sends one: Posted, newest first, until a column header is picked (Epo
+2026-11-20, `useAssignmentSort`). `sort` (title, kind, topic, posted, due) and
+`dir` order by that column, open ones still first, a row without the value last; topic sorts by the first topic the row shows (its
 quiz's, else its questions' first in topic order). `useAssignments` is an infinite query; the
 page's `ListEnd`, on the page's own scroller, reads the next page as it nears
 the end. Closed rows are muted (opacity 55%), as To do's done rows are.
 Below the `@4xl` container the staff's table becomes one row per assignment:
-its title, its kind, its progress bar, and "Due Sat 14 Nov" at the row's end
-(Epo 2026-11-16, in place of the average, which the wide table's Average
-column keeps).
+its title, its progress bar, and "Due Sat 14 Nov" at the row's end (Epo
+2026-11-16, in place of the average, which the wide table's Average column
+keeps); no kind line, so it takes two lines (Epo 2026-11-20, the wide table's
+Kind column keeps it). The wide table keeps Posted's label whole (`Th`'s
+`fit`), as it starts sorted and its dates alone are narrower. A class member's
+page there, their To do, is To do's table for that class (Epo 2026-11-20, "the
+two todo should align"): `TodoSection` with `page`, the Dashboard's To do with a
+page title, Show done and the To do page's selection bar
+(Mark as done, Mark as not done), newest posted first; a row opens To do's
+details dialog. It reads To do's list (`GET /api/todo`), not the paged
+assignments list, which only staff's table reads now.
 
 **Words** (Epo 2026-11-14). A class's marked assignment is a *Graded quiz*: it
 owns a quiz of its own (`materials.assignment_id`, migration
 `0174_graded_quiz_owner.sql`), freezes it, members submit it, it is marked and it
 counts. A class's unmarked one is an *Assignment*: a title and optional files
 (picked from the workspace's) that members tick, graded on points when it has
-them (below). One set for oneself (`own`) is a *Task*, marked or not, never
-graded on points (`kindLabel` in `assignmentText.ts`). None is a file. There
+them (below) (`kindLabel` in `assignmentText.ts`). None is a file. There
 is no other state than draft or published: a draft is invisible to members, and
 publishing posts it.
 
@@ -1094,7 +1230,7 @@ publishing posts it.
 2026-11-16; until then the quiz was made first and waited, `graded_pending`,
 for a second request to take it). Each way of getting questions carries the
 graded quiz's settings as `gradedQuiz` (an `AssignmentFormReq`, kind marked,
-no `quizId`): Create blank (`CreateMaterialReq`), From the bank (`BankQuizReq`)
+no `quizId`): Create blank (`CreateMaterialReq`), From question bank (`BankQuizReq`)
 and Existing quiz (`POST /api/quizzes/{id}/graded-copy`, a copy of one of the
 workspace's practice quizzes, never another graded quiz's own, which is an
 assignment already, nor one made only for oneself; its questions given fresh
@@ -1106,19 +1242,20 @@ that makes the run's quiz (a form that no longer fits then fails the run), and
 the run's `assignmentId` (and the quiz's) tells the dialog; a run refused then
 says why (`graded_quiz_invalid`, or one of the assignment limits). The dialog
 sends Generate's, Convert's and Create blank's as drafts, so AI-made or empty
-questions are read before anything goes out, except a task for oneself, which
-has no draft (`checkOwnTask`). Settings may leave the title empty: each way then
+questions are read before anything goes out. Settings may leave the title empty: each way then
 sends its quiz's name (the picked quiz's, "{workspace} quiz {n}", the
-generated or converted quiz's title). Once made, the dialog opens the graded
-quiz on its report's Questions tab (a task for oneself on its page), Epo
-2026-11-16. `POST
+generated or converted quiz's title). Once made, the dialog closes on the page
+behind it with a Graded quiz created toast (Epo 2026-11-20, in place of
+opening it, Epo 2026-11-16): Open goes to its report's Questions tab and Undo deletes it, wherever it was made (the
+Assignments page, a member profile). The Assignments page's own toast
+is left to Assignment. `POST
 /api/workspaces/{id}/assignments` no longer makes a graded quiz from a quiz id.
 An owned quiz never lists (Files, the file tree, Recent, search, Practice, Study,
 reviews and new items, pickers, Explore, a workspace clone with its images, the
 agent's outline and summary search; each list's SQL has `m.assignment_id IS
 NULL`), is held from every viewer for good (`materialHiddenSQL` reads
 `m.assignment_id IS NOT NULL`, as `live_access` does), so only the class's staff
-(and a Task's maker) open it, and it cannot be trashed, cloned or hidden by hand
+open it, and it cannot be trashed, cloned or hidden by hand
 (`ErrNotFound`; its header has no Hide or ⋮). Members' answers on it still count
 in their topic standings and Still missing once released, as answered only
 (`standingQuizSQL`). Deleting the assignment deletes the quiz (`ON DELETE
@@ -1135,7 +1272,7 @@ unique.
 
 | Table or column | Holds |
 | --- | --- |
-| `assignments` | `own` (migration 0168: a task a member set themself, its maker's alone, whose `workspace_id` may be null; it takes the rest of this row as a class's assignment does, but for `assign_all` and `draft`). Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `marking` (`ai_approve`, `ai` or `manual`, migration 0157), `answers_shown` (`closed`, `submitted` or `never`, migration 0159), `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its answers joined reviews, once) |
+| `assignments` | Kind, title, `source_quiz_id`, the frozen `questions` with their keys, `question_count`, `total_marks`, `due_at`, `time_limit_min`, `attempts_allowed`, `no_late`, `late_penalty_pct`, `assign_all`, `draft`, `marking` (`ai_approve`, `ai` or `manual`, migration 0157), `answers_shown` (`closed`, `submitted` or `never`, migration 0159), `shuffle`, `posted_at`, `closed_at` (closed by hand; a No late submissions one closes from its due date without it), `released_at` (its answers joined reviews, once) |
 | `materials.assignment_id` | The marked assignment that owns this quiz (migration 0174, unique, cascades on delete) |
 | `question_extractions.graded_quiz` | A Convert run started there, whose quiz is saved waiting |
 | `assignment_assignees` | Picked names and a staff member's own "You" |
@@ -1143,7 +1280,7 @@ unique.
 | `assignment_done` | A member's tick |
 | `assignments.points` | A graded Assignment's points, 1 to `fieldlimits.AssignmentPoints` (1000); null is not graded; only on a class's unmarked one (migration 0176) |
 | `assignment_grades` | A member's grade on a graded Assignment: `points` (one decimal place at most), `graded_by`, `graded_at`; apart from the tick, so Undo hand in keeps it (migration 0176) |
-| `editor_assets.assignment_id` | A frozen copy's image rows (an own task's have no `workspace_id` either: migration 0168 lets the assignment alone own a row) |
+| `editor_assets.assignment_id` | A frozen copy's image rows |
 | `assignments.frozen_by`, `frozen_bytes` | Who pays for the frozen question JSON and its size (migration `0149_assignment_storage.sql`) |
 | `attempts` (kind `assignment`) | A try: `assignment_id`, `deadline_at`, `submitted_at`, `auto_submitted`, `waiting_marks`, `waiting_answers`, with no `material_id`, so no practice read (best score, tried by, averages, review pool) ever sees it, and `GET /api/attempts` and its list leave it out |
 | `answer_events` | Source `assignment`, grader `owner`: closed parts at submit, open parts when marked; a changed mark is a new row, and the latest per attempt and part stands |
@@ -1171,10 +1308,7 @@ JSON's charge to whoever republished; an image the assignment already holds keep
 payer (Epo 2026-11-05), so that payer's purge takes it out of the paper. Frozen staff
 still delete an assignment, and Republish, which writes, is refused for them. They resolve for staff, whoever it went to and whoever holds an
 attempt at it (`frozenAssetReadable`), never another member, and they paste for
-nobody (`AdoptEditorAssets`). An own task's quiz may sit in another workspace or
-none (below), so its image copies name the task alone, with no workspace, and are
-copied from the task's source quiz (`copyFrozenAssetsTx`); only its maker reads them.
-Members are only ever served this copy:
+nobody (`AdoptEditorAssets`). Members are only ever served this copy:
 answer-free while running (`questions.LearnerViews`), with keys after
 submitting only as Show answers allows (below).
 
@@ -1254,8 +1388,9 @@ question it never showed counts 0. Saved answers that no longer mean what the me
 chose go with practice's rule (D9, `stillAnswers` in Go and in
 `features/quizzes/stillAnswers.ts`): a chosen option gone or moved, a changed set of
 ordering items, a matching option gone, another number of gaps. A change to the key
-or the wording keeps them. `dropStaleAnswersTx` does this in the republish for what
-was saved, and the open page for what it holds.
+or the wording keeps them. A canvas answer follows its canvas instead (Epo
+2026-11-24, see Shared canvas answers below). `dropStaleAnswersTx` does this in the
+republish for what was saved, and the open page for what it holds (`keptAnswers`).
 
 A submitted attempt keeps its graded copy and marks. What left the copy that a
 submission holds stays on the report (`withRemoved`), whole questions last and lost
@@ -1284,19 +1419,66 @@ saved. `auto_submitted` now means the time ran out (`attemptRow.timedOut`), so c
 never says so. During the grace the quiz is
 already open to them, the same short window a No late due date has.
 
+**Shared canvas answers** (Epo 2026-11-23). The parts answering in one stem's
+or group's canvas share one drawing, stored once, under the first of them in
+question order (their drawing part, `questions.DrawingParts`, TS
+`drawingParts`): Done stores it under that part, the attempt's answers name it
+there alone (`{"drawing": id}`), and every part sharing it counts as answered
+by it, waits on it at Submit (`gradeAttempt`) and is graded on its image as a
+part of its own (`attemptAnswersToMark` and `keptDrawingImages` read by
+drawing; see [question-bank.md](question-bank.md#canvas-parts)). Results and
+Grading show that drawing under each such part (`OpenPart`, `ReviewedDrawing`
+through `partAnswer`), "Drawing deleted" under each once its payer deletes it.
+Its storage is charged once
+([backend-storage-quota.md](backend-storage-quota.md#drawing-answers)); its
+marking image stays until no part it answers waits on the AI, and Files ›
+Canvas lists it once every shared canvas part of its question is marked.
+Its parts go to the AI in one marking call (Epo 2026-11-24, `markingOrder`,
+`packBatches`, `splitWorking`), unless there are more than a call holds.
+
+A drawing follows its canvas (Epo 2026-11-24). A canvas is named by its
+question and where it sits: the stem, a group by id, or a part's own by part
+id. Republish moves a running attempt's drawing row, and its `{"drawing": id}`,
+to the part its canvas's drawing is stored under in the new copy, the first
+part answering in it (`drawingTargets`, `moveDrawingsTx` in
+`dropStaleAnswersTx`); a drawing whose canvas no part answers in any more is
+deleted, which ends its charge, as any answer its question no longer takes.
+The dropped go first, so a part answering in a new canvas can take its
+drawing in place of the one it held. So with the stem's canvas shared by p1
+(its drawing part) and p2, reordering p2 above p1, switching p1 to New or
+removing p1 moves the drawing to p2, and p1 on New starts on an empty canvas
+of its own; a part that answered on its own canvas and now shares loses that
+drawing. A group's canvas that Ungroup hands to its first sub-part, which then
+answers in it as its own, keeps its drawing with that part
+(`questions.UngroupedCanvases`). The page taking it does the same to what it
+holds (`drawingMoves`, `keptAnswers` in `AssignmentTake`), as practice does
+live (`AttemptBody`), so a check names the current drawing part and
+`planGrading` takes it. A board's device draft and its open view are kept by
+canvas (`canvasName`), not by part, so a new first part changes neither and a
+canvas no part answers in for a while keeps its draft; only an Ungroup's
+renamed canvas has its draft copied to the new name (`renamedDrafts`,
+`copyDrawingDrafts`).
+
 **Submitting.** `POST …/submit` grades closed parts with the same deterministic
 Go scoring as a quiz (`questions.Graded`). An answered open part is left
 `pending` ("Not marked"), and the AI then marks it in the background, on the
-credits of the member attempting (`markAnswersSoon`, Epo 2026-11-08; one lock per
-member); a blank one earns 0. A part it could not mark keeps why, `aiError`
-`credits` (that member has none left), `error` (the grade failed) or `file` (a
+credits of the member attempting (`markAnswersSoon`, Epo 2026-11-08); a blank
+one earns 0. Its written and drawn parts go up to four and 24 images to a call
+(`gradeInBatches`, `POST /grade-batch`, Epo 2026-11-23), each with its question's images; a quiz or
+review check still sends one part a call. One payer's marking runs at most four
+attempts or paper reads at once (`payerSlots`, Epo 2026-11-23), so Grade {k} with
+AI on a class is about four times faster than one at a time and leaves the payer
+one provider session free ([observability-metering.md](observability-metering.md)). A part it could not mark keeps why, `aiError`
+`credits` (whoever pays has none left), `error` (the grade failed) or `file` (a
 file of its paper can't be read, Q730), which only staff read: Approve AI marks
 shows it on the row as No credits, Grade Error or Can't read file and in the
 answer pane as one line, with no banner and no names (mock T3). Waiting
 answers count as `toApprove`, and `notGraded` how many of them have no AI mark,
 which the Assignments row, the report header and Approve AI marks show apart from
-those to approve. Mark with AI runs each attempt on its member's credits and is
-refused only when grading isn't set up. While a run holds answers they read
+those to approve. Mark with AI (Grade {k} with AI) and Regrade with AI run on
+the credits of the staff member who presses them (Epo 2026-11-23: whoever
+starts it pays; `markingRequest`), and are refused only when grading isn't set
+up for them. While a run holds answers they read
 Marking… with a spinner (Q729): the gateway notes, in memory beside the run's
 progress (one gateway process; a restart forgets it), each attempt it holds
 from queued until its call returns or fails, its parts by id, or every part
@@ -1328,13 +1510,16 @@ date only, and the penalty on marks or a grade only (the store refuses anything
 else, `checkLatePolicy`), so with no due date Advanced holds Draft only.
 
 Advanced (Epo 2026-11-04, `Accordion` in `src/components/ui/Accordion.tsx`) is an accordion holding the policy
-and Draft only (and a graded Assignment's Show grades), with the app's `motion-accordion` recipe; a graded assignment's Show
-grades and Show answers sit at its top (Epo 2026-11-12). It starts closed unless a
+and Draft only (and a graded Assignment's Show grades), with the app's `motion-accordion` recipe; a graded quiz's
+Attempts (Epo 2026-11-21, from beside Assign to, which now takes the row), Show
+grades and Show answers sit at its top (Epo 2026-11-12, back in it 2026-11-20 after
+two days on the form). Its selects are the shared row select, 144px on phones and
+224px from sm, so no value is cut off there (Epo 2026-11-21). It starts closed unless a
 saved assignment holds something other than the defaults there, a draft, No late
-submissions or a penalty (`advancedStartsOpen`, Claude's pick), Shuffle, or grades or
-answers other than Automatic and After assignment close. Once opened it
-scrolls itself into view, since it opens at the dialog's foot, below the fold on a
-phone. Editing a published assignment has no Draft only, and one with no due date
+submissions or a penalty (`advancedStartsOpen`, Claude's pick), more than one attempt,
+Shuffle, or grades or answers other than Automatic and After assignment close. Opening it never
+scrolls the dialog (Epo 2026-11-20); rows it opens below the fold are scrolled to
+by hand. Editing a published assignment has no Draft only, and one with no due date
 has no Advanced at all.
 
 Both kinds follow the same rules (Epo 2026-11-09, "same rules", migration 0162
@@ -1390,8 +1575,9 @@ pass on while classmates still answer; per-part marks still show on submit.
 Reopening hides the keys again.
 
 **A graded quiz from a file** (Epo 2026-11-20, migration 0186, mock "Graded
-quiz from a file"): Existing file's file row asks for its "Total marks" (whole,
-1 to 1000, the form's `totalMarks`, which only this graded quiz has) and makes
+quiz from a file"): Settings asks a file for its "Points" (whole, 1 to 1000,
+the form's `totalMarks`, which only this graded quiz has; "Total marks" until
+Epo 2026-11-20 named it as Assignments' Points) and makes
 it with `POST /api/files/{id}/graded-quiz` (`MakeFileGradedQuiz`, the caller an
 editor of the file's workspace), its untitled name the file's without the
 extension.
@@ -1422,8 +1608,8 @@ extension.
   file stays readable in Files to every member, so staff hide a paper they want
   unread before the quiz (its picker row says "Hidden from members"). One moved,
   trashed or deleted reads "The question paper can't be opened".
-- Total marks (Epo 2026-11-20, mock "File quiz follow-ups" A): Settings shows
-  it beside Marking and saves it with the rest (`setPaperMarksTx`). Marks
+- Points, the total (Epo 2026-11-20, mock "File quiz follow-ups" A; named
+  Points later that day): the Settings tab shows it beside Marking and saves it with the rest (`setPaperMarksTx`). Marks
   already given stay as they are, out of the new total, as Canvas and Google
   Classroom keep them; Save asks first while any submission is graded (the
   staff summary's `graded`, past members' included), saying theirs change only
@@ -1473,7 +1659,8 @@ extension.
   the same grid in staff's Preview): a six-column grid in the list's place, each
   square filled when answered, dashed when partly, ringed when open, a bookmark
   in its corner, with what each look means under it; phones keep the number
-  strip above the question (`NumberStrip`).
+  strip above the question (`NumberStrip`). A part answered in a canvas above
+  counts as answered by that canvas's one drawing (`partAnswer`).
 - An upload attempt shows Your answers at the left (above the questions on
   phones) and every question in one scroll, read only: choices, matching and
   ordering show their options, written answer fields don't. Your answers lists
@@ -1528,8 +1715,8 @@ extension.
   Manual answer (Q730). There Read papers again sits
   where Mark with AI would, shown while the report's `papersToRead` (papers
   still `reading`: a read that failed, never ran, or runs now) is above zero;
-  it is the same `mark-with-ai` call, reading without grading on each
-  member's credits (Q725).
+  it is the same `mark-with-ai` call, reading without grading on the credits
+  of whoever presses it (Q725, payer from 2026-11-23).
 - Grading shows a part's pages of the paper (T1), or the whole paper where it
   was found on none, under the paper's files by name: each underlined
   (`SubmissionFileLink`, Epo 2026-11-19) and opening its signed link, a PDF or
@@ -1559,13 +1746,13 @@ no file is added (`storageFullErr` at the ticket and the upload session, as a
 Marked paper's start, Q728 A): the refusal toasts the storage-limit copy, a
 file added while there was room still saves past the limit, and Hand in and
 Undo still work. The report's chip reads
-"N of M handed in", and its Members tab lists each member's date (Late past the
-due date) and what they handed in, each file by name opening it in a new tab,
-under no Member header (the section's title says it), grades read only; a row
-opens the Grading tab at that member (Epo 2026-11-19, as a graded quiz's row
+"N of M handed in", and its Responses tab (Members until Epo 2026-11-21)
+lists each member's date (Late past the due date) and what they handed in, each
+file by name opening it in a new tab, grades read only; a row opens the Grading
+tab at that member (Epo 2026-11-19, as a graded quiz's row
 opens the attempt). **Grading** (`tab=grading`, `GradingTab.tsx`, mock A after
 Google Classroom's grading tool; named Hand-ins when there are no points) is
-the tab of an Assignment taking files or graded on points: the members on the
+the tab of an Assignment taking files: the members on the
 left in the app's `Accordion` (folds by hand), the open one (`member=<user
 id>`, else the first who handed in) showing when they handed in, their files
 with sizes (`work=<file id>` the one shown; not `file`, which the workspace
@@ -1612,51 +1799,70 @@ kind, submissions or average since Epo 2026-11-13), then its tabs,
 each with its link (`reportView` in `assignmentPage.ts`). A graded quiz (Epo
 2026-11-15, boards Main and Responses of todo-question-editor.md) has
 Questions (`tab` absent), Responses (`tab=responses`) and Settings; a draft
-Questions and Settings. Its header row ends in Preview (outline, the eye; only
-the eye on phones) and, for a draft, Publish (dark), with Release grades when it
-waits; while Questions shows, the quiz editor's save status and Undo and Redo sit
-before them (`FileActionsTarget`). Questions edits the graded quiz's own quiz
+Questions and Settings. Its header row ends, for a draft, in Publish (dark),
+with Release grades when it waits; while Questions shows, the quiz editor's
+save status and Undo and Redo sit before them (`FileActionsTarget`). Preview
+shows on Questions only, borderless (`ghost-hover`, Epo 2026-11-23): on the
+tabs row left of Full screen from `md`, in the header row on phones. Questions edits the graded quiz's own quiz
 (`manage.quizId`) in place with the quiz page's `QuizEditor`
 (`GradedQuizQuestions`; read only to someone who can't edit it, and the frozen
 questions to read when the quiz is gone); after publishing, edits reach members
-only on Republish (Settings). Responses opens with a row: View, a select of By
-member (default) or By question (`by=question`), "n of m handed in · average
-x / y" (the mean of the marks and totals the members' rows show), the select
-36px as Preview (Epo 2026-11-16). Marking is the Grading tab (`tab=grading`,
+only on Republish (Settings). Responses opens, in both views, with a row of
+numbers and at its end View, a select of By member (default) or By question
+(`by=question`), the select 36px as Preview (Epo 2026-11-16; one line since
+Epo 2026-11-22, the "n of m handed in · average x / y" line gone). By question
+has a Full screen at the tab row's end, as Grading and Questions do (Epo
+2026-11-22, `fullscreen` kept with `by=question`): its split alone over the
+page under a bar holding the exit, Escape leaving it. Marking is the Grading tab (`tab=grading`,
 its own tab between Responses and Settings since Epo 2026-11-19), so the row
 has no Approve AI grades button any more (Epo 2026-11-19). The report's head
 reads as a member's attempt: the back link, then the title on one line (an
 ellipsis, the full title on hover) with its chips under it 4px down, the
 actions (save status, Preview, Publish, Release grades) at the right, top
-aligned; below 20rem of room the actions wrap under. Older links still open: a graded quiz's `tab=members` is
-Responses By member, and an unknown tab (the old `tab=preview`) its first tab. By question's folded rows
-are one 36px line from md, as By member's table rows (Epo 2026-11-16). By
-question shows a row of numbers first, Submitted
-"n of m", Average, Average time (the mean of members' minutes), and Attempts
-and Uploads when allowed; per question one wording, "Average 80%" (the
-average share of its marks, partial marks counted) or for an open or drawing
-part "Average 2.8 of 4", only "Average" muted, "–" until one is marked, led by an
-"AI graded" badge on a question with open or drawing parts unless Marking is
-Manual (Epo 2026-11-14); answer frequencies, common wrong
-answers, how often each marking point was awarded; under them the part's answer
-key where the bars do not mark it, an open part's sample answer or a drawing
-part's drawn one, and the Solution. An open question folds on a click
-anywhere on it but a control or a text selection. A question of several parts
-lists each part on a row of its own (Epo 2026-11-14, board C), named with its
-full label, "Q18 (a)(i)" or "Q19 (2)" (Epo 2026-11-19, not "Q19.2"), with its own type, marks and numbers (the
-report's `parts[].percent` and `.average`, taken as the question's are); opened,
-it shows "From Q18", the question's stem and its group's text and figures above
-them; a one-part question's row shows its group's too. The first three rows start open,
-and what is opened or folded by hand stays so across the report's tabs, held by
-the report, Epo 2026-11-14). By member lists
+aligned; below 20rem of room the actions wrap under. A tab the report does not have (the old `tab=preview`
+or `tab=members`) opens its first tab. The numbers row: Submitted "n of m",
+Average in marks, "46.8 / 83" (the mean of the marks and totals the members'
+rows show; was a percentage), Average time (the mean of members' minutes), and
+Attempts and Uploads when allowed. By question is laid out as a member answers
+(Epo 2026-11-22; was rows that fold, a part of several on a row of its own):
+from a tablet up the page stops scrolling and `QuizSplit` (`listed`, so its
+pane keeps its scroll) holds the question numbers on the left
+(`QuestionNumbers`, each in its average's tint, a legend under them) and every
+question on the right in one scrolling list at most 3xl wide, centred; a
+number scrolls to its question and the question in view is current; phones
+have the numbers in a strip above the list (`NumberStrip`). Each question is
+drawn as the Questions tab draws it (`QuestionView`): every block of its stem,
+groups and parts, parts labelled and sub-parts indented, each part's type and
+marks at its right (the type gone on narrow questions) and its numbers where
+its answer would be. A tint is the topic labels' thresholds (Epo 2026-11-03;
+`averageTone`, Claude's pick to reuse them): 70% or more green, 60 to 69%
+amber, under 60% red, none before one answer is marked; a question's is its
+marked parts' averages over their marks. Per part: "Average" muted with the
+mean mark in a badge of its tint, "1.6 of 2", for every type (the report's
+`parts[].average`, Epo 2026-11-22; closed parts read "80%" before), "–" until
+one is marked, led by an "AI graded" badge on an open or canvas part unless
+Marking is Manual (Epo 2026-11-14); answer frequencies (an option's label and
+its bar halving the width), common wrong answers, how often each marking point
+was awarded; under them the part's answer key where the bars do not mark it,
+an open part's sample answer or a canvas part's drawn one, and the Solution.
+A member's Results draw their questions the same way, nothing folding, at most
+3xl wide and centred (`ResultBody` with `questionNumber`): each part's answer
+and marking where its answer would be, its outcome square, word and "1 / 2" at
+its right, the question's "6 / 10" in its header, and the question's comment
+and Save marks under it; the outcome chips at the top count parts. By member lists
 submitted, Late with its penalty, Missing, minutes taken, mark, "n to approve"; a row opens that
 member's Results (whose back link returns to Responses), where any mark and
 comment can change. Grading takes `&question=` and `&member=` (A3 by
 question, A3b by member). Percent,
 average and the table's Average count from the first marked result: the
 five-result minimum (§11.8) no longer applies to assignments (Epo 2026-11-13). An unmarked
-assignment keeps Members, Settings and Preview (a draft Settings and Preview);
-its Members tab opens with its Handed in or Done count. Preview shows what
+assignment has Content | Responses | Settings, with Grading before Settings when
+it takes files (Epo 2026-11-21, as a graded quiz's Questions |
+Responses | Grading | Settings; a draft Settings alone): Content holds the files
+it gives out ("No files given out" with none), Responses opens with its Handed in
+or Done count, then the members in the hand-ins table's design (`HandInMembers`:
+Member, Done or Handed in, Work when it takes files, Grade read only when graded),
+each row opening Grading at that member; with no Grading the rows open nothing. Preview shows what
 members see (Epo 2026-11-13 A). A graded quiz's (`PreviewDialog`, a large
 dialog, full screen on phones) shows the question list and one question at a
 time (`AssignmentPreview`, `TakeQuestion` shared with `AssignmentTake`), with
@@ -1698,25 +1904,51 @@ resubmit; reopening hides it again.
 (Approve all). A row it has not marked (no credits, a file it can't read, a failed
 part, a restart, or a submission the sweep made, which starts no marking) reads Not
 graded in amber, whatever the cause (Epo 2026-11-14: no red No credits chip); the pane
-says why, and its AI column reads "–". `POST /api/assignments/{id}/mark-with-ai` runs
+says why, and its Awarded marks start empty. `POST /api/assignments/{id}/mark-with-ai` runs
 the AI over all of those across the assignment, one attempt at a time per payer,
 with "Grading 12 of 40 answers…" from the report's `marking` while it runs. Nothing
 retries by itself (Epo 2026-11-03).
+
+**Regrade with AI** (Epo 2026-11-23). One member's question, from the grading
+pane: Canvas regrades a question across every submission and Moodle whole
+attempts, while here staff pick the answer. The button sits on the pane's
+grade line unless Marking is Manual or nothing in the question is answered. That
+line reads the grade alone, "Grade 3 of 6", not the AI's mark beside it (Epo
+2026-11-23); only grading now, or why the AI couldn't (credits, the file, an
+error), goes before it.
+`POST /api/assignment-attempts/{id}/regrade` `{questionId}` (`RegradeQuestion`)
+grades the answer again on the assignment's latest copy of the question
+(Republish's; the attempt's own copy without its marks if Republish dropped
+it). Closed parts are scored again at once. Each answered written, drawn or
+paper part goes back to waiting with its marks, AI marks and reason cleared;
+the staff comment stays. A drawing whose marking image went with an earlier
+AI mark has nothing to read and keeps its mark. The gateway holds those parts
+and marks only them in the background on the caller's credits, a paper's on
+its pages through `/paper`. Under Approve the AI's mark then waits for
+approval; under AI it is the mark. It is refused with 409 when nothing is
+answered (`nothing_to_regrade`), under Manual (`regrade_manual`) or while the
+attempt is being marked (`answer_marking`). A question that had a decided
+mark keeps it in `regraded` until the next decided mark; if that mark differs
+and the member sees grades (not Manual release still unreleased), they get a
+`mark_changed` notification, "Mark changed", linking to the assignment.
 
 **A graded quiz's Grading** (Epo 2026-11-14 as Approve AI grades, a view of
 Responses from 2026-11-15, its own Grading tab since 2026-11-19, after
 Gradescope and Crowdmark; `ApproveTab`). A row above the columns holds what is assignment-wide: "{n} to
 approve · {k} not graded", Grade {k} with AI (only when some wait; Read papers again
 under manual marking), an "Only {name}" chip when opened from a member's "to approve"
-on Responses By member, Overview and Next to approve. Below, from `lg` three columns: every
+on Responses By member, and Overview, borderless, its label ending on the
+content's edge under Full screen (Epo 2026-11-23, which removed Next to approve
+and Next to grade: the columns already show what waits). Below, from `lg` three columns: every
 question (Epo 2026-11-19; the report's `answers` hold a row for every answer)
-under To approve (count of waiting answers; under Manual marking, To grade, as are the toolbar's "N to grade", Start grading, Next to grade and the form's Save marks, Epo 2026-11-20) and Done (tick), "AI marked" in the
+under To approve (count of waiting answers; under Manual marking, To grade, as are the toolbar's "N to grade", Start grading and the form's Save marks, Epo 2026-11-20) and Done (tick), "AI marked" in the
 accent colour after "Q3 · 6 marks" on one with a written or drawn part unless
 Marking is Manual; the chosen question's members (waiting first, Approve all),
 and the grading pane, showing a written answer as the member's results do (Epo
-2026-11-19: `OpenPart`, Your answer boxed, Marking points | AI | Awarded, the
-sample answer and Solution; under 448px of its own width the points and the
-mark alone). A question marked by rule opens the results' own staff
+2026-11-19: `OpenPart`, Your answer boxed, Marking points | Awarded, the
+Awarded marks starting as the AI's with no AI column (Epo 2026-11-23), the
+sample answer and Solution; under 448px of its own width the mark takes only
+its width and the chips go). A question marked by rule opens the results' own staff
 view (`ResultBody`: the member's answer against the key, a Mark field per
 part, a comment, Save marks), a read paper's pages above it, or the whole
 paper while it waits to be read. From `md` each column scrolls on its own, the two
@@ -1752,13 +1984,19 @@ members list's late note says only that late work stays open until staff close
 it.
 
 **Graded assignments** (Epo 2026-11-14, `todo-graded-quizzes.md`, after Canvas;
-migration `0176_assignment_points.sql`). A class's Assignment may have **Points**
-(New assignment's own row under Due and Assign to, board Task, and the Settings
-tab's Details; empty is not graded, whole points 1 to 1000; a Task has none, and
-the store refuses points on a graded quiz or a task). Graded, the form adds Show
+migration `0176_assignment_points.sql`). A class's Assignment taking uploads may
+have **Points** (Epo 2026-11-21: with nothing handed in there is nothing to
+grade; Canvas grades No Submission and On Paper assignments too, which Capy
+leaves out). They show under Allow submission with uploads once it is on, in New
+assignment and in the Settings tab's Submissions, as a graded quiz's Points sit
+with its Submission; empty is not graded, whole points 1 to 1000. The form drops
+them when uploads go off (`assignmentBody`), and the store refuses points on a
+graded quiz or on an Assignment without uploads (422, and the
+`assignments_points_kind` check; migration `0190_drop_own_tasks.sql` cleared the
+points, grades and late penalty of those that had them). Graded, the form adds Show
 grades (in Advanced; Settings' Marking and results) and the late penalty, and an
 ungraded one sends Show grades Automatic and no penalty. Its staff enter each
-member's grade on the Grading tab (`GradeField`), the Members tab showing it
+member's grade on the Grading tab (`GradeField`), the Responses tab showing it
 read only (Epo 2026-11-19, as a graded quiz's Responses), from 0 to the points
 with at most one decimal place, saved on Enter or Save, never on
 leaving the field (as quiz marks wait for Save), emptied to clear it (`PUT
@@ -1767,7 +2005,7 @@ quiz marks, for anyone it went to, ticked or not, open or closed; a draft or an
 ungraded one refuses). Every read takes the grade where a graded quiz takes its
 counted submission (`gradesSQL`, `assignmentGrades`): the report's member rows
 (`correct`, `mark` after the penalty, `total` the points, `latePenaltyPct`), the
-Assignments table's Average and the Members tab's stat (the mean of mark over
+Assignments table's Average and the Responses tab's stat (the mean of mark over
 points), `mine` (the member's Assignments row, To do's Details and the details
 dialog read "17/20", their page "Grade 17 / 20" or "Out of 20"), and Members'
 standings and profile (a grade counts its points into Overall). Late is the
@@ -1801,9 +2039,10 @@ step and "What members see" link for an invite preview and board G5.
 **To do page.** `/todo` (`src/routes/Todo.tsx`, `GET /api/todo`,
 `store/assignment_todo.go`) lists what the viewer has to do across the classes
 they own or belong to, as a table (`TodoTable`; Epo 2026-11-10, board K at
-Artifact EwrCcGhudqpqvwTYQtqaeJ): Billing's table style with an icon on each
-header, a group per class with its open count that folds, and columns To do,
-Details and Due. Phones stack each row's due date and details under its title.
+Artifact EwrCcGhudqpqvwTYQtqaeJ): Billing's table style with the Study pages'
+header cells (`Th`, as Assignments' tables; no icons since Epo 2026-11-20), a
+group per class with its open count that folds, and columns To do,
+Details, Posted (the day it went out, Epo 2026-11-20) and Due. Phones stack each row's due date and details under its title.
 Tabs To do (open work and answers waiting, with its count, all of it in one read)
 and Done (`GET /api/todo/done`, `ListTodoDone`, `qk.todoDone` under `qk.todo`,
 read only while the tab is open: what was given to the viewer that they finished
@@ -1811,9 +2050,12 @@ or ticked off by hand, with the quiz's mark, "Waiting for marks" or "Not handed
 in", or that closed undone, dated by the day it was done, ticked off or closed; thirty a page, the next loading near the end as on
 Files, sorted and filtered in SQL with an offset cursor; a row a later page
 repeats is skipped). The headers sort, all in the URL (`parseTodoSearch`:
-`tab=done`, `sort=title`, `dir` only against the column's own order,
-`type=quiz,task`): To do by Due (classes with answers waiting first) or by To do
-(title, classes by name), in the browser; Done by its date, on the server.
+`tab=done`, `sort=due` or `sort=title`, `dir` only against the column's own
+order, `type=quiz,task`): To do by Posted, newest first, until another header is
+picked (Epo 2026-11-20), by Due, soonest first (with Posted, classes with
+answers waiting first, then the one whose first row leads), or by To do (title,
+classes by name), in the browser; Done by its date, on the server, its Posted
+column not sorting.
 Neither sorts nor filters by class (Epo 2026-11-10: class against personal stays
 inside the workspace). A class with nothing to show is left out. Due reads
 "Today, 15:40" and "Tomorrow, 09:00" for the next two days, and Overdue past it
@@ -1856,123 +2098,29 @@ done (or Mark as not done on Done) beside it while it can be ticked, which still
 asks first. On phones both buttons follow the content, since a long
 title needs the header's width. The table takes the page's full width; titles stay
 on one line and end in an ellipsis, and a Posted by column shows from xl (1280px).
-Add task, a dark button, sits at the toolbar's right for everyone
-(`NewAssignmentAnywhere`, Epo 2026-11-10). The form opens at once as a task with no
-workspace, and its first field, Workspace (optional, No workspace then the
-workspaces the caller is a member of), puts it in one (Epo 2026-11-11: "the same
-design as existing one, just with a workspace option"; the step that asked which
-workspace first is gone). It is one dialog (`NewAssignmentDialog`, Epo
-2026-11-11: "dont spwn another dialog, make both dialog the same thing, just
-hide/render the options/inputs that applies"): picking a workspace shows or hides
-fields in place, a class the caller runs giving the assignment's fields and
-anything else or No workspace a task's: every one of those but Assign to and
-Draft only (below). What is typed stays; what belongs to the workspace left
-behind is cleared (its quiz, its people, an assignment's files), while a task's
-quiz and files stay from task to task.
-Outside a workspace the words are
-the same for everyone (Epo 2026-11-10): the button, the dialog and its toast say
-task and workspace, never assignment or class.
+Nothing is added on To do (Epo 2026-11-21): it lists what classes give out.
 
-**A task with no workspace** (Epo 2026-11-11) is `own` with a null
-`workspace_id` (migration 0168 drops the NOT NULL, with a check that only an own
-task has none). `POST /api/todo/tasks` makes one from the same body, held to a
-task for oneself; its maker alone reads, changes, ticks and deletes it through the
-assignment routes (`lockTaskTx` and `taskRow` take an empty workspace, `ownedSQL`
-stands in for the membership `givenSQL` reads). `GET /api/todo` and
-`/api/todo/done` return these tasks as a section with an empty `workspaceId`, name
-and icon, first on To do; the table shows it first under either sort, under a
-group row reading No workspace with no icon, and the details dialog has no
-Workspace row. The 100-task cap counts them apart from any workspace's, and the
-account purge deletes a person's own tasks, since no workspace's cascade would.
-Its pages (taking its quiz, results, its report and settings) have no workspace
-to sit in, so `/todo/task?assignment=` hosts the same components
-(`routes/TodoTask.tsx`, `assignmentPage` picking between it and
-`/workspaces/{id}`); with no `assignment` it goes back to `/todo`, as the pages'
-own back links do.
+**No tasks for oneself** (Epo 2026-11-21, reversing 2026-11-10/11's New task and
+Add task: "they are for self tracking, no one can read the uploaded files for
+general task"; a personal workspace studies by practising, and nobody sets a
+graded quiz for themself). Only a class's owner and editors give out work, from
+the Assignments page's New menu: `POST /api/workspaces/{id}/assignments` refuses
+anyone else, and a personal workspace takes none. Migration `0190_drop_own_tasks.sql` deleted the
+tasks people had set themselves and dropped `assignments.own`, so every
+assignment has a workspace again. A personal workspace has no To do: no rail
+row, no Dashboard section, and a link to its `assignments` page goes to Practice
+(`studyView`). Google Classroom's to-do lists assigned work only (personal tasks
+live in Google Tasks, outside it); Canvas lets a student add a planner note, which
+Capy has no counterpart for. What a class gave out still hides while the
+workspace is personal.
 
-**A task's files come from anywhere** (Epo 2026-11-11: "files chosen should have
-nothing to do with which workspace this task belongs to"). For an own task, in a
-workspace or not, the store takes any file or block its maker can open
-(`ownTaskFileSQL`, `ownTaskMaterialSQL`: their own with no workspace, and what a
-workspace they are a member of shows them, a canvas left out; one they only pay
-for in a workspace they left is not theirs to open) and reads each back only while they still can, so one
-they lose leaves the task. `AssignmentFile` carries `workspaceId` and
-`workspaceName`, absent for a file with no workspace. In the form
-(`TaskFilesField` in `TaskFiles.tsx`, which the dialog shows in place of the
-class's `FilesField` for a task of one's own) Choose a file opens Make a quiz's
-search menu (`FileSearchMenu`): a field over `GET /api/items?scope=all&q=`, newest
-first until something is typed, each row with its workspace's name or No workspace;
-a row adds the file. Both Files fields keep Choose a file, a full-width
-select-like trigger (`ChooseFileButton`), above the files chosen, each 32px row ending
-in a small muted × (`RemoveFileButton`), with no dividers; the menu ticks the files
-already on the task and stays open for more until closed, a ticked row takes its file
-off, and at the files cap its unticked rows are disabled while the trigger still opens
-it (Epo 2026-11-12). The task's Quiz field opens the same menu and closes on its pick. A picked row
-names its workspace, and the details dialog opens each file where it sits
-(`/workspaces/{id}?file=`, or `/files/{id}` and `/materials/{id}` with none),
-naming the workspace when it is not the task's own. An assignment's files stay
-its class's, picked from the class (`FilesField`), since members must open them.
-
-Inside a workspace the words follow who gives out work (Epo 2026-11-10, the
-menu 2026-11-14): a class's owner and editor members get the New menu
-(Assignment, Graded quiz), a personal workspace's people the New menu with Task
-and Graded quiz, and a class's viewer members New task, since a viewer gives out
-no assignments. The button sits in the Dashboard's To do section (a small
-outline `NewAssignmentMenu`, `small`) and at the top of the Assignments or To do
-page. The Dashboard's section stays with nothing in it (Epo 2026-11-10: always
-show, and nothing is hidden that he did not ask to hide): its heading, its
-button (a visitor who is no member has none) and the To do page's "Nothing to
-do". A
-workspace with no files shows it too, above its empty state.
-
-New task is a task for oneself, the same dialog with `own` set (its heading New
-task; there is no second form), saved as an assignment with `own` set (migration
-0168) that names its maker alone. It takes every option an assignment does but
-Assign to (Epo 2026-11-11: "everything should apply except for the assigning
-members, and maybe filtering files"): marked or not, time limit, attempts,
-marking, Show grades, Show answers, Allow submission with uploads and Advanced.
-There is no Draft only, since To do lists no drafts and the task would have
-nowhere to be found. A marked Task is made through New › Graded quiz (below) and
-owns its quiz as a class's graded quiz does: it is made with its quiz in one
-request (the quiz maker's `gradedQuiz`, or Existing quiz's copy; The owned
-quiz), and Republish freezes the
-owned quiz again (`checkFreezeTx`). `POST /api/workspaces/{id}/assignments` takes a task from any
-member who is not a class's staff, and from them only for themself
-(`checkOwnTask`: no draft, nobody else); a class's staff make assignments there
-as before.
-
-An own task is the case of staff who are also the one it went to: its maker
-holds both `manage` and `mine` (`readAssignments`), and every assignment route
-reads standing from the task's row (`taskRow`, `staffOf`, `lockStaffOfTx`)
-instead of the workspace alone, so its maker publishes again, closes, reads the
-report, approves and changes marks, and takes it, in a class, a personal
-workspace or none, while a class's staff and the workspace's owner get 404 on
-all of it (`givenSQL`): they neither list it nor count it (Members, the
-Dashboard's Activity, the `todo` event and the class's caps leave it out). A
-task in a workspace needs its maker still a member; on leaving or removal their
-tasks there move to no workspace with their attempts
-(`RemoveWorkspaceMemberWithResult`), and a workspace that is deleted leaves every
-member's tasks the same way (`deleteWorkspaceWithResultTx`) instead of taking
-them in its cascade. While the workspace's owner is suspended or leaving, a task
-in it is out of reach like everything else there. What it does not do: it never
-hides a quiz it does not own, releasing its grades sends no notification,
-and its answer events log under the quiz's own workspace, as practising the quiz
-does, so that workspace's row is key-shared before the accounts
-(`taskRow.lockQuizWorkspaceTx`). What a
-class gave out still hides while the workspace is personal. The task sits in its
-maker's To do and Done under the workspace's name, in the Dashboard's To do and a
-member's Assignments list; its tick is the plain task's, and it opens To do's
-details dialog wherever it is listed (`OwnTaskDetails`, which ticks as the To do
-page does: a plain task's tick is its done, a quiz's or a hand-in's asks first
-and only clears To do), with Delete and Edit in
-the footer and, for one with a quiz, Start quiz, Continue quiz or See results:
-Edit opens the same form, Delete asks and then deletes the task for good (`DELETE
-/api/assignments/{id}`, its maker only, also while frozen). Its results page
-keeps Attempt again and Practise again for its maker, though they run it too, and
-its back link opens the report. A file on its pages opens where the file sits
-(`fileLink`). A member holds at most 100 own tasks in one
-workspace, and 100 with no workspace, done or not (`OwnTasksPerMember`, 409
-`task_limit`).
+A class's Dashboard To do section stays with nothing in it (Epo 2026-11-10:
+always show, and nothing is hidden that he did not ask to hide): its heading and
+the To do page's "Nothing to do", with no button, since members get what staff
+give out and staff's is mostly approving marks (as Canvas's instructor To Do and
+Google Classroom's To review create nothing). A workspace with no files shows it
+too, above its empty state. Staff's Assignments page (`ListAssignments`) lists
+assignments only.
 
 A class holds at most 500 assignments, 100 of them open
 (`row_caps.go`, 409 `assignment_limit` and `assignment_open_limit`, shown in the
@@ -1995,45 +2143,60 @@ do while its page says it closed. The sweep submitting an attempt left running
 tells the class's staff and that member (`publishSweptTodo`).
 
 **The New menu** (Epo 2026-11-14, `NewAssignmentMenu.tsx`). Assignments' header
-(a class's staff) offers Assignment and Graded quiz; a personal workspace's To do
-offers Task and Graded quiz; a class member keeps a plain New task. Assignment and
-Task open `NewAssignmentDialog`, which has no Kind or Quiz field (an unmarked
-form). Graded quiz opens `GradedQuizDialog`, titled New graded quiz, with Settings
-first (Epo 2026-11-16, as Canvas, Google Classroom and Moodle set a quiz up
-before its questions) and no stepper in the title (Epo 2026-11-19). Both steps
-take one frame, 720px wide (so the five tabs show) and `min(680px, 88dvh)` tall,
-and the step after the first opens in its place without the dialog's open
-motion (`DialogStep`), so Next and Back read as one dialog. Step 1 is `NewAssignmentDialog` with `graded`: the marked fields,
-the due date required, the title left empty to take its quiz's name ("The quiz's
-name"), and Next, which saves nothing and hands the values on. Step 2 is Add quiz (`AddPracticeDialog` with `graded`) with five tabs:
-Existing file first (Practice's quizzes and the workspace's files in the
-Convert file menu's 36px rows; a quiz is copied whole, a file becomes the
-question paper of a graded quiz from a file, below), then
-Convert, Generate, From the bank and Create blank, each sending the settings
-with its questions in one request (The owned quiz). Back returns to Settings
-with what was filled in (on a phone, the header's back arrow). Existing file
-and From the bank say Create; Generate,
-Convert and Create blank say Create draft. Convert's pages and run stay in the
-dialog's own state, with no Hide the quiz switch. Cancel leaves nothing behind.
-A member profile's Assign quiz (Epo 2026-11-16, was Assign practice) opens the
-same dialog with that member as the only assignee and Generate on their weakest
-topic. Editing a graded quiz shows its quiz as a locked field. Making a quiz
+(a class's staff) offers Assignment and Graded quiz. Assignment opens
+`NewAssignmentDialog`, which has no Kind or Quiz field (an unmarked form). Graded quiz opens `GradedQuizDialog`, titled New graded quiz, with its
+questions first and Settings last (Epo 2026-11-20, reversing 2026-11-16's
+Settings first, which followed Canvas, Google Classroom and Moodle: what was
+picked decides some settings, and Title can start on its name). There is no
+stepper in the title (Epo 2026-11-19). It is one dialog (`MakeQuizDialog` with
+`tabs.settings`), 1040px wide (Epo 2026-11-20, for From question bank's three
+columns; every way and Settings alike, so moving between them never resizes it) and 88dvh
+tall, and Settings shows in place of the steps before it, which stay mounted, so
+Back finds the pick as it was. Step 1 is New quiz's (`AddPracticeDialog` with
+`graded`) opening on five ways as cards (Epo 2026-11-20, board B), each step
+under its way's name: Existing file first (Practice's quizzes and the
+workspace's files in the Convert file menu's 36px rows; a quiz is copied whole, a
+file becomes the question paper of a graded quiz from a file, below), then
+Extract from file (was Convert to quiz), Generate quiz, From question bank (was
+From the bank) and Create blank. Each way's Next (Extract's after its pages)
+hands its pick (`GradedSource`: name, whether it is a file or a draft, and how
+to send it) to Settings and saves nothing. Step 2 is Settings
+(`useAssignmentForm` with `graded`, the form `NewAssignmentDialog` wraps): the
+marked fields, the due date required, Title starting on the pick's name (a
+quiz's title, a file's name without its extension, Generate's "{topic}
+practice", a bank or blank quiz's "{workspace} quiz {n}") and following later
+picks until something is typed. A file's Settings show Marking locked at Manual
+grading only with Points (the total, typed) beside it, and Submission locked at
+Upload only, as its Settings tab does; picking a quiz again puts back what they
+were. A quiz's Settings show its Points beside Marking, fixed: its questions'
+marks as members would get them (`useQuizFileQuestions`, the stored questions
+followed live, those with answers), loaded when it is picked. Show grades and
+Show answers are at the top of Advanced (Epo 2026-11-20). Create
+sends the pick with the settings in one request (The owned quiz) and a failure
+shows above the footer. The button follows Draft only, Create or Create draft
+(Epo 2026-11-21): Generate, Extract and Create blank make a draft, to be read
+before it goes out, so for them Draft only shows on and can't be turned off. Back returns to the pick
+(on a phone, the header's back arrow). Extract's pages and run stay in the
+dialog's own state, with no Hide the quiz switch, and its run shows once
+Create starts it. Cancel leaves nothing behind. A member profile's Assign quiz
+(Epo 2026-11-16, was Assign practice) opens the same dialog with that member as
+the only assignee and Generate on their weakest topic. Editing a graded quiz shows its quiz as a locked field. Making a quiz
 refreshes `qk.practice`.
 
 **Dashboard.** `TodoSection` (H1, H2, H2b) is the To do page's `TodoTable` for one
 class (Epo 2026-11-12, `single`: no group row): a box on every row, the row opening
-its details, Due and To do sorting it. A member's To do is what went to them; staff's
+its details, Posted (newest first to start, as the page, Epo 2026-11-20), Due and
+To do sorting it. A member's To do is what went to them; staff's
 holds answers to approve and anything they gave themselves, with New assignment (New
 task for everyone else) at its top right, which turns to Mark as done (Mark as not
 done for done rows) while rows are selected, using the page's `useTodoTicks`. Show
 done brings finished ones back, muted, and keeps a row in place as it is marked
-(`keepTicked`). Narrower than the table's 560px, beside an open panel, it stacks
+(`keepTicked`). Narrower than the table's 680px, beside an open panel, it stacks
 each row's facts under it as phones do. Empty, it says Nothing to do. Activity gains
 "assigned" rows, to whoever it went to and staff.
 
 **Not built.** The grading switch and everything behind it (AI marks, Mark with
-AI, Approve all, quoted highlights, charging). Home's To approve list and the bell. Topic labels and mastery on Results. Regrade one
-question. Per-member extra time and excused work.
+AI, Approve all, quoted highlights, charging). Home's To approve list and the bell. Topic labels and mastery on Results. Per-member extra time and excused work.
 
 Sources: [store](../server/internal/store/assignments.go),
 [routes](../server/internal/httpapi/huma_assignments.go),
@@ -2049,6 +2212,9 @@ Sources: [store](../server/internal/store/assignments.go),
   `server/internal/httpapi/members_progress_test.go`,
   `src/features/study/members/membersRows.test.ts` and
   `src/features/study/members/MembersPage.test.tsx`: Members; see
+  [test-catalog.md](test-catalog.md).
+- `server/internal/store/study_questions_test.go` and
+  `src/features/study/practice/TopicQuestions.test.tsx`: topic questions; see
   [test-catalog.md](test-catalog.md).
 - `server/internal/review/review_test.go` also holds the answer-history
   order Epo signed off (`TestHistoryWeightsOrder`).

@@ -446,8 +446,11 @@ pane's boundary. A block or part whose code could not load for a load someone as
 "This block cannot be shown" in its place (`CannotShow`), decided from how the load
 settled (`useCodeFailed` in `blockCode.ts`), not from a thrown error: a graph whose engine
 failed, wherever a graph shows (KaTeX failing leaves the graph without its formulas); a
-drawing part's Draw, Edit drawing or Open drawing, and a drawn sample's button, wherever
-the board's code failed; an HTML embed's View source, in Preview and in the editor. The
+canvas part's Answer in Canvas or Open canvas, a quiz editor's Edit canvas and a drawn
+sample's button, wherever the board's code failed (a canvas only looked at drops its Open
+canvas), and the same places, a looked-at canvas's corner included, when the board itself
+could not be fetched (`useBoardAsset`); an HTML embed's View source, in Preview and in the
+editor. The
 mutation error toast (`showErrorToast`) shows too, once a chunk, a stale or missing
 chunk's with Reload: the browser keeps the failed import, so only a reload brings it. A
 load that failed offline waits for the window's `online` event, then shows "Some blocks
@@ -1002,9 +1005,8 @@ and credits are required for processing rather than persistence.
 Chat `pending_sources` events show when edited source evidence is awaiting
 processing. If exact pending evidence exceeds the request budget, the message
 warns that source information may be outdated and offers Process file changes.
-Generation returns `pending_sources_too_large` with the edited file ids instead
-of silently using incomplete pending evidence, and offers the same action for
-exactly those files; a plain `context_too_large` is an ordinary failure. The action toasts that processing started,
+Generation reads indexed text only, so it has no pending-evidence failure; a
+`context_too_large` is an ordinary failure. The action toasts that processing started,
 or that it could not start with the reason (`useProcessFileChanges`).
 Processing shows no progress anywhere else; the workspace settings Indexing
 tab lists every file with unprocessed edits as waiting, queued, processing

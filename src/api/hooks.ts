@@ -124,6 +124,7 @@ import type {
   MaterialPage,
   MaterialRef,
   MaterialUpdateResult,
+  MemberAnswer,
   MemberProfile,
   MembersProgress,
   ModelSlot,
@@ -155,6 +156,7 @@ import type {
   SourceUploadPolicy,
   SpendingLimitReq,
   StudyPreferences,
+  StudyQuestion,
   StudyTopics,
   Tag,
   Task,
@@ -2758,9 +2760,10 @@ export function useCreateEmbeddedMaterial() {
 
 /** Create a workspace material of any kind; non-note kinds pass content
  * holding their element. */
-export function useCreateMaterial(wsId: string) {
+export function useCreateMaterial(wsId: string, options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (body: CreateMaterialReq) =>
       api.post<Material>(`/workspaces/${wsId}/materials`, body),
     onSuccess: (mt) => {
@@ -2776,10 +2779,11 @@ export function useCreateMaterial(wsId: string) {
 }
 
 /** A quiz in the workspace copied from picked bank questions, images and all
- * (Add quiz's From the bank). */
-export function useCreateBankQuiz(wsId: string) {
+ * (New quiz's From the bank). */
+export function useCreateBankQuiz(wsId: string, options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: ({
       bank,
       ...body
@@ -3521,17 +3525,13 @@ function refreshAssignment(
   ]);
 }
 
-/** Makes an assignment or a task in the workspace, or with no workspace (an
- * empty id, Epo 2026-11-11) a task that is its maker's alone. */
+/** Makes an assignment in a class, from its staff. */
 export function useCreateAssignment(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorToast: false },
     mutationFn: (body: AssignmentFormReq) =>
-      api.post<Assignment>(
-        workspaceId ? `/workspaces/${workspaceId}/assignments` : '/todo/tasks',
-        body
-      ),
+      api.post<Assignment>(`/workspaces/${workspaceId}/assignments`, body),
     onSuccess: () => refreshAssignment(qc, workspaceId),
   });
 }
@@ -3925,6 +3925,34 @@ export function useMarkAssignmentWithAI(assignmentId: string) {
   });
 }
 
+/** Has the AI grade one question of a member's answers again, on the
+ * caller's credits; the attempt reads Marking… until it lands. */
+export function useRegradeAssignmentQuestion(
+  workspaceId: string,
+  assignmentId: string
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      attemptId,
+      questionId,
+    }: {
+      attemptId: string;
+      questionId: string;
+    }) =>
+      api.post<AssignmentAttempt>(`/assignment-attempts/${attemptId}/regrade`, {
+        questionId,
+      }),
+    onSuccess: (attempt) => {
+      qc.setQueryData(qk.assignmentAttempt(attempt.id), attempt);
+      return Promise.all([
+        refreshAssignment(qc, workspaceId, assignmentId),
+        qc.invalidateQueries({ queryKey: qk.assignmentReport(assignmentId) }),
+      ]);
+    },
+  });
+}
+
 /** Approves every AI mark on one question. */
 export function useApproveAssignmentAIMarks(
   workspaceId: string,
@@ -4101,6 +4129,64 @@ export const useStudyTopics = (
     queryKey: qk.studyTopics(workspaceId),
   });
 
+/** Which questions a topic questions page lists: a topic's, Other files' or
+ * Frequently wrong's. */
+export type QuestionsList =
+  | { list: 'topic'; topicId: string }
+  | { list: 'others' | 'wrong' };
+
+/** A topic questions page: each question with the caller's latest result, or
+ * a member's for a class's staff (read only). */
+export const useStudyQuestions = (
+  workspaceId: string,
+  list: QuestionsList,
+  memberId?: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<{ questions: StudyQuestion[] }>(
+        `/workspaces/${workspaceId}/study/${memberId ? `members/${encodeURIComponent(memberId)}/` : ''}questions${listSearch(
+          {
+            list: list.list,
+            topicId: list.list === 'topic' ? list.topicId : undefined,
+          },
+          ''
+        )}`
+      ),
+    queryKey: [
+      ...qk.study(workspaceId),
+      'questions',
+      memberId ?? null,
+      list.list,
+      list.list === 'topic' ? list.topicId : null,
+    ],
+  });
+
+/** A member's latest answer to a question their lists show answered, for a
+ * class's staff. */
+export const useMemberAnswer = (
+  workspaceId: string,
+  memberId: string,
+  q: Pick<StudyQuestion, 'materialId' | 'questionId'>,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    meta: queryMeta(options),
+    queryFn: () =>
+      api.get<MemberAnswer>(
+        `/workspaces/${workspaceId}/study/members/${encodeURIComponent(memberId)}/answers/${encodeURIComponent(q.materialId)}/${encodeURIComponent(q.questionId)}`
+      ),
+    queryKey: [
+      ...qk.study(workspaceId),
+      'answer',
+      memberId,
+      q.materialId,
+      q.questionId,
+    ],
+  });
+
 /** Study → Members: each member's line, for a class's owner and teaching
  * assistants. */
 export const useMembersProgress = (
@@ -4120,9 +4206,10 @@ export const useMembersProgress = (
 export const useMemberProfile = (
   workspaceId: string,
   memberId: string,
-  options?: QueryUiOptions
+  options?: QueryUiOptions & { enabled?: boolean }
 ) =>
   useQuery({
+    enabled: options?.enabled,
     meta: queryMeta(options),
     queryFn: () =>
       api.get<MemberProfile>(

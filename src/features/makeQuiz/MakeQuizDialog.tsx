@@ -4,16 +4,12 @@ import {
   EXTRACTION_ANSWER_FILES_MAX,
   EXTRACTION_PAPER_FILES_MAX,
 } from '@/api/limits.generated';
-import type {
-  AssignmentFormReq,
-  Extraction,
-  SourceFile,
-  SourceUploadPolicy,
-} from '@/api/types';
+import type { Extraction, SourceFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { DialogCancel, SimpleDialog } from '@/components/ui/Dialog';
+import { SimpleDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { FormAlert } from '@/components/ui/FormAlert';
+import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { InputTitle } from '@/components/ui/Input';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -25,6 +21,9 @@ import {
   FileSearchMenu,
   RemoveFileButton,
 } from '@/features/files/FileSearchMenu';
+import { useFileDrop, usePastedFiles } from '@/features/files/fileDrop';
+import { UploadDropZone } from '@/features/files/UploadDropZone';
+import type { GradedSource } from '@/features/study/assignments/gradedSource';
 import { matchesSearch } from '@/features/workspace/PanelSearch';
 import {
   type SourceTransfer,
@@ -185,8 +184,9 @@ function MenuFileRow({
   );
 }
 
-/** The file menu (X0a): search, Upload a file, then the workspace's files,
- * the field's chosen ones ticked; a ticked one's row takes it off. */
+/** The file menu (X0a): search, `upload`'s Upload a file, then the
+ * workspace's files, the field's chosen ones ticked; a ticked one's row takes
+ * it off. The question paper uploads from its own box (Epo 2026-11-22). */
 function FileMenu({
   chosen,
   files,
@@ -194,10 +194,9 @@ function FileMenu({
   label,
   onOpenChange,
   onPick,
-  onUpload,
   open,
-  policy,
   trigger,
+  upload,
   workspaceName,
 }: {
   /** The field's files' ids. */
@@ -207,10 +206,9 @@ function FileMenu({
   label: string;
   onOpenChange: (open: boolean) => void;
   onPick: (file: SourceFile) => void;
-  onUpload: () => void;
   open: boolean;
-  policy: SourceUploadPolicy | undefined;
   trigger: React.ReactNode;
+  upload?: { disabled: boolean; onClick: () => void };
   workspaceName: string;
 }) {
   return (
@@ -221,11 +219,15 @@ function FileMenu({
       searchLabel={m.make_quiz_search_files()}
       top={
         <>
-          <FileMenuRow disabled={!policy || full} onClick={onUpload}>
-            <Icon name="upload" size={16} />
-            {m.make_quiz_upload_file()}
-          </FileMenuRow>
-          <hr className="my-1 border-divider" />
+          {upload && (
+            <>
+              <FileMenuRow disabled={upload.disabled} onClick={upload.onClick}>
+                <Icon name="upload" size={16} />
+                {m.make_quiz_upload_file()}
+              </FileMenuRow>
+              <hr className="my-1 border-divider" />
+            </>
+          )}
           <p className="px-2.5 pt-2 pb-1.5 font-bold text-[11px] text-fg-muted uppercase leading-none tracking-[.06rem]">
             {m.make_quiz_in_workspace({ workspace: workspaceName })}
           </p>
@@ -256,7 +258,7 @@ function FileMenu({
   );
 }
 
-/** The hidden file picker behind Upload a file. */
+/** The hidden file picker behind a field's Upload a file. */
 function UploadInput({
   accept,
   inputRef,
@@ -284,6 +286,13 @@ function UploadInput({
   );
 }
 
+/** The dialog's steps, as the address and New graded quiz hold them, before
+ * New quiz adds its ways and says what was made. */
+export type MakeQuizSteps = Omit<
+  React.ComponentProps<typeof MakeQuizDialog>,
+  'graded' | 'onDone' | 'tabs'
+>;
+
 /**
  * Make a quiz from a file (Epo 2026-11-03, boards X0a, X0b; 2026-11-05, "make the select
  * pages from files the same dialog rather than inside a page"): one dialog, from the
@@ -305,17 +314,18 @@ export function MakeQuizDialog({
   onShowPages,
   onStarted,
   runId,
-  step: stepName,
+  step: routeStep,
   tabs,
   workspaceId,
   workspaceName,
 }: {
   /** The file whose pages are on show. */
   file: string | undefined;
-  /** A graded quiz's settings (Epo 2026-11-16): the run makes the graded
-   * quiz with its quiz, so there is no Hide the quiz switch, and the dialog
-   * stays open while its files upload and read and the run goes on. */
-  graded?: AssignmentFormReq;
+  /** New graded quiz's (Epo 2026-11-16): the pages picked go on to its
+   * Settings, whose Create starts the run that makes the graded quiz with its
+   * quiz, so there is no Hide the quiz switch, and the dialog stays open
+   * while its files upload and read and the run goes on. */
+  graded?: { onNext: (source: GradedSource) => void };
   /** From the address, for a link or a reload. */
   initial: MakeQuizChoice;
   onClose: () => void;
@@ -332,15 +342,29 @@ export function MakeQuizDialog({
   runId?: string;
   /** Each step is an address, so the browser's Back walks them. */
   step: 'files' | 'pages' | 'run';
-  /** Add quiz: the files step is one tab of a dialog under this title.
-   * `strip` is its tab row and `other` the tab on show when it isn't this one,
-   * in place of the files and their footer. */
-  tabs?: {
-    /** A graded quiz's Back to its Settings: the footer's on wider screens,
-     * the header's arrow on phones. */
+  /** New quiz: the files step is Extract from file, one of the dialog's ways
+   * (Epo 2026-11-20, board B), under this title. `other` is on show in place
+   * of the files and their footer when it isn't this way: the ways to pick
+   * from, or another way. */
+  tabs: {
+    /** Back to the ways, once one is picked: the footer's Back from sm, the
+     * header's arrow on phones. */
     onBack?: () => void;
-    other?: { body: React.ReactNode; footer: React.ReactNode };
-    strip: React.ReactNode;
+    other?: {
+      body: React.ReactNode;
+      /** The cards before a way is picked (Epo 2026-11-20): the dialog this
+       * wide and only as tall as they are, not the ways' one size. */
+      fit?: { width: number };
+      footer: React.ReactNode;
+    };
+    /** New graded quiz's Settings, its last step, in place of every other
+     * (kept mounted, so Back finds them as they were): Back on wider
+     * screens, the header's arrow on phones. */
+    settings?: {
+      body: React.ReactNode;
+      footer: React.ReactNode;
+      onBack: () => void;
+    };
     title: React.ReactNode;
   };
   workspaceId: string;
@@ -361,7 +385,6 @@ export function MakeQuizDialog({
   const [answers, setAnswers] = useState<Picked[]>(() =>
     fromFiles(initial.answers)
   );
-  const onPages = stepName === 'pages';
   // Hidden unless switched off (Epo 2026-11-03, the switch 2026-11-11). A
   // reload on a later step starts from the default again.
   // Hide the quiz starts on wherever the dialog opens, Practice's Add
@@ -487,10 +510,21 @@ export function MakeQuizDialog({
     if (!graded)
       setUploading((current) => [...current, ...rows.map((row) => row.key)]);
   };
-  const startUpload = (target: 'answers' | 'paper') => {
-    setMenu(null);
-    (target === 'answers' ? answersInput : paperInput).current?.click();
+  const addAnswerFiles = (list: File[]) => {
+    const rows = add(
+      list.slice(0, EXTRACTION_ANSWER_FILES_MAX - answers.length)
+    );
+    if (rows.length === 0) return;
+    setAnswers((current) => [...current, ...rows]);
+    if (!graded)
+      setUploading((current) => [...current, ...rows.map((row) => row.key)]);
   };
+  // The question paper takes files dropped on its field or pasted (Epo
+  // 2026-11-22), so a paste means one field; a drop elsewhere is refused.
+  const paperDrop = useFileDrop(
+    policy && paperRoom ? addPaperFiles : undefined
+  );
+  const strayDrop = useFileDrop(undefined);
   const removeButton = (set: typeof setPaper, row: Picked) => (
     <RemoveFileButton
       label={m.make_quiz_remove_file({ name: row.name })}
@@ -503,18 +537,21 @@ export function MakeQuizDialog({
     paper: paper.flatMap((row) => row.fileId ?? []),
   };
   const pages = usePageStep({
-    active: onPages,
+    active: routeStep === 'pages',
     answers: choice.answers,
     file,
-    graded,
     hidden,
-    onCancel: onClose,
     onChangeFiles: () => onShowFiles(choice),
     onFile,
+    onNext: graded?.onNext,
     onStarted: (id) => onStarted(id, choice),
     paper: choice.paper,
     workspaceId,
   });
+  // Every file read whole: nothing to pick, so the files step stands in for
+  // the pages (Epo 2026-11-21), and its Continue does what theirs would.
+  const stepName = routeStep === 'pages' && pages.noPages ? 'files' : routeStep;
+  const onPages = stepName === 'pages';
   const run = useRunStep({
     onBack: choice.paper.length > 0 ? onRunBack : onClose,
     onConfirmed: (next) => onConfirmed(next, choice),
@@ -522,27 +559,17 @@ export function MakeQuizDialog({
     onLeave: onClose,
     runId,
   });
+  usePastedFiles(
+    stepName === 'files' && !tabs.other && !tabs.settings && policy && paperRoom
+      ? addPaperFiles
+      : undefined
+  );
   const filesBody = (
     <>
       <UploadInput inputRef={paperInput} multiple onFiles={addPaperFiles} />
-      <UploadInput
-        inputRef={answersInput}
-        multiple
-        onFiles={(list) => {
-          const rows = add(
-            list.slice(0, EXTRACTION_ANSWER_FILES_MAX - answers.length)
-          );
-          if (rows.length === 0) return;
-          setAnswers((current) => [...current, ...rows]);
-          if (!graded)
-            setUploading((current) => [
-              ...current,
-              ...rows.map((row) => row.key),
-            ]);
-        }}
-      />
-      {/* 16px between sections, as Workspace settings. Each field keeps Choose a file above the files
-          chosen, whose rows end in × (Epo 2026-11-12). */}
+      <UploadInput inputRef={answersInput} multiple onFiles={addAnswerFiles} />
+      {/* 16px between sections, as Workspace settings. Each field keeps Choose a file (and the
+          paper its Upload a file) above the files chosen, whose rows end in × (Epo 2026-11-12). */}
       <div className="flex flex-col gap-4 pb-1">
         <div>
           <p className="t-meta text-fg-muted">
@@ -558,7 +585,10 @@ export function MakeQuizDialog({
             />
           )}
         </div>
-        <div className="flex min-w-0 flex-col gap-1.5">
+        <div
+          className="flex min-w-0 flex-col gap-1.5"
+          {...paperDrop.dropHandlers}
+        >
           <InputTitle>
             {m.make_quiz_question_paper()}{' '}
             <span className="t-meta font-normal text-fg-muted">
@@ -572,11 +602,16 @@ export function MakeQuizDialog({
             label={m.make_quiz_question_paper()}
             onOpenChange={(open) => setMenu(open ? 'paper' : null)}
             onPick={(file) => toggleFile(paper, setPaper, file)}
-            onUpload={() => startUpload('paper')}
             open={menu === 'paper'}
-            policy={policy}
             trigger={<ChooseFileButton />}
             workspaceName={workspaceName}
+          />
+          <UploadDropZone
+            disabled={!(policy && paperRoom)}
+            hint={m.make_quiz_upload_hint()}
+            label={m.make_quiz_upload_file()}
+            onClick={() => paperInput.current?.click()}
+            over={paperDrop.over}
           />
           {paper.length > 0 && (
             <div>
@@ -606,10 +641,15 @@ export function MakeQuizDialog({
             label={m.make_quiz_answers()}
             onOpenChange={(open) => setMenu(open ? 'answers' : null)}
             onPick={(file) => toggleFile(answers, setAnswers, file)}
-            onUpload={() => startUpload('answers')}
             open={menu === 'answers'}
-            policy={policy}
             trigger={<ChooseFileButton />}
+            upload={{
+              disabled: !(policy && room),
+              onClick: () => {
+                setMenu(null);
+                answersInput.current?.click();
+              },
+            }}
             workspaceName={workspaceName}
           />
           {answers.length > 0 && (
@@ -625,92 +665,110 @@ export function MakeQuizDialog({
             </div>
           )}
         </div>
+        {/* A refused run, when Continue started it in place of the pages. */}
+        {pages.noPages && pages.alert}
       </div>
     </>
   );
-  const step: DialogStep =
-    stepName === 'run'
+  const { settings } = tabs;
+  const step: DialogStep = settings
+    ? {
+        body: null,
+        closable: true,
+        footer: settings.footer,
+        onBack: settings.onBack,
+        onCloseClick: onClose,
+        title: tabs.title,
+        // The ways' frame, so Next and Back change only what is in it.
+        width: 1040,
+      }
+    : stepName === 'run'
       ? run
       : onPages
         ? pages
         : {
-            // Continue is the primary: the header's right on phones, the
-            // footer's end elsewhere.
-            action: !tabs?.other && (
-              <Button
-                // A graded quiz's files read here, not in the upload panel.
-                disabled={!canContinue || (graded && !allRead)}
-                onClick={() => {
-                  if (allRead) {
-                    onShowPages(choice);
-                    return;
-                  }
-                  // Still reading, which may take a while: the panel follows it, and
-                  // the pages open once it is done.
-                  addQuizWait({
-                    answers: answers.map(waitingFile),
-                    paper: paper.map(waitingFile),
-                    title: paper[0]?.name ?? '',
-                    workspaceId,
-                  });
-                  onClose();
-                }}
-                type="button"
-                variant="accent"
-              >
-                {m.action_continue()}
-              </Button>
-            ),
             body: null,
-            closable: !!tabs,
-            footer: tabs?.other ? (
+            closable: true,
+            // Back to the ways and Continue, as every way's footer: Back from
+            // sm (the header's arrow on phones), the primary at the end.
+            footer: tabs.other ? (
               tabs.other.footer
-            ) : graded ? (
-              tabs?.onBack && (
-                <Button
-                  className="max-sm:hidden"
-                  onClick={tabs.onBack}
-                  size="md"
-                  type="button"
-                  variant="outline"
-                >
-                  {m.action_back()}
-                </Button>
-              )
             ) : (
               <>
-                <label className="mr-auto flex min-w-0 items-center gap-2 self-center text-sm max-sm:w-full">
-                  <Switch checked={hidden} onCheckedChange={setHidden} />
-                  {m.make_quiz_hide_quiz()}
-                </label>
-                {/* Not closable without tabs, so the dialog adds no Cancel. */}
-                {!tabs && (
-                  <span className="contents max-sm:hidden">
-                    <DialogCancel />
-                  </span>
+                {!graded && (
+                  <label className="mr-auto flex min-w-0 items-center gap-2 self-center text-sm max-sm:w-full">
+                    <Switch checked={hidden} onCheckedChange={setHidden} />
+                    {m.make_quiz_hide_quiz()}
+                  </label>
                 )}
+                <span className="contents max-sm:hidden">
+                  <Button
+                    onClick={tabs.onBack}
+                    size="md"
+                    type="button"
+                    variant="outline"
+                  >
+                    {m.action_back()}
+                  </Button>
+                </span>
+                <span className="max-sm:ml-auto sm:contents">
+                  <Button
+                    // A graded quiz's files read here, not in the upload panel.
+                    disabled={
+                      !canContinue || (graded && !allRead) || pages.pending
+                    }
+                    onClick={() => {
+                      if (allRead) {
+                        if (pages.noPages) pages.proceed();
+                        else onShowPages(choice);
+                        return;
+                      }
+                      // Still reading, which may take a while: the panel follows
+                      // it, and the pages open once it is done.
+                      addQuizWait({
+                        answers: answers.map(waitingFile),
+                        paper: paper.map(waitingFile),
+                        title: paper[0]?.name ?? '',
+                        workspaceId,
+                      });
+                      onClose();
+                    }}
+                    type="button"
+                    variant="accent"
+                  >
+                    {pages.pending ? <Spinner /> : m.action_continue()}
+                  </Button>
+                </span>
               </>
             ),
-            onBack: tabs?.onBack,
+            onBack: tabs.onBack,
             onCloseClick: onClose,
-            title: tabs?.title ?? m.make_quiz_title(),
-            // New graded quiz's five tabs need the wider one (Epo 2026-11-19).
-            width: tabs && !graded ? 600 : 720,
+            title: tabs.title,
+            // New quiz and New graded quiz are as wide as the pages, for From
+            // question bank's three columns (Epo 2026-11-20), every way the
+            // same so moving between them never resizes the dialog; the cards
+            // before a pick set their own.
+            width: tabs.other?.fit?.width ?? 1040,
           };
-  // The tabs share one height, so switching tabs or adding files never
-  // resizes the dialog; a tab's own body scrolls (Epo 2026-11-16).
-  const tabbed = !!tabs && stepName === 'files';
+  // The ways share one height, so picking one or adding files never resizes
+  // the dialog; a way's own body scrolls (Epo 2026-11-16).
+  const tabbed = stepName === 'files' || !!settings;
+  // The cards before a pick fit them, so no empty frame shows below.
+  const tall = tabbed && (!!settings || !tabs.other?.fit);
   return (
     <SimpleDialog
       action={step.action}
-      cardClassName={cn((step.framed || tabbed) && 'h-full')}
+      cardClassName={cn((step.framed || tall) && 'h-full')}
       cardScrollContainerClassName={cn(
         step.framed && 'max-sm:pb-0 sm:overflow-hidden'
       )}
       className={cn(
         step.framed && 'flex h-[88dvh] flex-col gap-0',
-        tabbed && 'flex flex-col gap-0 sm:h-[min(680px,88dvh)]'
+        tabbed && 'flex flex-col gap-0',
+        // As tall as the pages (Epo 2026-11-20).
+        tall && 'sm:h-[88dvh]'
       )}
+      compactFooter={tabbed}
       footer={step.footer}
       onBack={step.onBack}
       onClose={step.guarded ? () => undefined : onClose}
@@ -734,24 +792,33 @@ export function MakeQuizDialog({
       {/* Kept mounted, so a step's pages aren't read or drawn again on return. */}
       <div
         className={cn(tabbed && 'flex min-h-0 flex-1 flex-col')}
-        hidden={stepName !== 'files'}
+        hidden={stepName !== 'files' || !!settings}
       >
-        {tabs?.strip}
         <div
           className={cn(tabbed && 'min-h-0 flex-1 overflow-y-auto')}
-          hidden={!!tabs?.other}
+          hidden={!!tabs.other}
+          {...strayDrop.dropHandlers}
         >
           {filesBody}
         </div>
-        {tabs?.other?.body}
+        {tabs.other?.body}
       </div>
       <div
         className={cn(onPages && 'flex min-h-0 flex-1 flex-col')}
-        hidden={!onPages}
+        hidden={!onPages || !!settings}
       >
         {pages.body}
       </div>
-      {stepName === 'run' && run.body}
+      {stepName === 'run' && !settings && run.body}
+      {settings && (
+        // Room inside its scroller, as the dialog's padding gave the form
+        // before, for the controls that bleed past their text (Advanced's
+        // toggle, focus rings): without it they overflow sideways. Below, room
+        // so the last row doesn't sit on the footer.
+        <div className="-mx-3 min-h-0 flex-1 overflow-y-auto px-3 pb-4">
+          {settings.body}
+        </div>
+      )}
     </SimpleDialog>
   );
 }

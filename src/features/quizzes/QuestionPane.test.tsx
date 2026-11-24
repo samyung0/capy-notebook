@@ -67,9 +67,13 @@ function Pane() {
       onRemove={() => {}}
       picked="q1"
       questions={read}
+      quizId="qz_1"
       uploadAsset={async () => ({ assetId: 'a' })}
       uploadSample={async () => ({ board: 'b', image: 'i' })}
-      write={(question) => writeQuestion(content, keys, question)}
+      write={(question) => {
+        writeQuestion(content, keys, question);
+        return true;
+      }}
     />
   );
 }

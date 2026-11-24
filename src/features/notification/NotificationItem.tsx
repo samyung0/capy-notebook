@@ -97,6 +97,15 @@ function systemCopy(notification: AppNotification) {
         }),
         title: m.notification_system_grades_released_title(),
       };
+    // Staff had the AI grade a question again and its mark changed after
+    // grades showed (Epo 2026-11-23).
+    case 'mark_changed':
+      return {
+        body: m.notification_system_mark_changed_body({
+          title: dataString(data, 'title'),
+        }),
+        title: m.notification_system_mark_changed_title(),
+      };
     case 'pending_edits_too_large':
       return {
         body: m.notification_system_pending_edits_body({

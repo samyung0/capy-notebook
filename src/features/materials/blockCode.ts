@@ -163,8 +163,9 @@ function lazyBlock<P>(code: BlockCode<{ default: ComponentType<P> }>) {
   return lazy(() => code.load().catch(() => notShown));
 }
 
-/** BlockSuite's drawing board, about 650 KB gzipped: a drawing answer's Draw,
- * Edit drawing and Open drawing, and a drawn sample's editor. */
+/** BlockSuite's drawing board, about 650 KB gzipped: a canvas answer's
+ * Answer in Canvas and Open canvas, a shown canvas's Open canvas, and the quiz
+ * editor's canvases and drawn samples. */
 export const boardCode = blockCode(
   () => import('@/features/quizzes/drawing/DrawingBoardScreen')
 );
@@ -203,7 +204,7 @@ export const mathCode = blockCode(() => import('mathlive'), {
  * with it), or, a Mermaid diagram, in its worker, which says itself when it
  * could not load. */
 const NEEDS: Partial<Record<string, BlockCode>> = {
-  drawing: boardCode,
+  canvas: boardCode,
   equation: mathCode,
   formula: katexCode,
   graph: graphCode,
@@ -233,8 +234,14 @@ function need(type: string, found: Set<BlockCode>) {
   if (code) found.add(code);
 }
 
-/** Adds what a question's block (or a note's graph) needs to `found`. */
+/** Adds what a question's block (or a note's graph) needs to `found`. A
+ * drawn canvas opens on the board (Open canvas); an empty one shows
+ * nothing. */
 function blockNeeds(shown: QuestionBlock, found: Set<BlockCode>) {
+  if (shown.type === 'canvas') {
+    if ('board' in shown) found.add(boardCode);
+    return;
+  }
   need(shown.type, found);
   if (shown.type === 'graph')
     for (const element of shown.elements) need(element.type, found);

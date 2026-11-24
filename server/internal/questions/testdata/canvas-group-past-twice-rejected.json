@@ -1,0 +1,60 @@
+{
+  "name": "canvas-group-past-twice-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "layout": "paper",
+    "labels": "letters",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Canvas answers."
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it."
+          }
+        ],
+        "answer": {
+          "type": "canvas",
+          "shared": true
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          }
+        ],
+        "solution": [],
+        "group": "g1"
+      }
+    ],
+    "groups": [
+      {
+        "id": "g1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Use the canvas below."
+          },
+          {
+            "type": "canvas"
+          },
+          {
+            "type": "canvas"
+          },
+          {
+            "type": "canvas"
+          }
+        ]
+      }
+    ]
+  }
+}

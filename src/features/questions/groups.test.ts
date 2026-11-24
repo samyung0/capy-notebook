@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { QUESTION_BLOCKS_MAX } from '@/api/limits.generated';
 import {
+  addPart,
   addSubPart,
   canMoveItem,
   canPlaceItem,
@@ -19,6 +20,8 @@ import {
   repairGroups,
   splitPart,
   ungroup,
+  ungroupCanvasIssue,
+  withKeptPart,
 } from './groups';
 import { exampleQuestion } from './questionFixtures';
 import type { Question, QuestionPart } from './types';
@@ -151,18 +154,72 @@ describe("the editor's actions", () => {
     expect(sub.parts[3].group).toBe('g');
   });
 
-  it('splits a part into sub-parts, its text and answer kept in (i)', () => {
-    const q = question();
-    const split = splitPart(q, 'a', 'h', part('new'));
-    expect(ids(split)).toEqual(['a', 'new', 'i', 'ii', 'c']);
-    expect(split.groups?.map((group) => group.id)).toEqual(['h', 'g']);
-    expect(split.parts[0]).toEqual({ ...q.parts[0], group: 'h' });
-    expect(split.parts[1].group).toBe('h');
+  // Epo 2026-11-24: Add sub-part follows Add part. The part's blocks become
+  // the group's text, both sub-parts start blank, and what it held is kept,
+  // back in (i) once the group is undone, its canvas answer on its own
+  // canvas again.
+  it("moves a part's blocks into its new group's text and keeps what it held", () => {
+    const canvas = { board: 'b', image: 'i', type: 'canvas' } as const;
+    const held: QuestionPart = {
+      ...part('a'),
+      answer: { type: 'canvas' },
+      blocks: [fig, canvas],
+      markscheme: [{ marks: 1, text: 'Shades the cell.' }],
+    };
+    const q = { ...question(), parts: [held, ...question().parts.slice(1)] };
+    const { kept, question: split } = splitPart(
+      q,
+      'a',
+      'h',
+      part('x'),
+      part('y')
+    );
+    expect(ids(split)).toEqual(['x', 'y', 'i', 'ii', 'c']);
+    expect(split.groups?.[0]).toEqual({ blocks: [fig, canvas], id: 'h' });
+    expect(split.parts.slice(0, 2)).toEqual([
+      { ...part('x'), group: 'h' },
+      { ...part('y'), group: 'h' },
+    ]);
+    if (!kept) throw new Error('nothing kept');
+    expect(kept.parts).toEqual(['x', 'y']);
+    const back = withKeptPart(removePart(split, 'y'), 'x', kept);
+    expect(back.parts[0]).toEqual({
+      ...part('x'),
+      answer: held.answer,
+      blocks: [fig, canvas, ...part('x').blocks],
+      markscheme: held.markscheme,
+    });
+    // A fill in the blanks part stays (i) whole.
+    const gaps = {
+      ...q,
+      parts: [
+        { ...held, answer: { accepted: [['ATP']], type: 'gaps' as const } },
+      ],
+    };
+    const blanks = splitPart(gaps, 'a', 'h', part('x'), part('y'));
+    expect(blanks.kept).toBeUndefined();
+    expect(ids(blanks.question)).toEqual(['a', 'y']);
   });
 
   it('turns a group left with one sub-part back into the part it was', () => {
-    const split = splitPart(question(), 'a', 'h', part('new'));
-    expect(removePart(split, 'new')).toEqual(question());
+    const gaps = {
+      ...question(),
+      parts: [
+        {
+          ...part('a'),
+          answer: { accepted: [['ATP']], type: 'gaps' as const },
+        },
+        ...question().parts.slice(1),
+      ],
+    };
+    const { question: split } = splitPart(
+      gaps,
+      'a',
+      'h',
+      part('x'),
+      part('new')
+    );
+    expect(removePart(split, 'new')).toEqual(gaps);
   });
 
   it("ungroups without losing the group's text and figures", () => {
@@ -173,6 +230,49 @@ describe("the editor's actions", () => {
     expect(q.parts[1].blocks[0]).toEqual(fig);
     expect(q.parts[1].blocks).toHaveLength(part('i').blocks.length + 1);
     expect(q.parts[2].blocks).toEqual(part('ii').blocks);
+  });
+
+  // Epo 2026-11-24: the group's canvas goes to its first sub-part on Ungroup;
+  // one that answered in it answers in it as its own then.
+  it('gives a sub-part answering in its group canvas that canvas as its own', () => {
+    const canvas = { board: 'b', image: 'i', type: 'canvas' } as const;
+    const shared: QuestionPart = {
+      ...part('i', 'g'),
+      answer: { shared: true, type: 'canvas' },
+      markscheme: [{ marks: 1, text: 'Shades it.' }],
+    };
+    const q = {
+      ...question(),
+      groups: [{ blocks: [fig, canvas], id: 'g' }],
+      parts: [part('a'), shared, part('ii', 'g'), part('c')],
+    };
+    expect(ungroupCanvasIssue(q, 'g')).toBeNull();
+    const [, first] = ungroup(q, 'g').parts;
+    expect(first.answer).toEqual({ type: 'canvas' });
+    expect(first.blocks).toEqual([fig, canvas, ...shared.blocks]);
+    // (ii) answering in it too: Ungroup would take its canvas away.
+    const both = {
+      ...q,
+      parts: [part('a'), shared, { ...shared, id: 'ii' }, part('c')],
+    };
+    expect(ungroupCanvasIssue(both, 'g')).toBe('answered');
+  });
+
+  // Epo 2026-11-24: one canvas a list, so a first sub-part holding its own
+  // can't take the group's.
+  it("holds Ungroup back when its first part holds a canvas beside the group's", () => {
+    const canvas = { type: 'canvas' } as const;
+    const q = {
+      ...question(),
+      groups: [{ blocks: [fig, canvas], id: 'g' }],
+      parts: [
+        part('a'),
+        { ...part('i', 'g'), blocks: [...part('i').blocks, canvas] },
+        part('ii', 'g'),
+        part('c'),
+      ],
+    };
+    expect(ungroupCanvasIssue(q, 'g')).toBe('canvas');
   });
 
   it('holds Ungroup back when the text would not fit its first part', () => {
@@ -222,5 +322,98 @@ describe("the editor's actions", () => {
     expect(canRemovePart({ ...q, groups: [], parts: [part('a')] }, 'a')).toBe(
       false
     );
+  });
+});
+
+// Epo 2026-11-23 (E1): no block moves to the new part; the lone part's
+// blocks join the stem, both parts start blank, and what it held is kept.
+describe('Add part', () => {
+  const canvas = { board: 'b', image: 'i', type: 'canvas' } as const;
+  const lone = (): Question => ({
+    ...exampleQuestion('q'),
+    parts: [
+      {
+        ...part('a'),
+        answer: { sample: { board: 's', image: 't' }, type: 'canvas' },
+        blocks: [fig, canvas],
+        marks: 2,
+        markscheme: [{ marks: 2, text: 'Fills the square.' }],
+        solution: [{ text: 'AA, Aa, Aa, aa', type: 'text' }],
+      },
+    ],
+    stem: [{ text: 'Aa × Aa', type: 'text' }],
+  });
+
+  it("moves a lone part's blocks into the stem and blanks both parts", () => {
+    const [blank, next] = [part('x'), part('y')];
+    const { kept, question: q } = addPart(lone(), next, blank);
+    expect(q.stem).toEqual([...lone().stem, fig, canvas]);
+    expect(q.parts).toEqual([blank, next]);
+    const [held] = lone().parts;
+    expect(kept).toEqual({
+      answer: held.answer,
+      from: 'a',
+      marks: 2,
+      markscheme: held.markscheme,
+      parts: ['x', 'y'],
+      solution: held.solution,
+    });
+  });
+
+  it('adds a part after the others when there are several', () => {
+    const { kept, question: q } = addPart(question(), part('d'), part('x'));
+    expect(kept).toBeUndefined();
+    expect(ids(q)).toEqual(['a', 'i', 'ii', 'c', 'd']);
+    expect(q.stem).toEqual(question().stem);
+  });
+
+  it('puts back what it kept once the question is down to one part', () => {
+    const { kept, question: q } = addPart(lone(), part('y'), part('x'));
+    if (!kept) throw new Error('nothing kept');
+    const back = withKeptPart(removePart(q, 'y'), 'x', kept);
+    const { from: _from, parts: _made, ...held } = kept;
+    // Its canvas is the stem's now: it answers in the canvas above.
+    expect(back.parts).toEqual([
+      {
+        ...part('x'),
+        ...held,
+        answer: { ...held.answer, shared: true },
+      },
+    ]);
+  });
+
+  // Epo 2026-11-24: its blanks live in its text, which can't sit in the stem.
+  it('keeps a lone fill in the blanks part whole as (a)', () => {
+    const gaps = {
+      ...lone(),
+      parts: [
+        {
+          ...part('a'),
+          answer: { accepted: [['AA']], type: 'gaps' as const },
+          blocks: [
+            { text: 'Aa × Aa gives (1) ______.', type: 'text' as const },
+          ],
+        },
+      ],
+    };
+    const { kept, question: q } = addPart(gaps, part('y'), part('x'));
+    expect(kept).toBeUndefined();
+    expect(q.stem).toEqual(gaps.stem);
+    expect(q.parts).toEqual([gaps.parts[0], part('y')]);
+  });
+
+  // Epo 2026-11-24: one canvas a list, so with the stem's own the lone part's
+  // canvas waits in the tab's memory with its answer, back with it later.
+  it("keeps a lone part's canvas when the stem holds one already", () => {
+    const stem = [{ text: 'Aa × Aa', type: 'text' as const }, canvas];
+    const own = { ...lone(), stem };
+    const { kept, question: q } = addPart(own, part('y'), part('x'));
+    expect(q.stem).toEqual([...stem, fig]);
+    if (!kept) throw new Error('nothing kept');
+    expect(kept.canvas).toEqual({ block: canvas, index: 1 });
+    expect(kept.answer).toEqual(lone().parts[0].answer);
+    const back = withKeptPart(removePart(q, 'y'), 'x', kept);
+    expect(back.parts[0].blocks).toEqual([...part('x').blocks, canvas]);
+    expect(back.parts[0].answer).toEqual(lone().parts[0].answer);
   });
 });

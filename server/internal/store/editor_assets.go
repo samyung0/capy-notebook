@@ -555,6 +555,29 @@ func (s *Store) EditorAssetReadable(ctx context.Context, actorID string, asset E
 	return s.editorAssetReadable(ctx, s.pool, actorID, asset)
 }
 
+// EditsAssetQuiz says whether actorID may edit the live quiz the asset belongs
+// to: its editors still resolve its trashed assets until they are purged (Epo
+// 2026-11-24), so a canvas their tab kept comes back after a reload.
+func (s *Store) EditsAssetQuiz(ctx context.Context, actorID string, asset EditorAsset) (bool, error) {
+	if asset.MaterialID == "" {
+		return false, nil
+	}
+	var quiz bool
+	err := s.pool.QueryRow(ctx, `SELECT kind=$2 FROM materials WHERE id=$1 AND trashed_at IS NULL`,
+		asset.MaterialID, MaterialQuiz).Scan(&quiz)
+	if isNoRows(err) {
+		return false, nil
+	}
+	if err != nil || !quiz {
+		return false, err
+	}
+	err = s.AssertMaterialEditor(ctx, actorID, asset.MaterialID)
+	if errors.Is(err, ErrForbidden) || errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 // editorAssetReadable admits the readers of what the asset belongs to: its
 // material, so a hidden item's and an assigned quiz's rules hold for its images;
 // a frozen copy's assignment; an item bank question's bank; or for a row with
@@ -584,14 +607,13 @@ func (s *Store) editorAssetReadable(ctx context.Context, q rowQueryer, actorID s
 
 // frozenAssetReadable admits who may read the assignment's questions: its staff,
 // who it went to, and anyone holding an attempt at it (GetAssignmentAttempt), as
-// after being taken off a named list. A personal workspace hides a class's from
-// all; a task's are its maker's.
+// after being taken off a named list. A personal workspace hides it from all.
 func (s *Store) frozenAssetReadable(ctx context.Context, q rowQueryer, actorID string, asset EditorAsset) (bool, error) {
-	row, err := s.taskRow(ctx, q, asset.AssignmentID)
+	wsID, err := assignmentWorkspace(ctx, q, asset.AssignmentID)
 	if err != nil {
 		return false, err
 	}
-	staff, err := s.staffOf(ctx, q, actorID, row)
+	staff, err := s.assignmentStaff(ctx, q, actorID, wsID)
 	if err != nil || staff {
 		return staff, err
 	}
@@ -696,8 +718,8 @@ type EditorAssetItem struct {
 	// MaterialID is the note, quiz or set it sits in (an embedded quiz's or
 	// set's note), to open; empty when LostAccess.
 	MaterialID string `json:"materialId,omitempty"`
-	// MaterialType is that note's, quiz's or set's kind, for its icon.
-	MaterialType MaterialRefType `json:"materialType"`
+	// MaterialKind is that note's, quiz's or set's kind, for its icon.
+	MaterialKind MaterialKind `json:"materialKind"`
 	// MaterialTitle and WorkspaceName are blank once that workspace's owner is
 	// no longer live.
 	MaterialTitle string `json:"materialTitle"`
@@ -788,11 +810,9 @@ func (s *Store) ListEditorAssets(ctx context.Context, userID string, f EditorAss
 	}
 	items, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (EditorAssetItem, error) {
 		var item EditorAssetItem
-		var kind MaterialKind
 		err := row.Scan(&item.ID, &item.Name, &item.Purpose, &item.SizeBytes, &item.CreatedAt,
-			&item.MaterialID, &kind, &item.MaterialTitle, &item.WorkspaceName, &item.WorkspaceID, &item.LostAccess,
+			&item.MaterialID, &item.MaterialKind, &item.MaterialTitle, &item.WorkspaceName, &item.WorkspaceID, &item.LostAccess,
 			&item.ThumbnailKey, &item.Bank)
-		item.MaterialType = kind.RefType()
 		return item, err
 	})
 	if err != nil {

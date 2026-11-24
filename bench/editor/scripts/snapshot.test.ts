@@ -1,12 +1,20 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  assembleSnapshot,
+  BUILD_FILE,
+  buildLabel,
   compareSnapshots,
   MEDIAN_WINDOW,
   type PerfSnapshot,
+  parsePerfSnapshot,
   RELATIVE_METRICS,
 } from './snapshot';
 
 function snapshot({
+  build,
   commit,
   cpuModel = 'AMD EPYC',
   createdAt = '2026-08-24T12:00:00.000Z',
@@ -14,6 +22,7 @@ function snapshot({
   typingBlockingMs = 100,
   saveCycleBlockingMs = 200,
 }: {
+  build?: string | null;
   commit: string;
   cpuModel?: string;
   createdAt?: string;
@@ -22,6 +31,8 @@ function snapshot({
   saveCycleBlockingMs?: number;
 }): PerfSnapshot {
   return {
+    // null: a dev-server snapshot from before builds were recorded.
+    ...(build !== null && { build: build ?? 'production' }),
     cases: {
       'open-large-document': {
         interactive: { openMs },
@@ -107,6 +118,60 @@ describe('performance snapshot comparison', () => {
     expect(compareSnapshots(current, baselines).markdown).toContain(
       'other CPU models (`Intel Xeon`)'
     );
+  });
+
+  it('compares only snapshots of the same build', () => {
+    const baselines = [
+      snapshot({ build: null, commit: 'dev', typingBlockingMs: 900 }),
+      snapshot({
+        build: 'production-unminified',
+        commit: 'profile',
+        typingBlockingMs: 700,
+      }),
+      snapshot({ commit: 'prod', typingBlockingMs: 120 }),
+    ];
+    const current = snapshot({ commit: 'current', typingBlockingMs: 130 });
+    // The dev server's artifacts still parse, so they are counted.
+    expect(parsePerfSnapshot(structuredClone(baselines[0]))).not.toBeNull();
+
+    const result = compareSnapshots(current, baselines);
+
+    expect(typingRow(result.rows)).toMatchObject({ best: 120, median: 120 });
+    expect(result.markdown).toContain('2 snapshot(s) of another build');
+  });
+
+  it('assembles the cases with the build the run wrote', async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), 'perf-snapshot-'));
+    const metadata = {
+      chromium: 'Version 1.61.1',
+      commit: 'abc',
+      cpuModel: 'AMD EPYC',
+      cpuRate: 4,
+      snapshotDir: dir,
+    };
+    try {
+      await writeFile(
+        path.join(dir, 'typing-small-document.json'),
+        '{"blockingPerKeystrokeMs":0}'
+      );
+      await expect(assembleSnapshot(metadata)).rejects.toThrow(BUILD_FILE);
+
+      await writeFile(path.join(dir, BUILD_FILE), 'production-unminified');
+      expect(await assembleSnapshot(metadata)).toMatchObject({
+        build: 'production-unminified',
+        cases: { 'typing-small-document': { blockingPerKeystrokeMs: 0 } },
+      });
+    } finally {
+      await rm(dir, { force: true, recursive: true });
+    }
+  });
+
+  it('labels a run by what it measured', () => {
+    expect(buildLabel({})).toBe('production');
+    expect(buildLabel({ PERF_PROFILE: '1' })).toBe('production-unminified');
+    expect(
+      buildLabel({ PERF_BASE_URL: 'http://127.0.0.1:4173', PERF_PROFILE: '1' })
+    ).toBe('external');
   });
 
   it('excludes noisy context metrics from relative comparison', () => {

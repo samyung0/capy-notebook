@@ -55,15 +55,22 @@ export const sentRuns = (page: Page) =>
         .capyQuizRunRequests
   );
 
-/** Upload a file, from the files step's first menu. */
+/** New quiz opens on its ways (Epo 2026-11-20, board B): pick Extract from
+ * file's card for its files step. */
+export const pickExtract = (page: Page) =>
+  quizDialog(page)
+    .getByRole('button', { name: m.practice_tab_convert() })
+    .click({ timeout: 30_000 });
+
+/** Upload a file, from the question paper's box (Epo 2026-11-22). */
 export async function uploadPaper(page: Page, name: string, buffer: Buffer) {
+  await pickExtract(page);
+  const chooser = page.waitForEvent('filechooser');
+  // The box waits for the workspace's upload policy.
   await quizDialog(page)
-    .getByRole('button', { name: m.file_choose() })
+    .getByRole('button', { name: m.make_quiz_upload_file() })
     .first()
     .click({ timeout: 30_000 });
-  const chooser = page.waitForEvent('filechooser');
-  // Upload a file waits for the workspace's upload policy.
-  await page.getByRole('button', { name: m.make_quiz_upload_file() }).click();
   await (await chooser).setFiles({
     buffer,
     mimeType: 'application/octet-stream',
@@ -89,7 +96,7 @@ export async function makeQuizFromPanel(page: Page, timeout = 60_000) {
     .click({ timeout });
   await expect(page).toHaveURL(/make=pages/);
   await expect(
-    page.getByRole('heading', { name: m.make_quiz_pages_title() })
+    page.getByRole('heading', { name: m.make_quiz_pages_step_title() })
   ).toBeVisible();
   const paper = new URL(page.url()).searchParams.get('paper');
   if (!paper) throw new Error('The pages step names no paper');
@@ -189,13 +196,13 @@ export function expectRealPages(drawn: DrawnSheet[], format: 'docx' | 'pptx') {
   expect(new Set(drawn.map((page) => page.base64)).size).toBe(drawn.length);
 }
 
-/** Selects `number` alone and presses Convert to quiz: the sheet says it is picked,
+/** Selects `number` alone and presses Extract from file: the sheet says it is picked,
  * the bar counts one, and Extract waits for nothing. Answers the run's id. */
 export async function extractPage(page: Page, number: number) {
   await pageSheet(page, number).click();
   await expect(pageSheet(page, number)).toHaveAttribute('aria-pressed', 'true');
   await expect(
-    page.getByText(m.make_quiz_pages_count({ count: 1, max: 40 }))
+    page.getByText(m.make_quiz_one_page_selected({ max: 30 }))
   ).toBeVisible();
   await page.getByRole('button', { name: m.make_quiz_extract() }).click();
   await expect(page).toHaveURL(/make=run/, { timeout: 60_000 });

@@ -20,6 +20,7 @@ import {
   user,
   workspaces,
 } from './db';
+import { generateHandler } from './handlers';
 import { failureHandlers, failureScenarios } from './scenarioFailures';
 import { practiceBody } from './study';
 
@@ -567,8 +568,10 @@ export function getMockScenarioHandlers(
       ];
     case 'workspace-member':
       // The viewer as a viewer member: Study shows a member's pages and
-      // Practice their own suggestions and best scores.
+      // Practice their own suggestions and best scores; Make my own practice
+      // makes their own quiz.
       return [
+        generateHandler(true),
         http.get('/api/workspaces/:id', ({ params }) => {
           const workspace = workspaces.find((row) => row.id === params.id);
           if (!workspace) return new HttpResponse(null, { status: 404 });

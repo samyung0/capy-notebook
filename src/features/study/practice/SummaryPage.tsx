@@ -4,6 +4,7 @@ import { MembersMarks } from '../members/MembersPage';
 import { PracticePage } from './PracticePage';
 import { StudyTabs } from './studyPage';
 import { studyView } from './studyView';
+import { TopicQuestionsPage } from './TopicQuestions';
 
 /** Study's Overview (`study=summary`). Whoever practises gets Practice's page
  * (Suggested, their topics, every quiz; Epo 2026-11-13); a class's owner and
@@ -12,13 +13,21 @@ export function SummaryPage({
   search,
   workspaceId,
 }: {
-  search: { member?: string; show?: 'topics' };
+  search: { member?: string; show?: 'topics'; topic?: string; wrong?: true };
   workspaceId: string;
 }) {
   const { data: ws } = useWorkspace(workspaceId);
   if (!ws) return null;
   if (!studyView(ws).manages)
-    return <PracticePage search={{}} workspaceId={workspaceId} />;
+    return search.topic || search.wrong ? (
+      <TopicQuestionsPage
+        key={search.topic ?? 'wrong'}
+        topic={search.topic}
+        workspaceId={workspaceId}
+      />
+    ) : (
+      <PracticePage search={{}} workspaceId={workspaceId} />
+    );
   return (
     <MembersMarks
       header={
@@ -32,6 +41,9 @@ export function SummaryPage({
         </>
       }
       member={search.member}
+      questions={
+        search.topic || search.wrong ? { topic: search.topic } : undefined
+      }
       tab={search.show === 'topics' ? 'topics' : 'overview'}
       workspace={ws}
     />

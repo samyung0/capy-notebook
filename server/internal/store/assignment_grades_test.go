@@ -10,7 +10,7 @@ import (
 func (f assignmentFixture) gradedForm(due time.Time, points int) AssignmentForm {
 	return AssignmentForm{Kind: AssignmentUnmarked, Title: "Lab write-up", DueAt: &due, Attempts: 1, AssignAll: true,
 		Assignees: []string{}, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic,
-		Files: []AssignmentFileRef{}, Points: &points}
+		Files: []AssignmentFileRef{}, AllowUploads: true, Points: &points}
 }
 
 // A graded Assignment (Epo 2026-11-14): staff give each member a grade out of
@@ -30,6 +30,8 @@ func TestGradedAssignment(t *testing.T) {
 		t.Fatalf("points = %v", created.Points)
 	}
 	// Handed in late; the other member on time.
+	addHandInFile(t, f, created.ID, f.viewer, now)
+	addHandInFile(t, f, created.ID, f.other, now)
 	if err := f.s.SetAssignmentDone(ctx, f.viewer, created.ID, true, now.Add(2*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
@@ -130,8 +132,9 @@ func TestGradedAssignmentWaitsForRelease(t *testing.T) {
 	}
 }
 
-// Points belong to a class's Assignment: a graded quiz and a task have none.
-func TestPointsOnlyOnAnAssignment(t *testing.T) {
+// Points belong to an Assignment that takes uploads (Epo 2026-11-21): a graded
+// quiz has none, and neither has one members only tick done.
+func TestPointsOnlyOnAnAssignmentTakingUploads(t *testing.T) {
 	f := newAssignmentFixture(t, "graded-points-kind")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -142,9 +145,9 @@ func TestPointsOnlyOnAnAssignment(t *testing.T) {
 	if _, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, marked, now); !errors.As(err, &input) {
 		t.Fatalf("a graded quiz with points = %v", err)
 	}
-	task := f.gradedForm(now.Add(time.Hour), 10)
-	task.AssignAll, task.Assignees = false, []string{f.viewer}
-	if _, err := f.s.makeAssignment(ctx, f.viewer, f.ws.ID, task, now); !errors.As(err, &input) {
-		t.Fatalf("a task with points = %v", err)
+	ticked := f.gradedForm(now.Add(time.Hour), 10)
+	ticked.AllowUploads = false
+	if _, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, ticked, now); !errors.As(err, &input) {
+		t.Fatalf("points on one taking no uploads = %v", err)
 	}
 }

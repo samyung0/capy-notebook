@@ -4,8 +4,8 @@ import { act } from 'react';
 import { expect, it, vi } from 'vitest';
 import { getLocale, m } from '@/i18n';
 
-/* W1 (Epo 2026-11-07): Done on a board wider than the marking image can read
-   asks first, and Done anyway goes on to the image. */
+/* Done with something outside the area the pictures show asks first (Epo
+   2026-11-23), and Done anyway goes on to the image. */
 
 getLocale();
 const { document, window } = parseHTML(
@@ -24,8 +24,11 @@ Object.assign(window, {
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 type MountOptions = {
+  answerArea?: { label: string; movable?: boolean };
   fitPadding?: number[];
+  images?: { none?: boolean };
   onChange?: () => void;
+  question?: { board: string; tip: string };
   saved?: string;
 };
 const toImage = vi.hoisted(() => vi.fn(() => Promise.reject(new Error('x'))));
@@ -46,6 +49,7 @@ const handle = {
       boardImages().flatMap(({ file, id }) => (file ? [{ file, id }] : []))
     ),
   images: boardImages,
+  outside: () => true,
   putAway,
   save: () => ({ bytes: 100, doc: 'AA==' }),
   snapshot: () => 'AA==',
@@ -54,7 +58,6 @@ const handle = {
     bytes: 100,
     canvas: ['brush'],
     marks: 0,
-    span: 2400,
   }),
   toImage,
   unmount() {},
@@ -120,7 +123,7 @@ const button = (label: string) =>
     (b) => b.textContent === label
   ) as HTMLButtonElement;
 
-it('asks before Done on a wide board, and Done anyway makes the image', async () => {
+it('asks before Done with drawing outside the area, and Done anyway makes the image', async () => {
   const root = createRoot(document.getElementById('root') as never);
   await act(async () =>
     root.render(
@@ -133,12 +136,72 @@ it('asks before Done on a wide board, and Done anyway makes the image', async ()
   );
   await act(async () => button(m.drawing_board_done()).click());
   expect(document.querySelector('[role="alertdialog"] b')?.textContent).toBe(
-    m.drawing_wide_title()
+    m.question_canvas_outside_title()
   );
   expect(toImage).not.toHaveBeenCalled();
 
-  await act(async () => button(m.drawing_wide_done_anyway()).click());
+  await act(async () =>
+    button(m.question_canvas_outside_done_anyway()).click()
+  );
   expect(toImage).toHaveBeenCalledOnce();
+});
+
+// E3 (Epo 2026-11-23): the teacher's canvas board moves its area, takes no
+// pictures, and asks in the teacher's words.
+it("a teacher's canvas moves its area, takes no pictures, and asks in its own words", async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host as never);
+  await act(async () =>
+    root.render(
+      <DrawingBoardScreen
+        canvas
+        onClose={() => undefined}
+        onDone={() => undefined}
+        pinned={PINNED}
+      />
+    )
+  );
+  const options = mountDrawingBoard.mock.calls.at(-1)?.[1];
+  expect(options?.answerArea).toEqual({
+    label: m.question_canvas_area(),
+    movable: true,
+  });
+  expect(options?.images?.none).toBe(true);
+  const done = [...host.ownerDocument.querySelectorAll('button')].filter(
+    (b) => b.textContent === m.drawing_board_done()
+  );
+  await act(async () => done.at(-1)?.click());
+  expect(
+    [...document.querySelectorAll('[role="alertdialog"] b')].at(-1)?.textContent
+  ).toBe(m.question_canvas_area_outside_title());
+  expect(button(m.question_canvas_area_outside_keep())).toBeDefined();
+  await act(async () => root.unmount());
+});
+
+// A student's board opens as a copy of the part's canvas, its parts the
+// question's, with their tip.
+it("opens a student's board from the canvas's board, with the question's tip", async () => {
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host as never);
+  await act(async () =>
+    root.render(
+      <DrawingBoardScreen
+        onClose={() => undefined}
+        onDone={() => undefined}
+        pinned={PINNED}
+        question="QQ=="
+      />
+    )
+  );
+  const options = mountDrawingBoard.mock.calls.at(-1)?.[1];
+  expect(options?.question).toEqual({
+    board: 'QQ==',
+    tip: m.question_canvas_tip(),
+  });
+  expect(options?.answerArea).toEqual({ label: m.drawing_answer_area() });
+  await act(async () => root.unmount());
 });
 
 it('a time limit pressing Done during a Done waits for its upload', async () => {

@@ -1117,6 +1117,8 @@ export function BlockEditor({
         </Field>
       </div>
     );
+  // A canvas is drawn on its board, which this editor does not open.
+  if (block.type === 'canvas') return null;
   return (
     <TableBlockEditor
       block={block}

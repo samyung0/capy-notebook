@@ -1,0 +1,78 @@
+{
+  "name": "canvas-shared-group",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "layout": "paper",
+    "labels": "letters",
+    "stem": [
+      {
+        "type": "text",
+        "text": "A right-angled triangle."
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Mark the right angle on the canvas above."
+          }
+        ],
+        "answer": {
+          "type": "canvas",
+          "shared": true
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Right angle marked",
+            "marks": 1
+          }
+        ],
+        "solution": [],
+        "group": "g1"
+      },
+      {
+        "id": "p2",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw its mirror image."
+          },
+          {
+            "type": "canvas"
+          }
+        ],
+        "answer": {
+          "type": "canvas"
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Mirror image drawn",
+            "marks": 1
+          }
+        ],
+        "solution": [],
+        "group": "g1"
+      }
+    ],
+    "groups": [
+      {
+        "id": "g1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Use the canvas below."
+          },
+          {
+            "type": "canvas"
+          }
+        ]
+      }
+    ]
+  }
+}

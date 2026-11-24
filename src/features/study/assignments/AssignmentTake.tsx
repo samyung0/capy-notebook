@@ -3,6 +3,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -38,7 +39,9 @@ import {
   type QuestionType,
   questionMarks,
 } from '@/features/questions/types';
+import { partAnswer } from '@/features/quizzes/drawing/canvasParts';
 import {
+  copyDrawingDrafts,
   DrawingDraftScope,
   DrawingUploader,
   type DrawingValue,
@@ -51,7 +54,7 @@ import {
 } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { QuizSplit } from '@/features/quizzes/QuizSplit';
-import { keptAnswers, partsById } from '@/features/quizzes/stillAnswers';
+import { keptAnswers, renamedDrafts } from '@/features/quizzes/stillAnswers';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
@@ -60,7 +63,7 @@ import { NumberStrip, QuestionNumbers } from './QuestionNumbers';
 import { useAddSubmissionFiles } from './useAddSubmissionFiles';
 
 /** Answers written into a field, which an upload's questions leave out. */
-const WRITTEN = new Set(['short', 'open', 'drawing']);
+const WRITTEN = new Set(['short', 'open', 'canvas']);
 
 /** How long typing rests before answers save. */
 const SAVE_AFTER_MS = 2000;
@@ -150,6 +153,8 @@ export function TakeQuestion({
       <div className="[&_textarea]:max-h-none [&_textarea]:min-h-[calc(var(--ruled-line)*10)]">
         <QuestionRunner
           answers={answers}
+          // On paper a canvas is its picture, as an image is.
+          canvasPictures={paper}
           disabled={paper}
           // On paper the options still show, read only; a field to write in
           // does not.
@@ -160,6 +165,7 @@ export function TakeQuestion({
           }
           headerMarks={false}
           onChange={onChange}
+          pinFrom={{ number, question }}
           question={heading.rest}
         />
       </div>
@@ -370,19 +376,25 @@ export function AssignmentTake({
       leaving();
     };
   }, [flush]);
-  // Republished under the page: answers that no longer fit go, as on its next
-  // load (`dropStaleAnswersTx`).
-  const parts = useMemo(() => partsById(questions), [questions]);
-  const previousParts = useRef(parts);
-  useEffect(() => {
-    const before = previousParts.current;
-    previousParts.current = parts;
-    if (before === parts) return;
-    const kept = keptAnswers(before, parts, latest.current);
+  // Republished under the page: answers that no longer fit go, and a
+  // drawing follows its canvas, as the server moved it (`dropStaleAnswersTx`,
+  // Epo 2026-11-24). A device draft is kept by canvas: only a canvas the
+  // republish renamed (an Ungroup's) copies it, before the boards read it.
+  const previousQuestions = useRef(questions);
+  useLayoutEffect(() => {
+    const before = previousQuestions.current;
+    previousQuestions.current = questions;
+    if (before === questions) return;
+    copyDrawingDrafts(
+      `assignment:${attempt.id}`,
+      renamedDrafts(before, questions)
+    );
+    const kept = keptAnswers(before, questions, latest.current);
     if (kept === latest.current) return;
+    latest.current = kept;
     setAnswers(kept);
     dirty.current = true;
-  }, [parts]);
+  }, [attempt.id, questions]);
   // An ordering part always shows an order, so showing it is answering it.
   const question = questions[index];
   useEffect(() => {
@@ -468,11 +480,12 @@ export function AssignmentTake({
     [attempt.assignmentId, end, onClosed, reread]
   );
 
+  // A part answered in the canvas above is answered by its drawing.
   const isAnswered = (q: (typeof questions)[number]) =>
-    q.parts.some((part) => answered(answers[part.id]));
+    q.parts.some((part) => answered(partAnswer(q, answers, part)));
   // A multi-part question with some of its parts left isn't done.
   const isComplete = (q: (typeof questions)[number]) =>
-    q.parts.every((part) => answered(answers[part.id]));
+    q.parts.every((part) => answered(partAnswer(q, answers, part)));
   const answeredCount = questions.filter(isAnswered).length;
   const unanswered = questions.length - answeredCount;
   const go = (next: number) => {

@@ -101,7 +101,7 @@ func TestHandInFileOpensForItsMemberAndStaffOnly(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	created := unmarkedHandIn(t, f, now)
-	file := addHandInFile(t, f, created.ID, now)
+	file := addHandInFile(t, f, created.ID, f.viewer, now)
 	if _, _, err := f.s.HandInFileBlob(ctx, f.viewer, created.ID, file.ID); err != nil {
 		t.Fatalf("member: %v", err)
 	}
@@ -130,18 +130,18 @@ func unmarkedHandIn(t *testing.T, f assignmentFixture, now time.Time, assignees 
 	return created
 }
 
-func addHandInFile(t *testing.T, f assignmentFixture, assignmentID string, now time.Time) File {
+func addHandInFile(t *testing.T, f assignmentFixture, assignmentID, userID string, now time.Time) File {
 	t.Helper()
 	ctx := context.Background()
 	upload, err := f.s.CreateUploadSession(ctx, NewUploadSession{
-		ID: uid("up"), CreatedBy: f.viewer, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
+		ID: uid("up"), CreatedBy: userID, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
 		Name: "write-up.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: 2048, ParseMode: "none",
 		ExpiresAt: now.Add(time.Hour), HandInID: assignmentID, PaperMaxBytes: 10 << 20,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	file, err := f.s.FinalizeUploadSession(ctx, f.viewer, upload.ID, "etag", "", "")
+	file, err := f.s.FinalizeUploadSession(ctx, userID, upload.ID, "etag", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestHandInTakesNoFileOnceStorageIsFull(t *testing.T) {
 		ON CONFLICT (user_id) DO UPDATE SET used_bytes=EXCLUDED.used_bytes`, f.viewer, limit-1024); err != nil {
 		t.Fatal(err)
 	}
-	addHandInFile(t, f, handIn.ID, now) // 2048 bytes into 1024 of room
+	addHandInFile(t, f, handIn.ID, f.viewer, now) // 2048 bytes into 1024 of room
 	var quota *QuotaExceededError
 	if err := f.s.AssertHandInUpload(ctx, handIn.ID, f.viewer, 1024, 10<<20); !errors.As(err, &quota) {
 		t.Fatalf("ticket once full = %v", err)
@@ -422,7 +422,7 @@ func TestLeaverMarkedPaperAndHandInGo(t *testing.T) {
 		t.Fatal(err)
 	}
 	handIn := unmarkedHandIn(t, f, now)
-	handInFile := addHandInFile(t, f, handIn.ID, now)
+	handInFile := addHandInFile(t, f, handIn.ID, f.viewer, now)
 	if err := f.s.RemoveWorkspaceMember(ctx, f.user, f.ws.ID, f.viewer); err != nil {
 		t.Fatal(err)
 	}

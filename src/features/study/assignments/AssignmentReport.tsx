@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { type MouseEvent, useState } from 'react';
+import { type ReactNode, type UIEvent, useRef, useState } from 'react';
 import { useAssignmentReport, useReleaseAssignmentGrades } from '@/api/hooks';
 import type {
   Assignment,
@@ -32,27 +32,24 @@ import {
   EditorSaveStatus,
 } from '@/features/materials/CenterContentHeader';
 import { answerLabels } from '@/features/questions/editorFields';
-import { stripMarks } from '@/features/questions/parseMarkedText';
 import {
   AnswerView,
+  marksText,
   optionLetter,
   QuestionBlockView,
+  QuestionView,
   TextView,
 } from '@/features/questions/QuestionView';
 import { hasSample, SampleView } from '@/features/questions/SampleBlock';
-import {
-  modelMarked,
-  type Question,
-  questionMarks,
-} from '@/features/questions/types';
+import { modelMarked, type Question } from '@/features/questions/types';
 import { formatPoints } from '@/features/quizzes/grade';
 import { QuizReadSplit } from '@/features/quizzes/QuizEditor';
+import { QuizSplit } from '@/features/quizzes/QuizSplit';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
 import { useFullscreenSearch } from '@/lib/useFullscreenSearch';
 import { useMediaQuery } from '@/lib/useMediaQuery';
-import { blockText, questionLine } from '../practice/practiceText';
 import { ListRow, PracticeFrame, Td, Th } from '../practice/studyPage';
 import type { AssignmentsSearch, ReportTab } from '../studyRoutes';
 import { ApproveTab } from './ApproveTab';
@@ -66,31 +63,33 @@ import {
 import { AssignmentSettingsTab, PublishButton } from './AssignmentSettingsTab';
 import { reportView } from './assignmentPage';
 import {
+  averageLegend,
+  averageTone,
   dayLabel,
   isGraded,
   markText,
-  percentText,
   questionPaperOf,
-  questionRowName,
   takesLateWork,
 } from './assignmentText';
 import { GradedQuizQuestions } from './GradedQuizQuestions';
 import { GradingTab } from './GradingTab';
-import { GradeText, HandInMembers } from './HandIns';
+import { HandInMembers } from './HandIns';
 import { LateBadge } from './LateBadge';
 import { QuestionPaperView } from './LazyPaper';
 import { MarkingNow } from './MarkingNow';
 import { PreviewButton } from './PreviewButton';
-
-/** Rows the report opens with, as the board draws them. */
-const OPEN_FIRST = 3;
+import {
+  type NumberItem,
+  NumberStrip,
+  QuestionNumbers,
+} from './QuestionNumbers';
 
 const CHIP =
   'inline-flex h-5.5 shrink-0 items-center rounded-md bg-page-hover px-1.75 font-semibold text-fg-secondary text-xs';
 
 const TAB_LABELS: Record<ReportTab, () => string> = {
+  content: m.assignment_tab_content,
   grading: m.assignment_tab_grading,
-  members: m.assignment_tab_members,
   questions: m.assignment_tab_questions,
   responses: m.assignment_tab_responses,
   settings: m.assignment_tab_settings,
@@ -100,9 +99,9 @@ const TAB_LABELS: Record<ReportTab, () => string> = {
  * tabs, each with its own link. A graded quiz (Epo 2026-11-15, boards Main and
  * Responses) has Questions, its quiz edited in place, Responses, Grading
  * (Epo 2026-11-19) and Settings,
- * Preview and a draft's Publish in its header; a task lists who has ticked it,
- * a Grading tab when it takes files or points (a member's row opens it at
- * them) and a Settings tab. */
+ * Preview and a draft's Publish in its header; an Assignment has Content (its
+ * files), Responses (who has done it; a member's row opens Grading at them),
+ * Grading when it takes files or points, and Settings (Epo 2026-11-21). */
 export function AssignmentReport({
   assignment,
   search,
@@ -127,12 +126,9 @@ export function AssignmentReport({
     });
   const pickTab = (value: string) =>
     void go(value === tabs[0] ? {} : { tab: value as ReportTab });
-  // Questions open or folded by hand, kept here so they stay that way across
-  // tabs (Epo 2026-11-14); null until one is toggled, the first few open.
-  const [opened, setOpened] = useState<string[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
-  // Grading's and Questions' full screen (`fullscreen` in the URL, as the
-  // workspace's); Escape in a question's field stays the field's.
+  // Grading's, Questions' and By question's full screen (`fullscreen` in the
+  // URL, as the workspace's); Escape in a question's field stays the field's.
   const [fullscreen, setFullscreen] = useFullscreenSearch({
     fieldsKeepEscape: true,
   });
@@ -183,13 +179,23 @@ export function AssignmentReport({
     manage?.showGrades === 'manual' &&
     !manage.gradesReleasedAt;
 
+  // Full screen: Grading with a list to cover, Questions while it edits, By
+  // question's split (Epo 2026-11-22).
+  const fullscreenHere =
+    (tab === 'grading' && !!data?.members.length) ||
+    (editing && !!quizId) ||
+    (marked && tab === 'responses' && byQuestion && !!data?.questions.length);
+  const previewHere = marked && tab === 'questions';
+  // A published one previews its frozen questions, so it waits for the report.
+  const previewWaits = !(draft || data || paper !== undefined);
+
   return (
     <PracticeFrame
       // The quiz editor fills the page under the tabs, as the quiz page does;
       // so does Grading's split from a tablet up.
       className={cn(
         editing && 'flex flex-col overflow-hidden pb-0 lg:pb-0',
-        tab === 'grading' &&
+        (tab === 'grading' || (tab === 'responses' && byQuestion)) &&
           'md:flex md:flex-col md:overflow-hidden md:pb-0 lg:pb-0'
       )}
     >
@@ -253,12 +259,14 @@ export function AssignmentReport({
                   <span className="flex items-center" ref={setEditorActions} />
                 </>
               )}
-              {/* A published one previews its frozen questions, so it waits
-                  for the report. */}
-              {marked && (
+              {/* On Questions only, borderless (Epo 2026-11-23): here on
+                  phones, on the tabs' row from a tablet up. */}
+              {previewHere && (
                 <PreviewButton
-                  disabled={!(draft || data || paper !== undefined)}
+                  className="md:hidden"
+                  disabled={previewWaits}
                   onClick={() => setPreviewing(true)}
+                  variant="ghost-hover"
                 />
               )}
               {marked && draft && <PublishButton assignment={assignment} />}
@@ -285,24 +293,36 @@ export function AssignmentReport({
           }))}
           value={tab}
         />
-        {/* Grading only with a list to cover; Questions while it edits. */}
-        {((tab === 'grading' && !!data?.members.length) ||
-          (editing && !!quizId)) && (
-          <Button
-            // Its label ends on the content's edge: a graded quiz's Next to
-            // approve, or past the page's padding the hand-in file header's
-            // open-in-new-tab icon.
+        {(fullscreenHere || previewHere) && (
+          // The last label ends on the content's edge, or past the page's
+          // padding the hand-in file header's open-in-new-tab icon.
+          <div
             className={cn(
-              'absolute top-1/2 -translate-y-1/2 pr-1 pl-2 max-md:hidden',
+              'absolute top-1/2 flex -translate-y-1/2 items-center gap-1 max-md:hidden',
               marked ? 'right-[-4px]' : 'right-[-13px] lg:right-[-25px]'
             )}
-            iconLeft="maximize"
-            onClick={() => setFullscreen(true)}
-            size="sm"
-            variant="ghost-hover"
           >
-            {m.material_fullscreen()}
-          </Button>
+            {previewHere && (
+              <PreviewButton
+                className={cn('pl-2', fullscreenHere ? 'pr-2' : 'pr-1')}
+                disabled={previewWaits}
+                onClick={() => setPreviewing(true)}
+                size="sm"
+                variant="ghost-hover"
+              />
+            )}
+            {fullscreenHere && (
+              <Button
+                className="pr-1 pl-2"
+                iconLeft="maximize"
+                onClick={() => setFullscreen(true)}
+                size="sm"
+                variant="ghost-hover"
+              >
+                {m.material_fullscreen()}
+              </Button>
+            )}
+          </div>
         )}
       </div>
       {tab === 'settings' ? (
@@ -382,9 +402,9 @@ export function AssignmentReport({
           <ResponsesTab
             assignment={assignment}
             byQuestion={byQuestion}
+            fullscreen={wide && fullscreen}
             go={go}
-            onOpened={setOpened}
-            opened={opened}
+            onExitFullscreen={() => setFullscreen(false)}
             report={data}
           />
         )
@@ -397,13 +417,18 @@ export function AssignmentReport({
           onExitFullscreen={() => setFullscreen(false)}
           search={search}
         />
+      ) : tab === 'content' ? (
+        <AssignmentContent assignment={assignment} />
       ) : (
-        <UnmarkedBody
+        <AssignmentResponses
           assignment={assignment}
           loading={isPending}
           members={data?.members ?? []}
-          onOpen={(member) =>
-            void go({ member: member.userId, tab: 'grading' })
+          // Only Grading has more of a member to show.
+          onOpen={
+            tabs.includes('grading')
+              ? (member) => void go({ member: member.userId, tab: 'grading' })
+              : undefined
           }
         />
       )}
@@ -434,93 +459,71 @@ export function AssignmentReport({
 }
 
 /** Responses (Epo 2026-11-15, board Responses): a View of By member (the
- * members and their marks) or By question (the numbers, then each question's),
- * how many handed in and their average. Grading is its own tab, so no button
+ * members and their marks) or By question (each question's numbers), the
+ * numbers above both (Epo 2026-11-22). Grading is its own tab, so no button
  * here opens it (Epo 2026-11-19). */
 function ResponsesTab({
   assignment,
   byQuestion,
+  fullscreen,
   go,
-  onOpened,
-  opened,
+  onExitFullscreen,
   report,
 }: {
   assignment: Assignment;
   byQuestion: boolean;
+  /** By question covers the page (from a tablet up). */
+  fullscreen: boolean;
   go: (next: AssignmentsSearch) => unknown;
-  onOpened: (ids: string[]) => void;
-  opened: string[] | null;
+  onExitFullscreen: () => void;
   report: ReportData;
 }) {
-  const manage = assignment.manage;
-  const manual = manage?.marking === 'manual';
-  // The average of the marks the members' rows show, over theirs out of.
-  const marks = report.members.flatMap((member) =>
-    member.mark === undefined
-      ? []
-      : [{ mark: member.mark, total: member.total ?? 0 }]
-  );
-  const mean = (values: number[]) =>
-    formatPoints(
-      Number((values.reduce((a, b) => a + b, 0) / values.length).toFixed(1))
-    );
-  const summary = [
-    m.assignment_handed_in_of({
-      done: manage?.done ?? 0,
-      total: manage?.assigned ?? 0,
-    }),
-    marks.length
-      ? m.assignment_average_of({
-          mark: mean(marks.map(({ mark }) => mark)),
-          total: mean(marks.map(({ total }) => total)),
-        })
-      : null,
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  const manual = assignment.manage?.marking === 'manual';
   const view = m.assignment_view();
+  // On the numbers' line, at its end (Epo 2026-11-22).
+  const viewSelect = (
+    <div className="flex items-center gap-3">
+      <span className="font-semibold text-fg-secondary text-sm">{view}</span>
+      <Select
+        onValueChange={(value) =>
+          void go(
+            value === 'question'
+              ? { by: 'question', tab: 'responses' }
+              : { tab: 'responses' }
+          )
+        }
+        value={byQuestion ? 'question' : 'member'}
+      >
+        {/* 36px, as the header's Preview (Epo 2026-11-16). */}
+        <SelectTrigger aria-label={view} className="h-9 w-42.5">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            <SelectItem value="member">{m.assignment_by_member()}</SelectItem>
+            <SelectItem value="question">
+              {m.assignment_by_question()}
+            </SelectItem>
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+    </div>
+  );
   return (
     <>
-      <div className="mt-4.5 flex flex-wrap items-center gap-x-3 gap-y-2">
-        <span className="font-semibold text-fg-secondary text-sm">{view}</span>
-        <Select
-          onValueChange={(value) =>
-            void go(
-              value === 'question'
-                ? { by: 'question', tab: 'responses' }
-                : { tab: 'responses' }
-            )
-          }
-          value={byQuestion ? 'question' : 'member'}
-        >
-          {/* 36px, as the header's Preview (Epo 2026-11-16). */}
-          <SelectTrigger aria-label={view} className="h-9 w-42.5">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectGroup>
-              <SelectItem value="member">{m.assignment_by_member()}</SelectItem>
-              <SelectItem value="question">
-                {m.assignment_by_question()}
-              </SelectItem>
-            </SelectGroup>
-          </SelectContent>
-        </Select>
-        <span className="t-meta text-fg-muted max-sm:order-last max-sm:basis-full">
-          {summary}
-        </span>
-      </div>
+      <AssignmentStats
+        assignment={assignment}
+        end={viewSelect}
+        members={report.members}
+      />
       {byQuestion ? (
-        <>
-          <AssignmentStats assignment={assignment} members={report.members} />
-          <QuestionsTab
-            aiMarks={!manual}
-            go={go}
-            onOpened={onOpened}
-            opened={opened}
-            questions={report.questions}
-          />
-        </>
+        <QuestionsTab
+          aiMarks={!manual}
+          fullscreen={fullscreen}
+          go={go}
+          onExitFullscreen={onExitFullscreen}
+          questions={report.questions}
+        />
       ) : (
         <MembersTab assignment={assignment} go={go} members={report.members} />
       )}
@@ -528,8 +531,20 @@ function ResponsesTab({
   );
 }
 
-/** An unmarked assignment's files, and who has ticked it. */
-function UnmarkedBody({
+/** An Assignment's Content (Epo 2026-11-21): the files it gives out. */
+function AssignmentContent({ assignment }: { assignment: Assignment }) {
+  return assignment.files.length > 0 ? (
+    <AssignmentFiles assignment={assignment} />
+  ) : (
+    <p className="t-meta tab-body-mt text-fg-muted">
+      {m.assignment_content_empty()}
+    </p>
+  );
+}
+
+/** An Assignment's Responses (Epo 2026-11-21): its numbers, then the members
+ * in the hand-ins table's design, a row opening Grading at them. */
+function AssignmentResponses({
   assignment,
   loading,
   members,
@@ -538,53 +553,18 @@ function UnmarkedBody({
   assignment: Assignment;
   loading: boolean;
   members: AssignmentMemberRow[];
-  onOpen: (member: AssignmentMemberRow) => void;
+  onOpen?: (member: AssignmentMemberRow) => void;
 }) {
+  if (loading)
+    return <SkeletonList className="tab-body-mt" count={5} rowHeight={40} />;
   return (
     <>
-      {!loading && (
-        <AssignmentStats assignment={assignment} members={members} />
-      )}
-      <AssignmentFiles assignment={assignment} />
-      <section className="mt-6.5">
-        <h2 className="t-subtitle">{m.assignment_tab_members()}</h2>
-        {loading ? (
-          <SkeletonList className="mt-3" count={5} rowHeight={40} />
-        ) : assignment.allowUploads ? (
-          <HandInMembers
-            assignment={assignment}
-            members={members}
-            onOpen={onOpen}
-          />
-        ) : (
-          <ul className="mt-2">
-            {members.map((member) => (
-              <li
-                className="flex min-h-10 items-center gap-2.5 border-divider border-b"
-                key={member.userId}
-              >
-                <MemberName member={member} />
-                <span className="t-meta ml-auto flex shrink-0 items-center gap-2 text-fg-muted">
-                  {member.submittedAt
-                    ? m.assignment_done_on({
-                        date: dayLabel(member.submittedAt),
-                      })
-                    : m.assignment_not_done()}
-                  {member.late && (
-                    <LateBadge penaltyPct={member.latePenaltyPct} />
-                  )}
-                </span>
-                {/* Read only: grading is the Grading tab's (Epo 2026-11-19). */}
-                {assignment.points !== undefined && (
-                  <span className="shrink-0">
-                    <GradeText member={member} points={assignment.points} />
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      <AssignmentStats assignment={assignment} members={members} />
+      <HandInMembers
+        assignment={assignment}
+        members={members}
+        onOpen={onOpen}
+      />
     </>
   );
 }
@@ -735,9 +715,12 @@ const minutesShort = (count: number) => m.assignment_minutes_short({ count });
  * the attempts and uploads a member is allowed. */
 function AssignmentStats({
   assignment,
+  end,
   members,
 }: {
   assignment: Assignment;
+  /** At the row's end: Responses' View (Epo 2026-11-22). */
+  end?: ReactNode;
   members: AssignmentMemberRow[];
 }) {
   const manage = assignment.manage;
@@ -745,6 +728,15 @@ function AssignmentStats({
     member.minutes ? [member.minutes] : []
   );
   const marked = assignment.kind === 'marked';
+  const marks = members.flatMap((member) =>
+    member.mark === undefined
+      ? []
+      : [{ mark: member.mark, total: member.total ?? 0 }]
+  );
+  const mean = (values: number[]) =>
+    formatPoints(
+      Number((values.reduce((a, b) => a + b, 0) / values.length).toFixed(1))
+    );
   const stats = [
     {
       label: marked
@@ -757,9 +749,13 @@ function AssignmentStats({
         total: manage?.assigned ?? 0,
       }),
     },
+    // In marks, as each question's (Epo 2026-11-22): the members' rows'
+    // marks over what they were out of.
     isGraded(assignment) && {
       label: m.assignment_average(),
-      value: manage?.average === undefined ? '–' : percentText(manage.average),
+      value: marks.length
+        ? `${mean(marks.map(({ mark }) => mark))} / ${mean(marks.map(({ total }) => total))}`
+        : '–',
     },
     marked && {
       label: m.assignment_stat_time(),
@@ -785,248 +781,224 @@ function AssignmentStats({
       : null,
   ].filter((stat) => !!stat);
   return (
-    <dl className="tab-body-mt mb-2 flex flex-wrap gap-x-10 gap-y-3">
-      {stats.map((stat) => (
-        <div key={stat.label}>
-          <dt className="t-meta text-fg-muted">{stat.label}</dt>
-          <dd className="mt-0.5 font-bold text-xl">{stat.value}</dd>
-        </div>
-      ))}
-    </dl>
+    <div className="tab-body-mt mb-2 flex shrink-0 flex-wrap items-center gap-x-10 gap-y-3">
+      <dl className="flex flex-wrap gap-x-10 gap-y-3">
+        {stats.map((stat) => (
+          <div key={stat.label}>
+            <dt className="t-meta text-fg-muted">{stat.label}</dt>
+            <dd className="mt-0.5 font-bold text-xl">{stat.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {end && <div className="ml-auto">{end}</div>}
+    </div>
   );
 }
 
-/** Questions (G3): percent correct and answer frequencies, marking points and
- * how often each was awarded. A question of several parts lists each part on a
- * row of its own (Epo 2026-11-14, board C), so nothing nests. The first few
- * rows start open; `opened` is the report's once one is toggled. */
+/** Questions (G3) laid out as a member answers them (Epo 2026-11-22): the
+ * numbers on the left in their average's tint, every question on the right
+ * as the Questions tab draws it, its parts labelled and sub-parts indented,
+ * each part's numbers where its answer would be. A number scrolls to its
+ * question; the one in view is current. */
 function QuestionsTab({
   aiMarks,
+  fullscreen,
   go,
-  onOpened,
-  opened: toggled,
+  onExitFullscreen,
   questions,
 }: {
   aiMarks: boolean;
+  /** The split alone over the page, as the quiz editor's full screen. */
+  fullscreen: boolean;
   go: (next: AssignmentsSearch) => unknown;
-  onOpened: (ids: string[]) => void;
-  opened: string[] | null;
+  onExitFullscreen: () => void;
   questions: AssignmentQuestionReport[];
 }) {
-  type Row = {
-    id: string;
-    number: number;
-    part?: AssignmentPartReport;
-    row: AssignmentQuestionReport;
-  };
-  const rows = questions.flatMap((row, i): Row[] =>
-    row.parts.length > 1
-      ? row.parts.map((part) => ({ id: part.partId, number: i + 1, part, row }))
-      : [{ id: row.question.id, number: i + 1, row }]
+  const [current, setCurrent] = useState<string | undefined>(
+    questions[0]?.question.id
   );
-  const opened = toggled ?? rows.slice(0, OPEN_FIRST).map(({ id }) => id);
+  const list = useRef<HTMLOListElement>(null);
+  const items = questions.map((row): NumberItem => {
+    const average = questionAverage(row);
+    return {
+      id: row.question.id,
+      label: average
+        ? `${m.assignment_average()} ${m.assignment_stat_of(average)}`
+        : m.assignment_not_marked(),
+      state: 'empty',
+      tone: averageTone(average?.share),
+    };
+  });
+  const open = (id: string) => {
+    setCurrent(id);
+    list.current
+      ?.querySelector(`[data-report-question="${id}"]`)
+      // Not in every test DOM.
+      ?.scrollIntoView?.({ block: 'start' });
+  };
+  // The first question still in view below the pane's top is current.
+  const follow = (event: UIEvent) => {
+    const pane = event.target as HTMLElement;
+    if (!pane.matches('[data-quiz-pane]')) return;
+    const top = pane.getBoundingClientRect().top + 96;
+    const shown = [
+      ...pane.querySelectorAll<HTMLElement>('[data-report-question]'),
+    ].find((el) => el.getBoundingClientRect().bottom > top);
+    if (shown) setCurrent(shown.dataset.reportQuestion);
+  };
   return (
-    <ol className="flex flex-col">
-      {rows.map(({ id, number, part, row }) => (
-        <QuestionReportRow
-          aiMarks={aiMarks}
-          go={go}
-          key={id}
-          number={number}
-          onToggle={() =>
-            onOpened(
-              opened.includes(id)
-                ? opened.filter((other) => other !== id)
-                : [...opened, id]
-            )
-          }
-          open={opened.includes(id)}
-          part={part}
-          row={row}
-        />
-      ))}
-    </ol>
+    <div
+      className={cn(
+        'flex min-h-0 flex-1 flex-col',
+        fullscreen
+          ? 'fixed inset-0 z-40 bg-surface'
+          : 'page-bleed mt-3 border-divider border-t'
+      )}
+      onScrollCapture={follow}
+    >
+      {fullscreen && (
+        <div className="flex h-12 shrink-0 items-center justify-end border-divider border-b px-4">
+          <ToolbarButton
+            label={m.material_fullscreen_exit()}
+            onClick={onExitFullscreen}
+          >
+            <Icon name="minimize" />
+          </ToolbarButton>
+        </div>
+      )}
+      <QuizSplit
+        current={current}
+        listed
+        numbers={
+          <QuestionNumbers
+            current={current}
+            items={items}
+            legend={averageLegend()}
+            onOpen={open}
+          />
+        }
+        onBack={() => undefined}
+        onOpen={open}
+        onQuestion
+        phoneStrip={
+          <NumberStrip current={current} items={items} onOpen={open} />
+        }
+        questions={questions.map((row) => row.question)}
+      >
+        <ol className="mx-auto w-full max-w-3xl px-4 pb-10 sm:px-6" ref={list}>
+          {questions.map((row, i) => (
+            <li
+              className="scroll-mt-4 border-divider border-b py-6 last:border-b-0"
+              data-report-question={row.question.id}
+              key={row.question.id}
+            >
+              <QuestionView
+                question={row.question}
+                questionNumber={i + 1}
+                renderAnswer={(part) => {
+                  const stats = row.parts.find((p) => p.partId === part.id);
+                  return (
+                    stats && (
+                      <div className="col-[2/-1] min-w-0">
+                        <PartStats
+                          aiMarks={aiMarks}
+                          go={go}
+                          part={stats}
+                          question={row.question}
+                        />
+                      </div>
+                    )
+                  );
+                }}
+                // The type goes on narrow questions, where it squeezes the text.
+                renderMarks={(part) => (
+                  <>
+                    <span className="@max-[36rem]/question:hidden">
+                      {`${answerLabels[part.answer.type]()} · `}
+                    </span>
+                    {marksText(part.marks)}
+                  </>
+                )}
+              />
+            </li>
+          ))}
+        </ol>
+      </QuizSplit>
+    </div>
   );
 }
 
-/** One row: a whole question, or one part of a question of several, named
- * "Q18 (a)(i)" with its own numbers and, open, what it needs from its
- * question (the stem and its group) above them. */
-function QuestionReportRow({
+/** A question's average over its parts marked so far, in marks and as a
+ * share of those parts' marks; none until one is marked. */
+function questionAverage(row: AssignmentQuestionReport) {
+  let done = 0;
+  let total = 0;
+  for (const stats of row.parts) {
+    const part = row.question.parts.find((p) => p.id === stats.partId);
+    if (stats.average === undefined || !part) continue;
+    done += stats.average;
+    total += part.marks;
+  }
+  if (!total) return;
+  return {
+    done: formatPoints(Number(done.toFixed(1))),
+    share: done / total,
+    total,
+  };
+}
+
+/** A part's numbers: its average, led by "AI graded" on an open or drawing
+ * part unless Marking is Manual (Epo 2026-11-14); answer frequencies, common
+ * wrong answers or how often each marking point was awarded; then its key. */
+function PartStats({
   aiMarks,
   go,
-  number,
-  onToggle,
-  open,
   part,
-  row,
+  question,
 }: {
   /** The AI marks its open and drawn answers (Marking isn't Manual). */
   aiMarks: boolean;
   go: (next: AssignmentsSearch) => unknown;
-  number: number;
-  onToggle: () => void;
-  open: boolean;
-  part?: AssignmentPartReport;
-  row: AssignmentQuestionReport;
-}) {
-  const { question } = row;
-  const source = part
-    ? question.parts.find((p) => p.id === part.partId)
-    : question.parts[0];
-  const marks = part ? (source?.marks ?? 0) : questionMarks(question);
-  const type = source?.answer.type;
-  const name = questionRowName(number, question, part?.partId);
-  const meta = `${name} · ${type ? answerLabels[type]() : ''} · ${
-    marks === 1
-      ? m.question_ui_one_mark()
-      : m.question_ui_marks({ count: marks })
-  }`;
-  const line = (
-    <TextView
-      marks
-      text={(part && blockText(source?.blocks)) || questionLine(question)}
-    />
-  );
-  // A part's own row repeats its question's stem; any row its group's text
-  // and figures, which the parts' answers lean on.
-  const group = source?.group
-    ? question.groups?.find((g) => g.id === source.group)
-    : undefined;
-  const context = [...(part ? question.stem : []), ...(group?.blocks ?? [])];
-  // One wording (Epo 2026-11-13): "Average 80%" for closed answers, the
-  // average share of their marks, and "Average 2.8 of 4" for open and drawn
-  // ones; only "Average" is muted. "–" until one is marked.
-  const open_ = part
-    ? !!type && modelMarked(type)
-    : question.parts.some((p) => modelMarked(p.answer.type));
-  const { average, percent } = part ?? row;
-  const value = open_
-    ? average === undefined
-      ? undefined
-      : m.assignment_stat_of({
-          done: formatPoints(Number(average.toFixed(1))),
-          total: marks,
-        })
-    : percent === undefined
-      ? undefined
-      : percentText(percent);
-  // AI graded before the score, easy to spot down the list (Epo 2026-11-14).
-  const score = (
-    <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
-      {aiMarks && open_ && (
-        <Badge size="sm" tone="accent-1">
-          {m.assignment_ai_graded()}
-        </Badge>
-      )}
-      <span>
-        <span className="text-fg-muted">{m.assignment_average()}</span>{' '}
-        <b className={cn('font-bold', open && 'text-xl')}>{value ?? '–'}</b>
-      </span>
-    </span>
-  );
-  // Open, a click anywhere on it folds it again, but not one on a control
-  // inside or one that ends selecting text (Epo 2026-11-13).
-  const fold = (event: MouseEvent) => {
-    if ((event.target as Element).closest('a, button, summary')) return;
-    if (window.getSelection()?.toString()) return;
-    onToggle();
-  };
-  if (!open)
-    return (
-      <li className="border-divider border-b">
-        <button
-          aria-expanded={false}
-          // One line from md, 36px as the members' table rows (Epo
-          // 2026-11-16); phones stack it on three.
-          className="grid min-h-15 w-full grid-cols-[minmax(0,1fr)_20px] items-center gap-x-3 gap-y-1 py-3 text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset md:min-h-9 md:grid-cols-[240px_minmax(0,1fr)_auto_20px] md:py-1"
-          onClick={onToggle}
-          type="button"
-        >
-          <span className="t-meta truncate text-fg-secondary">{meta}</span>
-          {/* One line: TextView's own pre-wrap would wrap past truncate. */}
-          <span className="truncate font-semibold max-md:col-start-1 max-md:row-start-2 [&_span]:whitespace-nowrap">
-            {line}
-          </span>
-          <span className="whitespace-nowrap max-md:col-start-1 max-md:row-start-3">
-            {score}
-          </span>
-          <Icon
-            className="justify-self-end text-fg-muted max-md:col-start-2 max-md:row-start-1"
-            name="chevronDown"
-            size={16}
-          />
-        </button>
-      </li>
-    );
-  return (
-    // The click is a shortcut; its fold button is the keyboard's way.
-    <li
-      className="grid cursor-pointer grid-cols-[minmax(0,1fr)_20px] gap-x-3 border-divider border-b py-5 md:grid-cols-[320px_minmax(0,1fr)_20px] md:gap-x-10"
-      onClick={fold}
-    >
-      <div className="min-w-0">
-        <p className="t-meta text-fg-secondary">{meta}</p>
-        <p className="mt-2 text-[1.0625rem] leading-snug">{line}</p>
-        <p className="mt-3">{score}</p>
-      </div>
-      <button
-        aria-expanded
-        aria-label={m.action_close()}
-        className="col-start-2 row-start-1 grid size-5 place-items-center self-start justify-self-end text-fg-muted outline-none focus-visible:ring-2 focus-visible:ring-action md:col-start-3"
-        onClick={onToggle}
-        type="button"
-      >
-        <Icon className="rotate-180" name="chevronDown" size={16} />
-      </button>
-      <div className="col-span-2 mt-4 min-w-0 md:col-span-1 md:col-start-2 md:row-start-1 md:mt-0">
-        {context.length > 0 && (
-          <div className="mb-5 grid gap-3">
-            {part && (
-              <p className="t-meta text-fg-secondary">
-                {m.assignment_from_question({ number })}
-              </p>
-            )}
-            {context.map((block, i) => (
-              <QuestionBlockView block={block} key={i} />
-            ))}
-          </div>
-        )}
-        {(part ? [part] : row.parts).map((stats) => (
-          <PartStats
-            go={go}
-            key={stats.partId}
-            part={stats}
-            question={question}
-            showLabel={!part && row.parts.length > 1}
-          />
-        ))}
-      </div>
-    </li>
-  );
-}
-
-function PartStats({
-  go,
-  part,
-  question,
-  showLabel,
-}: {
-  go: (next: AssignmentsSearch) => unknown;
   part: AssignmentPartReport;
   question: Question;
-  showLabel: boolean;
 }) {
   const source = question.parts.find((p) => p.id === part.partId);
   if (!source) return null;
-  const label =
-    showLabel && source.blocks[0]?.type === 'text'
-      ? stripMarks(source.blocks[0].text)
-      : '';
   const answer = source.answer;
+  // "Average 2.8 of 4" for every type, in marks (Epo 2026-11-22, was "80%"
+  // for closed answers); only "Average" is muted. "–" until one is marked.
+  const open = modelMarked(answer.type);
+  const tone = averageTone(
+    part.average === undefined || !source.marks
+      ? undefined
+      : part.average / source.marks
+  );
+  const value =
+    part.average === undefined
+      ? undefined
+      : m.assignment_stat_of({
+          done: formatPoints(Number(part.average.toFixed(1))),
+          total: source.marks,
+        });
   return (
-    <div className="mb-3 last:mb-0">
-      {label && <p className="t-meta mb-1 truncate text-fg-muted">{label}</p>}
+    <div className="grid gap-3">
+      {/* The average in its band's tint, as the question's number (Epo
+          2026-11-22). */}
+      <p className="inline-flex flex-wrap items-center gap-x-2 gap-y-1">
+        {aiMarks && open && (
+          <Badge size="sm" tone="accent-1">
+            {m.assignment_ai_graded()}
+          </Badge>
+        )}
+        <span className="text-fg-muted">{m.assignment_average()}</span>
+        {value && tone ? (
+          <Badge size="sm" tone={tone}>
+            {value}
+          </Badge>
+        ) : (
+          <b className="font-bold">–</b>
+        )}
+      </p>
       {answer.type === 'mcq' && part.options && (
         <OptionBars
           correct={answer.correct}
@@ -1056,8 +1028,8 @@ function PartStats({
           </div>
         </div>
       )}
-      {modelMarked(answer.type) && part.items && (
-        <>
+      {open && part.items && (
+        <div>
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 sm:grid-cols-[minmax(0,1fr)_210px]">
             <p className="t-meta border-divider border-b pb-1.5 text-fg-secondary">
               {m.assignment_marking_point()}
@@ -1099,7 +1071,7 @@ function PartStats({
           >
             {m.assignment_check_marks()}
           </UnderlineLink>
-        </>
+        </div>
       )}
       <PartKey part={source} />
     </div>
@@ -1120,7 +1092,7 @@ function PartKey({ part }: { part: Question['parts'][number] }) {
   const sample = hasSample(part);
   if (!key && !sample && part.solution.length === 0) return null;
   return (
-    <div className="mt-4 grid gap-3">
+    <div className="mt-1 grid gap-3">
       {key && (
         <div>
           <p className="t-meta mb-1 text-fg-secondary">
@@ -1178,10 +1150,10 @@ function OptionBars({
             className={cn(
               'grid min-h-7 items-center gap-2',
               // True and False have no letter column, so they start at the
-              // column's edge.
+              // column's edge. The label and its bar halve the full width.
               letters
-                ? 'grid-cols-[20px_minmax(0,1fr)_72px_16px] sm:grid-cols-[20px_minmax(0,230px)_minmax(80px,1fr)_20px]'
-                : 'grid-cols-[minmax(0,1fr)_72px_16px] sm:grid-cols-[minmax(0,258px)_minmax(80px,1fr)_20px]'
+                ? 'grid-cols-[20px_minmax(0,1fr)_72px_16px] sm:grid-cols-[20px_minmax(0,1fr)_minmax(80px,1fr)_20px]'
+                : 'grid-cols-[minmax(0,1fr)_72px_16px] sm:grid-cols-[minmax(0,1fr)_minmax(80px,1fr)_20px]'
             )}
             key={label}
           >

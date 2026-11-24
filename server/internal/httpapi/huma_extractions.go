@@ -611,8 +611,6 @@ func gradedQuizRefusal(err error) (code, message string, ok bool) {
 		return "assignment_limit", err.Error(), true
 	case errors.Is(err, store.ErrTooManyOpenAssignments):
 		return "assignment_open_limit", err.Error(), true
-	case errors.Is(err, store.ErrTooManyOwnTasks):
-		return "task_limit", err.Error(), true
 	}
 	return "", "", false
 }

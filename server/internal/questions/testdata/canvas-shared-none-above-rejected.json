@@ -1,0 +1,39 @@
+{
+  "name": "canvas-shared-none-above-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "layout": "paper",
+    "labels": "letters",
+    "stem": [
+      {
+        "type": "text",
+        "text": "No canvas up here."
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Mark the right angle."
+          }
+        ],
+        "answer": {
+          "type": "canvas",
+          "shared": true
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      }
+    ]
+  }
+}

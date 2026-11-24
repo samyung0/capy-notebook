@@ -2,7 +2,6 @@ import { useNavigate } from '@tanstack/react-router';
 import { useStudyTopics } from '@/api/hooks';
 import type { SummaryTopic } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
-import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -11,20 +10,18 @@ import { LabelChip, TopicSquares } from '../topicLabels';
 
 /** Study's Overview, whoever practises (boards G5, M1; Study's own page until
  * Epo 2026-11-13): their standing per topic, each topic's label, what it rests
- * on and every question's result, grey when not attempted, with Practise.
- * Not drawn without a topic. */
+ * on and every question's result, grey when not attempted. A row opens the
+ * topic's questions, each practised there (Epo 2026-11-22: the row is the
+ * practise button). Not drawn without a topic. */
 export function TopicsSection({ workspaceId }: { workspaceId: string }) {
   const navigate = useNavigate();
   const { data, error, isError, isPending, refetch } = useStudyTopics(
     workspaceId,
     { errorBoundary: false }
   );
-  const practise = (topic: SummaryTopic) =>
+  const open = (topic: SummaryTopic) =>
     navigate(
-      studyLink(workspaceId, 'practice', {
-        group: topic.group,
-        topicId: topic.topicId,
-      })
+      studyLink(workspaceId, 'summary', { topic: topic.topicId ?? 'others' })
     );
   if (isPending) return <SkeletonList count={4} rowHeight={44} />;
   if (isError || !data)
@@ -43,7 +40,7 @@ export function TopicsSection({ workspaceId }: { workspaceId: string }) {
         {data.topics.map((topic) => (
           <TopicRow
             key={topic.topicId ?? topic.group}
-            onPractise={() => practise(topic)}
+            onOpen={() => void open(topic)}
             topic={topic}
           />
         ))}
@@ -63,10 +60,10 @@ export function weakestTopicId(topics: SummaryTopic[]) {
 }
 
 function TopicRow({
-  onPractise,
+  onOpen,
   topic,
 }: {
-  onPractise: () => void;
+  onOpen: () => void;
   topic: SummaryTopic;
 }) {
   const evidence =
@@ -74,25 +71,23 @@ function TopicRow({
       ? m.summary_right({ asked: topic.asked, right: topic.right })
       : '';
   return (
-    <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 border-divider border-b py-2 md:min-h-11 md:grid-cols-[minmax(0,1fr)_132px_110px_130px_72px] md:py-1">
-      <span className="truncate font-semibold">
-        {topic.group === 'others' ? m.topic_other_files() : topic.name}
-      </span>
-      <span className="col-start-1 row-start-2 mt-1 flex flex-wrap items-center gap-2 md:contents">
-        <span>
-          <LabelChip label={topic.label} />
-        </span>
-        <span className="t-meta text-fg-muted">{evidence}</span>
-        <TopicSquares className="hidden md:flex" topic={topic} />
-      </span>
-      <Button
-        className="col-start-2 row-span-2 row-start-1 justify-self-end md:col-start-auto md:row-span-1 md:row-start-auto"
-        onClick={onPractise}
-        size="sm"
-        variant="outline"
+    <li>
+      <button
+        className="grid w-full grid-cols-[minmax(0,1fr)] items-center gap-x-3 border-divider border-b py-2 text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset md:min-h-11 md:grid-cols-[minmax(0,1fr)_132px_110px_130px] md:py-1"
+        onClick={onOpen}
+        type="button"
       >
-        {m.practice_practise()}
-      </Button>
+        <span className="truncate font-semibold">
+          {topic.group === 'others' ? m.topic_other_files() : topic.name}
+        </span>
+        <span className="mt-1 flex flex-wrap items-center gap-2 md:contents">
+          <span>
+            <LabelChip label={topic.label} />
+          </span>
+          <span className="t-meta text-fg-muted">{evidence}</span>
+          <TopicSquares className="hidden md:flex" topic={topic} />
+        </span>
+      </button>
     </li>
   );
 }

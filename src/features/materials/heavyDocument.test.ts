@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MATERIAL_DOCUMENT_LIMITS, MATERIAL_RENDER_WARNING } from '@/lib/const';
 import { heavyMaterial } from './heavyDocument';
 
-const light = { nodeCount: 10, sizeBytes: 4096, type: 'note' } as const;
+const light = { kind: 'note', nodeCount: 10, sizeBytes: 4096 } as const;
 
 describe('heavyMaterial', () => {
   it('opens an ordinary document without an interstitial', () => {
@@ -45,12 +45,12 @@ describe('heavyMaterial', () => {
   // Epo 2026-10-22: a 1,400-card set is about 7,000 nodes, and its View has
   // no Plate editor to spare; diagrams draw in the worker.
   it('gates notes only', () => {
-    for (const type of ['flashcards', 'quiz', 'mindmap', 'diagram'] as const)
+    for (const kind of ['flashcards', 'quiz', 'mindmap', 'diagram'] as const)
       expect(
         heavyMaterial({
+          kind,
           nodeCount: MATERIAL_DOCUMENT_LIMITS.maxNodes * 2,
           sizeBytes: MATERIAL_DOCUMENT_LIMITS.maxContentBytes * 2,
-          type,
         })
       ).toBeNull();
   });

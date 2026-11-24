@@ -67,3 +67,19 @@ export function withCanvasBlock(
   (surface.get('sys:children') as Y.Array<string>).push(['extra']);
   return Y.encodeStateAsUpdate(doc);
 }
+
+/** A saved board with `props` set on its page block (`prop:` + each name). */
+export function withPageProps(
+  update: Uint8Array,
+  props: Record<string, unknown>
+) {
+  const doc = new Y.Doc();
+  Y.applyUpdate(doc, update);
+  const page = [...doc.getMap<Y.Map<unknown>>('blocks').values()].find(
+    (block) => block.get('sys:flavour') === 'affine:page'
+  );
+  if (!page) throw new Error('the saved board has no page');
+  for (const [key, value] of Object.entries(props))
+    page.set(`prop:${key}`, value);
+  return Y.encodeStateAsUpdate(doc);
+}

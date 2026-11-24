@@ -54,8 +54,11 @@ jobs:
       actions: read
       contents: read
     steps:
-      # The app imports BetterOffice from the submodule (vite scans it at
-      # startup), so this job prepares it as ci.yml's e2e_editor does.
+      # `pnpm bench:editor` makes a production build (production React,
+      # minified) with MSW in the page, inside its step (about two minutes).
+      # That build imports the fork's WASM and stylesheet, and fails on a
+      # missing one in CI, so this job prepares BetterOffice as the canvas job
+      # does.
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
@@ -109,8 +112,9 @@ jobs:
         with:
           if-no-files-found: ignore
           name: playwright-perf-artifacts
+          # The HTML report is written next to its config.
           path: |
-            playwright-report-perf/
+            bench/editor/scripts/playwright-report-perf/
             test-results/
           retention-days: 7
       # Green snapshots come from manual dispatches and from promotions, which

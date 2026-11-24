@@ -44,9 +44,11 @@ const selectTriggerVariants = cva(
     },
     variants: {
       // At the end of a SettingRow: the sharing tab's 144px on phones, long
-      // values ellipsized (the list shows them whole); 176px from sm.
+      // values ellipsized (the list shows them whole); from sm 224px, room
+      // for the longest value a row holds ("Quizzes and flashcards", "After
+      // assignment close") whole (Epo 2026-11-21).
       layout: {
-        row: 'w-36 shrink-0 sm:w-44',
+        row: 'w-36 shrink-0 sm:w-56',
       },
       size: {
         // Button and Input md's height.

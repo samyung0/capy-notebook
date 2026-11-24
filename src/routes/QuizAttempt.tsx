@@ -27,6 +27,7 @@ import {
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { useQuizRun } from '@/features/quizzes/quizRun';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
+import { OnlyYouChip } from '@/features/workspace/HiddenChip';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 
@@ -133,6 +134,8 @@ function Attempt({ quizId }: { quizId: string }) {
               </>
             )
           }
+          // A class member's own practice is theirs alone (Epo 2026-11-20).
+          badge={quiz.onlyYou && <OnlyYouChip />}
           control={control}
           emptyAction={
             <Link className="mt-6 inline-flex" preload="intent" to="/files">

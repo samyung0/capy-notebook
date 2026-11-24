@@ -579,8 +579,9 @@ URL-only nodes, become a placeholder in their place whose element fetches the
 URL in the browser and uploads the bytes, or a link to the URL showing the
 image's alt text when it cannot. Only absolute http(s) and `data:` URLs are
 read, never a path on this app; the file's extension comes from the served
-type through the types the server stores (`IMAGE_EXTENSIONS` in
-`src/lib/fitImage.ts`), and a type it refuses (an icon, SVG) or any failed
+type through the types the upload takes (`PICKED_IMAGE_EXTENSIONS` in
+`src/lib/fitImage.ts`: the stored ones, and AVIF, which the upload re-encodes
+as WebP, Epo 2026-11-23), and a type it refuses (an icon, SVG) or any failed
 read ends as the link, or nothing for a non-web URL, with the URL forgotten,
 so no skeleton stays (REVIEW5 S1). Pasted images read and upload four at a
 time; the rest wait as skeletons (REVIEW5 N6). Nothing is fetched by a
@@ -2951,6 +2952,13 @@ design, option d), and the nudge's release file on 2026-10-17.
   `OFFICE_PROTOCOL_VERSION` stays 15. It took the next number after the
   groups of pieces (the first of the two to land takes the next number).
   Its deploy request names "client protocol 41 -> 42, source 41 -> 42".
+  Canvas questions (the Canvas part type, a part's `answer.shared` canvas
+  graded once, drawings stored under the shared canvas's lead part, and the
+  room's question validator capping images and canvases; Epo 2026-11-23,
+  the Canvas questions picks) raised `CLIENT_PROTOCOL` to 43 and
+  `MIN_MATERIAL` to 43, so material tabs from before the format (protocol
+  42) reload; `MIN_SOURCE` stays 42 and `OFFICE_PROTOCOL_VERSION` stays 15.
+  Its deploy request names "client protocol 42 -> 43, material 41 -> 43".
 
 #### When to bump
 
@@ -3376,7 +3384,7 @@ same array:
 | `graph` (a note's figure, a question's block) | the graph engine (`graphPaint`) | drawing it |
 | a graph's `formula` | KaTeX | laying out its formulas |
 | `html_embed` | `HtmlEmbedSourceDialog` | View source |
-| a quiz part's `drawing` answer | the drawing board (`DrawingBoardScreen`, BlockSuite) | Draw, Edit drawing, Open drawing |
+| a quiz part's `canvas` answer, a drawn canvas | the drawing board (`DrawingBoardScreen`, BlockSuite) | Answer in Canvas, Open canvas, Edit canvas |
 | `equation`, `inline_equation`, a formula in a quiz's text, a quiz part's `open` answer | MathLive | drawing formulas; a long answer's Formula |
 
 Each loads once (`BlockCode`), for its lazy component and the preload alike. Until they
@@ -3386,16 +3394,18 @@ registered by another import, counts at once. Each open waits afresh, a reopen b
 last one's DOM left included. Code a block added while Preview is open needs loads without
 the loader. Edit from the loader goes back to where the editor was.
 
-A load is asked for (`load`) by Preview's walk, a drawn graph and a pressed button (Draw,
-Edit drawing, Open drawing, a drawn sample's, View source); the board's idle load ahead of
-a drawing part (`useBoardAhead`) is a preload (`preload`), whose failure marks nothing, so
-the part keeps Draw and a press asks again. What an asked load could not bring (offline, a
+A load is asked for (`load`) by Preview's walk, a drawn graph and a pressed button (Answer
+in Canvas, Open canvas, Edit canvas, a drawn sample's, View source); the
+board's idle load ahead of a canvas part or a quiz editor's canvas (`useBoardAhead`) is a
+preload (`preload`), whose failure marks nothing, so the part keeps its button and a press
+asks again. What an asked load could not bring (offline, a
 failed chunk) shows "This block cannot be shown" (`CannotShow`, the words of a note's
 unknown block) in place of what needs it, read from how its load settled
 (`useCodeFailed`), never from a thrown error (a lazy component whose load failed draws the
-notice itself), and the rest of Preview stays: a graph shows it in its place; a drawing
-part in place of its grid and Draw, its Edit drawing or Open drawing, its verdict and a
-drawing already made staying; a drawn sample's field in place of its button, closing an
+notice itself), and the rest of Preview stays: a graph shows it in its place; a canvas
+part in place of Answer in Canvas or Open canvas, its canvas, its verdict and
+an answer already made staying; a quiz editor's canvas in place of Edit canvas; a canvas
+only looked at drops its Open canvas; a drawn sample's field in place of its button, closing an
 open one, and the quiz editor's footer in place of Draw sample answer (the phone's ⋮ item
 disabled); an HTML embed in its toolbar where View source was, the embed itself still
 running. Those hold wherever the graph, the board or the source view show once their code
@@ -5451,26 +5461,28 @@ needs, so it's a lazy chunk of about 650 KB gzipped, and the app reaches it thro
 data-view (database and table views) stays out of it: its elements are defined by the
 database and data-view blocks, and Convert to database loads them on use (local change
 26); `createIcon` takes icons by reference, so only icons the code names ship (local
-change 27). The board takes a stroke as soon as Draw is clicked (fix 4 of the
-canvas-open report, Epo 2026-11-07): once a drawing part (`DrawingAnswer`) or a sample
-answer field (`DrawnSampleField`) shows, `useBoardAhead` in
+change 27). The board takes a stroke as soon as Answer in Canvas is clicked (fix 4
+of the canvas-open report, Epo 2026-11-07): once a canvas part (`CanvasAnswer`) or a
+sample answer field (`DrawnSampleField`) shows, `useBoardAhead` in
 `quizzes/drawing/boardPrefetch.tsx` fetches and evaluates the module in idle time
 (within a second, `whenIdle`), then renders that part's `DrawingBoardScreen` with
-`hidden`, which mounts the board in idle time too, or at once if Draw comes first: a
-mount is one long task. Hidden is `opacity: 0` with `inert` and `aria-hidden`, not
+`hidden`, which mounts the board in idle time too, or at once if Answer in Canvas comes
+first: a mount is one long task. A quiz editor's canvas (`CanvasField`, in the stem, a
+group's text or a part's) only preloads the module and mounts its board on Edit canvas,
+leaving the page's one board ahead to a sample field. Hidden is `opacity: 0` with `inert` and `aria-hidden`, not
 `visibility: hidden`, since BlockSuite gives every card in view (notes, images) an
 inline `visibility: visible` that beats a hidden parent; `inert` keeps pointers off
 everything in it, and the board keeps its size, so it mounts and fits as if shown. A
 hidden board keeps no device draft (a note's height settling as it mounts isn't the
-student's) and takes no time-limit Done. Draw only shows it and fits it again at the
+student's) and takes no time-limit Done. Answer in Canvas only shows it and fits it again at the
 window's width then; Done puts it away: `putAway()` closes an open card, clears the
 selection and turns off BlockSuite's event dispatcher (local change 28), whose key and
 clipboard handlers sit on the document. A Done that changes the answer mounts the board
 again, hidden and in idle time, for a fresh undo history. One board is mounted ahead
-per page, held by the first drawing part that shows until it leaves; other parts mount
-theirs on Draw, with the module already there. A hidden mount that fails says nothing
-and Draw tries again; a mount that fails when shown says so and closes, and the next
-Draw tries again. A first mount took 240-430 ms at 4x CPU on a Mac (about 1 s on the
+per page, held by the first canvas part that shows until it leaves; other parts mount
+theirs on Answer in Canvas, with the module already there. A hidden mount that fails
+says nothing and the button tries again; a mount that fails when shown says so and
+closes, and the next press tries again. A first mount took 240-430 ms at 4x CPU on a Mac (about 1 s on the
 CI runner) and showing one mounted ahead about 12 ms; a mounted board holds about 3-9
 MB of JS heap and 3,500-5,700 DOM nodes.
 Nothing in production opens it yet: `/dev/drawing` is a dev-only route. A production
@@ -6179,24 +6191,27 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   the device's scale. Notes are drawn by html2canvas-pro (local change 72): html2canvas
   1.4.1 threw on the `color(srgb …)` Chrome computes for a note's `color-mix()` fill. A
   note scrolled out of view is shown for the capture: BlockSuite
-  hides it with no size, which html2canvas drew as nothing and the capture threw on. On a board wider or taller than 1,568 px, groups of elements more than
-  400 px apart are drawn 400 px apart, so one dragged far away doesn't squash the rest;
-  the board itself stays as it is. Only a quiz's board (`question`) does this, for its
-  answer area: a workspace canvas is framed where everything is (Epo 2026-11-18). The PNG goes through `fitImageOffThread` (WebP, 300 KB cap, Epo 2026-11-06), whose
+  hides it with no size, which html2canvas drew as nothing and the capture threw on. A quiz's board (`question`) draws exactly its answer area, cut at
+  its edge (Epo 2026-11-23, which removed the far-group pass); a workspace canvas is
+  framed where everything is (Epo 2026-11-18). The PNG goes through `fitImageOffThread` (WebP, 300 KB cap, Epo 2026-11-06), whose
   encode runs in a worker while the drawing stays on the page, and
-  comes back as a `File`. `stats().span` is that image's longest side in board units
-  (after the far groups are drawn nearer, with the margin), for the answer flow's wide-board
-  warning on Done.
+  comes back as a `File`. `outside()` says whether anything but the question's parts
+  lies wholly or partly outside the answer area, for Done's question in the answer flow
+  and on the teacher's canvas (the 2,000-unit span check is gone).
 - **What the answer flow mounts:** `mountDrawingBoard(host, { readOnly, saved,
-  onChange })`. Every answer starts on the same plain board (Epo 2026-11-06 dropped
-  per-question backgrounds); the dev pages pass `plane: true` for a plane card to play
+  onChange })`. An answer starts on a plain board (Epo 2026-11-06 dropped
+  per-question backgrounds), or on a copy of its drawn canvas's question board (Epo
+  2026-11-23); the dev pages pass `plane: true` for a plane card to play
   with.
   - `answerArea: { label }` draws a dashed 1,920 × 1,200 box at the board's origin with
     the label in a black chip on its top left corner (Epo 2026-11-07, W3/W4), on the
     layer under the strokes, the same size on screen at every zoom, and fits the first
-    view to it and what's drawn. It's only on screen: the image, `save()`, `stats().span`
-    and previews leave it out, and a read-only board draws none. Drawing inside it keeps
-    `span` at most 1,936.
+    view to it and what's drawn. Its frame is only on screen: the image and previews
+    are cut to it without drawing it, `save()` leaves it out, and a read-only board draws
+    none. `movable` (the teacher's question board) lets its label or edge move it, its
+    top left kept as the page block's `prop:area`; a Canvas part's student board is a copy
+    of the question's (`question: {board, tip}`), its parts locked (`lockedBySelf`) and
+    showing `tip` when hovered or pressed.
   - `fitPadding` ([top, right, bottom, left] pixels) is the room the first fit leaves
     for what the page lays over the board, such as a pinned question card or a top bar;
     without it the fit leaves room for the board's own toolbar and undo. The first view is
@@ -6210,7 +6225,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     points are rounded to whole pixels and every place (`xywh`) to a tenth, which leaves
     60% of the bytes with no visible change (pressure stays: perfect-freehand draws the
     line from it); highlighter strokes from the pen menu are rounded the same way. The
-    answer flow refuses past Epo's 250 KB on Done.
+    answer flow refuses past `DRAWING_BOARD_MAX` on Done (400 KiB since
+    2026-11-23, Epo's 250 KB before).
   - `saved` is checked before anything mounts (`boardLoad.ts`, by the board's rules in
     `boardRules.ts`, below), as BlockSuite's store
     skips a block it doesn't know and takes any tree on load: one page and one canvas,
@@ -6400,7 +6416,10 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     `TestGeneratedFileIsCurrent` fails when it's stale. `mountDrawingBoard`,
     `checkSavedBoard` and `drawBoardPreview` take the board, and the limits in
     `boardData.ts` come from it, as does the picture emoji list (`emoji`, read by
-    `boardPictureData.ts`). The server keeps a saved board as opaque bytes and
+    `boardPictureData.ts`). Its `props` give a block flavour a prop on some boards
+    only, its value checked by the board's rules (`BOARD_PROPS`): the page block's
+    `area` on a question board, the answer area's top left (`boardArea.ts`, Canvas
+    parts, Epo 2026-11-23). The server keeps a saved board as opaque bytes and
     checks no canvas room's content (below), so the browser is the only reader.
   - **The board's rules** (2026-11-22): `src/features/blocksuite/boardRules.ts`, read by
     the load check, the live board's placeholders, the preview and `keepToCatalog`. A

@@ -62,9 +62,7 @@ const searchText = (question: Question) =>
   ]).toLowerCase();
 
 export const itemBankHandlers = (
-  workspace: (
-    id: string
-  ) => Pick<Workspace, 'kind' | 'name' | 'role'> | undefined,
+  workspaces: () => Pick<Workspace, 'id' | 'kind' | 'name' | 'role'>[],
   /** A workspace's topic ids. */
   topicIdsOf: (workspaceId: string) => string[],
   /** A quiz material in the workspace holding these questions. */
@@ -77,6 +75,7 @@ export const itemBankHandlers = (
   /** A quiz material's workspace ('' for none); undefined when not found. */
   quizWorkspace: (quizId: string) => string | undefined
 ) => {
+  const workspace = (id: string) => workspaces().find((ws) => ws.id === id);
   const questionsOf = (bank: string) => {
     let list = banks.get(bank);
     if (!list) {
@@ -124,23 +123,33 @@ export const itemBankHandlers = (
     });
   };
   return [
+    // Every bank the caller reaches: the class they are in first, then their
+    // own, then the other classes they own or edit, A–Z.
     http.get('/api/item-banks', ({ request }) => {
       const workspaceId = new URL(request.url).searchParams.get('workspaceId');
-      const items: ItemBank[] = [];
-      if (workspaceId && reaches(workspaceId))
-        items.push({
-          count: questionsOf(workspaceId).length,
-          id: workspaceId,
+      const classes: ItemBank[] = workspaces()
+        .filter((ws) => reaches(ws.id))
+        .sort(
+          (a, b) =>
+            Number(b.id === workspaceId) - Number(a.id === workspaceId) ||
+            a.name.localeCompare(b.name)
+        )
+        .map((ws) => ({
+          count: questionsOf(ws.id).length,
+          id: ws.id,
           kind: 'workspace',
-          name: workspace(workspaceId)?.name ?? '',
-        });
-      items.push({
+          name: ws.name,
+        }));
+      const first = classes[0]?.id === workspaceId ? 1 : 0;
+      const own: ItemBank = {
         count: questionsOf('me').length,
         id: 'me',
         kind: 'personal',
         name: '',
+      };
+      return HttpResponse.json({
+        items: [...classes.slice(0, first), own, ...classes.slice(first)],
       });
-      return HttpResponse.json({ items });
     }),
     http.get('/api/item-banks/:bank/questions', ({ params, request }) => {
       const bank = String(params.bank);

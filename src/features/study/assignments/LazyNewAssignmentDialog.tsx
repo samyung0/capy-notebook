@@ -21,7 +21,7 @@ export function NewAssignmentDialog(props: ComponentProps<typeof Dialog>) {
   );
 }
 
-/** New graded quiz, with Add quiz's tabs: loaded as it opens. */
+/** New graded quiz, with New quiz's tabs: loaded as it opens. */
 export function GradedQuizDialog(props: ComponentProps<typeof Graded>) {
   return (
     <Suspense fallback={null}>

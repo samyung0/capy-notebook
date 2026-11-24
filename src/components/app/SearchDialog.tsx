@@ -3,7 +3,7 @@ import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useState } from 'react';
 import { searchQueryQMax } from '@/api/gen/validators';
 import { useSearch } from '@/api/hooks';
-import type { MaterialRefType, SearchKind, SearchResult } from '@/api/types';
+import type { MaterialKind, SearchKind, SearchResult } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
@@ -29,7 +29,7 @@ const KIND_ICON = {
   workspace: 'workspaces',
 } satisfies Partial<Record<SearchKind, Parameters<typeof Icon>[0]['name']>>;
 
-const isMaterial = (kind: SearchKind): kind is MaterialRefType =>
+const isMaterial = (kind: SearchKind): kind is MaterialKind =>
   !(kind in KIND_ICON);
 
 function visibleSearchResult(result: SearchResult): boolean {

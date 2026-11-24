@@ -36,6 +36,8 @@ const sent: Pick<AppNotification, 'data' | 'kind'>[] = [
   { data: { code: 'over_quota_frozen' }, kind: 'system' },
   { data: { code: 'account_deletion_requested' }, kind: 'system' },
   { data: { code: 'account_deletion_cancelled' }, kind: 'system' },
+  { data: { code: 'grades_released', title: 'Paper 1' }, kind: 'system' },
+  { data: { code: 'mark_changed', title: 'Paper 1' }, kind: 'system' },
   {
     data: {
       code: 'workspace_invite_accepted',

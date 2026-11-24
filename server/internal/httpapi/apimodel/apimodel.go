@@ -398,6 +398,8 @@ type Quiz struct {
 	CreatedAt     time.Time        `json:"createdAt"`
 	Privacy       store.Privacy    `json:"privacy"`
 	SharePath     string           `json:"sharePath,omitempty"`
+	// OnlyYou is a class member's own practice quiz, theirs alone.
+	OnlyYou bool `json:"onlyYou,omitempty"`
 	// Author is the owner a shared page shows; only the single-quiz read fills it.
 	Author *store.MaterialAuthor `json:"author,omitempty"`
 	// ParentMaterialID is the note a quiz is embedded in (a quick check).
@@ -419,7 +421,7 @@ func FromQuiz(q store.Quiz) Quiz {
 		Revision: q.Revision,
 		ID:       q.ID, Name: q.Name, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName,
 		Topics: q.Topics, Questions: decodeQuestions(q.Questions), CreatedAt: q.CreatedAt,
-		Privacy: q.Privacy, SharePath: q.SharePath, ParentMaterialID: q.ParentMaterialID, Provenance: q.Provenance,
+		Privacy: q.Privacy, SharePath: q.SharePath, OnlyYou: q.OnlyYou, ParentMaterialID: q.ParentMaterialID, Provenance: q.Provenance,
 		IsOwner: q.IsOwner, CanEdit: q.CanEdit, CanEditContent: q.CanEditContent,
 	}
 	if out.Topics == nil {
@@ -499,8 +501,9 @@ type AssignmentFormReq struct {
 	// (Epo 2026-11-19); it needs AllowUploads.
 	UploadOnly bool                      `json:"uploadOnly,omitempty"`
 	Files      []store.AssignmentFileRef `json:"files" nullable:"false" maxItems:"20"`
-	// Points grades a class's Assignment out of this many (Epo 2026-11-14);
-	// absent, it is not graded. A graded quiz and a task have none.
+	// Points grades a class's Assignment that takes uploads out of this many
+	// (Epo 2026-11-14, 2026-11-21); absent, it is not graded. A graded quiz has
+	// none.
 	Points *AssignmentPoints `json:"points,omitempty"`
 	// TotalMarks is a graded quiz from a file's total, what each hand-in is
 	// marked out of (Epo 2026-11-20); it has one, nothing else does.

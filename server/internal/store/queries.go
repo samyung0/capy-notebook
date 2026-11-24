@@ -885,11 +885,6 @@ func (s *Store) deleteWorkspaceWithResultTx(
 		return nil, err
 	}
 	rows.Close()
-	// The tasks its members set themselves are theirs, not the workspace's:
-	// they stay, in no workspace, as when a member leaves.
-	if _, err := tx.Exec(ctx, `UPDATE assignments SET workspace_id=NULL WHERE workspace_id=$1 AND own`, id); err != nil {
-		return nil, err
-	}
 	if _, err := tx.Exec(ctx, `DELETE FROM workspaces WHERE id=$1`, id); err != nil {
 		return nil, err
 	}
@@ -2176,11 +2171,10 @@ func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]Ma
 	defer rows.Close()
 	for rows.Next() {
 		var r MaterialRef
-		var kind MaterialKind
 		var provenance []byte
 		if err := rows.Scan(
 			&r.ID,
-			&kind,
+			&r.Kind,
 			&r.Title,
 			&r.TopicID,
 			&r.Position,
@@ -2196,7 +2190,6 @@ func (s *Store) ListMaterialRefs(ctx context.Context, userID, wsID string) ([]Ma
 		if r.Provenance, err = decodeProvenance(provenance); err != nil {
 			return nil, err
 		}
-		r.Type = kind.RefType()
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -2226,6 +2219,7 @@ func (s *Store) quizFromMaterial(mt Material) (Quiz, error) {
 		Topics: topics, ScopeFileNames: mt.ScopeFileNames, Questions: questions, CreatedAt: mt.CreatedAt,
 		Privacy: mt.Privacy, TimeLimitMin: timeLimit, Provenance: mt.Provenance, ParentMaterialID: mt.ParentMaterialID,
 		SharePath: materialSharePath(s.shareLinkSecret, string(mt.Kind), mt.ID, mt.WorkspaceID, mt.ParentMaterialID),
+		OnlyYou:   mt.PracticeWorkspaceID != "",
 		IsOwner:   mt.IsOwner, CanEdit: mt.Capabilities.CanEdit, CanEditContent: mt.Capabilities.CanEditContent,
 	}, nil
 }

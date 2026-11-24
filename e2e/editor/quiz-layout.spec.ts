@@ -141,13 +141,13 @@ test.describe('taking an assignment', () => {
         name: `${m.assignment_question_n({ number: 1 })}, ${m.assignment_legend_answered()}`,
       })
     ).toBeVisible({ timeout: 30_000 });
-    // One set of the paper's 21 numbers: the grid's, the strip hidden.
+    // One set of the paper's 26 numbers: the grid's, the strip hidden.
     await expect(
       take.getByRole('button', {
         name: new RegExp(
           `^${m.assignment_question_n({ number: 0 }).replace('0', '\\d+')}, `
         ),
       })
-    ).toHaveCount(21);
+    ).toHaveCount(26);
   });
 });

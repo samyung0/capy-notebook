@@ -1,0 +1,108 @@
+{
+  "name": "canvases-at-limit",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "layout": "paper",
+    "labels": "letters",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Four canvases."
+      },
+      {
+        "type": "canvas"
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it here."
+          }
+        ],
+        "answer": {
+          "type": "canvas",
+          "shared": true
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          }
+        ],
+        "solution": [],
+        "group": "g1"
+      },
+      {
+        "id": "p2",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it again."
+          },
+          {
+            "type": "canvas"
+          }
+        ],
+        "answer": {
+          "type": "canvas"
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          }
+        ],
+        "solution": [],
+        "group": "g1"
+      },
+      {
+        "id": "p3",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "And once more."
+          },
+          {
+            "type": "canvas",
+            "board": "asset_board_3",
+            "image": "asset_image_3"
+          }
+        ],
+        "answer": {
+          "type": "canvas"
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      }
+    ],
+    "groups": [
+      {
+        "id": "g1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Use the canvas below."
+          },
+          {
+            "type": "canvas",
+            "board": "asset_board_2",
+            "image": "asset_image_2"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -68,7 +68,7 @@ export function MaterialListItem({
         search={{ material: matRef.id }}
         to="/workspaces/$workspaceId"
       >
-        <FileIcon className="size-4" name={materialIconName(matRef.type)} />
+        <FileIcon className="size-4" name={materialIconName(matRef.kind)} />
         <span
           className={cn(
             'min-w-0 flex-1 translate-y-px truncate',
@@ -76,7 +76,7 @@ export function MaterialListItem({
             matRef.hidden && 'text-fg-muted'
           )}
         >
-          {matRef.type === 'quiz'
+          {matRef.kind === 'quiz'
             ? m.files_quiz_row({ title: matRef.title })
             : matRef.title}
         </span>

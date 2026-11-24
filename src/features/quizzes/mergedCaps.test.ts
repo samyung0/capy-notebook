@@ -10,7 +10,12 @@ import {
   validateQuestion,
 } from '@/features/questions/validation';
 import { m } from '@/i18n';
-import { editQuestion, readQuestions, writeQuestion } from './liveQuiz';
+import {
+  editQuestion,
+  figureRoom,
+  readQuestions,
+  writeQuestion,
+} from './liveQuiz';
 
 /* Epo 2026-11-22, "Yes, A everywhere": two people's edits merged past a cap
  * are kept and read whole up to twice it; editors stop at the cap, checked
@@ -137,4 +142,67 @@ it('writes an editor’s question only within the quiz caps as it reads now', ()
   expect(readQuestions(docs.content, docs.keys)[0].parts[0].blocks).toEqual(
     edited.parts[0].blocks
   );
+});
+
+// One canvas a part (Epo 2026-11-23): two editors' adds at once leave two,
+// read whole, a drawn one's board and picture together; an editor adds none
+// past one, and an edit elsewhere still goes.
+it('keeps two canvases two editors added at once, and an editor adds no second', () => {
+  const a = quiz([short('q1')]);
+  const b = copy(a);
+  for (const [docs, canvas] of [
+    [a, { type: 'canvas' }],
+    [b, { board: 'board_1', image: 'image_1', type: 'canvas' }],
+  ] as const) {
+    const question = structuredClone(readQuestions(docs.content, docs.keys)[0]);
+    question.parts[0].blocks.push(canvas);
+    expect(editQuestion(docs.content, docs.keys, question)).toBeNull();
+  }
+  exchange(a, b);
+  const [merged] = readQuestions(a.content, a.keys);
+  const canvases = merged.parts[0].blocks.filter((b) => b.type === 'canvas');
+  expect(canvases).toHaveLength(2);
+  expect(canvases).toContainEqual({
+    board: 'board_1',
+    image: 'image_1',
+    type: 'canvas',
+  });
+  expect(validateQuestion(merged)).toEqual(merged);
+  const edited = structuredClone(merged);
+  edited.stem = [{ text: 'Look closely.', type: 'text' }];
+  expect(editQuestion(a.content, a.keys, edited)).toBeNull();
+  const third = structuredClone(edited);
+  third.parts[0].blocks.push({ type: 'canvas' });
+  expect(editQuestion(a.content, a.keys, third)).toBe(
+    m.question_validation_canvas_count()
+  );
+  const fresh = quiz([short('q2')]);
+  const [one] = readQuestions(fresh.content, fresh.keys);
+  one.parts[0].blocks.push({ type: 'canvas' }, { type: 'canvas' });
+  expect(editQuestion(fresh.content, fresh.keys, one)).toBe(
+    m.question_validation_canvas_count()
+  );
+});
+
+// A canvas Done puts back where a co-editor removed it goes in only while the
+// part holds none (Epo 2026-11-23).
+it("puts a figure's canvas back only into a part without one", () => {
+  const docs = quiz([short('q1')]);
+  const figures = figureRoom(docs);
+  const section = {
+    partId: readQuestions(docs.content, docs.keys)[0].parts[0].id,
+  };
+  const place = { index: 1, question: 'q1', section };
+  expect(figures.insert(place, { type: 'canvas' })).not.toBeNull();
+  expect(
+    figures.insert(place, {
+      board: 'board_1',
+      image: 'image_1',
+      type: 'canvas',
+    })
+  ).toBeNull();
+  const [read] = readQuestions(docs.content, docs.keys);
+  expect(read.parts[0].blocks.filter((b) => b.type === 'canvas')).toEqual([
+    { type: 'canvas' },
+  ]);
 });

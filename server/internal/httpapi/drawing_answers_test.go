@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -18,13 +19,13 @@ import (
 // drawingQuestion is one question whose one part, draw-a, is drawn; sample is
 // its drawn sample answer, {board, image} asset ids, or nil.
 func drawingQuestion(sample map[string]any) map[string]any {
-	answer := map[string]any{"type": "drawing"}
+	answer := map[string]any{"type": "canvas"}
 	if sample != nil {
 		answer["sample"] = sample
 	}
 	return map[string]any{
 		"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
-		"parts": []any{map[string]any{"id": "draw-a", "blocks": []any{map[string]any{"type": "text", "text": "Draw it."}},
+		"parts": []any{map[string]any{"id": "draw-a", "blocks": []any{map[string]any{"type": "text", "text": "Draw it."}, map[string]any{"type": "canvas"}},
 			"answer": answer, "marks": 2, "markscheme": []any{map[string]any{"text": "Shape", "marks": 2}}, "solution": []any{}}},
 	}
 }
@@ -294,6 +295,110 @@ func TestPracticeDrawingIsLoggedAsAIMarked(t *testing.T) {
 	}
 	if grader != "ai" {
 		t.Fatalf("grader = %q, want ai", grader)
+	}
+}
+
+// TestASharedCanvasIsMarkedPerPartOnOneDrawing (Epo 2026-11-23): parts
+// answering in the stem's canvas send one drawing, under the first of them;
+// each is graded with its image, and it is stored once. A drawing sent under
+// the other is refused.
+func TestASharedCanvasIsMarkedPerPartOnOneDrawing(t *testing.T) {
+	h, st, _ := openGradingAPI(t, "full")
+	shared := func(id, text string) map[string]any {
+		return map[string]any{"id": id, "blocks": []any{map[string]any{"type": "text", "text": text}},
+			"answer": map[string]any{"type": "canvas", "shared": true}, "marks": 1,
+			"markscheme": []any{map[string]any{"text": text, "marks": 1}}, "solution": []any{}}
+	}
+	rec := doReq(t, h, http.MethodPost, "/api/quizzes", "u_owner", map[string]any{
+		"name": "Shared canvas", "privacy": "private",
+		"questions": []any{map[string]any{
+			"id": "q1", "layout": "paper", "labels": "letters",
+			"stem":  []any{map[string]any{"type": "text", "text": "A Punnett square."}, map[string]any{"type": "canvas"}},
+			"parts": []any{shared("s1", "Fill in the boxes."), shared("s2", "Write the ratio.")},
+		}},
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create quiz → %d %s", rec.Code, rec.Body.String())
+	}
+	var quiz struct{ ID string }
+	_ = json.Unmarshal(rec.Body.Bytes(), &quiz)
+	t.Cleanup(func() { doReq(t, h, http.MethodDelete, "/api/quizzes/"+quiz.ID, "u_owner", nil) })
+	check := func(part string) *httptest.ResponseRecorder {
+		return doReq(t, h, http.MethodPost, "/api/quizzes/"+quiz.ID+"/check", "u_owner", map[string]any{
+			"questionId": "q1", "answers": map[string]any{part: drawingDone(t)},
+		})
+	}
+	expectStatus(t, check("s2"), http.StatusUnprocessableEntity, "a drawing under the second sharing part")
+	before := gradedImages.Load()
+	rec = check("s1")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("check → %d %s", rec.Code, rec.Body.String())
+	}
+	var detail struct {
+		ID        string
+		Answers   map[string]any
+		Questions []map[string]any
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &detail)
+	parts := gradedParts(t, detail.Questions)
+	if parts["s1"]["awarded"] != float64(1) || parts["s2"]["awarded"] != float64(1) {
+		t.Fatalf("graded = %+v", parts)
+	}
+	if sent := gradedImages.Load() - before; sent != 2 {
+		t.Fatalf("grading calls with the drawing = %d, want 2", sent)
+	}
+	held, err := st.AttemptDrawings(context.Background(), detail.ID)
+	if err != nil || len(held) != 1 || held["s1"].BoardKey == "" || held["s1"].ImageKey != "" {
+		t.Fatalf("stored drawings = %+v, err %v", held, err)
+	}
+	if _, named := detail.Answers["s2"]; named {
+		t.Fatalf("answers = %v", detail.Answers)
+	}
+}
+
+// TestASharedCanvasIsMarkedInOneCallOnOneImage (Epo 2026-11-23): an
+// assignment's parts answering in the stem's canvas go to one marking call,
+// each with the one drawing's image, byte for byte, which the pipeline then
+// sends once; the canvas they answer in is no figure of theirs.
+func TestASharedCanvasIsMarkedInOneCallOnOneImage(t *testing.T) {
+	h, _, _ := openGradingAPI(t, "full")
+	const ws = "/api/workspaces/ws_e2e_private"
+	if rec := doReq(t, h, http.MethodPatch, ws, "u_owner", map[string]any{"kind": "class"}); rec.Code != http.StatusOK {
+		t.Fatalf("set kind: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	t.Cleanup(func() { doReq(t, h, http.MethodPatch, ws, "u_owner", map[string]any{"kind": "personal"}) })
+	shared := func(id, text string) map[string]any {
+		return map[string]any{"id": id, "blocks": []any{map[string]any{"type": "text", "text": text}},
+			"answer": map[string]any{"type": "canvas", "shared": true}, "marks": 1,
+			"markscheme": []any{map[string]any{"text": text, "marks": 1}}, "solution": []any{}}
+	}
+	assignment, _ := makeGradedQuiz(t, h, "u_owner", []any{map[string]any{
+		"id": "q1", "layout": "paper", "labels": "letters",
+		"stem":  []any{map[string]any{"type": "text", "text": "A Punnett square."}, map[string]any{"type": "canvas"}},
+		"parts": []any{shared("s1", "Fill in the boxes."), shared("s2", "Write the ratio.")},
+	}}, gradedQuizForm("Shared canvas", "ai_approve"))
+	attempt := startDrawingAttempt(t, h, assignment, "u_viewer")
+	expectStatus(t, doReq(t, h, http.MethodPut, "/api/assignment-attempts/"+attempt+"/drawings/s1", "u_viewer", drawingDone(t)), http.StatusOK, "Done")
+	gradedBatches.Lock()
+	before := len(gradedBatches.calls)
+	gradedBatches.Unlock()
+	rec := doReq(t, h, http.MethodPost, "/api/assignment-attempts/"+attempt+"/submit", "u_viewer", map[string]any{"answers": map[string]any{}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("submit: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	waitForMarks(t, h, attempt, "s1", "s2")
+	gradedBatches.Lock()
+	calls := gradedBatches.calls[before:]
+	gradedBatches.Unlock()
+	if len(calls) != 1 || len(calls[0]) != 2 {
+		t.Fatalf("marking calls = %d, want one of both parts", len(calls))
+	}
+	a, b := calls[0][0], calls[0][1]
+	if a.Image == "" || a.Image != b.Image || len(a.Figures)+len(b.Figures) != 0 {
+		t.Fatalf("parts sent %d and %d image bytes, %d and %d figures", len(a.Image), len(b.Image), len(a.Figures), len(b.Figures))
+	}
+	if strings.Contains(a.Question, "[Figure") || strings.Contains(b.Question, "[Figure") {
+		t.Fatalf("the answer canvas is a figure: %q / %q", a.Question, b.Question)
 	}
 }
 

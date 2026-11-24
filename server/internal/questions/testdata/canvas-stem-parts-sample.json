@@ -1,0 +1,75 @@
+{
+  "name": "canvas-stem-parts-sample",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "layout": "paper",
+    "labels": "letters",
+    "stem": [
+      {
+        "type": "text",
+        "text": "A circle and its centre."
+      },
+      {
+        "type": "canvas",
+        "board": "asset_board_1",
+        "image": "asset_image_1"
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw a radius."
+          },
+          {
+            "type": "canvas"
+          }
+        ],
+        "answer": {
+          "type": "canvas",
+          "sample": {
+            "board": "asset_board_2",
+            "image": "asset_image_2"
+          }
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      },
+      {
+        "id": "p2",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw a chord."
+          },
+          {
+            "type": "canvas",
+            "board": "asset_board_3",
+            "image": "asset_image_3"
+          }
+        ],
+        "answer": {
+          "type": "canvas"
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      }
+    ]
+  }
+}

@@ -96,7 +96,7 @@ type sharingNoticeOutput struct {
 func (a *api) registerAssignments(api huma.API) {
 	const tag = "Assignments"
 	reg(api, http.MethodGet, "/api/workspaces/{id}/assignments", "listAssignments", tag, "A class's assignments, a page at a time: all of them for its owner and teaching assistants, a member's own otherwise", http.StatusOK, a.listAssignments)
-	reg(api, http.MethodPost, "/api/workspaces/{id}/assignments", "createAssignment", tag, "Give a class an unmarked assignment, or set oneself a task; a graded quiz is made with its questions", http.StatusCreated, a.createAssignment)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/assignments", "createAssignment", tag, "Give a class an unmarked assignment; a graded quiz is made with its questions", http.StatusCreated, a.createAssignment)
 	reg(api, http.MethodPost, "/api/quizzes/{id}/graded-copy", "copyQuizToGradedQuiz", tag, "Make a graded quiz from a copy of a practice quiz in the same workspace, images and all", http.StatusCreated, a.copyQuizToGradedQuiz)
 	reg(api, http.MethodPost, "/api/files/{id}/graded-quiz", "makeFileGradedQuiz", tag, "Make a graded quiz whose question paper is a file of the workspace, answered by upload and marked by hand", http.StatusCreated, a.makeFileGradedQuiz)
 	reg(api, http.MethodGet, "/api/assignments/{id}", "getAssignment", tag, "An assignment", http.StatusOK, a.getAssignment)
@@ -119,6 +119,7 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/sharing-notice", "getSharingNotice", tag, "Whether a class member is yet to be told what they share", http.StatusOK, a.getSharingNotice)
 	reg(api, http.MethodPut, "/api/workspaces/{id}/sharing-notice", "markSharingNoticeSeen", tag, "Record that a class member was told what they share", http.StatusNoContent, a.markSharingNoticeSeen)
 	reg(api, http.MethodPost, "/api/assignment-attempts/{id}/marks", "markAssignmentAnswer", tag, "Set or change a question's marks and comment in a member's answers", http.StatusOK, a.markAssignmentAnswer)
+	reg(api, http.MethodPost, "/api/assignment-attempts/{id}/regrade", "regradeAssignmentQuestion", tag, "Have the AI grade one question of a member's answers again, on the caller's credits", http.StatusOK, a.regradeAssignmentQuestion)
 	reg(api, http.MethodPut, "/api/assignments/{id}/grades/{userId}", "setAssignmentGrade", tag, "Set or clear a member's grade on an assignment graded on points", http.StatusNoContent, a.setAssignmentGrade)
 }
 
@@ -138,6 +139,10 @@ func assignmentError(err error) error {
 		return conflictError("assignment_quiz_gone", err.Error())
 	case errors.Is(err, store.ErrPaperTotalBelowMark):
 		return conflictError("total_below_mark", err.Error())
+	case errors.Is(err, store.ErrRegradeManual):
+		return conflictError("regrade_manual", err.Error())
+	case errors.Is(err, store.ErrNothingToRegrade):
+		return conflictError("nothing_to_regrade", err.Error())
 	}
 	return hErr(err)
 }
@@ -220,14 +225,12 @@ func (a *api) createAssignment(ctx context.Context, in *createAssignmentInput) (
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
-	// Any member: a class's staff make an assignment, anyone else a task for
-	// themself (the store holds it to that).
-	role, err := a.s.WorkspaceRole(ctx, userID(ctx), in.ID)
-	if err != nil {
+	// A class's staff only; the store checks again in the write.
+	if err := a.s.AssertWorkspaceMemberEditor(ctx, userID(ctx), in.ID); err != nil {
+		if errors.Is(err, store.ErrForbidden) {
+			err = store.ErrNotFound
+		}
 		return nil, hErr(err)
-	}
-	if role == "" {
-		return nil, hErr(store.ErrNotFound)
 	}
 	res, err := a.s.CreateAssignment(ctx, userID(ctx), in.ID, assignmentForm(in.Body), time.Now())
 	if err != nil {
@@ -405,14 +408,6 @@ func (a *api) freezeAssignment(ctx context.Context, id string, freeze func(conte
 	if err != nil {
 		return nil, assignmentError(err)
 	}
-	// A task's maker who can no longer open its quiz has none to freeze.
-	if quizID != "" && current.Own {
-		if _, err := a.materialRead(ctx, quizID); errors.Is(err, store.ErrNotFound) {
-			quizID = ""
-		} else if err != nil {
-			return nil, hErr(err)
-		}
-	}
 	var qs []map[string]any
 	if quizID != "" {
 		if qs, err = a.quizForFreezing(ctx, quizID); err != nil {
@@ -515,7 +510,8 @@ type markAssignmentWithAIOutput struct {
 }
 
 // markAssignmentWithAI runs the AI over what still waits, as credits come back or
-// after a failure (Epo 2026-11-03), each attempt on its member's credits. Staff only: reading the report checks that.
+// after a failure (Epo 2026-11-03), on the credits of whoever pressed it
+// (2026-11-23). Staff only: reading the report checks that.
 func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (*markAssignmentWithAIOutput, error) {
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
@@ -538,8 +534,8 @@ func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (
 	if out.Body.Total == 0 {
 		return out, nil
 	}
-	// Refused here while the page waits only when grading is not set up: each
-	// member pays for their own, and one without credits shows No credits.
+	// Refused here while the page waits only when grading is not set up; out
+	// of credits, each answer shows No credits.
 	if _, err := a.gradingLLM(ctx, userID(ctx)); err != nil {
 		return nil, hErr(err)
 	}
@@ -552,12 +548,52 @@ func (a *api) markAssignmentWithAI(ctx context.Context, in *assignmentIDInput) (
 	for _, id := range papers {
 		held = append(held, a.marking.hold(id, true))
 	}
-	a.markAnswersAfter(in.ID, "", func() {
+	a.markAnswersAfter(in.ID, "", markingRequest{payer: userID(ctx)}, func() {
 		for _, release := range held {
 			release()
 		}
 	})
 	return out, nil
+}
+
+type regradeQuestionInput struct {
+	ID   string `path:"id"`
+	Body struct {
+		QuestionID string `json:"questionId"`
+	}
+}
+
+// regradeAssignmentQuestion has the AI grade one question of a member's answers
+// again, on the latest copy of the question, on the caller's credits (Epo
+// 2026-11-23). Closed parts are scored again at once; answered open parts wait
+// for the AI, and then for approval when the assignment asks for it.
+func (a *api) regradeAssignmentQuestion(ctx context.Context, in *regradeQuestionInput) (*assignmentAttemptOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	if held, _ := a.marking.markingOf(in.ID); held {
+		return nil, conflictError("answer_marking", "This answer is being graded. Try again once it is done.")
+	}
+	if _, err := a.gradingLLM(ctx, userID(ctx)); err != nil {
+		return nil, hErr(err)
+	}
+	actor := userID(ctx)
+	parts, err := a.s.RegradeQuestion(ctx, actor, in.ID, in.Body.QuestionID, time.Now())
+	if err != nil {
+		return nil, assignmentError(err)
+	}
+	res, err := a.s.GetAssignmentAttempt(ctx, actor, in.ID, time.Now())
+	if err != nil {
+		return nil, assignmentError(err)
+	}
+	// Held before the reply, so the page shows them being graded (Q729).
+	only := make(map[string]bool, len(parts))
+	for _, id := range parts {
+		only[id] = true
+	}
+	a.markAnswersAfter(res.AssignmentID, in.ID, markingRequest{payer: actor, only: only}, a.marking.hold(in.ID, false, parts...))
+	a.publishTodo(ctx, append(a.todoAudience(ctx, res.AssignmentID, true), res.UserID)...)
+	return &assignmentAttemptOutput{Body: a.withMarking(res)}, nil
 }
 
 type approveAIMarksInput struct {
@@ -577,10 +613,11 @@ func (a *api) approveAssignmentAIMarks(ctx context.Context, in *approveAIMarksIn
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
-	approved, err := a.s.ApproveAIMarks(ctx, userID(ctx), in.ID, in.Body.QuestionID, time.Now())
+	approved, sent, err := a.s.ApproveAIMarks(ctx, userID(ctx), in.ID, in.Body.QuestionID, time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
 	}
+	a.publishNotifications(ctx, sent)
 	a.publishTodo(ctx, a.todoAudience(ctx, in.ID, false)...)
 	out := &approveAIMarksOutput{}
 	out.Body.Approved = approved
@@ -624,9 +661,12 @@ func (a *api) markAssignmentAnswer(ctx context.Context, in *assignmentMarkInput)
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
-	res, err := a.s.MarkAssignmentAnswer(ctx, userID(ctx), in.ID, in.Body, time.Now())
+	res, sent, err := a.s.MarkAssignmentAnswer(ctx, userID(ctx), in.ID, in.Body, time.Now())
 	if err != nil {
 		return nil, assignmentError(err)
+	}
+	if sent != nil {
+		a.publishNotifications(ctx, []store.Notification{*sent})
 	}
 	a.publishTodo(ctx, append(a.todoAudience(ctx, res.AssignmentID, true), res.UserID)...)
 	return &assignmentAttemptOutput{Body: a.withMarking(res)}, nil

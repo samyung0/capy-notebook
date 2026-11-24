@@ -1,0 +1,48 @@
+{
+  "name": "canvas-background-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Canvas answers."
+      }
+    ],
+    "parts": [
+      {
+        "id": "p1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Draw it."
+          },
+          {
+            "type": "canvas"
+          }
+        ],
+        "answer": {
+          "type": "canvas",
+          "background": {
+            "kind": "grid"
+          }
+        },
+        "marks": 2,
+        "markscheme": [
+          {
+            "text": "Shape right",
+            "marks": 1
+          },
+          {
+            "text": "Labelled",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

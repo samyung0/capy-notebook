@@ -19,6 +19,8 @@ import { CPU_RATE } from './metrics';
  *
  * Opt-in, because it asserts nothing and costs ~2 minutes:
  *   $env:PERF_PROFILE=1; pnpm bench:editor --grep "save cycle profile"
+ * PERF_PROFILE also leaves the production build unminified, so the profile
+ * names the functions (playwright.perf.config.ts).
  */
 
 /** Kept identical to `TYPING_TEXT` in editor.perf.ts. */
@@ -105,7 +107,7 @@ test(`save cycle profile — near-limit document (cpu x${CPU_RATE})`, async ({
   await client.send('Emulation.setCPUThrottlingRate', { rate: 1 });
 
   const report = [
-    `document: ${blocks} rendered slate nodes, cpu x${CPU_RATE}, vite dev build`,
+    `document: ${blocks} rendered slate nodes, cpu x${CPU_RATE}, production build, unminified`,
     '',
     profileSection(
       `PHASE 1 — typing ${PROBE_TEXT.length + 1} characters`,

@@ -289,6 +289,33 @@ export function deleteLocalDrawingDraft(key: string): Promise<void> {
   });
 }
 
+/** Copies each draft `from`, its pictures too, to the key `to` (a canvas an
+ * edit renamed), in one transaction; `from` stays. */
+export function copyLocalDrawingDrafts(
+  copies: readonly (readonly [from: string, to: string])[]
+): Promise<void> {
+  return run(['drawingDrafts', 'drawingPictures'], 'readwrite', (t) => {
+    const drafts = t.objectStore('drawingDrafts');
+    const pictures = t.objectStore('drawingPictures');
+    for (const [from, to] of copies) {
+      const draft = drafts.get(from) as IDBRequest<
+        LocalDrawingDraft | undefined
+      >;
+      draft.onsuccess = () => {
+        if (!draft.result) return;
+        drafts.put({ ...draft.result, key: to });
+        const held = pictures.index('draft').getAll(from) as IDBRequest<
+          LocalDrawingPicture[]
+        >;
+        held.onsuccess = () => {
+          for (const picture of held.result)
+            pictures.put({ ...picture, draft: to });
+        };
+      };
+    }
+  });
+}
+
 export function localDrawingPictures(
   draft: string
 ): Promise<LocalDrawingPicture[]> {

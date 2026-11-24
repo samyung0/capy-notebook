@@ -127,11 +127,18 @@ test.describe('assignments', () => {
     expect(listed.items.map((item) => item.id)).toEqual([assignment.id]);
 
     // The member answers on their page. Accept told them what a class member
-    // shares, so no notice opens (Epo 2026-11-19).
+    // shares, so no notice opens (Epo 2026-11-19). Their To do is To do's
+    // table (Epo 2026-11-20): the row opens its details, whose Start quiz
+    // opens the quiz, which starts by itself.
     await viewerPage.goto(`/workspaces/${workspaceId}/assignments`);
     await viewerPage
-      .getByRole('button', { exact: true, name: m.assignment_start() })
+      .getByRole('button', { name: 'Cells check' })
       .locator('visible=true')
+      .first()
+      .click();
+    await viewerPage
+      .getByRole('dialog')
+      .getByRole('button', { name: m.todo_start_quiz() })
       .click();
     // The question numbers (Epo 2026-11-19): the grid, or a phone's strip.
     const numbers = viewerPage
@@ -187,42 +194,5 @@ test.describe('assignments', () => {
         return [after.correct, after.waitingAnswers];
       })
       .toEqual([3, 0]);
-  });
-
-  test('a personal workspace holds the task its owner sets themself', async ({
-    ownerApi,
-    workspaceFactory,
-  }) => {
-    const workspace = await workspaceFactory.create({
-      name: `Personal ${randomUUID().slice(0, 8)}`,
-    });
-    const me = (await (await ownerApi.get('/api/me')).json()) as { id: string };
-    expect(
-      (
-        await ownerApi.post(`/api/workspaces/${workspace.id}/assignments`, {
-          data: {
-            assignAll: false,
-            assignees: [me.id],
-            attempts: 1,
-            draft: false,
-            files: [],
-            kind: 'unmarked',
-            latePenaltyPct: 0,
-            marking: 'ai_approve',
-            noLate: false,
-            showAnswers: 'closed',
-            showGrades: 'automatic',
-            shuffle: false,
-            title: 'Read chapter 4',
-          },
-        })
-      ).status()
-    ).toBe(201);
-    const list = (await (
-      await ownerApi.get(`/api/workspaces/${workspace.id}/assignments`)
-    ).json()) as { items: { own: boolean; title: string }[] };
-    expect(list.items.map((a) => [a.title, a.own])).toEqual([
-      ['Read chapter 4', true],
-    ]);
   });
 });

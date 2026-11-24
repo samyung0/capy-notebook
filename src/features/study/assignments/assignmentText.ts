@@ -4,9 +4,9 @@ import type {
   AssignmentFormReq,
   AssignmentGradedQuestion,
 } from '@/api/types';
-import { fullPartLabel } from '@/features/questions/groups';
 import { formatPoints } from '@/features/quizzes/grade';
 import { getLocale, m } from '@/i18n';
+import type { NumberTone } from './QuestionNumbers';
 
 /** en reads day before month, as the boards draw it ("Fri 7 Nov"). */
 const dateLocale = () => (getLocale() === 'en' ? 'en-GB' : getLocale());
@@ -86,12 +86,10 @@ export function dueText(
 
 /** A graded quiz, else an Assignment in a class and a Task one set oneself
  * (Epo 2026-11-14). */
-export const kindLabel = ({ kind, own }: Pick<Assignment, 'kind' | 'own'>) =>
+export const kindLabel = ({ kind }: Pick<Assignment, 'kind'>) =>
   kind === 'marked'
     ? m.assignment_kind_marked()
-    : own
-      ? m.assignment_kind_task()
-      : m.assignment_kind_assignment();
+    : m.assignment_kind_assignment();
 
 export const minutesText = (count: number) =>
   count === 1 ? m.assignment_minutes_one() : m.assignment_minutes({ count });
@@ -140,10 +138,17 @@ export const isGraded = ({
 /** Advanced starts closed, unless a saved assignment holds something other than
  * its defaults there, so nothing is hidden by surprise. */
 export const advancedStartsOpen = (
-  existing?: Pick<Assignment, 'draft' | 'latePenaltyPct' | 'noLate'>
+  existing?: Pick<
+    Assignment,
+    'attempts' | 'draft' | 'kind' | 'latePenaltyPct' | 'noLate'
+  >
 ) =>
   !!existing &&
-  (existing.draft || existing.noLate || existing.latePenaltyPct > 0);
+  (existing.draft ||
+    existing.noLate ||
+    existing.latePenaltyPct > 0 ||
+    // Attempts is in Advanced (Epo 2026-11-21).
+    (existing.kind === 'marked' && existing.attempts > 1));
 
 const pastDue = (dueAt: string | undefined, now: number) =>
   !!dueAt && Date.parse(dueAt) <= now;
@@ -166,6 +171,22 @@ export const takesLateWork = (
 
 /** The boards' "78%"; marks decided so far only. */
 export const percentText = (share: number) => `${Math.round(share * 100)}%`;
+
+/** An average's tint on the report (Epo 2026-11-22), by the topic labels'
+ * thresholds (Epo 2026-11-03): under 60% needs practice, 70% or more is
+ * proficient, amber between. None until one answer is marked. */
+export function averageTone(share: number | undefined): NumberTone | undefined {
+  if (share === undefined) return;
+  if (share >= 0.7) return 'success';
+  return share >= 0.6 ? 'warning' : 'error';
+}
+
+/** What each tint means, for the numbers' legend. */
+export const averageLegend = (): { label: string; tone: NumberTone }[] => [
+  { label: m.assignment_band_high(), tone: 'success' },
+  { label: m.assignment_band_mid(), tone: 'warning' },
+  { label: m.assignment_band_low(), tone: 'error' },
+];
 
 export type Outcome = 'right' | 'partly' | 'wrong' | 'waiting';
 
@@ -254,24 +275,6 @@ export function typedMark(text: string, max: number): string | undefined {
       : next
     : undefined;
 }
-
-/** A question's row name, or one of its parts' when a question of several
- * parts lays each out as its own row (the report's Questions tab, a
- * member's result): "Q18", "Q18 (a)(i)", and with number labels "Q19 (2)"
- * (Epo 2026-11-19, not "Q19.2"). */
-export function questionRowName(
-  number: number,
-  question?: Parameters<typeof fullPartLabel>[0],
-  partId?: string
-) {
-  const label = question && partId ? fullPartLabel(question, partId) : '';
-  if (!label) return `Q${number}`;
-  if (label.startsWith('(')) return `Q${number} ${label}`;
-  // "2." or "2(i)": the number in brackets as letters are.
-  const [, top, rest] = NUMBER_LABEL.exec(label) ?? [];
-  return top ? `Q${number} (${top})${rest}` : `Q${number} ${label}`;
-}
-const NUMBER_LABEL = /^(\d+)\.?(.*)$/;
 
 /** A file's graded quiz's question paper (Epo 2026-11-20): its one file, or
  * null once the caller can no longer open it (trashed, hidden from members).

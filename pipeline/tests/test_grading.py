@@ -230,3 +230,196 @@ def test_a_sample_answer_image_comes_before_the_students():
 
 def test_open_answers_keep_todays_prompt():
     assert grading.DRAWN_SECTION not in grading.SYSTEM_PROMPT
+
+
+def test_the_questions_images_follow_the_marking_items():
+    content = grading.answer_message("Q [Figure 1]", ITEMS, ANSWER, [IMAGE, IMAGE])
+    assert [part.get("text") for part in content[1:5]] == [
+        "Figure 1:",
+        None,
+        "Figure 2:",
+        None,
+    ]
+    assert "<marking_items>" in content[0]["text"]
+    assert content[-1]["text"].startswith("<student_answer>")
+    # With none the message is today's text.
+    assert grading.answer_message("Q", ITEMS, ANSWER, []) == grading.user_message(
+        "Q", ITEMS, ANSWER
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_batch_marks_its_parts_in_one_call(monkeypatch):
+    calls = []
+
+    async def complete(messages, **kwargs):
+        calls.append((messages, kwargs))
+        entry = json.loads(reply())
+        return SimpleNamespace(content=json.dumps({"parts": [{"part": "p1", **entry}]}))
+
+    monkeypatch.setattr(grading.models, "complete", complete)
+    passage = "The cell membrane controls what enters and leaves the cell. " * 3
+    parts = [
+        {"id": "a", "question": "Name a cell part.", "items": ITEMS, "answer": ANSWER},
+        {"id": "b", "question": "Name a cell part.", "items": ITEMS, "answer": ANSWER},
+        {"id": "c", "question": passage, "items": ITEMS, "answer": passage},
+    ]
+    out = await grading.grade_batch(parts, model=None)
+    # The copied answer is scored by code; the call holds the other two, and
+    # the part its reply leaves out fails alone.
+    assert out["a"]["shares"] == [1.0] and "error" in out["b"]
+    assert out["c"]["flag"] == "copied"
+    ((messages, kwargs),) = calls
+    assert messages[0]["content"] == grading.SYSTEM_PROMPT + grading.BATCH_SECTION
+    assert messages[1]["content"].startswith('<parts>\n<part id="p1">\n<question>')
+    assert '<part id="p2">' in messages[1]["content"]
+    assert kwargs["reasoning"] is False and kwargs["max_tokens"] == 4000
+
+
+def test_the_batch_route_answers_per_part(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from pipeline.retrieve import service
+
+    secret = "s" * 32
+    monkeypatch.setattr(service.cfg, "pipeline_secret", secret)
+    monkeypatch.setattr(service.models, "resolve_query_model", lambda *a, **k: None)
+    monkeypatch.setattr(service, "_bind_accounting", lambda session: None)
+
+    async def complete(messages, **kwargs):
+        entry = json.loads(reply(quote="the line"))
+        return SimpleNamespace(content=json.dumps({"parts": [{"part": "p1", **entry}]}))
+
+    monkeypatch.setattr(grading.models, "complete", complete)
+    body = {
+        "thinking": "low",
+        "providerSlug": "openrouter",
+        "modelSlug": "deepseek/deepseek-v4.1-flash-1017",
+        "configVersion": 1,
+        "spendSessionId": "ps_1",
+        "parts": [
+            {
+                "id": "q1:part:1",
+                "question": "Draw it. [Figure 1]",
+                "items": ITEMS,
+                "image": IMAGE,
+                "figures": [IMAGE],
+            }
+        ],
+    }
+    http = TestClient(service.app)
+    done = http.post("/grade-batch", json=body, headers={"X-Pipeline-Secret": secret})
+    assert done.status_code == 200
+    assert done.json()["parts"]["q1:part:1"]["shares"] == [1.0]
+
+
+def test_canvas_calls_say_the_canvas_may_hold_other_parts_answers():
+    """Parts answering in one canvas are graded on one image (Epo 2026-11-23):
+    canvas calls say so, word for word; paper pages keep their own rule."""
+    line = (
+        "- The canvas may hold the student's answers to other parts too; "
+        "mark only the answer to the part in <question>."
+    )
+    assert line in grading.DRAWN_SECTION
+    assert line not in grading.PAGE_DRAWN_SECTION
+
+
+def _shown(content):
+    return [c.get("text") or c["image_url"]["url"] for c in content]
+
+
+def test_a_batch_sends_each_image_once():
+    """Images a call's parts share go with the first part that shows them; a
+    later part keeps its own label and points at it (Epo 2026-11-23)."""
+    stem, drawing, own = (
+        "data:image/jpeg;base64,U1RFTQ==",
+        "data:image/webp;base64,RFJBVw==",
+        "data:image/webp;base64,T1dO",
+    )
+    sample = "data:image/png;base64,U0FNUA=="
+    parts = [
+        {"id": "a", "question": "Q [Figure 1]", "items": ITEMS, "image": drawing},
+        {
+            "id": "b",
+            "question": "Q",
+            "items": ITEMS,
+            "image": drawing,
+            "sample": sample,
+        },
+        {
+            "id": "c",
+            "question": "Q [Figure 1]",
+            "items": ITEMS,
+            "image": own,
+            "figures": [stem],
+        },
+        {
+            "id": "d",
+            "question": "Q [Figure 1]",
+            "items": ITEMS,
+            "answer": ANSWER,
+            "figures": [stem],
+        },
+    ]
+    parts[0]["figures"] = [stem]
+    shown = _shown(grading.batch_message(parts))
+    # Each image once, at its first part.
+    assert [shown.count(url) for url in (stem, drawing, own, sample)] == [1, 1, 1, 1]
+    b = shown[shown.index('<part id="p2">') : shown.index('<part id="p3">')]
+    assert b[-3:] == [
+        sample,
+        "Student's drawing: the same image as the student's drawing in part p1.",
+        "</part>",
+    ]
+    c = shown[shown.index('<part id="p3">') :]
+    assert c[2] == "Figure 1: the same image as Figure 1 in part p1."
+    assert c[3] == own
+    d = shown[shown.index('<part id="p4">') :]
+    assert d[2] == "Figure 1: the same image as Figure 1 in part p1."
+    # One part's call is as before: every image after its label.
+    alone = _shown(grading.drawing_message("Q", ITEMS, drawing, sample, [stem]))
+    assert alone[1:] == [
+        "Figure 1:",
+        stem,
+        "Sample answer:",
+        sample,
+        "Student's drawing:",
+        drawing,
+    ]
+
+
+def test_a_part_takes_its_questions_images_and_canvases():
+    """A part carries up to its question's 4 images and 4 canvases (the
+    generated caps), and a batch counts an image its parts share once."""
+    from pydantic import ValidationError
+
+    from pipeline.generated.limits import QUESTION_CANVASES_MAX, QUESTION_IMAGES_MAX
+    from pipeline.retrieve import service
+
+    most = QUESTION_IMAGES_MAX + QUESTION_CANVASES_MAX
+    figures = [f"data:image/jpeg;base64,{n:04d}" for n in range(most)]
+    part = {"question": "Q", "items": ITEMS, "image": IMAGE, "figures": figures}
+    assert len(service.GradePartReq(**part).figures) == most
+    with pytest.raises(ValidationError):
+        service.GradePartReq(**{**part, "figures": [*figures, IMAGE]})
+    assert (
+        len(
+            service.PaperPart(
+                id="1", type="drawing", label="1", figures=figures
+            ).figures
+        )
+        == most
+    )
+    # Four parts of 9 images, all shared: 9 sent, though 36 are listed.
+    shared = [{**part, "id": f"p{n}"} for n in range(4)]
+    service.GradeBatchReq(parts=shared, spendSessionId="ps_1", thinking="low")
+    apart = [
+        {
+            **part,
+            "id": f"p{n}",
+            "figures": [f"data:image/jpeg;base64,{n}{f:03d}" for f in range(most)],
+        }
+        for n in range(4)
+    ]
+    with pytest.raises(ValidationError, match="at most 32 images"):
+        service.GradeBatchReq(parts=apart, spendSessionId="ps_1", thinking="low")

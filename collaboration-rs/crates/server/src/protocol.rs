@@ -169,10 +169,10 @@ pub fn message(channel: u64, kind: Kind, payload: &[u8]) -> Bytes {
 /// every JOIN and draft send. A change an older client would break (openwiki
 /// plate-editor "Client protocol") raises it to N+1 and sets the broken
 /// family's minimum to N+1; the other family keeps its minimum.
-pub const CLIENT_PROTOCOL: u32 = 42;
+pub const CLIENT_PROTOCOL: u32 = 43;
 /// The oldest client material rooms accept (`material:`, `keys:`: notes,
 /// mindmaps, diagrams, quizzes, quiz keys, flashcard sets, canvases).
-pub const MIN_MATERIAL: u32 = 41;
+pub const MIN_MATERIAL: u32 = 43;
 /// The oldest client source rooms accept (`source:`: Office and text); every
 /// BetterOffice pin bump and Office protocol bump raises it.
 pub const MIN_SOURCE: u32 = 42;
@@ -592,7 +592,8 @@ mod tests {
         assert!(outdated(MIN_MATERIAL, Some(36)));
         assert!(outdated(MIN_MATERIAL, Some(37)));
         assert!(outdated(MIN_MATERIAL, Some(40)));
-        assert!(!outdated(MIN_MATERIAL, Some(41)));
+        assert!(outdated(MIN_MATERIAL, Some(42)));
+        assert!(!outdated(MIN_MATERIAL, Some(43)));
         assert!(outdated(MIN_SOURCE, Some(41)));
         assert!(!outdated(MIN_SOURCE, Some(42)));
     }

@@ -1,4 +1,4 @@
-import type { FileKind, MaterialRefType, SourceFile } from '@/api/types';
+import type { FileKind, MaterialKind, SourceFile } from '@/api/types';
 
 /** Symbol ids in src/assets/catppuccin.svg. */
 export const FILE_ICON_NAMES = [
@@ -250,7 +250,7 @@ const EXTENSION_ICON: Record<string, FileIconName> = {
   zsh: 'bash',
 };
 
-const MATERIAL_ICON: Record<MaterialRefType, FileIconName> = {
+const MATERIAL_ICON: Record<MaterialKind, FileIconName> = {
   canvas: 'drawing',
   diagram: 'api-blueprint',
   flashcards: 'vhs',
@@ -271,6 +271,6 @@ export function fileIconName({
 
 /** `assigned`: a quiz under an open assignment shows the assignment's icon in
  * every list (Epo 2026-11-04). */
-export function materialIconName(type: MaterialRefType): FileIconName {
-  return MATERIAL_ICON[type];
+export function materialIconName(kind: MaterialKind): FileIconName {
+  return MATERIAL_ICON[kind];
 }

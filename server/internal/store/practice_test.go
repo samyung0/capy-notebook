@@ -171,6 +171,10 @@ func TestMemberPracticeQuiz(t *testing.T) {
 	if len(mine.Items) != 1 || mine.Items[0].ID != made.ID || !mine.Items[0].OnlyYou {
 		t.Fatalf("the member's practice = %+v", mine.Items)
 	}
+	// Its attempt page says so (Epo 2026-11-20).
+	if quiz, err := f.s.GetQuiz(ctx, made.ID); err != nil || !quiz.OnlyYou {
+		t.Fatalf("the member's quiz = %+v, %v", quiz.OnlyYou, err)
+	}
 	theirs, err := f.s.WorkspacePractice(ctx, f.user, f.ws.ID, true, time.Now())
 	if err != nil {
 		t.Fatal(err)

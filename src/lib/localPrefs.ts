@@ -27,6 +27,9 @@ export const PREF_KEYS = {
   /** The Get started list, written only by the browser that ran onboarding
    * (gettingStarted.ts). */
   gettingStarted: 'capy.gettingStarted',
+  /** The Hidden chip's first-run callout was closed (HiddenChip.tsx; no key:
+   * the first hidden quiz opened here shows it). */
+  hiddenQuizTip: 'capy.tips.hiddenQuiz',
   /** The anonymous id KLIPY's GIF search asks per user, for this browser (boardKlipy.ts). */
   klipyCustomer: 'capy.klipy.customer',
   /** Progress maps whose finish animation has played: `topic:<id>:<count>`, `workspace:<id>:<count>`. */
@@ -45,6 +48,9 @@ export const PREF_KEYS = {
   openItem: (workspaceId: string) => `capy.workspace.openItem.${workspaceId}`,
   openTopics: (workspaceId: string) =>
     `capy.workspace.openTopics.${workspaceId}`,
+  /** The Only you chip's first-run callout was closed (HiddenChip.tsx; no
+   * key: a member's first own practice quiz shows it). */
+  ownPracticeTip: 'capy.tips.ownPractice',
   /** The quiz attempt this browser continues, by its id: the account's
    * (`account`) or, signed out on a shared quiz, this browser's (`local`). */
   quizAttempt: (owner: 'account' | 'local', quizId: string) =>
