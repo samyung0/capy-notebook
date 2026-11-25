@@ -6908,7 +6908,138 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       `boardFull.ts`), and whatever refuses an add (`refusesAdds`: a tool
       picked, a press on the board with a tool that adds, a paste, a drop, ⌘D, a
       formula, a piece, a link or quiz card, a double click on empty canvas) and
-      the menu as it opens call the check first. With
+      the menu as it opens call the check first. A gesture writing several
+      elements on a full board goes only when the size plus 16 B for each value
+      it writes fits under the cap (`refusesWrites`, `BOARD_WRITE_BYTES`; Epo
+      2026-11-25): Yjs keeps a stub for each value overwritten, its clock
+      twice (in the new value's origin and in the deleted range), measured in
+      the room's collected state (`collectedSize`) at 12 B an element on a
+      fresh board, 14 B once its clocks passed 10^5 and 16 B past 2.1 × 10^6,
+      and a value written for the first time adds its key (about 20 B, two
+      values' worth: `NEW_KEY`). A value written longer than it was adds the
+      difference besides (the guard's fourth review: BlockSuite's
+      `Bound.serialize` writes 17 significant digits at any zoom but 1, so a
+      drag at zoom 0.73 of shapes placed on whole numbers grew each by 40 B,
+      its stub 14 of it), so each written value keeps room for the most it
+      can grow, the longest its format allows less what it stores now
+      (`Writes.grows`, `bytesOf`; one read a value, no encode; positions are
+      never rounded): a box 105 characters (`[x,y,w,h]`, each number at most
+      25 as JS writes it: a sign, `0.`, five zeros and 17 digits), a moved
+      one its `x` and `y` alone, 25 each (one that may get shorter, a
+      peer's longer numbers, by nothing: an arrow key sends each element's
+      move as an update of its own; a drag sets `moveDelta`, the snap
+      shifts its delta, an arrow key its `x` and `y`; a mind map's nodes,
+      laid out after a drag, and a note, whose measured size may go with its
+      move, keep the whole box's bound), a number 9
+      bytes (a float64 in lib0's `writeAny`: a rotation's angle, a text
+      label's font size, a plane's view corner, a note's scale and collapsed
+      height), a connector's free end its two numbers and a label's place its
+      four, a toolbar change's values their new bytes less their stored ones
+      (`anyBytes`, known before the write: a colour turned themed), new
+      indexes by how BlockSuite makes them (`Keys`; fractional-indexing's
+      key is at most one character longer than the longer of its two
+      neighbours, the board's longest L or one the write made; a key that
+      may get shorter counts as nothing): to the front or back each past the
+      last (its integer part plus one, its fraction dropped, so the longest
+      integer part I plus 1 + ⌊log₆₂ n⌋ at most, whatever fractions the
+      board's keys carry: after a long chain of steps a Bring to Front of 200
+      keeps 3,210 B where the whole keys' L + i kept 26,534), an ungroup's
+      bisected at once between two (`generateNKeysBetween`, L + ⌈log₂(n +
+      1)⌉), forward or backward each between two, either one it made, L + i
+      for the i-th (a chain does grow: 1,000 adjacent elements brought
+      forward top first reach 170 characters, and 200 grew a board by 5,371 B
+      where `end` keys keep 3,599). An ungroup inside another group writes
+      each element's id into that group's children too, a new key each, in
+      the same update (the emptied group goes in one of its own after; the
+      room judges each update alone, so a count covers each, not their sum):
+      a group of 50 between two others grew the board by 1,852 B in that
+      first update, counted at 2,785. A mind map node's place in its tree (an
+      index and its parent's id) is the map's one value, a few bytes within
+      the Style count its nodes keep; joining another map's tree it is a new
+      key there. A block's object value (a note's `edgeless` through its style panel) is
+      its own map, written whole: a new item for each value and each object
+      in it, an array a Y.Array with an item for each run of plain values
+      (Yjs packs them in one) and each map or array in it with its own (the
+      map it replaces is collected whole, so its old values cost nothing):
+      20 notes' empty styles given four values grew the board by 2,960 B,
+      counted at 3,680 (2,080 without the items), and an array of two
+      numbers and 12 maps in each 6,884 B, counted at 11,920 (3,920 with
+      the array as one item). A select-all
+      move of 1,000 shapes placed on whole numbers (boxes of 18 characters,
+      `[1234,567,100,100]`) keeps 59,000 B (16 B and 43 a shape; 16,000
+      before, against the 41,000 or so it adds at zoom 0.73), under the 64
+      KiB a full board has left at most; a Bring to Front of 1,000 elements
+      on 3-character keys keeps about 18,000 B, a Bring Forward of them
+      about 516,000 B, more than a full board ever has.
+      Back-to-back overwrites of one value by one tab merge (1,000 drags of one
+      shape add 35 B), but not where values alternate: several elements'
+      writes interleave, and so do one element's when it writes two or more
+      values (a connector's ends and label, a rotation's angle and place, a text
+      label's box and font size). Those never merge and no board fold collects
+      them, so a select-all drag of thousands of elements would pass the cap
+      and send the tab to its copy-only recovery. The count (`writesOf`) takes
+      every element the gesture reaches (what a selected group holds; every
+      node of a mind map one of them is in, since a node dragged moves its
+      whole map; the label of each labelled connector hanging on one, which the
+      moving tab places, local change 63) and every value it writes on each
+      (`valuesWritten`, at most: a connector 3, its free ends and label; a
+      rotation 2; a resize 2 on a text label or a stroke and 3 on a note, its
+      scale written the first time, or a plane, 4 on one that fitted (it
+      stops fitting, `fit` written only then); the alignment menu's place 5
+      on a note, its collapse and collapsed height written the first time, a
+      note's Scale 3 and its height 2; a note one more, the size it shows
+      stored first, local change 75; a mind map's Style 9 a node and its Layout
+      2, measured on BlockSuite's own layout at 117 B and 18 B a node at most
+      on a fresh board, 125 B and 20 B past 10^5, 133 B and 22 B past
+      2.1 × 10^6; a mind map's node dragged alone, which may land in another
+      branch and restyle, its whole map at the Style count; a group nothing of
+      its own). A toolbar change counts each value
+      it names on each element (`valuesUpdated`), a stroke's width its points
+      and box too, and a labelled connector's mode its label placed again. The
+      size as it stands is never
+      below the board's, so a write it fits goes unmeasured (a held arrow key
+      measures nothing); one that doesn't is measured first. Refused, it writes
+      nothing and shows the removals-only line; one element's gesture always
+      goes (its few values are written once, at its end), and a board under the
+      line checks nothing. It covers a drag, resize or rotation of a selection
+      (at the interactivity's `handleElementMove`, `handleElementResize` and
+      `handleElementRotate`, where the moving set is known: a press outside the
+      selection selects what is under it; BlockSuite's DefaultTool and
+      selection frame get the board's one `InteractivityManager` from the
+      std), an arrow key's nudge (stopped as the board captures it; a key typed
+      into a field on the board, `TYPING`, is the field's), the element
+      toolbar's changes (its `updateElement` calls on what the selection
+      writes, decided whole for the task; the width slider picks a value once a
+      drag, its press included, local change 84, so each width it picks is
+      one change), its alignment menu, a reorder, a note's Scale and Auto or
+      Customized height, a mind map's Style and Layout, and a Lock or an Unlock
+      of several, which write models straight and ask before any
+      (`boardWrites`, local change 82), and an arrange, a resize to one size
+      and an ungroup (their commands, `gateCommands`; an ungroup, and an Unlock
+      of a group, writes the index of each element the group holds directly,
+      and counts those). A group (a lock of several makes one) and a mind map's
+      node dragged off its map (which makes a new map; refused, the node stays
+      in its map) are adds, refused as one; a node dropped into another map
+      is asked once, at the drop, for both maps: the one it joins laid out
+      again, the one it leaves restyled whole at worst (Style one colours by
+      first-level branch), the moved nodes among them (refused, it stays in
+      its map). The board wires all of it in one place (`boardGates.ts`
+      `gateBoardWrites`). A gesture's values stay this tab's until it ends
+      (BlockSuite's stash), a dragged connector's free ends and label (local
+      change 80; a bound end stays stored, so a peer's re-attach mid-drag
+      stands, and one a peer frees mid-drag is stashed at the next frame), a
+      resized stroke's points (local change 81), the label of a
+      connector hanging on an element in this tab's gesture (local change 83:
+      the interactivity manager's `activeInteraction$` names the elements, kept
+      in a set once a gesture, a mind map's root its whole map; written inside
+      the change that ends the gesture, so Undo takes them back together, or
+      released after it at the stored place, writing nothing, so a peer's
+      place stored meanwhile stands; a 60-frame drag of a shape with two
+      labelled connectors on it grew the board 2,607 B before, 46 B after) and an end dragged by its
+      handle with its label (local change 85; a cancelled pointer ends it as
+      a release does) included. Left out: one
+      element's gesture of several values always goes, leaving a stub a value
+      each time. With
       deletions since the last measure it encodes once and the exact size reaches
       the board before it returns (`subscribeSize` is synchronous), so a board
       that peers cleared takes an add with no receipt. A tab that may not write

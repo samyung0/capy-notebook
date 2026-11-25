@@ -10,7 +10,10 @@ import {
   type ToolbarModuleConfig,
   ToolbarModuleExtension,
 } from '@blocksuite/affine-shared/services';
-import { getMostCommonValue } from '@blocksuite/affine-shared/utils';
+import {
+  boardWrites,
+  getMostCommonValue,
+} from '@blocksuite/affine-shared/utils';
 import {
   type MenuItem,
   renderMenu,
@@ -70,6 +73,9 @@ export const createMindmapStyleActionMenu = (
 ) => {
   const style = getMostCommonValue(models, 'style') ?? MindmapStyle.ONE;
   const onPick = (style: MindmapStyle) => {
+    // Capy (vendor/blocksuite/README.md, local change 82): the board may
+    // refuse to restyle them, before any node is.
+    if (boardWrites.refuses(ctx.store, models, 'style')) return;
     for (const model of models) {
       model.style = style;
     }
@@ -92,6 +98,9 @@ export const createMindmapLayoutActionMenu = (
   const layoutType =
     getMostCommonValue(models, 'layoutType') ?? LayoutType.BALANCE;
   const onPick = (layoutType: LayoutType) => {
+    // Capy (local change 82): the board may refuse to lay them out again,
+    // before any node moves.
+    if (boardWrites.refuses(ctx.store, models, 'layout')) return;
     for (const model of models) {
       model.layoutType = layoutType;
       model.layout();

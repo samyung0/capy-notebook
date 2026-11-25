@@ -9,6 +9,7 @@ import {
   MindmapElementModel,
   type MindmapNode,
 } from '@blocksuite/affine-model';
+import { boardWrites } from '@blocksuite/affine-shared/utils';
 import type { Bound, IVec } from '@blocksuite/global/gfx';
 import {
   type DragExtensionInitializeContext,
@@ -43,6 +44,12 @@ type DragMindMapCtx = {
   isRoot: boolean;
   originalMindMapBound: Bound;
 };
+
+/** The elements of `node` and the nodes under it (local change 82). */
+const subtreeElements = (node: MindmapNode): GfxModel[] => [
+  node.element,
+  ...node.children.flatMap(subtreeElements),
+];
 
 export class MindMapDragExtension extends InteractivityExtension {
   static override key = 'mind-map-drag';
@@ -170,12 +177,41 @@ export class MindMapDragExtension extends InteractivityExtension {
         }
       },
       onDragEnd: (dragEndContext: ExtensionDragEndContext) => {
-        if (hoveredCtx?.merge) {
+        // Capy (local change 82): a node merged into another map takes that
+        // map's style and lays the map out again, writes the board may
+        // refuse; refused, it stays in its map and nothing is written.
+        const into = hoveredCtx?.mindmap;
+        if (
+          hoveredCtx?.merge &&
+          into &&
+          into !== dragMindMapCtx.mindmap &&
+          boardWrites.refuses(
+            this.gfx.doc,
+            [into, ...subtreeElements(dragMindMapCtx.node)],
+            'merge'
+          )
+        ) {
+          hoveredCtx.abort?.();
+          if (dragMindMapCtx.isRoot) dragMindMapCtx.mindmap.layout();
+        } else if (hoveredCtx?.merge) {
           hoveredCtx.merge();
         } else {
           hoveredCtx?.abort?.();
 
-          if (hoveredCtx?.detach) {
+          // Capy (local change 82): a node dragged off its map makes a new
+          // map, an add the board may refuse; refused, the node stays in its
+          // map and nothing is written.
+          if (
+            hoveredCtx?.detach &&
+            !(
+              dragMindMapCtx.node !== dragMindMapCtx.mindmap.tree &&
+              boardWrites.refuses(
+                this.gfx.doc,
+                [dragMindMapCtx.node.element],
+                'add'
+              )
+            )
+          ) {
             const { x: startX, y: startY } = dragEndContext.dragStartPos;
             const { x: endX, y: endY } = dragEndContext.dragLastPos;
 

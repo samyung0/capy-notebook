@@ -6,6 +6,7 @@ import {
 } from '@blocksuite/affine-block-surface';
 import { EditorChevronDown } from '@blocksuite/affine-components/toolbar';
 import type { ToolbarContext } from '@blocksuite/affine-shared/services';
+import { boardWrites } from '@blocksuite/affine-shared/utils';
 import type {
   Menu,
   MenuItem,
@@ -264,7 +265,12 @@ export function renderAlignmentMenu(
   ctx: ToolbarContext,
   models: GfxModel[],
   { label, tooltip, icon }: Pick<Menu<Alignment>, 'label' | 'tooltip' | 'icon'>,
-  onPick = (type: Alignment) => alignment[type](ctx, models)
+  onPick = (type: Alignment) => {
+    // Capy (local change 82): the board may refuse to move them all, before
+    // any is moved (a connector or a note is written apart from the rest).
+    if (boardWrites.refuses(ctx.store, models, 'place')) return;
+    alignment[type](ctx, models);
+  }
 ) {
   return html`
     <editor-menu-button

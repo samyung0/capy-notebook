@@ -981,6 +981,44 @@ it('moves a connector’s label at the save, in its transaction, not per key', a
   at.dispose();
 });
 
+// Review of local change 83: a note showing a size this tab measured keeps
+// its `xywh` stashed (local change 75), which the connector watcher took for
+// a gesture: a label hanging on it stayed this tab's for as long as the size
+// showed, and an Undo took a move back without it. Fails if this tab's move
+// of the connector's other end leaves its label unstored.
+it('stores the label of a connector hanging on a note that shows a measured size as this tab moves its other end, taken back with the move', async () => {
+  const { at, id, model } = typist(false);
+  const surface = surfaceOf(at);
+  const shape = surface.addElement(shapeAt(400));
+  const connector = surface.getElementById(
+    surface.addElement({
+      labelDisplay: true,
+      labelOffset: { distance: 0.5 },
+      labelXYWH: [0, 0, 60, 24],
+      mode: 0,
+      source: { id },
+      target: { id: shape },
+      text: new Y.Text('feeds'),
+      type: 'connector',
+    })
+  ) as ConnectorElementModel;
+  await vi.advanceTimersByTimeAsync(0);
+  // This tab's fonts wrap the text taller than the stored 30: it shows that.
+  measureNoteSize(model, 'h', 62, false);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(model.h).toBe(62);
+  const before = connector.yMap.get('labelXYWH');
+  at.store.captureSync();
+  surface.updateElement(shape, { xywh: '[400,600,10,10]' });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(connector.labelXYWH).not.toEqual(before);
+  expect(connector.yMap.get('labelXYWH')).toEqual(connector.labelXYWH);
+  // One Undo takes the move and the label back.
+  at.store.undo();
+  expect(connector.yMap.get('labelXYWH')).toEqual(before);
+  at.dispose();
+});
+
 it.each([
   [
     'its 3 s wait ends',

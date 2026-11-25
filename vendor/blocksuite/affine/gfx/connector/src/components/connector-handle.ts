@@ -83,6 +83,12 @@ export class EdgelessConnectorHandle extends WithDisposable(LitElement) {
   private _capPointerDown(e: PointerEvent, connection: 'target' | 'source') {
     const { gfx, connector, slots, _disposables } = this;
     e.stopPropagation();
+    // Capy (vendor/blocksuite/README.md, local change 85): the end dragged
+    // and the label the watcher places on its path stay this tab's until the
+    // pointer is up, then each is written once. Upstream stored the end, and
+    // the watcher the label, at every pointer move.
+    connector.stash(connection);
+    connector.stash('labelXYWH');
     _disposables.addFromEvent(document, 'pointermove', e => {
       const point = gfx.viewport.toModelCoordFromClientCoord([e.x, e.y]);
       const isStartPointer = connection === 'source';
@@ -95,13 +101,21 @@ export class EdgelessConnectorHandle extends WithDisposable(LitElement) {
       this.requestUpdate();
     });
 
-    _disposables.addFromEvent(document, 'pointerup', () => {
+    // Capy (local change 85): a cancelled pointer ends the drag as a release
+    // does, once.
+    const end = () => {
+      this.doc.transact(() => {
+        connector.pop(connection);
+        connector.pop('labelXYWH');
+      });
       this.doc.captureSync();
       _disposables.dispose();
       this._disposables = new DisposableGroup();
       this._bindEvent();
       slots.elementResizeEnd.next();
-    });
+    };
+    _disposables.addFromEvent(document, 'pointerup', end);
+    _disposables.addFromEvent(document, 'pointercancel', end);
   }
 
   override firstUpdated() {

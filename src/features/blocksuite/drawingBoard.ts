@@ -19,7 +19,6 @@ import { NoteStoreExtension } from '@blocksuite/affine/blocks/note/store';
 import { NoteViewExtension } from '@blocksuite/affine/blocks/note/view';
 import { ParagraphStoreExtension } from '@blocksuite/affine/blocks/paragraph/store';
 import { ParagraphViewExtension } from '@blocksuite/affine/blocks/paragraph/view';
-import { createElementsFromClipboardDataCommand } from '@blocksuite/affine/blocks/root';
 import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
 import { RootViewExtension } from '@blocksuite/affine/blocks/root/view';
 import {
@@ -162,7 +161,9 @@ import {
   refusesAdds,
   setBoardFull,
   setBoardSizer,
+  TYPING,
 } from './boardFull';
+import { gateBoardWrites } from './boardGates';
 import { IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import type { BoardImages } from './boardImages';
 import { watchNoteLinks } from './boardNoteLinks';
@@ -842,11 +843,12 @@ export function mountDrawingBoard(
   // A canvas near its room's cap (`fullAt`) takes only edits that remove
   // content: select, the eraser, delete and moving stay; a tool that adds, a
   // paste, a drop, ⌘D and Duplicate (`duplicates`), an Alt-drag's copy, a
-  // mind map's Tab or Enter child, a shape's auto-complete +, a double
-  // click's note or label, a piece, a picture, a link or quiz card, an image
-  // and a formula are refused with the cap's line (boardFull.ts). Typing in
-  // what is there and Undo are not stopped; a refusal by the room still goes
-  // to the copy-only recovery.
+  // group, a mind map's Tab or Enter child, a shape's auto-complete +, a
+  // double click's note or label, a piece, a picture, a link or quiz card, an
+  // image and a formula are refused with the cap's line (boardFull.ts), and so
+  // is a write of several elements whose stubs would pass the cap (below).
+  // Typing in what is there and Undo are not stopped; a refusal by the room
+  // still goes to the copy-only recovery.
   let full = false;
   const ADDS_NOTHING = new Set([
     DefaultTool.toolName,
@@ -907,15 +909,9 @@ export function mountDrawingBoard(
   };
   for (const type of ['paste', 'drop', 'keydown', 'pointerdown'])
     board.addEventListener(type, refuseAdd, true);
-  // Duplicate (the element toolbar's, ⌘D's) and a paste of copied elements
-  // make their copies through one command.
-  const { command } = std;
-  const exec = command.exec.bind(command);
-  command.exec = ((run, ...rest) =>
-    (run as unknown) === createElementsFromClipboardDataCommand &&
-    refusesAdds(store)
-      ? [false, {}]
-      : exec(run, ...rest)) as typeof command.exec;
+  // A gesture writing several elements on a full board goes only when the
+  // stubs it leaves fit under the cap (boardGates.ts).
+  const ungateWrites = gateBoardWrites(board, std);
   // The stylesheet shows the eraser's ring while it's the tool.
   const unwatchTool = gfx.tool.currentToolName$.subscribe((name) => {
     board.dataset.tool = name;
@@ -968,11 +964,7 @@ export function mountDrawingBoard(
     if (!board.checkVisibility() || board.hasAttribute('data-editor-open'))
       return;
     const [target] = event.composedPath();
-    if (
-      target instanceof Element &&
-      target.closest('input, textarea, [contenteditable="true"], math-field')
-    )
-      return;
+    if (target instanceof Element && target.closest(TYPING)) return;
     const centre: Vec = [gfx.viewport.centerX, gfx.viewport.centerY];
     const piece = {
       KeyB: event.shiftKey ? 'pie' : 'bar',
@@ -997,11 +989,7 @@ export function mountDrawingBoard(
     const path = event.composedPath();
     const [target] = path;
     const onBoard = target === document.body || path.includes(board);
-    if (
-      !onBoard ||
-      (target instanceof Element &&
-        target.closest('input, textarea, [contenteditable="true"], math-field'))
-    )
+    if (!onBoard || (target instanceof Element && target.closest(TYPING)))
       return;
     event.preventDefault();
     event.stopPropagation();
@@ -1523,6 +1511,7 @@ export function mountDrawingBoard(
       document.removeEventListener('keydown', slotKeys);
       for (const type of ['paste', 'drop', 'keydown', 'pointerdown'])
         board.removeEventListener(type, refuseAdd, true);
+      ungateWrites();
       window.removeEventListener('keydown', cardKeys, true);
       unwatchEditor?.();
       unfollow?.();

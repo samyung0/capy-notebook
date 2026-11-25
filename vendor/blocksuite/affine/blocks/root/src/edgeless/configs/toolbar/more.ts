@@ -31,6 +31,7 @@ import type {
   ToolbarContext,
 } from '@blocksuite/affine-shared/services';
 import {
+  boardWrites,
   matchModels,
   type ReorderingType,
 } from '@blocksuite/affine-shared/utils';
@@ -411,6 +412,11 @@ function reorderElements(
       })
     ).values()
   );
+  // Capy (local change 82): the board may refuse to reorder them all, before
+  // any is reordered; a step forward or backward makes its keys between two
+  // siblings, to the front or back past them.
+  const write = type === 'forward' || type === 'backward' ? 'step' : 'order';
+  if (boardWrites.refuses(ctx.store, normalizedModels, write)) return;
 
   for (const model of normalizedModels) {
     const index = ctx.gfx.layer.getReorderedIndex(model, type);
