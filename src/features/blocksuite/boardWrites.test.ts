@@ -196,8 +196,12 @@ function board() {
     bytes = MAX - bytesOf(writes) + short;
   };
   const at = (id: string) => surface.getElementById(id) as GfxModel;
+  /** Adds an element with its own index past the last, as the board's CRUD
+   * adds one (`generateIndex`). */
+  const add = <T extends { type: string }>(props: T) =>
+    surface.addElement({ index: gfx.layer.generateIndex(), ...props });
   const shape = (x: number) =>
-    surface.addElement({
+    add({
       shapeType: 'rect',
       type: 'shape',
       xywh: `[${x},0,10,10]`,
@@ -208,6 +212,7 @@ function board() {
   ) => writesOf(models, gesture, (id) => surface.getConnectors(id));
   const longest = () => longestIndex(gfx.gfxElements);
   return {
+    add,
     at,
     doc,
     gfx,
@@ -226,8 +231,8 @@ function board() {
 type Board = ReturnType<typeof board>;
 
 /** A group of `ids`. */
-const group = ({ surface }: Board, ids: string[]) =>
-  surface.addElement({
+const group = ({ add }: Board, ids: string[]) =>
+  add({
     children: Object.fromEntries(ids.map((id) => [id, true])),
     title: new Y.Text('g'),
     type: 'group',
@@ -235,11 +240,11 @@ const group = ({ surface }: Board, ids: string[]) =>
 
 /** A labelled connector from `source` to `target` (ids or free points). */
 const connector = (
-  { surface }: Board,
+  { add }: Board,
   source: string | [number, number],
   target: string | [number, number]
 ) =>
-  surface.addElement({
+  add({
     labelDisplay: true,
     labelOffset: { distance: 0.5 },
     labelXYWH: [0, 0, 20, 10],
@@ -263,7 +268,7 @@ function mindmap(b: Board, x: number, children: number) {
     ids.push(id);
   }
   const map = b.at(
-    b.surface.addElement({ children: tree, type: 'mindmap' })
+    b.add({ children: tree, type: 'mindmap' })
   ) as MindmapElementModel;
   return { ids, map };
 }
@@ -329,19 +334,19 @@ it("counts a group's elements, a mind map's nodes, each value written and the la
   const hanging = connector(b, a1, x);
   const root = b.shape(0);
   const node = b.shape(30);
-  b.surface.addElement({
+  b.add({
     children: {
       [node]: { index: 'a0', parent: root },
       [root]: { index: 'a0' },
     },
     type: 'mindmap',
   });
-  const text = b.surface.addElement({
+  const text = b.add({
     text: new Y.Text('t'),
     type: 'text',
     xywh: '[0,40,20,10]',
   });
-  const stroke = b.surface.addElement({
+  const stroke = b.add({
     points: [
       [0, 0],
       [10, 10],
@@ -370,6 +375,20 @@ it("counts a group's elements, a mind map's nodes, each value written and the la
     elements: 3,
     grows: 48 + 47 + 4 * 7,
     values: 5,
+  });
+  // A box stored with numbers longer than JS writes them (a peer's) may get
+  // shorter when moved: it grows by nothing, never less, since an arrow key
+  // sends each element's move as an update of its own.
+  const digits = `0.${'1'.repeat(36)}`;
+  const long = b.add({
+    shapeType: 'rect',
+    type: 'shape',
+    xywh: `[${digits},${digits},10,10]`,
+  });
+  expect(b.written([b.at(long)], 'move')).toEqual({
+    elements: 1,
+    grows: 0,
+    values: 1,
   });
   // A text label's resize writes its box and font size, a stroke's its box
   // and points (as long as they were); the shape's box moves the label
@@ -403,7 +422,7 @@ it("counts a mind map's Style and Layout per node, a node's drag as its map's St
     b.store.addBlock('affine:note', { xywh: '[0,300,200,80]' }, root)
   ) as NoteBlockModel;
   const labelled = connector(b, [0, 100], [50, 150]);
-  const bare = b.surface.addElement({
+  const bare = b.add({
     mode: 0,
     source: { position: [0, 200] },
     target: { position: [50, 250] },
@@ -495,14 +514,14 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     Array.from({ length: n }, (_, i) => make(i));
   const shapes = each((i) => b.shape(20 * i));
   const texts = each((i) =>
-    b.surface.addElement({
+    b.add({
       text: new Y.Text('t'),
       type: 'text',
       xywh: `[${20 * i},100,20,10]`,
     })
   );
   const strokes = each((i) =>
-    b.surface.addElement({
+    b.add({
       lineWidth: 4,
       points: [
         [i, 300],
@@ -540,7 +559,8 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
    * each in turn: a change a write's observer makes, as an emptied group's
    * removal, is already on the board when the update before it is sent):
    * one change, as a gesture's end writes, or `apart`, each write its own (a
-   * toolbar action's loop, a command, a drop). */
+   * toolbar action's loop, a command, a drop). The board must change: a
+   * case that writes what it holds proves nothing. */
   const fits = async (
     counted: Writes,
     change: () => void,
@@ -549,6 +569,8 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
   ) => {
     const room = new Y.Doc();
     Y.applyUpdate(room, Y.encodeStateAsUpdate(b.doc));
+    const board = () => JSON.stringify(room.getMap('blocks').toJSON());
+    const was = board();
     const before = collectedSize(room);
     const grew: number[] = [];
     const measure = (update: Uint8Array) => {
@@ -560,6 +582,7 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     else b.store.transact(change);
     await settled();
     b.doc.off('update', measure);
+    expect(board(), label).not.toBe(was);
     expect(grew.length, label).toBeGreaterThan(0);
     expect(Math.max(...grew), label).toBeLessThanOrEqual(bytesOf(counted));
   };
@@ -692,7 +715,7 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     [w, h, distance]: number[]
   ) =>
     each((i) =>
-      b.surface.addElement({
+      b.add({
         labelDisplay: true,
         labelOffset: { distance },
         labelXYWH: [0, 0, w, h],
@@ -799,7 +822,7 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
   const panel = notes.map((note) => ({
     edgeless: {
       ...note.props.edgeless,
-      style: { ...note.props.edgeless.style, borderRadius: 8 },
+      style: { ...note.props.edgeless.style, borderRadius: 16 },
     },
   }));
   await fits(
@@ -849,6 +872,24 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     "a note's whole style through its style panel",
     true
   );
+  // An array in a block's object is a Y.Array of its own: an item for its
+  // run of plain values and a map, with its own items, for each object in
+  // it (the item rule's bound for arrays).
+  const listed = plain.map((note) => ({
+    edgeless: {
+      ...note.props.edgeless,
+      marks: [1, 2, ...Array.from({ length: 12 }, (_, k) => ({ k }))],
+    },
+  }));
+  await fits(
+    summed(plain.map((note, i) => updated([note], listed[i]))),
+    () => {
+      for (const [i, note] of plain.entries())
+        crud.updateElement(note.id, listed[i]);
+    },
+    "a block's object holding an array",
+    true
+  );
   await fits(
     orderWrites(models(shapes), b.longest(), 'end'),
     () =>
@@ -892,15 +933,21 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     'a reorder of 200 to the front past long keys',
     true
   );
-  const locked = [
-    b.at(
-      group(
-        b,
-        each((i) => b.shape(20 * i))
-      )
-    ),
-    ...models(strokes),
-  ];
+  // Each group sits between two elements, so its ungroup bisects between
+  // two distinct keys (`split`), as it does on most boards; `bisected` says
+  // its elements landed between them.
+  const bisected = (held: GfxModel[], low: GfxModel, high: GfxModel) =>
+    held.every(({ index }) => index > low.index && index < high.index);
+  const lockedBelow = b.at(b.shape(1480));
+  const lockedGroup = b.at(
+    group(
+      b,
+      each((i) => b.shape(20 * i))
+    )
+  ) as GroupElementModel;
+  const lockedHeld = lockedGroup.childElements;
+  const lockedAbove = b.at(b.shape(1500));
+  const locked = [lockedGroup, ...models(strokes)];
   for (const model of locked) model.lock();
   await fits(
     unlockWrites(locked, b.longest()),
@@ -911,45 +958,56 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     'an Unlock',
     true
   );
+  expect(bisected(lockedHeld, lockedBelow, lockedAbove)).toBe(true);
   const grouped = b.at(group(b, texts)) as GroupElementModel;
+  const groupedHeld = grouped.childElements;
+  const groupedAbove = b.at(b.shape(1520));
   await fits(
     ungroupWrites(grouped, b.longest()),
     () => b.std.command.exec(ungroupCommand, { group: grouped as never }),
     'an ungroup',
     true
   );
-  // A group of 50 inside another: its ungroup writes each element's id into
-  // the outer group's children too, in its first update, before the emptied
-  // group goes in one of its own.
+  expect(bisected(groupedHeld, lockedAbove, groupedAbove)).toBe(true);
+  // A group of 50 inside another, between two of its elements: its ungroup
+  // writes each element's id into the outer group's children too, in its
+  // first update, before the emptied group goes in one of its own.
   const nested = () => {
-    const inner = group(
-      b,
-      Array.from({ length: 50 }, (_, i) => b.shape(7 * i))
-    );
-    group(b, [inner, b.shape(400)]);
-    return b.at(inner) as GroupElementModel;
+    const low = b.at(b.shape(0));
+    const inner = b.at(
+      group(
+        b,
+        Array.from({ length: 50 }, (_, i) => b.shape(7 * i))
+      )
+    ) as GroupElementModel;
+    const high = b.at(b.shape(400));
+    group(b, [low.id, inner.id, high.id]);
+    return { held: inner.childElements, high, inner, low };
   };
-  const inner = nested();
+  const inGroup = nested();
   await fits(
-    ungroupWrites(inner, b.longest()),
-    () => b.std.command.exec(ungroupCommand, { group: inner as never }),
+    ungroupWrites(inGroup.inner, b.longest()),
+    () => b.std.command.exec(ungroupCommand, { group: inGroup.inner as never }),
     'an ungroup of 50 in a group',
     true
   );
-  const lockedInner = nested();
-  lockedInner.lock();
+  expect(bisected(inGroup.held, inGroup.low, inGroup.high)).toBe(true);
+  const lockedIn = nested();
+  lockedIn.inner.lock();
   await fits(
-    unlockWrites([lockedInner], b.longest()),
+    unlockWrites([lockedIn.inner], b.longest()),
     () =>
       action(builtinLockedToolbarConfig.actions, 'b.unlock').run(
-        toolbar(b, [lockedInner])
+        toolbar(b, [lockedIn.inner])
       ),
     'an Unlock of 50 in a group',
     true
   );
+  expect(bisected(lockedIn.held, lockedIn.low, lockedIn.high)).toBe(true);
   const planes = models(
     each((i) =>
-      b.surface.addElement({
+      b.add({
+        fit: true,
         type: 'plane',
         x0: -1,
         xywh: `[${200 * i},900,160,120]`,
@@ -960,13 +1018,15 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
   expect(planes.every((plane) => plane instanceof PlaneElementModel)).toBe(
     true
   );
+  // A fitted plane's resize writes its fit too, as its handler does.
+  expect(b.written(planes, 'resize').values).toBe(4 * n);
   await fits(
     b.written(planes, 'resize'),
     () => {
       // As its resize handlers write it: its view follows the dragged side.
       for (const plane of planes) {
         const { x, y, w, h } = Bound.deserialize(plane.xywh);
-        plane.fit = false;
+        if (plane.fit) plane.fit = false;
         for (const key of ['xywh', 'x0', 'y0']) plane.stash(key);
         plane.xywh = new Bound(x + 7 / 0.73, y, w - 7 / 0.73, h).serialize();
         plane.x0 = -1 + 7 / 0.73 / plane.ppu;
@@ -1222,8 +1282,11 @@ it('refuses a lock of several and a reorder past a full board before either writ
   expect(b.sent).not.toEqual([]);
   // Bring Forward makes each key between two, one it made before among them
   // (`step`): the i-th at most 2 + i long, more than keys made past the last
-  // (`end`) keep.
-  const forward = [b.shape(60), b.shape(80), b.shape(100)].map(b.at);
+  // (`end`) keep. Three adjacent shapes under a fourth, the top one first,
+  // chain: each next key goes between the fourth and the last one made.
+  const [low, mid, high] = [b.shape(60), b.shape(80), b.shape(100)].map(b.at);
+  b.shape(120);
+  const forward = [high, mid, low];
   const stepped = orderWrites(forward, b.longest(), 'step');
   expect(stepped).toEqual({ elements: 3, grows: 1 + 2 + 3, values: 3 });
   b.roomShort(stepped, 1);
@@ -1232,7 +1295,7 @@ it('refuses a lock of several and a reorder past a full board before either writ
   expect(b.sent).toEqual([]);
   b.roomShort(stepped, 0);
   action(moreActions, 'b.bring-forward').run(toolbar(b, forward));
-  expect(b.sent).not.toEqual([]);
+  expect(forward.map((model) => model.index)).toEqual(['a9', 'a8V', 'a8G']);
 });
 
 /** The handlers a lit template sets for `event` (`@click`, `@select`), in
@@ -1408,7 +1471,7 @@ it("refuses a mind map's node dragged off its map on a full board, an add, and w
   const b = board();
   const root = b.shape(0);
   const node = b.shape(30);
-  const map = b.surface.addElement({
+  const map = b.add({
     children: {
       [node]: { index: 'a0', parent: root },
       [root]: { index: 'a0' },

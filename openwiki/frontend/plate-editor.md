@@ -6925,7 +6925,9 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       (`Writes.grows`, `bytesOf`; one read a value, no encode; positions are
       never rounded): a box 105 characters (`[x,y,w,h]`, each number at most
       25 as JS writes it: a sign, `0.`, five zeros and 17 digits), a moved
-      one its `x` and `y` alone, 25 each (a drag sets `moveDelta`, the snap
+      one its `x` and `y` alone, 25 each (one that may get shorter, a
+      peer's longer numbers, by nothing: an arrow key sends each element's
+      move as an update of its own; a drag sets `moveDelta`, the snap
       shifts its delta, an arrow key its `x` and `y`; a mind map's nodes,
       laid out after a drag, and a note, whose measured size may go with its
       move, keep the whole box's bound), a number 9
@@ -6950,15 +6952,19 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       each element's id into that group's children too, a new key each, in
       the same update (the emptied group goes in one of its own after; the
       room judges each update alone, so a count covers each, not their sum):
-      50 elements grew the board by 1,807 B in that first update, counted at
-      2,785. A mind map node's place in its tree (an index and its parent's
-      id) is the map's one value, a few bytes within the Style count its
-      nodes keep; joining another map's tree it is a new key there. A
-      block's object value (a note's `edgeless` through its style panel) is
+      a group of 50 between two others grew the board by 1,852 B in that
+      first update, counted at 2,785. A mind map node's place in its tree (an
+      index and its parent's id) is the map's one value, a few bytes within
+      the Style count its nodes keep; joining another map's tree it is a new
+      key there. A block's object value (a note's `edgeless` through its style panel) is
       its own map, written whole: a new item for each value and each object
-      in it (the map it replaces is collected whole, so its old values cost
-      nothing): 20 notes' empty styles given four values grew the board by
-      2,960 B, counted at 3,680 (2,080 without the items). A select-all
+      in it, an array a Y.Array with an item for each run of plain values
+      (Yjs packs them in one) and each map or array in it with its own (the
+      map it replaces is collected whole, so its old values cost nothing):
+      20 notes' empty styles given four values grew the board by 2,960 B,
+      counted at 3,680 (2,080 without the items), and an array of two
+      numbers and 12 maps in each 6,884 B, counted at 11,920 (3,920 with
+      the array as one item). A select-all
       move of 1,000 shapes placed on whole numbers (boxes of 18 characters,
       `[1234,567,100,100]`) keeps 59,000 B (16 B and 43 a shape; 16,000
       before, against the 41,000 or so it adds at zoom 0.73), under the 64
@@ -6978,7 +6984,8 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       moving tab places, local change 63) and every value it writes on each
       (`valuesWritten`, at most: a connector 3, its free ends and label; a
       rotation 2; a resize 2 on a text label or a stroke and 3 on a note, its
-      scale written the first time, or a plane; the alignment menu's place 5
+      scale written the first time, or a plane, 4 on one that fitted (it
+      stops fitting, `fit` written only then); the alignment menu's place 5
       on a note, its collapse and collapsed height written the first time, a
       note's Scale 3 and its height 2; a note one more, the size it shows
       stored first, local change 75; a mind map's Style 9 a node and its Layout

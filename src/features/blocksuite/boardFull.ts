@@ -234,7 +234,9 @@ const boxGrowth = (model: GfxModel) =>
  * box (the snap shifting its delta alone), an arrow key its `x` and `y`. So
  * only `x` and `y` may grow, to 25 characters each, the width and height
  * written again as JS writes their numbers. A box that does not read falls
- * back to `boxGrowth`. */
+ * back to `boxGrowth`; one that may get shorter grows by nothing (an arrow
+ * key sends each element's move as its own update, so one box's shrinking
+ * may come after another's growth). */
 const moveGrowth = (model: GfxModel) => {
   const xywh = String(stored(model, 'xywh') ?? '');
   let box: unknown;
@@ -245,7 +247,7 @@ const moveGrowth = (model: GfxModel) => {
   }
   if (!(Array.isArray(box) && box.length === 4)) return boxGrowth(model);
   const [, , w, h] = box.map((n) => String(Number(n)));
-  return 2 * 25 + w.length + h.length + 5 - xywh.length;
+  return Math.max(0, 2 * 25 + w.length + h.length + 5 - xywh.length);
 };
 
 /** A connector's free end, `{position: [x, y]}`, grows by its two numbers
@@ -361,7 +363,7 @@ const edgelessOf = (model: GfxModel) => {
 /** What a resize writes on an element besides its box: a text label its
  * font size (a corner) or wrap (a side), a note its scale (`NEW_KEY` the
  * first time), a stroke its points (vendor/blocksuite local change 81), a
- * plane its view's corner. */
+ * plane its view's corner (and its `fit`, when it fitted: `fitted`). */
 const RESIZED: Record<string, number> = {
   'affine:note': 1 + NEW_KEY,
   brush: 2,
@@ -369,6 +371,10 @@ const RESIZED: Record<string, number> = {
   plane: 3,
   text: 2,
 };
+
+/** A plane that fits its marks stops at a resize's start (`boardPlane.ts`
+ * `onResizeStart`), one value more; one that does not writes nothing. */
+const fitted = (model: GfxModel) => (stored(model, 'fit') === true ? 1 : 0);
 
 /** What a mind map's Style writes on each node: up to ten of its values (its
  * colours, font, padding, radius and shadow) and its box once, measured in
@@ -405,7 +411,7 @@ export function valuesWritten(model: GfxModel, gesture: Gesture) {
     model instanceof GfxPrimitiveElementModel ? model.type : model.flavour;
   const shown = kind === 'affine:note' ? 1 : 0;
   if (gesture === 'rotate') return 2 + shown;
-  if (gesture === 'resize') return (RESIZED[kind] ?? 1) + shown;
+  if (gesture === 'resize') return (RESIZED[kind] ?? 1) + shown + fitted(model);
   if (gesture === 'place' && kind === 'affine:note')
     return 1 + 2 * NEW_KEY + shown;
   if (gesture === 'scale') return 1 + NEW_KEY + shown;
@@ -592,30 +598,43 @@ const placesLabel = (model: GfxModel, props: Record<string, unknown>) =>
   model.hasLabel() &&
   ('mode' in props || 'source' in props || 'target' in props);
 
-const isObject = (value: unknown): value is object =>
-  !!value && typeof value === 'object' && !Array.isArray(value);
+/** An object or array a block stores as a shared type of its own
+ * (`native2Y`: a map, a Y.Array). */
+const isShared = (value: unknown): value is object =>
+  !!value && typeof value === 'object' && !(value instanceof Uint8Array);
 
-/** The items an object a block stores as its own map adds: one for each
- * value and each object nested in it (`native2Y` makes maps of them). */
-const itemsOf = (value: object): number =>
-  Object.values(value).reduce<number>(
-    (sum, entry) => sum + 1 + (isObject(entry) ? itemsOf(entry) : 0),
-    0
-  );
+/** The items a block's object or array stored as its own type adds
+ * (`native2Y`): a map an item for each value, an array one for each run of
+ * plain values (Yjs packs them in one) and each binary, and each map or
+ * array inside either one for itself and its own items. */
+const itemsOf = (value: object): number => {
+  if (!Array.isArray(value))
+    return Object.values(value).reduce<number>(
+      (sum, entry) => sum + 1 + (isShared(entry) ? itemsOf(entry) : 0),
+      0
+    );
+  let items = 0;
+  let packing = false;
+  for (const entry of value) {
+    if (isShared(entry)) items += 1 + itemsOf(entry);
+    else if (entry instanceof Uint8Array || !packing) items += 1;
+    packing = !isShared(entry) && !(entry instanceof Uint8Array);
+  }
+  return items;
+};
 
 /** The values a change `props` through the board's `updateElement` writes
  * on `model`: each it names (`NEW_KEY` more for one it stores for the first
- * time; a block's object, stored as a map of its own, a new item for each
- * value and object in it, `itemsOf`: the map it replaces is collected
- * whole), a stroke's width its points
- * and box too (its derive), and a labelled connector's mode or end its
- * label (`placesLabel`). */
+ * time; a block's object or array, stored as a type of its own, a new item
+ * for each it holds, `itemsOf`: the type it replaces is collected whole), a
+ * stroke's width its points and box too (its derive), and a labelled
+ * connector's mode or end its label (`placesLabel`). */
 export function valuesUpdated(model: GfxModel, props: Record<string, unknown>) {
   let values = 0;
   for (const [key, value] of Object.entries(props)) {
     values += 1;
     if (!storesKey(model, key)) values += NEW_KEY;
-    if (!(model instanceof GfxPrimitiveElementModel) && isObject(value))
+    if (!(model instanceof GfxPrimitiveElementModel) && isShared(value))
       values += itemsOf(value);
   }
   if ('lineWidth' in props) values += 2;
