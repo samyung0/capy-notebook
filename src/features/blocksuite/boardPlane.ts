@@ -399,8 +399,9 @@ const planeInteraction = GfxViewInteractionExtension<PlaneElementView>(
         },
         onResizeStart(context) {
           context.default(context);
-          // As resizing a note does: the card keeps the size it's given.
-          model.fit = false;
+          // As resizing a note does: the card keeps the size it's given
+          // (written only when it fitted: the field writes an equal value).
+          if (model.fit) model.fit = false;
           model.stash('x0');
           model.stash('y0');
         },

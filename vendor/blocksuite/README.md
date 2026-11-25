@@ -1178,8 +1178,9 @@ Outside this directory, for BlockSuite:
     The app sets the answer per store (`src/features/blocksuite/boardFull.ts`
     `gateToolbarWrites`); with none set, nothing is refused. Pinned by the
     alignment menu's Align left, a Lock and an Unlock of several, Bring to Front,
-    a note's Scale and height, a mind map's Style and Layout, a node dragged off
-    its map and one dropped into another in
+    Bring Forward (counted as `step` keys), a note's Scale and height, a mind
+    map's Style and Layout, a node dragged off its map and one dropped into
+    another in
     `src/features/blocksuite/boardWrites.test.ts`, the menus' handlers taken from
     their templates.
 

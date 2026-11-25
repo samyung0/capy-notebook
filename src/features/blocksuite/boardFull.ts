@@ -145,16 +145,25 @@ const storesKey = (model: GfxModel, key: string) =>
 const varUintBytes = (n: number) =>
   n < 2 ** 7 ? 1 : n < 2 ** 14 ? 2 : n < 2 ** 21 ? 3 : n < 2 ** 28 ? 4 : 5;
 
+/** A string's UTF-8 bytes as lib0 writes it (`TextEncoder.encodeInto`): a
+ * surrogate pair 4, a lone surrogate 3 (as U+FFFD). */
 const utf8Bytes = (text: string) => {
   let bytes = 0;
   for (let i = 0; i < text.length; i++) {
     const code = text.charCodeAt(i);
+    const next = text.charCodeAt(i + 1);
     if (code < 0x80) bytes += 1;
     else if (code < 0x8_00) bytes += 2;
-    else if (code >= 0xd8_00 && code < 0xdc_00) {
+    else if (
+      code < 0xd8_00 ||
+      code >= 0xdc_00 ||
+      !(next >= 0xdc_00 && next < 0xe0_00)
+    )
+      bytes += 3;
+    else {
       bytes += 4;
       i++;
-    } else bytes += 3;
+    }
   }
   return bytes;
 };
@@ -256,11 +265,26 @@ const labelGrowth = (connector: ConnectorElementModel) => {
   );
 };
 
-/** The longest index among `models`. */
-export const longestIndex = (models: Iterable<GfxModel>) => {
-  let longest = 0;
-  for (const model of models) longest = Math.max(longest, model.index.length);
-  return longest;
+/** The longest of `models`' indexes, whole and their integer parts (a
+ * fractional-indexing key's head says its integer part's length: `a` 2, `b`
+ * 3, … `z` 27, `Z` 2, `Y` 3, … `A` 27). */
+export type IndexLengths = { integer: number; whole: number };
+
+const integerLength = (index: string) => {
+  const head = index.charCodeAt(0);
+  if (head >= 97 && head <= 122) return head - 97 + 2;
+  if (head >= 65 && head <= 90) return 90 - head + 2;
+  return index.length;
+};
+
+export const longestIndex = (models: Iterable<GfxModel>): IndexLengths => {
+  let integer = 0;
+  let whole = 0;
+  for (const { index } of models) {
+    integer = Math.max(integer, integerLength(index));
+    whole = Math.max(whole, index.length);
+  }
+  return { integer, whole };
 };
 
 /** How a write makes its new indexes (fractional-indexing's
@@ -274,64 +298,55 @@ export const longestIndex = (models: Iterable<GfxModel>) => {
 export type Keys = 'end' | 'split' | 'step';
 
 /** The longest the i-th of n new keys is when every key they go between is
- * at most `longest` long. Every path: a neighbour is a key on the board or
- * one this write made, so the i-th is at most `longest` + i (a `step` chain
+ * at most `longest.whole` long. Every path: a neighbour is a key on the board
+ * or one this write made, so the i-th is at most `whole` + i (a `step` chain
  * does grow: 1,000 adjacent elements brought forward top first reach 170
  * characters). `end`: a key past `a` alone is `a`'s integer part plus one
  * (its fraction dropped), before `b` alone its integer part less one; an
  * integer of ℓ characters has 62^(ℓ - 1) values, so after the first step to
- * a longer one each further takes 62² keys at least: at most `longest` + 1 +
- * ⌊log₆₂ n⌋ (the largest and smallest integers, 27 characters, where it
- * goes on with fractions, need a key that long). `split`:
+ * a longer one each further takes 62² keys at least: at most
+ * `longest.integer` + 1 + ⌊log₆₂ n⌋ (the largest and smallest integers, 27
+ * characters, where it goes on with fractions, aside). `split`:
  * `generateNKeysBetween(a, b, n)` takes the key between them and halves n on
- * each side, so a key is at most ⌈log₂(n + 1)⌉ longer (its one-sided
- * fallbacks, as `end`, stay within it). */
-const keyLongest = (keys: Keys, longest: number, n: number, i: number) => {
-  let bound = longest + i;
-  if (keys === 'end' && longest < 27) {
+ * each side, so a key is at most ⌈log₂(n + 1)⌉ longer than `whole` (its
+ * one-sided fallbacks, as `end`, stay within it). */
+const keyLongest = (
+  keys: Keys,
+  longest: IndexLengths,
+  n: number,
+  i: number
+) => {
+  let bound = longest.whole + i;
+  if (keys === 'end' && longest.integer < 27) {
     let steps = 0;
     for (let m = 62; m <= n; m *= 62) steps++;
-    bound = Math.min(bound, longest + 1 + steps);
+    bound = Math.min(bound, longest.integer + 1 + steps);
   }
   if (keys === 'split') {
     let halvings = 0;
     while (2 ** halvings < n + 1) halvings++;
-    bound = Math.min(bound, longest + halvings);
+    bound = Math.min(bound, longest.whole + halvings);
   }
   return bound;
 };
 
 /** What new indexes for `models`, made as `keys` says next to keys at most
  * `longest` long, grow by: each at its longest (`keyLongest`) less its
- * length now. */
+ * length now, a key that may get shorter as nothing (the room judges each
+ * change alone, so one key's shrinking may come after another's growth). */
 export function indexGrowth(
   models: readonly GfxModel[],
-  longest: number,
+  longest: IndexLengths,
   keys: Keys
 ) {
   let grows = 0;
   for (const [i, model] of models.entries())
-    grows +=
-      keyLongest(keys, longest, models.length, i + 1) - model.index.length;
+    grows += Math.max(
+      0,
+      keyLongest(keys, longest, models.length, i + 1) - model.index.length
+    );
   return grows;
 }
-
-/** A node's place in a mind map's tree, `{index, parent}` under its id, at
- * its longest in `map`: an index one character longer than the map's
- * longest (`indexGrowth`) and the longest of its nodes' ids as its parent. */
-const treePlaceBytes = (map: MindmapElementModel, place: object) => {
-  let index = 0;
-  let id = 0;
-  map.children.forEach((entry, key) => {
-    index = Math.max(index, entry.index.length);
-    id = Math.max(id, key.length);
-  });
-  return anyBytes({
-    ...place,
-    index: 'i'.repeat(index + 1),
-    parent: 'p'.repeat(id),
-  });
-};
 
 /** A note's stored `edgeless` values (its own map). */
 const edgelessOf = (model: GfxModel) => {
@@ -454,8 +469,9 @@ export function growthOf(model: GfxModel, gesture: Gesture) {
  * `growthOf`), with the label of each labelled connector hanging on one of
  * them (`connectorsOf`), which the tab moving its end places
  * (vendor/blocksuite local change 63). A mind map's node dragged alone may
- * land in another branch: its place in the tree is written again, its map
- * lays out again and restyles what moved (Style one colours by first-level
+ * land in another branch: its place in the tree is written again (the map's
+ * one value, a few bytes within the Style count of its nodes), its map lays
+ * out again and restyles what moved (Style one colours by first-level
  * branch, the others by depth), at worst the whole map at its Style count. */
 export function writesOf(
   models: Iterable<GfxModel>,
@@ -472,10 +488,6 @@ export function writesOf(
   const each = branch ? 'style' : gesture;
   let values = 0;
   let grows = 0;
-  if (branch) {
-    const place = branch.children.get(first.id) ?? {};
-    grows += treePlaceBytes(branch, place) - anyBytes(place);
-  }
   const labels = new Set<ConnectorElementModel>();
   for (const model of written) {
     values += valuesWritten(model, each);
@@ -580,19 +592,22 @@ const placesLabel = (model: GfxModel, props: Record<string, unknown>) =>
   model.hasLabel() &&
   ('mode' in props || 'source' in props || 'target' in props);
 
-/** The values of an object a block stores as its own map, one a key. */
-const leavesOf = (value: unknown): number =>
-  value && typeof value === 'object' && !Array.isArray(value)
-    ? Object.values(value).reduce<number>(
-        (sum, entry) => sum + leavesOf(entry),
-        0
-      )
-    : 1;
+const isObject = (value: unknown): value is object =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+
+/** The items an object a block stores as its own map adds: one for each
+ * value and each object nested in it (`native2Y` makes maps of them). */
+const itemsOf = (value: object): number =>
+  Object.values(value).reduce<number>(
+    (sum, entry) => sum + 1 + (isObject(entry) ? itemsOf(entry) : 0),
+    0
+  );
 
 /** The values a change `props` through the board's `updateElement` writes
  * on `model`: each it names (`NEW_KEY` more for one it stores for the first
- * time; a block's object, stored as a map of its own, a new value for each
- * of its leaves and a stub for each it held), a stroke's width its points
+ * time; a block's object, stored as a map of its own, a new item for each
+ * value and object in it, `itemsOf`: the map it replaces is collected
+ * whole), a stroke's width its points
  * and box too (its derive), and a labelled connector's mode or end its
  * label (`placesLabel`). */
 export function valuesUpdated(model: GfxModel, props: Record<string, unknown>) {
@@ -600,11 +615,8 @@ export function valuesUpdated(model: GfxModel, props: Record<string, unknown>) {
   for (const [key, value] of Object.entries(props)) {
     values += 1;
     if (!storesKey(model, key)) values += NEW_KEY;
-    else if (!(model instanceof GfxPrimitiveElementModel)) {
-      const now = stored(model, key);
-      if (now instanceof Y.AbstractType) values += leavesOf(now.toJSON());
-      if (value && typeof value === 'object') values += leavesOf(value);
-    }
+    if (!(model instanceof GfxPrimitiveElementModel) && isObject(value))
+      values += itemsOf(value);
   }
   if ('lineWidth' in props) values += 2;
   if (placesLabel(model, props)) values += 1;
@@ -683,7 +695,7 @@ export type GatedCommands = {
  * a reorder's, an ungroup's for the elements its group holds directly. */
 export const orderWrites = (
   models: readonly GfxModel[],
-  longest: number,
+  longest: IndexLengths,
   keys: Keys
 ): Writes => ({
   elements: models.length,
@@ -691,35 +703,62 @@ export const orderWrites = (
   values: models.length,
 });
 
+/** What an ungroup of `group` writes (`ungroupCommand`): the index of each
+ * element it holds directly (`split` keys), and, in a group itself, each
+ * one's id in that group's children, a new key there (`NEW_KEY`, its `true`
+ * a byte), in the same change; the emptied group goes in a change of its
+ * own, after. */
+export function ungroupWrites(
+  group: { childElements: GfxModel[]; group: unknown },
+  longest: IndexLengths
+): Writes {
+  const held = group.childElements;
+  const indexes = orderWrites(held, longest, 'split');
+  if (!group.group) return indexes;
+  return {
+    elements: indexes.elements,
+    grows: indexes.grows + held.length * anyBytes(true),
+    values: indexes.values + held.length * NEW_KEY,
+  };
+}
+
 /** What an Unlock of several writes: each element's lock (a boolean, as long
- * either way) and, for a group, what its ungroup writes, one group after
- * another, so a group's neighbours may be keys the ones before it made. */
-export function unlockWrites(models: readonly GfxModel[], longest: number) {
+ * either way; a mind map's too) and, for a group, what its ungroup writes
+ * (`ungroupWrites`), one group after another, so a group's neighbours may be
+ * keys the ones before it made. */
+export function unlockWrites(
+  models: readonly GfxModel[],
+  longest: IndexLengths
+): Writes {
   let elements = 0;
   let grows = 0;
+  let values = 0;
   let reach = longest;
   for (const model of models) {
     if (!(model instanceof GroupElementModel)) {
-      if (!isGfxGroupCompatibleModel(model)) elements += 1;
+      elements += 1;
+      values += 1;
       continue;
     }
-    const held = model.childElements;
-    const ungrouped = orderWrites(held, reach, 'split');
+    const ungrouped = ungroupWrites(model, reach);
     elements += ungrouped.elements;
     grows += ungrouped.grows;
-    reach = Math.max(
-      reach,
-      ...held.map((_, i) => keyLongest('split', reach, held.length, i + 1))
-    );
+    values += ungrouped.values;
+    const { length } = model.childElements;
+    const made = keyLongest('split', reach, length, length);
+    reach = {
+      integer: Math.max(reach.integer, made),
+      whole: Math.max(reach.whole, made),
+    };
   }
-  return { elements, grows, values: elements };
+  return { elements, grows, values };
 }
 
 /** What a node and the nodes under it (`moved`) dropped into another mind
  * map (`into`) write: the map they leave laid out again and restyled at
  * worst, their own restyle among it, the map they join laid out again, and
- * each one's place in the tree it joins, a new key there (`NEW_KEY`, its id
- * and its place at the longest, `treePlaceBytes`). */
+ * each one's place in the tree it joins, a new key there (`NEW_KEY`; the
+ * place itself, a few bytes, is within the Style count each takes). */
 export function mergeWrites(
   into: GfxModel,
   moved: GfxModel[],
@@ -727,13 +766,9 @@ export function mergeWrites(
 ): Writes {
   const left = written(moved, 'style');
   const joined = written([into], 'layout');
-  let grows = left.grows + joined.grows;
-  if (into instanceof MindmapElementModel)
-    for (const model of moved)
-      grows += anyBytes(model.id) - 1 + treePlaceBytes(into, {});
   return {
     elements: left.elements + joined.elements,
-    grows,
+    grows: left.grows + joined.grows,
     values: left.values + joined.values + moved.length * NEW_KEY,
   };
 }
@@ -747,18 +782,17 @@ export function gateCommands(
   command: Pick<CommandManager, 'exec'>,
   commands: GatedCommands,
   placed: () => Writes,
-  longest: () => number
+  longest: () => IndexLengths
 ) {
   const exec = command.exec.bind(command);
   const refuses = (run: unknown, input: unknown) => {
     if (commands.adds.includes(run)) return refusesAdds(store);
     if (commands.places.includes(run)) return refusesWrites(store, placed());
     if (run !== commands.ungroup) return false;
-    const { group } = input as { group: GfxGroupCompatibleInterface };
-    return refusesWrites(
-      store,
-      orderWrites(group.childElements, longest(), 'split')
-    );
+    const { group } = input as {
+      group: GfxGroupCompatibleInterface & { group: unknown };
+    };
+    return refusesWrites(store, ungroupWrites(group, longest()));
   };
   command.exec = ((run, ...rest) =>
     refuses(run, rest[0])
@@ -780,7 +814,7 @@ export function gateCommands(
 export function gateToolbarWrites(
   store: Store,
   written: (models: GfxModel[], gesture: Gesture) => Writes,
-  longest: () => number
+  longest: () => IndexLengths
 ) {
   boardWrites.gate(store, (models, write) => {
     if (write === 'add') return refusesAdds(store);

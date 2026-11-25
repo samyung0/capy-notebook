@@ -6936,17 +6936,29 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       (`anyBytes`, known before the write: a colour turned themed), new
       indexes by how BlockSuite makes them (`Keys`; fractional-indexing's
       key is at most one character longer than the longer of its two
-      neighbours, the board's longest L or one the write made): to the front
-      or back each past the last (the integer part plus one, so L + 1 +
-      ⌊log₆₂ n⌋ at most), an ungroup's bisected at once between two
-      (`generateNKeysBetween`, L + ⌈log₂(n + 1)⌉), forward or backward each
-      between two, either one it made, L + i for the i-th (a chain does
-      grow: 1,000 adjacent elements brought forward top first reach 170
-      characters), and a mind map node's place in its tree
-      an index one character longer and the longest id as its parent (a new
-      key, with its id, in the tree a merge joins). A block's object value
-      (a note's `edgeless` through its style panel) is its own map, written
-      whole: a value for each leaf it held and each it writes. A select-all
+      neighbours, the board's longest L or one the write made; a key that
+      may get shorter counts as nothing): to the front or back each past the
+      last (its integer part plus one, its fraction dropped, so the longest
+      integer part I plus 1 + ⌊log₆₂ n⌋ at most, whatever fractions the
+      board's keys carry: after a long chain of steps a Bring to Front of 200
+      keeps 3,210 B where the whole keys' L + i kept 26,534), an ungroup's
+      bisected at once between two (`generateNKeysBetween`, L + ⌈log₂(n +
+      1)⌉), forward or backward each between two, either one it made, L + i
+      for the i-th (a chain does grow: 1,000 adjacent elements brought
+      forward top first reach 170 characters, and 200 grew a board by 5,371 B
+      where `end` keys keep 3,599). An ungroup inside another group writes
+      each element's id into that group's children too, a new key each, in
+      the same update (the emptied group goes in one of its own after; the
+      room judges each update alone, so a count covers each, not their sum):
+      50 elements grew the board by 1,807 B in that first update, counted at
+      2,785. A mind map node's place in its tree (an index and its parent's
+      id) is the map's one value, a few bytes within the Style count its
+      nodes keep; joining another map's tree it is a new key there. A
+      block's object value (a note's `edgeless` through its style panel) is
+      its own map, written whole: a new item for each value and each object
+      in it (the map it replaces is collected whole, so its old values cost
+      nothing): 20 notes' empty styles given four values grew the board by
+      2,960 B, counted at 3,680 (2,080 without the items). A select-all
       move of 1,000 shapes placed on whole numbers (boxes of 18 characters,
       `[1234,567,100,100]`) keeps 59,000 B (16 B and 43 a shape; 16,000
       before, against the 41,000 or so it adds at zoom 0.73), under the 64

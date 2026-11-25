@@ -81,6 +81,7 @@ const {
   anyBytes,
   growthUpdated,
   longestIndex,
+  ungroupWrites,
   mergeWrites,
   orderWrites,
   setBoardFull,
@@ -169,6 +170,9 @@ function board() {
   });
   const gfx = std.get(GfxControllerIdentifier);
   gfx.selection.mounted();
+  // The layers follow what the board adds and reorders, as on a mounted board.
+  gfx.layer.mounted();
+  onTestFinished(() => gfx.layer.unmounted());
   const surface = store.getModelsByFlavour(
     'affine:surface'
   )[0] as SurfaceBlockModel;
@@ -354,11 +358,10 @@ it("counts a group's elements, a mind map's nodes, each value written and the la
     values: 3,
   });
   // A node dragged alone may restyle its whole map: the map's tree and both
-  // nodes at the Style count (9 a node), their boxes, and the node's place in
-  // the tree (an index one character longer).
+  // nodes at the Style count (9 a node) and their boxes.
   expect(b.written([b.at(node)], 'move')).toEqual({
     elements: 3,
-    grows: 94 + 93 + 1,
+    grows: 94 + 93,
     values: 19,
   });
   // A connector moved with its ends: its free ends and label, at most (its
@@ -420,11 +423,11 @@ it("counts a mind map's Style and Layout per node, a node's drag as its map's St
     grows: boxes,
     values: 9,
   });
-  // A node dragged alone: its whole map at its Style count and its place in
-  // the tree; its root moves the map.
+  // A node dragged alone: its whole map at its Style count; its root moves
+  // the map.
   expect(b.written([b.at(ids[1])], 'move')).toEqual({
     elements: 5,
-    grows: boxes + 1,
+    grows: boxes,
     values: 37,
   });
   expect(b.written([b.at(ids[0])], 'move')).toEqual({
@@ -464,21 +467,24 @@ it("counts a mind map's Style and Layout per node, a node's drag as its map's St
   );
 });
 
-// Second, third and fourth reviews of the guard: what the gate counts for
-// each gesture bounds what it adds to the room's collected state
-// (`collectedSize`, what the room measures), on a board whose clocks passed
-// 10^5: each overwritten value's stub carries its clock twice, 3 bytes each
-// there (a fresh board's are 1 or 2), a value written for the first time
-// adds its key, and a value written longer than it was the difference (a box
-// placed on whole numbers dragged at zoom 0.73, a whole angle turned to a
-// float, a colour turned themed). Each gesture writes as BlockSuite's does:
-// the board's `updateElement` and `updateBlock` in one change, a connector's
-// drag through its view, a resize by its handlers' stashes, the toolbar's
-// reorder and Unlock through their actions, an ungroup through its command,
-// a mind map's Style and Layout on its own layout (the view's) over every
-// change of style and layout of a 21-node map, and a node dropped on another
-// map through its drag. Fails if one grows the board past what its count
-// keeps (`bytesOf`).
+// Second to fifth reviews of the guard: what the gate counts for each
+// gesture bounds what each update it sends adds to the room's collected
+// state (a collected copy takes each update in turn, as the room's replica
+// does), on a board whose clocks passed 10^5: each overwritten value's stub
+// carries its clock twice, 3 bytes each there (a fresh board's are 1 or 2),
+// a value written for the first time adds its key, and a value written
+// longer than it was the difference (a box placed on whole numbers dragged
+// at zoom 0.73, a whole angle turned to a float, a colour turned themed, a
+// connector's free ends and label from whole numbers to 17 digits, a note's
+// empty style given four values, keys a step forward chains, an ungroup's
+// elements written into the group it sits in). Each gesture writes as
+// BlockSuite's does: the board's `updateElement` and `updateBlock` in one
+// change, a connector's drag through its view, a resize by its handlers'
+// stashes, the toolbar's reorder and Unlock through their actions, an
+// ungroup through its command, a mind map's Style and Layout on its own
+// layout (the view's) over every change of style and layout of a 21-node
+// map, and a node dropped on another map through its drag. Fails if one
+// update grows the board past what its gesture's count keeps (`bytesOf`).
 it('grows a board whose clocks passed 10^5 by no more than the gate counts for each gesture', async () => {
   const b = board();
   const aged = b.doc.getText('aged');
@@ -529,12 +535,33 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
   vi.stubGlobal('document', { body: measured(), createElement: measured });
   map.layout();
   await settled();
-  const fits = async (counted: Writes, change: () => void, label: string) => {
-    const before = collectedSize(b.doc);
-    b.store.transact(change);
+  /** Whether `change` fits what its count keeps after each update it
+   * sends, as the room judges each on its own (a copy of the board takes
+   * each in turn: a change a write's observer makes, as an emptied group's
+   * removal, is already on the board when the update before it is sent):
+   * one change, as a gesture's end writes, or `apart`, each write its own (a
+   * toolbar action's loop, a command, a drop). */
+  const fits = async (
+    counted: Writes,
+    change: () => void,
+    label: string,
+    apart = false
+  ) => {
+    const room = new Y.Doc();
+    Y.applyUpdate(room, Y.encodeStateAsUpdate(b.doc));
+    const before = collectedSize(room);
+    const grew: number[] = [];
+    const measure = (update: Uint8Array) => {
+      Y.applyUpdate(room, update);
+      grew.push(collectedSize(room) - before);
+    };
+    b.doc.on('update', measure);
+    if (apart) change();
+    else b.store.transact(change);
     await settled();
-    const grew = collectedSize(b.doc) - before;
-    expect(grew, label).toBeLessThanOrEqual(bytesOf(counted));
+    b.doc.off('update', measure);
+    expect(grew.length, label).toBeGreaterThan(0);
+    expect(Math.max(...grew), label).toBeLessThanOrEqual(bytesOf(counted));
   };
   /** At zoom 0.73 a drag or resize writes 17 significant digits
    * (`Bound.serialize`). */
@@ -542,6 +569,12 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     new Bound(bound.x + dx / 0.73, bound.y + dy / 0.73, bound.w, bound.h);
   const models = (ids: string[]) => ids.map(b.at);
   const crud = b.std.get(EdgelessCRUDIdentifier);
+  const summed = (writes: Writes[]) =>
+    writes.reduce((sum, each) => ({
+      elements: sum.elements + each.elements,
+      grows: sum.grows + each.grows,
+      values: sum.values + each.values,
+    }));
   await fits(
     b.written(models(shapes), 'move'),
     () => {
@@ -592,7 +625,8 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     () => {
       for (const id of strokes) crud.updateElement(id, { lineWidth: 8 });
     },
-    "a stroke's width"
+    "a stroke's width",
+    true
   );
   await fits(
     b.written(models(strokes), 'resize'),
@@ -611,7 +645,8 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     () => {
       for (const id of shapes) crud.updateElement(id, { fillColor: '#ff0000' });
     },
-    'a fill'
+    'a fill',
+    true
   );
   const themed = { dark: '#252525', light: '#ffffff' };
   await fits(
@@ -619,33 +654,91 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     () => {
       for (const id of shapes) crud.updateElement(id, { fillColor: themed });
     },
-    'a fill from a colour to a themed one'
+    'a fill from a colour to a themed one',
+    true
   );
+  /** Drags each of `ids`' connectors through its view by `dx` and `dy`. */
+  const dragged = (ids: string[], dx: number, dy: number) => () => {
+    for (const model of models(ids)) {
+      const view = new ConnectorElementView(
+        model as ConnectorElementModel,
+        b.gfx
+      );
+      view.onDragStart({} as DragStartContext);
+      view.onDragMove({
+        currentBound: model.elementBound,
+        dx,
+        dy,
+      } as DragMoveContext);
+      view.onDragEnd({} as DragEndContext);
+    }
+  };
   await fits(
     b.written(models(connectors), 'move'),
-    () => {
-      for (const model of models(connectors)) {
-        const view = new ConnectorElementView(
-          model as ConnectorElementModel,
-          b.gfx
-        );
-        view.onDragStart({} as DragStartContext);
-        view.onDragMove({
-          currentBound: model.elementBound,
-          dx: 0,
-          dy: 40,
-        } as DragMoveContext);
-        view.onDragEnd({} as DragEndContext);
-      }
-    },
+    dragged(connectors, 0, 40),
     "a connector's drag"
+  );
+  // At zoom 0.73: the free ends and the label to 17 digits.
+  await fits(
+    b.written(models(connectors), 'move'),
+    dragged(connectors, 3 / 0.73, 7 / 0.73),
+    "a connector's drag at zoom 0.73"
+  );
+  /** Labelled connectors from `source` to `target` (`i` each's place), their
+   * labels `w` by `h`, at `distance` along their paths. */
+  const labelled = (
+    source: (i: number) => { id: string } | { position: number[] },
+    target: (i: number) => number[],
+    [w, h, distance]: number[]
+  ) =>
+    each((i) =>
+      b.surface.addElement({
+        labelDisplay: true,
+        labelOffset: { distance },
+        labelXYWH: [0, 0, w, h],
+        mode: 0,
+        source: source(i),
+        target: { position: target(i) },
+        text: new Y.Text('l'),
+        type: 'connector',
+      })
+    );
+  // Free ends on whole numbers, their labels' measured sizes placing them to
+  // 17 digits already: a drag at zoom 0.73 takes the ends to 17 digits.
+  const sized = labelled(
+    (i) => ({ position: [20 * i, 900] }),
+    (i) => [20 * i + 10, 950],
+    [20.3, 10.7, 0.5]
+  );
+  await settled();
+  await fits(
+    b.written(models(sized), 'move'),
+    dragged(sized, 3 / 0.73, 7 / 0.73),
+    "a connector's free ends from whole numbers at zoom 0.73"
   );
   await fits(
     updated(models(connectors), { mode: 1 }),
     () => {
       for (const id of connectors) crud.updateElement(id, { mode: 1 });
     },
-    "a connector's mode"
+    "a connector's mode",
+    true
+  );
+  // Labels on whole numbers (a third along a straight path), curved: each
+  // placed again on its new path, to 17 digits.
+  const curved = labelled(
+    (i) => ({ id: b.shape(1000 + 30 * i) }),
+    (i) => [1045 + 30 * i, 120],
+    [20, 10, 0.3]
+  );
+  await settled();
+  await fits(
+    updated(models(curved), { mode: 2 }),
+    () => {
+      for (const id of curved) crud.updateElement(id, { mode: 2 });
+    },
+    "a connector's label from whole numbers at a mode change",
+    true
   );
   // A note placed and scaled for the first time adds its collapse, its
   // collapsed height and its scale.
@@ -710,34 +803,77 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     },
   }));
   await fits(
-    notes
-      .map((note, i) => updated([note], panel[i]))
-      .reduce((sum, each) => ({
-        elements: sum.elements + each.elements,
-        grows: sum.grows + each.grows,
-        values: sum.values + each.values,
-      })),
+    summed(notes.map((note, i) => updated([note], panel[i]))),
     () => {
       for (const [i, note] of notes.entries())
         crud.updateElement(note.id, panel[i]);
     },
-    "a note's corners through its style panel"
+    "a note's corners through its style panel",
+    true
+  );
+  // A note's background turned themed: its own map of two values.
+  const background = { dark: '#1f1f1f', light: '#fefefe' };
+  await fits(
+    updated(notes, { background }),
+    () => {
+      for (const note of notes) crud.updateElement(note.id, { background });
+    },
+    "a note's background through its style panel",
+    true
+  );
+  // Notes stored with an empty style given all four of its values: each a
+  // new item of the note's new map, a header and key more than its bytes.
+  const plain = each((i) =>
+    b.store.addBlock(
+      'affine:note',
+      { edgeless: { style: {} }, xywh: `[${300 * i},700,200,80]` },
+      root
+    )
+  ).map((id) => b.store.getModelById(id) as NoteBlockModel);
+  await settled();
+  const style = {
+    borderRadius: 8,
+    borderSize: 4,
+    borderStyle: 'solid',
+    shadowType: '--affine-note-shadow-sticker',
+  };
+  const styled = plain.map((note) => ({
+    edgeless: { ...note.props.edgeless, style },
+  }));
+  await fits(
+    summed(plain.map((note, i) => updated([note], styled[i]))),
+    () => {
+      for (const [i, note] of plain.entries())
+        crud.updateElement(note.id, styled[i]);
+    },
+    "a note's whole style through its style panel",
+    true
   );
   await fits(
     orderWrites(models(shapes), b.longest(), 'end'),
     () =>
       action(moreActions, 'a.bring-to-front').run(toolbar(b, models(shapes))),
-    'a reorder'
+    'a reorder',
+    true
   );
-  // A reorder of 200 elements: to the front each key past the last (2
-  // characters on this board, so 4 at most), forward each between two, the
-  // top one first so each next key goes between the last it made.
-  const many = Array.from({ length: 200 }, (_, i) => b.shape(5 * i));
-  const front = orderWrites(models(many), b.longest(), 'end');
+  // A reorder of 200 elements, each added with its own index past the last
+  // as the board adds them: to the front each key past the last (an integer
+  // part one longer at most); forward each between two, the top one first,
+  // so each next key goes between the last it made, a chain longer than
+  // `end` keys keep; then to the front again past those long keys, their
+  // integer parts alone counted.
+  const many = Array.from({ length: 200 }, (_, i) =>
+    crud.addElement('shape', {
+      shapeType: 'rect',
+      xywh: `[${5 * i},600,10,10]`,
+    })
+  ) as string[];
+  await settled();
   await fits(
-    front,
+    orderWrites(models(many), b.longest(), 'end'),
     () => action(moreActions, 'a.bring-to-front').run(toolbar(b, models(many))),
-    'a reorder of 200 to the front'
+    'a reorder of 200 to the front',
+    true
   );
   const topFirst = models(many).sort((one, other) =>
     one.index < other.index ? 1 : -1
@@ -745,7 +881,16 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
   await fits(
     orderWrites(topFirst, b.longest(), 'step'),
     () => action(moreActions, 'b.bring-forward').run(toolbar(b, topFirst)),
-    'a reorder of 200 forward'
+    'a reorder of 200 forward, top first',
+    true
+  );
+  const chained = b.longest();
+  expect(chained.whole).toBeGreaterThan(27);
+  await fits(
+    orderWrites(models(many), chained, 'end'),
+    () => action(moreActions, 'a.bring-to-front').run(toolbar(b, models(many))),
+    'a reorder of 200 to the front past long keys',
+    true
   );
   const locked = [
     b.at(
@@ -763,13 +908,44 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
       action(builtinLockedToolbarConfig.actions, 'b.unlock').run(
         toolbar(b, locked)
       ),
-    'an Unlock'
+    'an Unlock',
+    true
   );
   const grouped = b.at(group(b, texts)) as GroupElementModel;
   await fits(
-    orderWrites(grouped.childElements, b.longest(), 'split'),
+    ungroupWrites(grouped, b.longest()),
     () => b.std.command.exec(ungroupCommand, { group: grouped as never }),
-    'an ungroup'
+    'an ungroup',
+    true
+  );
+  // A group of 50 inside another: its ungroup writes each element's id into
+  // the outer group's children too, in its first update, before the emptied
+  // group goes in one of its own.
+  const nested = () => {
+    const inner = group(
+      b,
+      Array.from({ length: 50 }, (_, i) => b.shape(7 * i))
+    );
+    group(b, [inner, b.shape(400)]);
+    return b.at(inner) as GroupElementModel;
+  };
+  const inner = nested();
+  await fits(
+    ungroupWrites(inner, b.longest()),
+    () => b.std.command.exec(ungroupCommand, { group: inner as never }),
+    'an ungroup of 50 in a group',
+    true
+  );
+  const lockedInner = nested();
+  lockedInner.lock();
+  await fits(
+    unlockWrites([lockedInner], b.longest()),
+    () =>
+      action(builtinLockedToolbarConfig.actions, 'b.unlock').run(
+        toolbar(b, [lockedInner])
+      ),
+    'an Unlock of 50 in a group',
+    true
   );
   const planes = models(
     each((i) =>
@@ -858,7 +1034,8 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
   await fits(
     mergeWrites(into.map, moving, b.written),
     () => dropOnRoot(b, from.map, from.ids[1], into.map),
-    'a merge'
+    'a merge',
+    true
   );
   expect(into.map.getNode(from.ids[1])).not.toBeNull();
 });
@@ -959,10 +1136,9 @@ it('ungroups a group when its direct elements fit, however many its groups hold,
   );
   // Its two direct elements' indexes, bisected between the board's (two
   // characters long): the first at most 3 long, the second 4.
-  const ungrouped = orderWrites(
-    (b.at(outer) as GroupElementModel).childElements,
-    b.longest(),
-    'split'
+  const ungrouped = ungroupWrites(
+    b.at(outer) as GroupElementModel,
+    b.longest()
   );
   expect(ungrouped).toEqual({ elements: 2, grows: 3 + 4 - 2 - 2, values: 2 });
   b.roomShort(ungrouped, 1);
@@ -1043,6 +1219,19 @@ it('refuses a lock of several and a reorder past a full board before either writ
   expect(userToast).toHaveBeenCalledTimes(2);
   b.roomShort(reordered, 0);
   action(moreActions, 'a.bring-to-front').run(toolbar(b, models));
+  expect(b.sent).not.toEqual([]);
+  // Bring Forward makes each key between two, one it made before among them
+  // (`step`): the i-th at most 2 + i long, more than keys made past the last
+  // (`end`) keep.
+  const forward = [b.shape(60), b.shape(80), b.shape(100)].map(b.at);
+  const stepped = orderWrites(forward, b.longest(), 'step');
+  expect(stepped).toEqual({ elements: 3, grows: 1 + 2 + 3, values: 3 });
+  b.roomShort(stepped, 1);
+  b.sent.length = 0;
+  action(moreActions, 'b.bring-forward').run(toolbar(b, forward));
+  expect(b.sent).toEqual([]);
+  b.roomShort(stepped, 0);
+  action(moreActions, 'b.bring-forward').run(toolbar(b, forward));
   expect(b.sent).not.toEqual([]);
 });
 
@@ -1296,11 +1485,13 @@ it("refuses a mind map's Style and Layout past a full board before any node chan
 
 // Second review of the guard, finding 6 (local change 82): an Unlock of
 // several writes each element's lock, and ungroups a locked group, writing
-// each of its elements. Fails if a refused Unlock writes anything.
+// each of its elements. Fails if a refused Unlock writes anything, or a mind
+// map's own lock goes uncounted.
 it('refuses an Unlock of several past a full board before any element unlocks', () => {
   const b = board();
   const g = group(b, [b.shape(0), b.shape(20), b.shape(40)]);
-  const models = [b.at(g), b.at(b.shape(60)), b.at(b.shape(80))];
+  const { map } = mindmap(b, 300, 1);
+  const models = [b.at(g), b.at(b.shape(60)), b.at(b.shape(80)), map];
   for (const model of models) model.lock();
   const stop = gateToolbarWrites(b.store, b.written, b.longest);
   onTestFinished(stop);
@@ -1309,13 +1500,13 @@ it('refuses an Unlock of several past a full board before any element unlocks', 
       toolbar(b, models)
     );
   // The group's three elements' indexes, bisected between the board's (two
-  // characters long: at most 3, then 2 + ⌈log₂ 4⌉), and two locks (as long
-  // either way).
+  // characters long: at most 3, then 2 + ⌈log₂ 4⌉), and three locks, the
+  // map's its own (as long either way).
   const unlocked = unlockWrites(models, b.longest());
   expect(unlocked).toEqual({
-    elements: 5,
+    elements: 6,
     grows: 3 + 4 + 4 - 3 * 2,
-    values: 5,
+    values: 6,
   });
   b.roomShort(unlocked, 1);
   b.sent.length = 0;
@@ -1325,6 +1516,7 @@ it('refuses an Unlock of several past a full board before any element unlocks', 
   b.roomShort(unlocked, 0);
   unlock();
   expect(models.slice(1).map((model) => model.isLocked())).toEqual([
+    false,
     false,
     false,
   ]);
@@ -1352,13 +1544,11 @@ it('refuses a node merged into another mind map past a full board, and writes no
   // Checked once, at the drop, for both maps: the first at its Style count
   // (its value, 9 for each of its two nodes), the second laid out (its value,
   // 2 for each of its two nodes), each node's box at its longest, and the
-  // moved node's place in the second map's tree, a new key (its id of 10
-  // characters, 11 bytes, and its place at the longest, 32).
-  expect(moved).toHaveLength(10);
+  // moved node's place in the second map's tree, a new key.
   const merged = mergeWrites(into.map, [b.at(moved)], b.written);
   expect(merged).toEqual({
     elements: 6,
-    grows: 94 + 93 + 92 + 91 + 11 + 32,
+    grows: 94 + 93 + 92 + 91,
     values: 19 + 5 + 2,
   });
   b.roomShort(merged, 1);
