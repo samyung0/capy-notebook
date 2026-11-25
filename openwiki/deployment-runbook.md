@@ -816,8 +816,9 @@ the bench behind them is
   to start. Unloads during a trim or its spacing ask for
   exactly one more, run once the spacing passed, so a burst of unloads costs
   one trim per 5 s. The same request also follows each board's whole-board
-  work (`work.rs`: a load, a fold, a projection or a heavy update's
-  admission, whose 25 to 90 MiB peak otherwise stays resident on glibc),
+  work (`work.rs`: a load, a fold, a projection, an update's trial on the
+  board's replica or a joiner's answer behind its base, whose 25 to 90 MiB
+  peak otherwise stays resident on glibc),
   spaced with the
   unloads' trims. A trim that panics leaves later ones running. Each trim
   logs one Info line, `memory trimmed`, with `ms`, `released`,
@@ -4732,3 +4733,51 @@ a canvas's first open and each board fold fail. The deploy's own order
 columns are nullable, null for every other kind and for a board seeded
 before 0193 and not folded since; the migration backfills nothing and refuses
 nothing.
+
+## Board base indexes, the rest (migration 0195)
+
+[`0195_board_base_indexes_rest.sql`](../server/migrations/0195_board_base_indexes_rest.sql)
+(the bytes-room plan, step 2, Epo 2026-11-24) adds `base_indexes` to
+`material_yjs_documents`: the rest of a board base's indexes (the origins
+the board room's flag rule reads, the place hashes, each type's depth and the
+clients that wrote contributor markers), one versioned binary value that
+`board::Indexes::stored` in
+[`board.rs`](../collaboration-rs/crates/server/src/board.rs) documents. As
+with 0193, it must be applied before the new collaboration server starts,
+which writes it with 0193's two columns at every canvas's first seed and
+every board fold (a canvas's first open and each board fold fail without
+it); the deploy's own order does this. It is nullable, null for every other
+kind and for a board seeded before 0195 and not folded since; the migration
+backfills nothing and refuses nothing.
+
+The board room on bytes (step 2's room tasks) loads a board from these three
+columns and never decodes its base, so a canvas whose row lacks any of them
+fails its load with "a board's base has no stored indexes" (Epo 2026-11-24:
+canvases saved before the stored indexes are deleted, not migrated). A damaged
+value fails it too, with "a board's stored indexes cannot be read": sets whose
+runs or clients are out of order, overlap or are empty, heads or firsts out of
+order, or a sequence's first that is not one of its heads. Flipped bytes inside
+a value that keep its order (a place hash, a depth) still read; there is no
+checksum. Before that server reaches UAT, the UAT canvases stored before it
+(each with a `material_yjs_documents` row and no `base_indexes`; one never
+opened has no row and seeds afresh) are deleted by hand, and only once Epo
+has said yes to it (the bytes-room plan's follow-ups). As for 0181, count
+them before the deploy and tell whoever drew them, then delete them right
+after it. Not before: the old server, running until the deploy, writes rows
+without `base_indexes`, so a canvas opened or created between the delete and
+the deploy would fail its load afterwards. The new server writes
+`base_indexes` at every first seed and every fold, so after the deploy the
+query matches exactly the canvases stored before it, and nothing adds more.
+The cascade releases each charge and queues each blob:
+
+```sql
+SELECT m.owner_user_id, count(*) FROM materials m
+JOIN material_yjs_documents d ON d.material_id = m.id
+WHERE m.kind = 'canvas' AND d.base_indexes IS NULL GROUP BY m.owner_user_id;
+
+DELETE FROM materials m USING material_yjs_documents d
+WHERE d.material_id = m.id AND m.kind = 'canvas' AND d.base_indexes IS NULL;
+```
+
+Until the deploy the live-document room still opens them; from the deploy to
+the delete they fail their load.

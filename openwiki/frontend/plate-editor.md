@@ -5792,15 +5792,24 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   notes, text, connectors, stamps; picking one goes back to select), a paste,
   a drop, ⌘D and the element toolbar's Duplicate (both through
   `createElementsFromClipboardDataCommand`), an Alt-drag's copy, a mind map's
-  Tab or Enter child, a shape's auto-complete +, a double click's note, a piece
-  or picture from the toolbar or Misc, an image picked, and a new formula.
+  Tab or Enter child, a shape's auto-complete +, a double click on empty
+  canvas (its note, or with the note off at the cap a canvas text label; one
+  on an element edits it, and a board that takes no edits, offline past its
+  cap, says nothing), a piece or picture from the toolbar or Misc, a
+  link card and a quiz or set card (or a new one made for the board; one a
+  peer's filling refused while it was made still opens, kept in the
+  workspace's list), an image picked, and a new formula.
   Typing in what is already there and Undo are not stopped; the room refuses
   them past its cap and its copy-only recovery takes over. Below the margin it
-  all comes back. The gate coming on under the pen waits for the stroke to end,
-  then goes back to select without a toast (the row says why); picking an
-  adding tool while gated is what the toast is for. `setRoomSize` is called on
-  every update of the room, so it does nothing unless the row's text or the
-  gate changes.
+  all comes back. The gate coming on under the pen leaves it picked: its next
+  press on the board (`gatePresses`, the tool controller's hooks, which hear
+  only presses on the canvas, never the toolbar's) checks the size and, still
+  full, is refused with the toast and goes back to select, nothing of the
+  press reaching the pen (bytes room review 4, 2026-11-25: before, the board
+  went back to select silently as the gate came on, which encoded the board at
+  each crossing in every tab holding the pen while a peer moved things). `setRoomSize`
+  is called on every update of the room, so it does nothing unless the row's
+  text or the gate changes.
   A popover, menu or dialog of the page's that holds focus keeps it while the pointer
   crosses the board (local change 40): upstream the board took focus back on the
   pointer's first move, which closed the canvas picker.
@@ -6857,17 +6866,80 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       their width as `--capy-board-chrome` (`useCanvasBoard`); a phone's picker
       fills the row (mock `StatusPhone`, 360 px included), a wider screen's shrinks
       into it. The status turns compact below 640 px, as a note's header.
-      The room keeps the board's size (`size`, `subscribeSize`): the room's own
-      measure in each receipt (`metrics.contentBytes`, the Yjs v1 encoding the server
-      caps), one encode of this tab's document when idle before the first, plus the
-      bytes of every update applied since; the page hands it to the board
-      (`setRoomSize`), whose menu ends with the size from 75% and, at the cap, "Only
-      edits that remove content will be saved." The server is the judge of what
-      removes content: an update whose state with it is no larger than without it (a
+      A tab that may write keeps the board's size (`size`, `subscribeSize`): its own
+      measure, or the length of the device copy it opened from, plus the bytes of
+      every update applied since, an upper bound since deletions only lower it.
+      The measure (`measure`, every one of them: the first sync's, the idle ones,
+      the checks and the offline stop's) is what a collected copy of the document
+      holds (`collectedSize.ts`), not the encode's length: the board's undo
+      history (BlockSuite's, a `Y.UndoManager`) keeps what its transactions
+      deleted, so the encode still holds a cleared board (200 deleted 2 KB
+      entries: 404 KB against 3.3 KB collected), while the room's state is
+      collected. It is the encode less what collecting each deleted item that
+      still holds its content would save (an item inside a deleted type becomes a
+      GC struct, any other keeps its header with its content shrunk to its
+      length), an upper bound since collected neighbours merge (1.6% over at half
+      of a 2.9 MB board erased); the walk adds 25-35 ms to the encode's 40 at
+      that size on an M1, and reads Yjs internals in that one file. An encode
+      below where anything acts on the size (the lower of the menu's 75% line
+      and the cap less the 64 KiB margin) stands with no walk, an upper bound
+      too: most boards and most first syncs skip it. A device copy
+      is that tab's encode, so a copy-opened board takes deletions as pending
+      and its first check measures. A board with no copy is measured once as it
+      first syncs, at once rather than when idle, so a full board takes only
+      removals from its first edit. The room's own bound in each receipt
+      (`metrics.contentBytes`: exact after a fold or a trial, otherwise that size
+      plus the most each update since can add, as the room never encodes the board
+      whole) never sets it, since it never comes down for a deletion between those
+      measures and misses what was appended during its store. With deletions
+      applied since the last measure (a transaction's delete set; a move
+      overwrites a key, written once per drag at its end and once per arrow-key
+      nudge; a long stroke rewrites its points every 20), the size is encoded again
+      once the tab is idle at the next store's receipt while it is at or past the
+      lower of the menu's 75% line (`BOARD_SIZE_SHOWN`) and the cap less the 64 KiB
+      margin, and as it crosses the full line, so the next press finds it exact:
+      moves cost one encode per store, never one each, however near a line. The
+      crossing's encode comes once per stroke (a stroke's rewrites cross again
+      after each measure) and is armed again by a receipt or a press on the
+      board, so a press right after a long stroke near the line may still
+      encode. Nothing acts on a size deletions may have left high: the page
+      hands the board its size with its check and its note of presses
+      (`setRoomSize(size, { check, pressed })`, kept per store in
+      `boardFull.ts`), and whatever refuses an add (`refusesAdds`: a tool
+      picked, a press on the board with a tool that adds, a paste, a drop, ⌘D, a
+      formula, a piece, a link or quiz card, a double click on empty canvas) and
+      the menu as it opens call the check first. With
+      deletions since the last measure it encodes once and the exact size reaches
+      the board before it returns (`subscribeSize` is synchronous), so a board
+      that peers cleared takes an add with no receipt. A tab that may not write
+      measures nothing. The board's menu ends with the size from 75% and, at the
+      cap, "Only edits that remove content will be saved." The server is
+      the judge of what removes content: an update whose state with it is no larger than without it (a
       deletion) is always admitted, and a growing one at the cap is refused and kept
       for copying as above. Offline, a board's work stops under the offline-limit
-      strip once its size is within 64 KiB of the cap (the space left), or at 4 MiB
-      of unsent updates (its cap, not the note's 2 MiB), whichever comes first.
+      strip at the space its cap leaves (within 64 KiB of the cap; Epo
+      2026-11-18, client-limits A), so its backlog fits when it is back, or at 4
+      MiB of unsent updates (its cap, not the note's 2 MiB), whichever comes
+      first. An update that deletes nothing (a stroke, typing in a note, Undo of
+      a removal, a card: the gate checks only some of these) stops it when it
+      leaves the size past the line. One that deletes (a removal, a move, a
+      replacement) never stops it for the line alone: whenever the size counted
+      is past the cap (going offline with it there included), the board is
+      measured, and stops only when the exact size is past the line and a repeat
+      of that update could take it over the cap (exact size plus the update's
+      bytes). A move's update is several times what it adds (a select-all move
+      of thousands of elements sends more than the margin), so the line keeps a
+      board with room left going. A move of one element barely grows the board
+      (Yjs merges a key's consecutive overwrites: 1,000 drags add 35 B), but a
+      selection moved together adds about 10 B per element per drag (1,000 drags
+      of ten add 100 KB), so many moves of a large selection can fill a board,
+      which stops at its cap; it encodes once per (cap − exact size) bytes of
+      updates. With deletions since the last measure, either check encodes
+      first, at once (offline, at those updates alone: an accepted cost,
+      repeated often only when large selections keep moving within a few KB of
+      the cap), so a board removals freed takes adds until one takes it back
+      past the line. A single update larger than the room left
+      still overshoots, as one large add always could.
     - **Opened from the Trash.** A canvas in its maker's Trash opens from the Trash's
       link on its own canvas page (the account's, or its workspace's with
       `view=canvas`): `useCanvasPicker` asks `GET /api/canvases/{id}` for a `c` the

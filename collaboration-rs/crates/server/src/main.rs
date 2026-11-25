@@ -8,6 +8,7 @@ compile_error!("the collaboration server needs panic = \"unwind\": rooms catch u
 mod access;
 mod app;
 mod auth;
+mod board;
 mod children;
 mod client_ids;
 mod config;

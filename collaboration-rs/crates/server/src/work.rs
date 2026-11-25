@@ -1,14 +1,14 @@
 //! A server-wide limit on whole-board work (Epo 2026-11-24, bytes-room plan
-//! step 1): a canvas room's load, its folds, its durable projection and the
-//! admission of a heavy update each build or walk the whole board in memory,
-//! up to about ten times its stored state, so at most [BOARD_WORK] of them
-//! run at once in this process. Office and text source rooms and notes do
-//! not take it.
+//! step 1): a canvas room's load, its folds, its durable projection, the
+//! trial of an update past a small edit and the answer to a joiner behind
+//! its base each read or build the whole board in memory, up to about ten
+//! times its stored state, so at most [BOARD_WORK] of them run at once in
+//! this process. Office and text source rooms and notes do not take it.
 //!
 //! A [Permit] is taken right before the work and held until the work ends, a
 //! panic included: moved into the blocking closure that does it, held across
-//! an admission's `block_in_place`, or, at a fold, until its new base is
-//! stored. It is never kept on
+//! a trial's or a join's `block_in_place`, or, at a fold, until its new base
+//! is stored. It is never kept on
 //! a room between commands; its holder never waits for another permit, never
 //! sends to a socket or its room's channel, and takes it before any material
 //! lock it waits for, never after. Each call site frees what its work built
@@ -37,7 +37,8 @@ const SLOW_WAIT: Duration = Duration::from_secs(5);
 /// The work a permit is for, in logs.
 #[derive(Clone, Copy, Debug)]
 pub enum WorkKind {
-    /// A board room's load: its stored base and rows replayed and measured.
+    /// A board room's load: its rows merged beside its base, which it never
+    /// decodes (`board::Board::load`).
     Load,
     /// A loaded board's fold of its log.
     Fold,
@@ -46,10 +47,12 @@ pub enum WorkKind {
     /// A board's projection from its durable rows (the cadence, an asset
     /// named, the pending scan).
     Projection,
-    /// The admission of any heavy update on a loaded board (`heavy` in
-    /// `room.rs`: over 64 KiB, many structs or costly splits, or near the
-    /// cap), whether or not it is tried on a copy.
+    /// A loaded board's trial of a writer's update past a small edit, or
+    /// near its cap, on a replica of the whole board (`board::Check`).
     Trial,
+    /// The answer to a joiner holding part of a board's base: a diff of
+    /// the whole base (`board::Board::join`).
+    Rejoin,
 }
 
 impl WorkKind {
@@ -60,6 +63,7 @@ impl WorkKind {
             WorkKind::UnloadFold => "unload_fold",
             WorkKind::Projection => "projection",
             WorkKind::Trial => "trial",
+            WorkKind::Rejoin => "rejoin",
         }
     }
 }

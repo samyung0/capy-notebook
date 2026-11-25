@@ -141,7 +141,7 @@ import { cardUndo, onCardState } from '@/features/canvas/materialCardHosts';
 import type { PlaneOpener } from '@/features/graph/planeEditing';
 import { contentSizeKilobytes } from '@/features/notes/documentStats';
 import { m } from '@/i18n';
-import { BOARD_OFFLINE_MARGIN } from '@/lib/const';
+import { BOARD_OFFLINE_MARGIN, BOARD_SIZE_SHOWN } from '@/lib/const';
 import { fitImageOffThread } from '@/lib/fitImageOffThread';
 import { fromBase64, toBase64 } from './base64';
 import { anyOutside, mountAnswerArea, storedArea } from './boardArea';
@@ -155,7 +155,14 @@ import {
   openBlankFormula,
 } from './boardFormula';
 import { forgetFormulas } from './boardFormulaDraw';
-import { refusesAdds, setBoardFull } from './boardFull';
+import {
+  type BoardSizer,
+  checkBoardSize,
+  gatePresses,
+  refusesAdds,
+  setBoardFull,
+  setBoardSizer,
+} from './boardFull';
 import { IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import type { BoardImages } from './boardImages';
 import { watchNoteLinks } from './boardNoteLinks';
@@ -752,15 +759,18 @@ export function mountDrawingBoard(
   // bottom row holds only the toolbar (Epo 2026-11-08). A teacher's has zoom only.
   const zoomTo = (zoom: number) =>
     gfx.viewport.smoothZoom(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, zoom)));
-  // The room's size and cap (`setRoomSize`): the menu's last row from 75% of the
-  // cap, as a note's size line reads it (Epo 2026-11-18, 2B), and from the cap
-  // less the room's margin (`BOARD_OFFLINE_MARGIN`, online too: client-limits
-  // A) the board takes only removals and the row says so in the error colour.
+  // The room's size and cap (`setRoomSize`: the tab's own measure of its
+  // document and every update since, an upper bound that deletions may leave
+  // high, so whatever refuses an add and the menu as it opens check it first,
+  // `boardFull.ts`): the menu's last row from 75% of the cap
+  // (`BOARD_SIZE_SHOWN`, Epo 2026-11-18, 2B), and from the cap less the room's
+  // margin (`BOARD_OFFLINE_MARGIN`, online too: client-limits A) the board
+  // takes only removals and the row says so in the error colour.
   let roomSize: { bytes: number; max: number } | null = null;
   const fullAt = (size: { bytes: number; max: number } | null) =>
     !!size && size.bytes >= size.max - BOARD_OFFLINE_MARGIN;
   const sizeNote = () => {
-    if (!roomSize || roomSize.bytes < roomSize.max * 0.75) return;
+    if (!roomSize || roomSize.bytes < roomSize.max * BOARD_SIZE_SHOWN) return;
     const text = m.editor_stats_size({
       current: contentSizeKilobytes(roomSize.bytes).toLocaleString(),
       max: contentSizeKilobytes(roomSize.max).toLocaleString(),
@@ -827,13 +837,16 @@ export function mountDrawingBoard(
       percent: { reset: () => zoomTo(1), value: () => gfx.viewport.zoom },
     },
   }));
+  // The size row it shows is checked as it opens.
+  menu.opening = () => checkBoardSize(store);
   // A canvas near its room's cap (`fullAt`) takes only edits that remove
   // content: select, the eraser, delete and moving stay; a tool that adds, a
   // paste, a drop, ⌘D and Duplicate (`duplicates`), an Alt-drag's copy, a
   // mind map's Tab or Enter child, a shape's auto-complete +, a double
-  // click's note, a piece, a picture, an image and a formula are refused with
-  // the cap's line (boardFull.ts). Typing in what is there and Undo are not
-  // stopped; a refusal by the room still goes to the copy-only recovery.
+  // click's note or label, a piece, a picture, a link or quiz card, an image
+  // and a formula are refused with the cap's line (boardFull.ts). Typing in
+  // what is there and Undo are not stopped; a refusal by the room still goes
+  // to the copy-only recovery.
   let full = false;
   const ADDS_NOTHING = new Set([
     DefaultTool.toolName,
@@ -841,28 +854,24 @@ export function mountDrawingBoard(
     PanTool.toolName,
     TapPanTool.toolName,
   ]);
-  /** Back to select from a tool that adds, while gated: said when the
-   * person picked it, silent when the gate came on under it (the size row
-   * says why), and never under a stroke in progress, which ends first. */
-  let stillTool: (() => void) | null = null;
-  const refuseTool = (picked: boolean) => {
-    if (!full || ADDS_NOTHING.has(gfx.tool.currentToolName$.peek())) return;
-    if (picked) {
+  /** A tool that adds, picked while gated: back to select with the cap's
+   * line, the size checked first (`boardFull.ts`). */
+  const refuseTool = () => {
+    if (
+      !ADDS_NOTHING.has(gfx.tool.currentToolName$.peek()) &&
+      refusesAdds(store)
+    )
       gfx.tool.setTool(DefaultTool);
-      refusesAdds(store);
-      return;
-    }
-    stillTool?.();
-    stillTool = gfx.tool.dragging$.subscribe((dragging) => {
-      if (dragging) return;
-      queueMicrotask(() => {
-        stillTool?.();
-        stillTool = null;
-        if (full && !ADDS_NOTHING.has(gfx.tool.currentToolName$.peek()))
-          gfx.tool.setTool(DefaultTool);
-      });
-    });
   };
+  // A press on the canvas with a tool that adds, while gated, is refused the
+  // same way; the gate coming on under a tool leaves it until the next press.
+  gatePresses(
+    store,
+    gfx.tool.get(DefaultTool),
+    () => !(readOnly || ADDS_NOTHING.has(gfx.tool.currentToolName$.peek())),
+    ({ x, y }) => !!gfx.getElementByPoint(...gfx.viewport.toModelCoord(x, y)),
+    () => gfx.tool.setTool(DefaultTool)
+  );
   /** A mind map's node alone is selected: Tab and Enter add its child or
    * sibling. */
   const onMindmapNode = () => {
@@ -892,10 +901,9 @@ export function mountDrawingBoard(
                 target instanceof Element &&
                 target.localName === 'edgeless-auto-complete'
             )));
-    if (!adds) return;
+    if (!(adds && refusesAdds(store))) return;
     event.preventDefault();
     event.stopPropagation();
-    refusesAdds(store);
   };
   for (const type of ['paste', 'drop', 'keydown', 'pointerdown'])
     board.addEventListener(type, refuseAdd, true);
@@ -911,7 +919,7 @@ export function mountDrawingBoard(
   // The stylesheet shows the eraser's ring while it's the tool.
   const unwatchTool = gfx.tool.currentToolName$.subscribe((name) => {
     board.dataset.tool = name;
-    if (full) queueMicrotask(() => refuseTool(true));
+    if (full) queueMicrotask(refuseTool);
   });
   // The ☰ and, just left of it, the page's save status (`statusSlot`, empty
   // without a room).
@@ -1439,9 +1447,13 @@ export function mountDrawingBoard(
       uploads?.changed();
       copying?.draw();
     },
-    /** The room's size against its cap, shown in the menu from 75%; null (no
-     * room) shows none. */
-    setRoomSize: (size: { bytes: number; max: number } | null) => {
+    /** The room's size against its cap, shown in the menu from 75%, and its
+     * hold on it (`boardFull.ts`); null (no room) shows none. */
+    setRoomSize: (
+      size: { bytes: number; max: number } | null,
+      sizer?: BoardSizer
+    ) => {
+      setBoardSizer(store, sizer ?? null);
       // Called on every update of the room: only a change of what the board
       // shows or takes does any work.
       const before = menu.open ? JSON.stringify(sizeNote()) : '';
@@ -1457,7 +1469,6 @@ export function mountDrawingBoard(
           'enable_dblclick_note',
           options.board === 'workspace' && !full
         );
-      refuseTool(false);
     },
     /** The board as it is, leaving a tool in use alone; a note's size waiting
      * on a pause in typing goes in. */
@@ -1519,7 +1530,6 @@ export function mountDrawingBoard(
       chrome.remove();
       uploads?.dispose();
       boardUploads.delete(std);
-      stillTool?.();
       copying?.dispose();
       if (onChange) store.spaceDoc.off('update', onChange);
       symbols?.unmount();

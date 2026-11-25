@@ -38,6 +38,8 @@ export class BoardMenu {
   readonly element = document.createElement('div');
   open = false;
   private readonly content: () => MenuContent;
+  /** Run as it opens, before it reads its content. */
+  opening: (() => void) | null = null;
 
   constructor(content: () => MenuContent) {
     this.content = content;
@@ -57,6 +59,7 @@ export class BoardMenu {
   };
 
   set(open: boolean) {
+    if (open && !this.open) this.opening?.();
     this.open = open;
     this.draw();
   }

@@ -383,10 +383,11 @@ workspace or not (who holds it:
   content writes, so the charge is the board's stored bytes as of its last
   projection (each projection changes the content, since the block carries the
   stored version); a fold between projections is not charged again, and a
-  rename, a share or a trash charges nothing. The board's base state vector
-  and delete set (`base_state_vector`, `base_delete_set`, migration 0193,
-  ids only, written at the seed and each fold) are not charged. The seeded
-  board is charged
+  rename, a share or a trash charges nothing. The board's base indexes
+  (`base_state_vector` and `base_delete_set`, migration 0193, and
+  `base_indexes`, migration 0195: ids and place hashes only, written at the
+  seed and each fold, about 0.6 MB beside a 6,000-stroke, 4.7 MiB pen
+  board) are not charged. The seeded board is charged
   once its room first seeds it, at its first open (migration 0184, Epo
   2026-11-20): a canvas is made with no Yjs row, and its room seeds the
   `material_yjs_documents` row on the first open (`load` → `bootstrap` in
@@ -413,7 +414,20 @@ workspace or not (who holds it:
   2 MiB while it was provisional). It bounds the Yjs state, history included,
   not a saved copy, and the collaboration server enforces it at admission
   ([plate-editor](frontend/plate-editor.md#the-boards-tools), The canvas's
-  room). It equals the largest sync message the collaboration server takes
+  room). The room never encodes a board whole between folds: it holds a bound
+  of the state's bytes (at the load the base's length plus the most each row
+  can add, `board_growth`; exact after a fold or a trial; plus the most each
+  update since can add), which its receipts carry (`metrics.contentBytes`). An
+  update enters on the bound while the bound and the update's growth fit the
+  cap; past that, or flagged by the board's read, it is tried on a replica of
+  the board under the board work permit, and the state's exact size with it
+  decides: the cap is never passed, and an update that does not grow the
+  state (a deletion) always enters. Deletions leave the bound high until the
+  next trial or fold, so the browser keeps a size of its own (what a
+  collected copy of the writing tab's document holds, or its device copy's
+  length, plus every update since; `frontend/plate-editor.md`), which its menu shows
+  and its removals-only gate and offline stop read. The cap equals the
+  largest sync message the collaboration server takes
   (`NOTE_MAX_SYNC_BYTES`, 4 MiB; a compile-time assert keeps the cap from
   passing it). The embed catalog carries the number to the Rust catalog and
   the board catalog to the browser. A store never refuses a board for size.
