@@ -6924,24 +6924,35 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       can grow, the longest its format allows less what it stores now
       (`Writes.grows`, `bytesOf`; one read a value, no encode; positions are
       never rounded): a box 105 characters (`[x,y,w,h]`, each number at most
-      25 as JS writes it: a sign, `0.`, five zeros and 17 digits), a number 9
+      25 as JS writes it: a sign, `0.`, five zeros and 17 digits), a moved
+      one its `x` and `y` alone, 25 each (a drag sets `moveDelta`, the snap
+      shifts its delta, an arrow key its `x` and `y`; a mind map's nodes,
+      laid out after a drag, and a note, whose measured size may go with its
+      move, keep the whole box's bound), a number 9
       bytes (a float64 in lib0's `writeAny`: a rotation's angle, a text
       label's font size, a plane's view corner, a note's scale and collapsed
       height), a connector's free end its two numbers and a label's place its
       four, a toolbar change's values their new bytes less their stored ones
-      (`anyBytes`, known before the write: a colour turned themed), a
-      reorder's or an ungroup's n indexes n·longest + n(n + 1)/2 characters
-      less theirs (fractional-indexing makes a key at most one character
-      longer than the longer of its two neighbours, the board's longest or
-      one the write made before it), and a mind map node's place in its tree
+      (`anyBytes`, known before the write: a colour turned themed), new
+      indexes by how BlockSuite makes them (`Keys`; fractional-indexing's
+      key is at most one character longer than the longer of its two
+      neighbours, the board's longest L or one the write made): to the front
+      or back each past the last (the integer part plus one, so L + 1 +
+      ⌊log₆₂ n⌋ at most), an ungroup's bisected at once between two
+      (`generateNKeysBetween`, L + ⌈log₂(n + 1)⌉), forward or backward each
+      between two, either one it made, L + i for the i-th (a chain does
+      grow: 1,000 adjacent elements brought forward top first reach 170
+      characters), and a mind map node's place in its tree
       an index one character longer and the longest id as its parent (a new
       key, with its id, in the tree a merge joins). A block's object value
       (a note's `edgeless` through its style panel) is its own map, written
       whole: a value for each leaf it held and each it writes. A select-all
       move of 1,000 shapes placed on whole numbers (boxes of 18 characters,
-      `[1234,567,100,100]`) keeps 103,000 B now (16,000 before, against the
-      40,000 or so it adds at zoom 0.73): more than the 64 KiB a full board
-      has left at most, so a full board refuses it outright.
+      `[1234,567,100,100]`) keeps 59,000 B (16 B and 43 a shape; 16,000
+      before, against the 41,000 or so it adds at zoom 0.73), under the 64
+      KiB a full board has left at most; a Bring to Front of 1,000 elements
+      on 3-character keys keeps about 18,000 B, a Bring Forward of them
+      about 516,000 B, more than a full board ever has.
       Back-to-back overwrites of one value by one tab merge (1,000 drags of one
       shape add 35 B), but not where values alternate: several elements'
       writes interleave, and so do one element's when it writes two or more

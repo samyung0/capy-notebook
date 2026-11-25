@@ -313,8 +313,9 @@ const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 // Review of 8d813a7cc, findings 1, 2 and 5: what a gesture writes is every
 // element it reaches, each with every value it writes there. Fourth review:
-// and what each value may grow by, a box to 105 characters (`[0,0,10,10]`
-// by 94), a whole number to a float64 (by 7). Fails if a group counts as
+// and what each value may grow by: a box to 105 characters (`[0,0,10,10]`
+// by 94), or moved its `x` and `y` alone to 25 each (by 48), a whole
+// number to a float64 (by 7). Fails if a group counts as
 // one, a mind map's node as one, a connector, a text label's resize, a
 // stroke's resize or a rotation as one value each, or a growth is left out.
 it("counts a group's elements, a mind map's nodes, each value written and the labels hanging on them", async () => {
@@ -344,12 +345,12 @@ it("counts a group's elements, a mind map's nodes, each value written and the la
     type: 'brush',
   });
   await settled();
-  // The group (nothing of its own), its two shapes (their boxes 94 and 93),
-  // and the label of the connector hanging on one of them (four whole
-  // numbers, 7 each).
+  // The group (nothing of its own), its two shapes (their `x` and `y` by 48
+  // and 47), and the label of the connector hanging on one of them (four
+  // whole numbers, 7 each).
   expect(b.written([b.at(g)], 'move')).toEqual({
     elements: 4,
-    grows: 94 + 93 + 4 * 7,
+    grows: 48 + 47 + 4 * 7,
     values: 3,
   });
   // A node dragged alone may restyle its whole map: the map's tree and both
@@ -364,7 +365,7 @@ it("counts a group's elements, a mind map's nodes, each value written and the la
   // ends bound, so its label's growth alone).
   expect(b.written([b.at(hanging), b.at(a1), b.at(x)], 'move')).toEqual({
     elements: 3,
-    grows: 94 + 93 + 4 * 7,
+    grows: 48 + 47 + 4 * 7,
     values: 5,
   });
   // A text label's resize writes its box and font size, a stroke's its box
@@ -431,9 +432,11 @@ it("counts a mind map's Style and Layout per node, a node's drag as its map's St
     grows: boxes,
     values: 5,
   });
+  // A note's whole box (a size it measures may go with its move), the
+  // shape's `x` and `y`.
   expect(b.written([note, b.at(b.shape(500))], 'move')).toEqual({
     elements: 2,
-    grows: 91 + 92,
+    grows: 91 + 46,
     values: 3,
   });
   expect(valuesUpdated(b.at(labelled), { mode: 1 })).toBe(2);
@@ -721,10 +724,28 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     "a note's corners through its style panel"
   );
   await fits(
-    orderWrites(models(shapes), b.longest()),
+    orderWrites(models(shapes), b.longest(), 'end'),
     () =>
       action(moreActions, 'a.bring-to-front').run(toolbar(b, models(shapes))),
     'a reorder'
+  );
+  // A reorder of 200 elements: to the front each key past the last (2
+  // characters on this board, so 4 at most), forward each between two, the
+  // top one first so each next key goes between the last it made.
+  const many = Array.from({ length: 200 }, (_, i) => b.shape(5 * i));
+  const front = orderWrites(models(many), b.longest(), 'end');
+  await fits(
+    front,
+    () => action(moreActions, 'a.bring-to-front').run(toolbar(b, models(many))),
+    'a reorder of 200 to the front'
+  );
+  const topFirst = models(many).sort((one, other) =>
+    one.index < other.index ? 1 : -1
+  );
+  await fits(
+    orderWrites(topFirst, b.longest(), 'step'),
+    () => action(moreActions, 'b.bring-forward').run(toolbar(b, topFirst)),
+    'a reorder of 200 forward'
   );
   const locked = [
     b.at(
@@ -746,7 +767,7 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
   );
   const grouped = b.at(group(b, texts)) as GroupElementModel;
   await fits(
-    orderWrites(grouped.childElements, b.longest()),
+    orderWrites(grouped.childElements, b.longest(), 'split'),
     () => b.std.command.exec(ungroupCommand, { group: grouped as never }),
     'an ungroup'
   );
@@ -870,9 +891,9 @@ it("gates the drag DefaultTool starts and the frame's resize and rotation on the
       keys: { alt: false },
       raw: {},
     } as unknown as PointerEventState);
-  // Two boxes, and what they may grow by.
+  // Two boxes, and what their `x` and `y` may grow by.
   const moved = b.written([b.at(g)], 'move');
-  expect(moved).toEqual({ elements: 3, grows: 94 + 93, values: 2 });
+  expect(moved).toEqual({ elements: 3, grows: 48 + 47, values: 2 });
   b.roomShort(moved, 1);
   await drag();
   expect(started.handleElementMove).not.toHaveBeenCalled();
@@ -936,11 +957,12 @@ it('ungroups a group when its direct elements fit, however many its groups hold,
     () => ({ elements: 0, grows: 0, values: 0 }),
     b.longest
   );
-  // Its two direct elements' indexes, made next to the board's (two
+  // Its two direct elements' indexes, bisected between the board's (two
   // characters long): the first at most 3 long, the second 4.
   const ungrouped = orderWrites(
     (b.at(outer) as GroupElementModel).childElements,
-    b.longest()
+    b.longest(),
+    'split'
   );
   expect(ungrouped).toEqual({ elements: 2, grows: 3 + 4 - 2 - 2, values: 2 });
   b.roomShort(ungrouped, 1);
@@ -1011,10 +1033,10 @@ it('refuses a lock of several and a reorder past a full board before either writ
   action(builtinMiscToolbarConfig.actions, 'b.lock').run(toolbar(b, models));
   expect(b.sent).toEqual([]);
   expect(b.at(a1).group).not.toBeNull();
-  // Two indexes made next to the board's (two characters long): the first
-  // at most 3 long, the second 4.
-  const reordered = orderWrites(models, b.longest());
-  expect(reordered).toEqual({ elements: 2, grows: 3 + 4 - 2 - 2, values: 2 });
+  // Two indexes, each past the last of the board's (two characters long),
+  // at most 3 long.
+  const reordered = orderWrites(models, b.longest(), 'end');
+  expect(reordered).toEqual({ elements: 2, grows: 3 + 3 - 2 - 2, values: 2 });
   b.roomShort(reordered, 1);
   action(moreActions, 'a.bring-to-front').run(toolbar(b, models));
   expect(b.sent).toEqual([]);
@@ -1286,13 +1308,13 @@ it('refuses an Unlock of several past a full board before any element unlocks', 
     action(builtinLockedToolbarConfig.actions, 'b.unlock').run(
       toolbar(b, models)
     );
-  // The group's three elements' indexes, made next to the board's (two
-  // characters long, the i-th at most 2 + i), and two locks (as long either
-  // way).
+  // The group's three elements' indexes, bisected between the board's (two
+  // characters long: at most 3, then 2 + ⌈log₂ 4⌉), and two locks (as long
+  // either way).
   const unlocked = unlockWrites(models, b.longest());
   expect(unlocked).toEqual({
     elements: 5,
-    grows: 3 + 4 + 5 - 3 * 2,
+    grows: 3 + 4 + 4 - 3 * 2,
     values: 5,
   });
   b.roomShort(unlocked, 1);

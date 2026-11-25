@@ -221,6 +221,24 @@ const XYWH_LONGEST = 105;
 const boxGrowth = (model: GfxModel) =>
   XYWH_LONGEST - String(stored(model, 'xywh') ?? '').length;
 
+/** A move keeps a box's width and height: a drag sets `moveDelta` of the
+ * box (the snap shifting its delta alone), an arrow key its `x` and `y`. So
+ * only `x` and `y` may grow, to 25 characters each, the width and height
+ * written again as JS writes their numbers. A box that does not read falls
+ * back to `boxGrowth`. */
+const moveGrowth = (model: GfxModel) => {
+  const xywh = String(stored(model, 'xywh') ?? '');
+  let box: unknown;
+  try {
+    box = JSON.parse(xywh);
+  } catch {
+    return boxGrowth(model);
+  }
+  if (!(Array.isArray(box) && box.length === 4)) return boxGrowth(model);
+  const [, , w, h] = box.map((n) => String(Number(n)));
+  return 2 * 25 + w.length + h.length + 5 - xywh.length;
+};
+
 /** A connector's free end, `{position: [x, y]}`, grows by its two numbers
  * (`moveTo` writes them); a bound end is left as it is. */
 const endGrowth = (end: unknown) => {
@@ -245,16 +263,57 @@ export const longestIndex = (models: Iterable<GfxModel>) => {
   return longest;
 };
 
-/** What new indexes for `models` grow by (a reorder's, an ungroup's):
- * fractional-indexing's `generateKeyBetween` makes a key at most one
- * character longer than the longer of the two it goes between, each a key on
- * the board (`longest` at most) or one this write made before it, so the
- * i-th of n is at most `longest` + i long: n·longest + n(n + 1)/2 less their
- * lengths now. */
-export function indexGrowth(models: readonly GfxModel[], longest: number) {
-  const n = models.length;
-  const now = models.reduce((sum, model) => sum + model.index.length, 0);
-  return n * longest + (n * (n + 1)) / 2 - now;
+/** How a write makes its new indexes (fractional-indexing's
+ * `generateKeyBetween`, its key at most one character longer than the
+ * longer of the two it goes between): `end`, one past the last or before the
+ * first of its siblings each (Bring to Front, Send to Back:
+ * `getReorderedIndex`'s `(last, null)` and `(null, first)`), the last one
+ * made the next one's neighbour; `split`, n bisected between two siblings at
+ * once (an ungroup's `generateNKeysBetween`); `step`, each between two
+ * siblings (Bring Forward, Send Backward), either one it made before. */
+export type Keys = 'end' | 'split' | 'step';
+
+/** The longest the i-th of n new keys is when every key they go between is
+ * at most `longest` long. Every path: a neighbour is a key on the board or
+ * one this write made, so the i-th is at most `longest` + i (a `step` chain
+ * does grow: 1,000 adjacent elements brought forward top first reach 170
+ * characters). `end`: a key past `a` alone is `a`'s integer part plus one
+ * (its fraction dropped), before `b` alone its integer part less one; an
+ * integer of ℓ characters has 62^(ℓ - 1) values, so after the first step to
+ * a longer one each further takes 62² keys at least: at most `longest` + 1 +
+ * ⌊log₆₂ n⌋ (the largest and smallest integers, 27 characters, where it
+ * goes on with fractions, need a key that long). `split`:
+ * `generateNKeysBetween(a, b, n)` takes the key between them and halves n on
+ * each side, so a key is at most ⌈log₂(n + 1)⌉ longer (its one-sided
+ * fallbacks, as `end`, stay within it). */
+const keyLongest = (keys: Keys, longest: number, n: number, i: number) => {
+  let bound = longest + i;
+  if (keys === 'end' && longest < 27) {
+    let steps = 0;
+    for (let m = 62; m <= n; m *= 62) steps++;
+    bound = Math.min(bound, longest + 1 + steps);
+  }
+  if (keys === 'split') {
+    let halvings = 0;
+    while (2 ** halvings < n + 1) halvings++;
+    bound = Math.min(bound, longest + halvings);
+  }
+  return bound;
+};
+
+/** What new indexes for `models`, made as `keys` says next to keys at most
+ * `longest` long, grow by: each at its longest (`keyLongest`) less its
+ * length now. */
+export function indexGrowth(
+  models: readonly GfxModel[],
+  longest: number,
+  keys: Keys
+) {
+  let grows = 0;
+  for (const [i, model] of models.entries())
+    grows +=
+      keyLongest(keys, longest, models.length, i + 1) - model.index.length;
+  return grows;
 }
 
 /** A node's place in a mind map's tree, `{index, parent}` under its id, at
@@ -355,6 +414,9 @@ const isBranch = (model: GfxModel) =>
 export function growthOf(model: GfxModel, gesture: Gesture) {
   if (model instanceof MindmapElementModel || isGfxGroupCompatibleModel(model))
     return 0;
+  // A mind map lays its nodes out after a drag and a note may store a size
+  // it measures with its move (vendor/blocksuite local change 75): their
+  // boxes keep `boxGrowth` below.
   if (model instanceof ConnectorElementModel)
     return (
       endGrowth(stored(model, 'source')) +
@@ -366,6 +428,7 @@ export function growthOf(model: GfxModel, gesture: Gesture) {
   const kind =
     model instanceof GfxPrimitiveElementModel ? model.type : model.flavour;
   const note = kind === 'affine:note' ? edgelessOf(model) : null;
+  if (gesture === 'move' && !note) return moveGrowth(model);
   if (gesture === 'rotate') return box + numberGrowth(stored(model, 'rotate'));
   if (gesture === 'resize') {
     if (kind === 'text') return box + numberGrowth(stored(model, 'fontSize'));
@@ -615,32 +678,41 @@ export type GatedCommands = {
   ungroup: unknown;
 };
 
-/** What a reorder of `models` writes: each one's index, made next to the
- * board's (`indexGrowth`, `longest` the board's longest). An ungroup writes
- * the index of each element its group holds directly the same way. */
+/** What new indexes for `models` write: each one's index, made as `keys`
+ * says next to the board's (`indexGrowth`, `longest` the board's longest):
+ * a reorder's, an ungroup's for the elements its group holds directly. */
 export const orderWrites = (
   models: readonly GfxModel[],
-  longest: number
+  longest: number,
+  keys: Keys
 ): Writes => ({
   elements: models.length,
-  grows: indexGrowth(models, longest),
+  grows: indexGrowth(models, longest, keys),
   values: models.length,
 });
 
 /** What an Unlock of several writes: each element's lock (a boolean, as long
- * either way) and, for a group, what its ungroup writes, the groups' keys
- * made one after another. */
+ * either way) and, for a group, what its ungroup writes, one group after
+ * another, so a group's neighbours may be keys the ones before it made. */
 export function unlockWrites(models: readonly GfxModel[], longest: number) {
-  const held = models.flatMap((model) =>
-    model instanceof GroupElementModel ? model.childElements : []
-  );
-  const locks = models.length - models.filter(isGfxGroupCompatibleModel).length;
-  const ungrouped = orderWrites(held, longest);
-  return {
-    elements: ungrouped.elements + locks,
-    grows: ungrouped.grows,
-    values: ungrouped.values + locks,
-  };
+  let elements = 0;
+  let grows = 0;
+  let reach = longest;
+  for (const model of models) {
+    if (!(model instanceof GroupElementModel)) {
+      if (!isGfxGroupCompatibleModel(model)) elements += 1;
+      continue;
+    }
+    const held = model.childElements;
+    const ungrouped = orderWrites(held, reach, 'split');
+    elements += ungrouped.elements;
+    grows += ungrouped.grows;
+    reach = Math.max(
+      reach,
+      ...held.map((_, i) => keyLongest('split', reach, held.length, i + 1))
+    );
+  }
+  return { elements, grows, values: elements };
 }
 
 /** What a node and the nodes under it (`moved`) dropped into another mind
@@ -683,7 +755,10 @@ export function gateCommands(
     if (commands.places.includes(run)) return refusesWrites(store, placed());
     if (run !== commands.ungroup) return false;
     const { group } = input as { group: GfxGroupCompatibleInterface };
-    return refusesWrites(store, orderWrites(group.childElements, longest()));
+    return refusesWrites(
+      store,
+      orderWrites(group.childElements, longest(), 'split')
+    );
   };
   command.exec = ((run, ...rest) =>
     refuses(run, rest[0])
@@ -696,7 +771,8 @@ export function gateCommands(
  * any write: an add (a Lock of several groups them, a mind map's node
  * dragged off its map makes a new map) is refused as one (`refusesAdds`); a
  * reorder writes each element's index (`orderWrites`, the board's `longest`
- * index), an Unlock each element's lock or a group's elements' indexes (it
+ * index: to the front or back `end` keys, a step forward or backward `step`
+ * ones), an Unlock each element's lock or a group's elements' indexes (it
  * ungroups, `unlockWrites`); a node merged into another mind map is checked
  * once, at the drop, for both maps (`mergeWrites`); the rest write what
  * `written` counts for their gesture (the alignment menu's `place`, a note's
@@ -708,8 +784,11 @@ export function gateToolbarWrites(
 ) {
   boardWrites.gate(store, (models, write) => {
     if (write === 'add') return refusesAdds(store);
-    if (write === 'order')
-      return refusesWrites(store, orderWrites(models, longest()));
+    if (write === 'order' || write === 'step')
+      return refusesWrites(
+        store,
+        orderWrites(models, longest(), write === 'order' ? 'end' : 'step')
+      );
     if (write === 'unlock')
       return refusesWrites(store, unlockWrites(models, longest()));
     if (write === 'merge') {

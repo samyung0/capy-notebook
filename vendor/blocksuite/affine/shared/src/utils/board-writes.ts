@@ -8,7 +8,9 @@ import type { Store } from '@blocksuite/store';
  * (`src/features/blocksuite/boardFull.ts`). */
 
 /** What the action writes: `place`, each element's box (the alignment menu's
- * `updateXYWH`); `order`, each one's index (a reorder); `scale`, each note's
+ * `updateXYWH`); `order`, each one's index, past its siblings' (Bring to
+ * Front, Send to Back); `step`, each one's index between two siblings' (Bring
+ * Forward, Send Backward); `scale`, each note's
  * box and scale (a note's Scale); `height`, each note's box and collapse (a
  * note's Auto or Customized height); `unlock`, each one's lock, or a group's
  * elements' (an Unlock ungroups a group); `style`, each mind map's style and
@@ -25,6 +27,7 @@ export type BoardWrite =
   | 'order'
   | 'place'
   | 'scale'
+  | 'step'
   | 'style'
   | 'unlock';
 

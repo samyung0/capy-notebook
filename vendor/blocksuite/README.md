@@ -1168,8 +1168,11 @@ Outside this directory, for BlockSuite:
     again, neither refused: refused there, part of the change was already
     written.
     `boardWrites.refuses(store, models, write)` now runs before any write
-    (`place`, `order`, `scale`, `height`, `unlock`, `style`, `layout`, `merge` or
-    `add`), and what it refuses writes nothing (a dragged node stays in its map).
+    (`place`, `order`, `step`, `scale`, `height`, `unlock`, `style`, `layout`,
+    `merge` or `add`), and what it refuses writes nothing (a dragged node stays
+    in its map). A reorder says how it makes its keys: `order` to the front or
+    back, each past its siblings, `step` forward or backward, each between two
+    (fourth guard review: the app bounds how long each can grow).
     A merge is asked once, at the drop, with both maps' counts together (third
     guard review: the first version asked for the map it joins alone).
     The app sets the answer per store (`src/features/blocksuite/boardFull.ts`
