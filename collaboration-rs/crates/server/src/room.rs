@@ -5176,7 +5176,31 @@ impl Room {
         let (content, freed, deleted, lost) = match content {
             Ok(content) => content,
             Err(error) => {
-                // Admission counted on an apply that did not happen.
+                // yrs keeps the structs it integrated before the error: part
+                // of a refused update may be in the document, which peers
+                // lack until they resync and the next store saves. No known
+                // shape gets here past admission (`ydoc::inspect` refuses an
+                // item under a non-type of its own update), so it is
+                // reported. The room keeps its document: discarding it would
+                // drop the other editors' unsaved changes.
+                let (material, kind) = match &self.kind {
+                    Kindly::Note(note) => (note.material_id.as_str(), note.kind.clone()),
+                    Kindly::Source(source) => (
+                        source.room.file_id.as_str(),
+                        format!("{:?}", source.format).to_ascii_lowercase(),
+                    ),
+                };
+                observe::capture(
+                    &format!("an admitted update failed to apply, maybe in part: {error}"),
+                    None,
+                    &[
+                        ("room", &self.name),
+                        ("stage", "live_apply"),
+                        ("material", material),
+                        ("kind", &kind),
+                    ],
+                );
+                // Admission's bound may no longer match the document.
                 if let Kindly::Note(note) = &mut self.kind {
                     note.validator.invalidate();
                 }
@@ -8098,8 +8122,10 @@ mod tests {
     /// are taken, collected and stored so. After each, the stored base and
     /// rows replay in one transaction to the room's document. Fails if a
     /// room stores what its document did not integrate, or (before
-    /// `ydoc::inspect` refused an item under its own update's text) with the
-    /// note's and the text source's update applied in part.
+    /// `ydoc::inspect` refused an item under its own update's text) with an
+    /// update applied in part: the note's for the key set under its own
+    /// text, the text and Word sources' for both, while the flashcard set's
+    /// and the quiz's shape checks refused both first.
     #[test]
     fn a_document_rooms_stored_rows_replay_whatever_parent_an_update_names() {
         let note = [json!({ "type": "p", "id": "b1", "children": [{ "text": "Body text" }] })];

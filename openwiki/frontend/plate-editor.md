@@ -3996,7 +3996,10 @@ is refused at admit, before it can cost the room time or memory
   collected, so the stored rows still replay in one transaction (a board,
   which stores its writers' bytes, refuses an item under a value deleted
   since its base on its own: `Board::parent_type`,
-  [the canvas's room](#the-boards-tools));
+  [the canvas's room](#the-boards-tools)). An admitted update whose live apply
+  still fails is reported to Sentry (stage `live_apply`, with the material and
+  its kind), since part of it may be in the room's document, which the room
+  keeps: discarding it would drop the other editors' unsaved changes;
 - in a note text, content other than strings, formats and element texts, and
   non-plain attribute, mark or marker values (invisible to the projection and
   the size metrics).
