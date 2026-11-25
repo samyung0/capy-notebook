@@ -33,6 +33,7 @@ import {
   ExportManager,
   Overlay,
   type SurfaceBlockComponent,
+  type SurfaceBlockModel,
 } from '@blocksuite/affine/blocks/surface';
 import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { SurfaceViewExtension } from '@blocksuite/affine/blocks/surface/view';
@@ -113,7 +114,6 @@ import {
   GfxControllerIdentifier,
   type GfxModel,
   InteractivityIdentifier,
-  isGfxGroupCompatibleModel,
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_STEP,
@@ -167,14 +167,19 @@ import { forgetFormulas } from './boardFormulaDraw';
 import {
   type BoardSizer,
   checkBoardSize,
+  elementsWritten,
+  type Gesture,
+  gateCommands,
   gateElementUpdates,
   gateNudges,
   gatePresses,
   gateSelectionWrites,
+  gateToolbarWrites,
   refusesAdds,
-  refusesWrites,
   setBoardFull,
   setBoardSizer,
+  TYPING,
+  writesOf,
 } from './boardFull';
 import { IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import type { BoardImages } from './boardImages';
@@ -922,21 +927,18 @@ export function mountDrawingBoard(
   for (const type of ['paste', 'drop', 'keydown', 'pointerdown'])
     board.addEventListener(type, refuseAdd, true);
   // A gesture writing several elements on a full board goes only when a stub
-  // for each fits under the cap (`refusesWrites`, Epo 2026-11-25): a drag, a
-  // resize or a rotation of a selection, an arrow key's nudge, the element
-  // toolbar's changes, an arrange or an ungroup. A selection writes what is
-  // selected and what its groups hold.
-  const selectionWrites = () => {
-    const { selectedElements } = gfx.selection;
-    return new Set([
-      ...selectedElements,
-      ...selectedElements.flatMap((element) =>
-        isGfxGroupCompatibleModel(element) ? element.descendantElements : []
-      ),
-    ]);
-  };
-  const interactivity = std.getOptional(InteractivityIdentifier);
-  if (interactivity) gateSelectionWrites(store, interactivity);
+  // for each value it writes fits under the cap (`refusesWrites`, Epo
+  // 2026-11-25): a drag, a resize or a rotation of a selection, an arrow
+  // key's nudge, the element toolbar's changes, its alignment menu, a reorder
+  // or a lock of several (`boardWrites`, vendor/blocksuite local change 82),
+  // an arrange or an ungroup. A selection writes what is selected, what its
+  // groups hold, the whole of a mind map it touches and the labels of the
+  // connectors hanging on it (`writesOf`).
+  const connectorsOf = (id: string) =>
+    (gfx.surface as SurfaceBlockModel | null)?.getConnectors(id) ?? [];
+  const written = (models: GfxModel[], gesture: Gesture) =>
+    writesOf(models, gesture, connectorsOf);
+  gateSelectionWrites(store, std.get(InteractivityIdentifier), written);
   const ungateNudges = gateNudges(board, store, () => {
     const { editing, selectedElements } = gfx.selection;
     // A key on a mind map's node moves the selection, and nothing moves
@@ -948,34 +950,35 @@ export function mountDrawingBoard(
           element.group instanceof MindmapElementModel || element.isLocked()
       )
     )
-      return 0;
-    return selectionWrites().size;
+      return null;
+    return written(selectedElements, 'move');
   });
   gateElementUpdates(store, std.get(EdgelessCRUDIdentifier), (id) => {
-    const written = selectionWrites();
-    return [...written].some((element) => element.id === id) ? written.size : 0;
+    const elements = elementsWritten(gfx.selection.selectedElements);
+    return [...elements].some((element) => element.id === id)
+      ? elements.size
+      : 0;
   });
+  const ungateToolbar = gateToolbarWrites(store, (models) =>
+    written(models, 'place')
+  );
   // Duplicate (the element toolbar's, ⌘D's) and a paste of copied elements
   // make their copies through one command, a group (a lock of several makes
-  // one) through another: adds. An arrange, a resize to one size and an
-  // ungroup write every selected element.
-  const ADDS = new Set<unknown>([
-    createElementsFromClipboardDataCommand,
-    createGroupCommand,
-    createGroupFromSelectedCommand,
-  ]);
-  const WRITES_SELECTION = new Set<unknown>([
-    autoArrangeElementsCommand,
-    autoResizeElementsCommand,
-    ungroupCommand,
-  ]);
-  const { command } = std;
-  const exec = command.exec.bind(command);
-  command.exec = ((run, ...rest) =>
-    (ADDS.has(run) && refusesAdds(store)) ||
-    (WRITES_SELECTION.has(run) && refusesWrites(store, selectionWrites().size))
-      ? [false, {}]
-      : exec(run, ...rest)) as typeof command.exec;
+  // one) through another.
+  gateCommands(
+    store,
+    std.command,
+    {
+      adds: [
+        createElementsFromClipboardDataCommand,
+        createGroupCommand,
+        createGroupFromSelectedCommand,
+      ],
+      places: [autoArrangeElementsCommand, autoResizeElementsCommand],
+      ungroup: ungroupCommand,
+    },
+    () => written(gfx.selection.selectedElements, 'place')
+  );
   // The stylesheet shows the eraser's ring while it's the tool.
   const unwatchTool = gfx.tool.currentToolName$.subscribe((name) => {
     board.dataset.tool = name;
@@ -1028,11 +1031,7 @@ export function mountDrawingBoard(
     if (!board.checkVisibility() || board.hasAttribute('data-editor-open'))
       return;
     const [target] = event.composedPath();
-    if (
-      target instanceof Element &&
-      target.closest('input, textarea, [contenteditable="true"], math-field')
-    )
-      return;
+    if (target instanceof Element && target.closest(TYPING)) return;
     const centre: Vec = [gfx.viewport.centerX, gfx.viewport.centerY];
     const piece = {
       KeyB: event.shiftKey ? 'pie' : 'bar',
@@ -1057,11 +1056,7 @@ export function mountDrawingBoard(
     const path = event.composedPath();
     const [target] = path;
     const onBoard = target === document.body || path.includes(board);
-    if (
-      !onBoard ||
-      (target instanceof Element &&
-        target.closest('input, textarea, [contenteditable="true"], math-field'))
-    )
+    if (!onBoard || (target instanceof Element && target.closest(TYPING)))
       return;
     event.preventDefault();
     event.stopPropagation();
@@ -1584,6 +1579,7 @@ export function mountDrawingBoard(
       for (const type of ['paste', 'drop', 'keydown', 'pointerdown'])
         board.removeEventListener(type, refuseAdd, true);
       ungateNudges();
+      ungateToolbar();
       window.removeEventListener('keydown', cardKeys, true);
       unwatchEditor?.();
       unfollow?.();

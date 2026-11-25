@@ -6908,28 +6908,55 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       `boardFull.ts`), and whatever refuses an add (`refusesAdds`: a tool
       picked, a press on the board with a tool that adds, a paste, a drop, ⌘D, a
       formula, a piece, a link or quiz card, a double click on empty canvas) and
-      the menu as it opens call the check first. A gesture writing k > 1
-      elements on a full board goes only when the size plus 16 B an element
-      fits under the cap (`refusesWrites`, `BOARD_WRITE_BYTES`; Epo
-      2026-11-25): Yjs keeps a stub of about 10 B for each value overwritten,
-      one element's back-to-back overwrites merge (1,000 drags of one add
-      35 B) but several elements' interleave and never merge, and no board fold
-      collects them, so a select-all drag of thousands of elements would pass
-      the cap and send the tab to its copy-only recovery. Refused, it writes
-      nothing and shows the removals-only line, its size checked first; one
-      element's always goes, and a board under the line checks nothing. It
-      covers a drag, resize or rotation of a selection (at the interactivity's
-      `handleElementMove`, `handleElementResize` and `handleElementRotate`,
-      where the moving set is known: a press outside the selection selects
-      what is under it; a rotation counts two values, angle and place), an
-      arrow key's nudge (stopped as the board captures it), the element
-      toolbar's changes and aligns (its `updateElement` calls on what the
-      selection writes, decided whole for the task) and an arrange, a resize
-      to one size and an ungroup (their commands). A selection writes what is
-      selected and what its groups hold. A group (a lock of several makes one)
-      is an add, refused as one. Left out: a reorder (it writes each
-      element's `index` straight, through neither path), and a connector's
-      own writes at each move of a resize or rotation it follows. With
+      the menu as it opens call the check first. A gesture writing several
+      elements on a full board goes only when the size plus 16 B for each value
+      it writes fits under the cap (`refusesWrites`, `BOARD_WRITE_BYTES`; Epo
+      2026-11-25): Yjs keeps a stub of about 10 B for each value overwritten.
+      Back-to-back overwrites of one value by one tab merge (1,000 drags of one
+      shape add 35 B), but not where values alternate: several elements'
+      writes interleave, and so do one element's when it writes two or more
+      values (a connector's ends and label, a rotation's angle and place, a text
+      label's box and font size). Those never merge and no board fold collects
+      them, so a select-all drag of thousands of elements would pass the cap
+      and send the tab to its copy-only recovery. The count (`writesOf`) takes
+      every element the gesture reaches (what a selected group holds; every
+      node of a mind map one of them is in, since a node dragged moves its
+      whole map; the label of each labelled connector hanging on one, which the
+      moving tab places, local change 63) and every value it writes on each
+      (`valuesWritten`, at most: a connector 3, its free ends and label; a
+      rotation 2; a resize 2 on a text label, a note or a stroke and 3 on a
+      plane; the alignment menu's place 3 on a note; a group nothing of its
+      own). A toolbar change counts each value it names on each element, and a
+      stroke's width its points and box too. The size as it stands is never
+      below the board's, so a write it fits goes unmeasured (a held arrow key
+      measures nothing); one that doesn't is measured first. Refused, it writes
+      nothing and shows the removals-only line; one element's gesture always
+      goes (its few values are written once, at its end), and a board under the
+      line checks nothing. It covers a drag, resize or rotation of a selection
+      (at the interactivity's `handleElementMove`, `handleElementResize` and
+      `handleElementRotate`, where the moving set is known: a press outside the
+      selection selects what is under it; BlockSuite's DefaultTool and
+      selection frame get the board's one `InteractivityManager` from the
+      std), an arrow key's nudge (stopped as the board captures it; a key typed
+      into a field on the board, `TYPING`, is the field's), the element
+      toolbar's changes (its `updateElement` calls on what the selection
+      writes, decided whole for the task), its alignment menu, a reorder and a
+      lock of several, which write models straight and ask before any
+      (`boardWrites`, local change 82), and an arrange, a resize to one size
+      and an ungroup (their commands, `gateCommands`; an ungroup, and an Unlock
+      of a group, writes the index of each element the group holds directly,
+      and counts those). A group (a lock of several makes one) is an add,
+      refused as one. A gesture's values stay this tab's until it ends
+      (BlockSuite's stash), a dragged connector's ends and label (local change
+      80) and a resized stroke's points (local change 81) included. Left out: a
+      labelled connector hanging on an element dragged, resized or turned
+      writes its label at every frame, as the watcher places it for this tab's
+      own (stashed) move (two such labels over three frames write six
+      updates), counted once; the toolbar's stroke-width slider and a note
+      toolbar's scale write several elements outside these paths; a mind map's
+      node dragged off its map makes a new map, an add nothing refuses; and one
+      element's gesture of several values always goes, leaving a stub a value
+      each time. With
       deletions since the last measure it encodes once and the exact size reaches
       the board before it returns (`subscribeSize` is synchronous), so a board
       that peers cleared takes an add with no receipt. A tab that may not write

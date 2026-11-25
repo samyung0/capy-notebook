@@ -1143,6 +1143,22 @@ Outside this directory, for BlockSuite:
     `onResizeMove` still sets the box. Pinned by "resizes a stroke with its points
     this tab's" in `src/features/blocksuite/strokePoints.test.ts`.
 
+82. The element toolbar's actions that write several elements straight to their
+    models ask the board first (`affine/shared` `utils/board-writes.ts`, called from
+    `affine/blocks/root` `edgeless/configs/toolbar/alignment.ts`, `misc.ts` and
+    `more.ts`, marked `Capy (local change 82)`; Epo 2026-11-25, the full board's
+    write gate). The alignment menu's pick moves a connector (`moveTo`) or a note
+    (`updateBlock`) before the board's `updateElement` sees the first element, a
+    Lock of several moves them between groups before its group's command, and a
+    reorder writes each `index` through neither: refused there, part of the
+    change was already written. `boardWrites.refuses(store, models, write)` now
+    runs before any write (`place`, `group` or `order`), and an action it refuses
+    writes nothing. The app sets the answer per store
+    (`src/features/blocksuite/boardFull.ts` `gateToolbarWrites`); with none set,
+    nothing is refused. Pinned by "refuses a lock of several and a reorder past a
+    full board before either writes" in `src/features/blocksuite/boardWrites.test.ts`;
+    the alignment menu's pick, inside its rendered template, is not driven there.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

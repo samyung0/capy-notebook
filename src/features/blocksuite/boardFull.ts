@@ -1,7 +1,16 @@
-import type { PointerEventState } from '@blocksuite/affine/std';
-import type {
-  BaseTool,
-  InteractivityManager,
+import {
+  ConnectorElementModel,
+  MindmapElementModel,
+} from '@blocksuite/affine/model';
+import { boardWrites } from '@blocksuite/affine/shared/utils';
+import type { CommandManager, PointerEventState } from '@blocksuite/affine/std';
+import {
+  type BaseTool,
+  type GfxGroupCompatibleInterface,
+  type GfxModel,
+  GfxPrimitiveElementModel,
+  type InteractivityManager,
+  isGfxGroupCompatibleModel,
 } from '@blocksuite/affine/std/gfx';
 import type { Store } from '@blocksuite/affine/store';
 import { userToast } from '@/components/ui/userToast';
@@ -52,83 +61,162 @@ export function refusesAdds(store: Store) {
 
 /** What a full board counts for each value a gesture writes on several
  * elements (Epo 2026-11-25). Yjs keeps a stub of about 10 B (its id, origin
- * and deleted mark) for every value overwritten. One element's back-to-back
- * overwrites merge (1,000 drags of one add 35 B), but a gesture on several
- * interleaves their writes, which then never merge: a select-all drag adds
- * about 10 B an element, and no fold collects them. 16 B is the margin over
- * that measure. */
+ * and deleted mark) for every value overwritten. Back-to-back overwrites of
+ * one value by one tab merge (1,000 drags of one shape add 35 B), but not
+ * where values alternate: a gesture on several elements interleaves their
+ * writes, and one element's gesture writing two or more values (a
+ * connector's ends and label, a rotation's angle and place, a text label's
+ * box and font size) interleaves its own. Those never merge: a select-all
+ * drag adds about 10 B an element, and no fold collects them. 16 B is the
+ * margin over that measure. */
 export const BOARD_WRITE_BYTES = 16;
 
-/** Whether a gesture writing `values` values of `elements` elements (one
- * each unless said) is refused: on a full board, its size checked first,
- * when the size and `BOARD_WRITE_BYTES` a value pass the cap, with the cap's
- * line. One element's writes merge, so they always go; a board that takes no
- * edits has nothing to refuse. */
-export function refusesWrites(
-  store: Store,
-  elements: number,
-  values = elements
-) {
-  if (elements <= 1 || store.readonly || !boardFull(store)) return false;
-  const size = sizers.get(store)?.size();
-  if (!size || size.bytes + BOARD_WRITE_BYTES * values <= size.max)
-    return false;
+/** What a write reaches: its elements, and the values it writes on them. */
+export type Writes = { elements: number; values: number };
+
+/** How a gesture writes each element: a drag or an arrow key moves it, the
+ * alignment menu, an arrange and a resize to one size place it
+ * (`updateXYWH`), the selection frame resizes or rotates it. */
+export type Gesture = 'move' | 'place' | 'resize' | 'rotate';
+
+/** The elements a write on `models` reaches: what their groups hold, and
+ * every node of a mind map one of them is in or holds (a node dragged moves
+ * its whole map: `MindMapDragExtension`, `updateXYWH`'s layout). */
+export function elementsWritten(models: Iterable<GfxModel>) {
+  const written = new Set<GfxModel>();
+  const add = (model: GfxModel) => {
+    if (written.has(model)) return;
+    written.add(model);
+    if (isGfxGroupCompatibleModel(model)) model.descendantElements.forEach(add);
+    if (model.group instanceof MindmapElementModel) add(model.group);
+  };
+  for (const model of models) add(model);
+  return written;
+}
+
+/** What a resize writes on an element besides its box: a text label its
+ * font size (a corner) or wrap (a side), a note its scale, a stroke its
+ * points (vendor/blocksuite local change 81), a plane its view's corner. */
+const RESIZED: Record<string, number> = {
+  'affine:note': 2,
+  brush: 2,
+  highlighter: 2,
+  plane: 3,
+  text: 2,
+};
+
+/** The values `gesture` writes on `model`, at most: a group's box is its
+ * elements' and writes nothing; a mind map's tree takes a dragged node's new
+ * place; a connector writes its free ends and its label (`moveTo`, its
+ * resize and rotation); a rotation an angle and a place; a note placed its
+ * collapse and collapsed height too (`updateXYWH`). */
+export function valuesWritten(model: GfxModel, gesture: Gesture) {
+  if (model instanceof MindmapElementModel) return gesture === 'move' ? 1 : 0;
+  if (isGfxGroupCompatibleModel(model)) return 0;
+  if (model instanceof ConnectorElementModel) return 3;
+  if (gesture === 'rotate') return 2;
+  const kind =
+    model instanceof GfxPrimitiveElementModel ? model.type : model.flavour;
+  if (gesture === 'resize') return RESIZED[kind] ?? 1;
+  if (gesture === 'place' && kind === 'affine:note') return 3;
+  return 1;
+}
+
+/** What `gesture` on `models` writes (`elementsWritten`, `valuesWritten`),
+ * with the label of each labelled connector hanging on one of them
+ * (`connectorsOf`), which the tab moving its end places (vendor/blocksuite
+ * local change 63). */
+export function writesOf(
+  models: Iterable<GfxModel>,
+  gesture: Gesture,
+  connectorsOf: (id: string) => Iterable<ConnectorElementModel>
+): Writes {
+  const written = elementsWritten(models);
+  let values = 0;
+  const labels = new Set<ConnectorElementModel>();
+  for (const model of written) {
+    values += valuesWritten(model, gesture);
+    for (const connector of connectorsOf(model.id))
+      if (!written.has(connector) && connector.hasLabel())
+        labels.add(connector);
+  }
+  return { elements: written.size + labels.size, values: values + labels.size };
+}
+
+/** Whether `writes` is refused: on a full board, when the size and
+ * `BOARD_WRITE_BYTES` a value pass the cap, with the cap's line. The size as
+ * it stands is never below the board's (deletions since its last measure
+ * leave it high), so a write it fits goes unmeasured: a held arrow key's
+ * repeats measure nothing. One that doesn't fit goes once a measure finds
+ * room. One element's gesture always goes (a shape's box merges, and a
+ * connector's or a rotation's few values are written once, at its end); a
+ * board that takes no edits has nothing to refuse. */
+export function refusesWrites(store: Store, writes: Writes) {
+  if (writes.elements <= 1 || store.readonly || !full.has(store)) return false;
+  const fits = () => {
+    const size = sizers.get(store)?.size();
+    return !size || size.bytes + BOARD_WRITE_BYTES * writes.values <= size.max;
+  };
+  if (fits()) return false;
+  checkBoardSize(store);
+  if (!full.has(store) || fits()) return false;
   userToast({ title: m.editor_limit_remove_only(), variant: 'warning' });
   return true;
 }
 
-/** A drag of a selection (its moving set, the elements its groups hold
- * included, known only once the press picked it: a press outside the
- * selection selects what is under it), a resize or a rotation of several
- * elements writes each at its end (a rotation two values: its angle and its
- * place): on a full board it starts only when they fit (`refusesWrites`),
- * and refused it moves nothing. */
+/** A drag of a selection (its moving set, known only once the press picked
+ * it: a press outside the selection selects what is under it), a resize or a
+ * rotation by the selection frame writes each element at its end: on a full
+ * board it starts only when `written` (`writesOf`) fits (`refusesWrites`),
+ * and refused it moves nothing. BlockSuite's DefaultTool and selection frame
+ * call these on the board's one `InteractivityManager`. */
 export function gateSelectionWrites(
   store: Store,
   interactivity: Pick<
     InteractivityManager,
     'handleElementMove' | 'handleElementResize' | 'handleElementRotate'
-  >
+  >,
+  written: (models: GfxModel[], gesture: Gesture) => Writes
 ) {
   const { handleElementMove, handleElementResize, handleElementRotate } =
     interactivity;
   interactivity.handleElementMove = (options) => {
-    if (!refusesWrites(store, options.movingElements.length))
+    if (!refusesWrites(store, written(options.movingElements, 'move')))
       handleElementMove.call(interactivity, options);
   };
   interactivity.handleElementResize = (options) => {
-    if (!refusesWrites(store, options.elements.length))
+    if (!refusesWrites(store, written(options.elements, 'resize')))
       handleElementResize.call(interactivity, options);
   };
   interactivity.handleElementRotate = (options) => {
-    const { length } = options.elements;
-    if (!refusesWrites(store, length, 2 * length))
+    if (!refusesWrites(store, written(options.elements, 'rotate')))
       handleElementRotate.call(interactivity, options);
   };
 }
 
 const NUDGES = new Set(['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp']);
+/** A field on the board that takes typed keys: the toolbar's inputs, a
+ * colour's, the ☰ menu's, the symbols panel's, an open editor. */
+export const TYPING = 'input, textarea, [contenteditable="true"], math-field';
 
-/** An arrow key nudges the selection, writing each element it moves
- * (`written`: none when it moves nothing) at every press: on a full board
- * the key is stopped before the board hears it unless they fit
- * (`refusesWrites`). Listens on `target` as it captures; returns the stop. */
+/** An arrow key nudges the selection, writing what it moves (`written`: null
+ * when it moves nothing) at every press: on a full board the key is stopped
+ * before the board hears it unless that fits (`refusesWrites`). A key typed
+ * into a field (`TYPING`) is the field's. Listens on `target` as it
+ * captures; returns the stop. */
 export function gateNudges(
   target: EventTarget,
   store: Store,
-  written: () => number
+  written: () => Writes | null
 ) {
   const refuse = (event: Event) => {
     const { altKey, ctrlKey, key, metaKey } = event as KeyboardEvent;
-    if (
-      !NUDGES.has(key) ||
-      metaKey ||
-      ctrlKey ||
-      altKey ||
-      !full.has(store) ||
-      !refusesWrites(store, written())
-    )
+    if (!NUDGES.has(key) || metaKey || ctrlKey || altKey || !full.has(store))
       return;
+    const [typed] = event.composedPath() as Partial<Element>[];
+    if (typed?.closest?.(TYPING)) return;
+    const writes = written();
+    if (!(writes && refusesWrites(store, writes))) return;
     event.preventDefault();
     event.stopPropagation();
   };
@@ -139,9 +227,10 @@ export function gateNudges(
 /** The element toolbar's changes (a colour, a stroke, a font, an alignment
  * or a spread) write every selected element through the board's
  * `updateElement`, one call each in one task: on a full board the first call
- * on what the selection writes (`written`: their number, 0 for another
+ * on what the selection writes (`written`: the elements, 0 for another
  * element) decides for the task, so the change goes whole or not at all
- * (`refusesWrites`). */
+ * (`refusesWrites`). Each element takes every value the call names, and a
+ * stroke's width its points and box too (its derive). */
 export function gateElementUpdates(
   store: Store,
   crud: { updateElement: (id: string, props: Record<string, unknown>) => void },
@@ -151,9 +240,10 @@ export function gateElementUpdates(
   let refused: boolean | null = null;
   crud.updateElement = (id, props) => {
     if (refused === null && full.has(store)) {
-      const count = written(id);
-      if (count > 1) {
-        refused = refusesWrites(store, count);
+      const elements = written(id);
+      if (elements > 1) {
+        const each = Object.keys(props).length + ('lineWidth' in props ? 2 : 0);
+        refused = refusesWrites(store, { elements, values: elements * each });
         queueMicrotask(() => {
           refused = null;
         });
@@ -161,6 +251,61 @@ export function gateElementUpdates(
     }
     if (!refused) updateElement(id, props);
   };
+}
+
+/** The board's commands a full board gates: `adds` add elements (a paste's
+ * or Duplicate's copies, a group), `places` place every selected element (an
+ * arrange, a resize to one size) and `ungroup` writes the index of each
+ * element its group holds directly (an Ungroup, an Unlock of a group). */
+export type GatedCommands = {
+  adds: unknown[];
+  places: unknown[];
+  ungroup: unknown;
+};
+
+/** Runs `command`'s gated commands (`commands`) on a full board only as
+ * `refusesAdds` and `refusesWrites` allow, what a place writes from
+ * `placed`; a refused one runs nothing and answers as a failed command. */
+export function gateCommands(
+  store: Store,
+  command: Pick<CommandManager, 'exec'>,
+  commands: GatedCommands,
+  placed: () => Writes
+) {
+  const exec = command.exec.bind(command);
+  const refuses = (run: unknown, input: unknown) => {
+    if (commands.adds.includes(run)) return refusesAdds(store);
+    if (commands.places.includes(run)) return refusesWrites(store, placed());
+    if (run !== commands.ungroup) return false;
+    const { length } = (input as { group: GfxGroupCompatibleInterface }).group
+      .childElements;
+    return refusesWrites(store, { elements: length, values: length });
+  };
+  command.exec = ((run, ...rest) =>
+    refuses(run, rest[0])
+      ? [false, {}]
+      : exec(run, ...rest)) as typeof command.exec;
+}
+
+/** The element toolbar's writes straight to models (`boardWrites`,
+ * vendor/blocksuite local change 82) ask the board before any: a lock of
+ * several makes a group (`refusesAdds`), a reorder writes each element's
+ * index, the alignment menu places them (`placed`). Returns the stop. */
+export function gateToolbarWrites(
+  store: Store,
+  placed: (models: GfxModel[]) => Writes
+) {
+  boardWrites.gate(store, (models, write) =>
+    write === 'group'
+      ? refusesAdds(store)
+      : refusesWrites(
+          store,
+          write === 'order'
+            ? { elements: models.length, values: models.length }
+            : placed(models)
+        )
+  );
+  return () => boardWrites.gate(store, null);
 }
 
 /** A press on the board's canvas with a tool that adds (`adds`) while the

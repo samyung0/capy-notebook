@@ -23,6 +23,7 @@ import {
   type ToolbarContext,
   type ToolbarModuleConfig,
 } from '@blocksuite/affine-shared/services';
+import { boardWrites } from '@blocksuite/affine-shared/utils';
 import { Bound } from '@blocksuite/global/gfx';
 import {
   AlignLeftIcon,
@@ -253,6 +254,13 @@ export const builtinMiscToolbarConfig = {
         const otherElements = elements.filter(
           element => element !== topElement
         );
+        // Capy (local change 82): a lock of several groups them, which the
+        // board may refuse; it asks before moving any between groups.
+        if (
+          otherElements.length &&
+          boardWrites.refuses(ctx.store, elements, 'group')
+        )
+          return;
 
         ctx.store.captureSync();
 

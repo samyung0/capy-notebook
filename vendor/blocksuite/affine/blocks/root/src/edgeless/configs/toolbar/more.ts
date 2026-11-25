@@ -31,6 +31,7 @@ import type {
   ToolbarContext,
 } from '@blocksuite/affine-shared/services';
 import {
+  boardWrites,
   matchModels,
   type ReorderingType,
 } from '@blocksuite/affine-shared/utils';
@@ -411,6 +412,9 @@ function reorderElements(
       })
     ).values()
   );
+  // Capy (local change 82): the board may refuse to reorder them all, before
+  // any is reordered.
+  if (boardWrites.refuses(ctx.store, normalizedModels, 'order')) return;
 
   for (const model of normalizedModels) {
     const index = ctx.gfx.layer.getReorderedIndex(model, type);

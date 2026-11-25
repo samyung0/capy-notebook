@@ -1,7 +1,9 @@
 import type { PointerEventState } from '@blocksuite/affine/std';
 import type { BaseTool } from '@blocksuite/affine/std/gfx';
 import type { Store } from '@blocksuite/affine/store';
+import { parseHTML } from 'linkedom';
 import { beforeEach, expect, it, vi } from 'vitest';
+import type { Writes } from './boardFull';
 
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 const { userToast } = await import('@/components/ui/userToast');
@@ -10,8 +12,8 @@ const {
   gateElementUpdates,
   gateNudges,
   gatePresses,
-  gateSelectionWrites,
   refusesAdds,
+  refusesWrites,
   setBoardFull,
   setBoardSizer,
 } = await import('./boardFull');
@@ -170,142 +172,123 @@ it("leaves a read-only full board's double click alone", () => {
 
 const MAX = 4 * 1024 * 1024;
 
-/** A full board whose size stands `room` bytes under its cap, its check
- * counted. */
+/** A full board whose size stands `room` bytes under its cap, its checks
+ * counted; `freeing` makes each check find that many bytes more. */
 function fullBoard(room: number) {
   const store = {} as Store;
-  const check = vi.fn();
+  let bytes = MAX - room;
+  let freed = 0;
+  const check = vi.fn(() => {
+    bytes -= freed;
+  });
   setBoardSizer(store, {
     check,
     pressed: vi.fn(),
-    size: () => ({ bytes: MAX - room, max: MAX }),
+    size: () => ({ bytes, max: MAX }),
   });
   setBoardFull(store, true);
-  return { check, store };
+  const freeing = (by: number) => {
+    freed = by;
+  };
+  return { check, freeing, store };
 }
 
-/** Elements as the board's interactivity takes them: only their number
- * counts. */
-const elements = (count: number) =>
-  Array.from({ length: count }, (_, at) => ({ id: `e${at}` }));
-
-/** The board's interactivity, gated: what started. */
-function interactivity(store: Store) {
-  const started = {
-    handleElementMove: vi.fn(),
-    handleElementResize: vi.fn(),
-    handleElementRotate: vi.fn(),
-  };
-  const gated = { ...started };
-  gateSelectionWrites(store, gated as never);
-  return {
-    move: (count: number) =>
-      gated.handleElementMove({ movingElements: elements(count) } as never),
-    resize: (count: number) =>
-      gated.handleElementResize({ elements: elements(count) } as never),
-    rotate: (count: number) =>
-      gated.handleElementRotate({ elements: elements(count) } as never),
-    started,
-  };
-}
-
-// Epo 2026-11-25: a drag of several elements writes each at its end, and
-// their interleaved writes leave a stub of about 10 B each that never
-// merges. On a full board it is refused, its size checked first, when 16 B
-// an element would pass the cap, and nothing starts; with room for them it
-// goes; one element's drag merges and always goes. Fails if a select-all
-// drag on a full board can pass the cap.
-it('refuses a drag of several elements on a full board within 16 B each of its cap, and starts nothing', () => {
-  const near = fullBoard(BOARD_WRITE_BYTES * 100 - 1);
-  const gated = interactivity(near.store);
-  gated.move(100);
-  expect(near.check).toHaveBeenCalledOnce();
-  expect(gated.started.handleElementMove).not.toHaveBeenCalled();
+// Epo 2026-11-25: a write of several elements on a full board goes only when
+// a 16 B stub for each value it writes fits under the cap. Review of
+// 8d813a7cc, finding 6: the size as it stands is never below the board's, so
+// a write it fits goes unmeasured (a held arrow key measured the whole board
+// at every repeat); one it doesn't is measured, and goes once deletions
+// freed room. Fails if a write that fits measures, or a refusal acts on the
+// size as it stood.
+it('takes a write that fits the size as it stands unmeasured, and measures one that does not before refusing it', () => {
+  const board = fullBoard(BOARD_WRITE_BYTES * 10);
+  expect(refusesWrites(board.store, { elements: 5, values: 10 })).toBe(false);
+  expect(board.check).not.toHaveBeenCalled();
+  expect(refusesWrites(board.store, { elements: 5, values: 11 })).toBe(true);
+  expect(board.check).toHaveBeenCalledOnce();
   expect(userToast).toHaveBeenCalledOnce();
-  gated.resize(100);
-  expect(gated.started.handleElementResize).not.toHaveBeenCalled();
-  gated.move(1);
-  expect(gated.started.handleElementMove).toHaveBeenCalledOnce();
-  const roomy = fullBoard(BOARD_WRITE_BYTES * 100);
-  const fits = interactivity(roomy.store);
-  fits.move(100);
-  fits.resize(100);
-  expect(fits.started.handleElementMove).toHaveBeenCalledOnce();
-  expect(fits.started.handleElementResize).toHaveBeenCalledOnce();
-  // A rotation writes two values an element: its angle and its place.
-  fits.rotate(100);
-  expect(fits.started.handleElementRotate).not.toHaveBeenCalled();
-  fits.rotate(50);
-  expect(fits.started.handleElementRotate).toHaveBeenCalledOnce();
-  expect(userToast).toHaveBeenCalledTimes(3);
-});
-
-it('checks nothing at a drag on a board under the line', () => {
-  const { check, store } = fullBoard(0);
-  setBoardFull(store, false);
-  const gated = interactivity(store);
-  gated.move(5000);
-  expect(check).not.toHaveBeenCalled();
-  expect(gated.started.handleElementMove).toHaveBeenCalledOnce();
+  board.freeing(BOARD_WRITE_BYTES);
+  expect(refusesWrites(board.store, { elements: 5, values: 11 })).toBe(false);
+  // One element's gesture always goes.
+  expect(refusesWrites(board.store, { elements: 1, values: 100 })).toBe(false);
+  expect(userToast).toHaveBeenCalledOnce();
 });
 
 // Epo 2026-11-25: an arrow key nudges the selection, writing each element at
 // every press; on a full board it is stopped before the board hears it when
-// the stubs would pass the cap, and goes with room or with one element.
-it("stops an arrow key that nudges several elements past a full board's cap before the board hears it", () => {
+// the stubs would pass the cap. Review of 8d813a7cc, finding 8: a key typed
+// into a field on the board (the toolbar's inputs, a colour's, the menu's,
+// the symbols panel's) is the field's. Fails if a nudge past the cap reaches
+// the board, or an arrow key in a field is swallowed.
+it("stops an arrow key that nudges several elements past a full board's cap, and leaves a field's keys alone", () => {
+  const { document, Event } = parseHTML(
+    '<div><p></p><input><span contenteditable="true"><b></b></span><math-field></math-field></div>'
+  );
+  const board = document.querySelector('div') as Element;
   const near = fullBoard(BOARD_WRITE_BYTES * 10 - 1);
-  const board = new EventTarget();
-  let written = 10;
-  gateNudges(board, near.store, () => written);
-  /** A key pressed on the board: whether it was stopped there. */
-  const press = (keys: Partial<KeyboardEvent>) => {
+  let writes: Writes | null = { elements: 10, values: 10 };
+  gateNudges(board, near.store, () => writes);
+  /** A key pressed on `target`: whether the board's gate stopped it. */
+  const press = (target: string, keys: Partial<KeyboardEvent>) => {
     const event = Object.assign(
-      new Event('keydown', { cancelable: true }),
+      new Event('keydown', { bubbles: true, cancelable: true }),
       { altKey: false, ctrlKey: false, metaKey: false, shiftKey: false },
       keys
     );
     const stop = vi.spyOn(event, 'stopPropagation');
-    board.dispatchEvent(event);
+    (board.querySelector(target) ?? board).dispatchEvent(event);
     expect(stop).toHaveBeenCalledTimes(event.defaultPrevented ? 1 : 0);
     return event.defaultPrevented;
   };
-  expect(press({ key: 'ArrowLeft' })).toBe(true);
-  expect(press({ key: 'ArrowUp', shiftKey: true })).toBe(true);
+  expect(press('p', { key: 'ArrowLeft' })).toBe(true);
+  expect(press('div', { key: 'ArrowUp', shiftKey: true })).toBe(true);
   expect(userToast).toHaveBeenCalledTimes(2);
+  for (const field of ['input', 'b', 'math-field'])
+    expect(press(field, { key: 'ArrowLeft' })).toBe(false);
   // Not a nudge: the board hears it.
-  expect(press({ key: 'ArrowLeft', metaKey: true })).toBe(false);
-  expect(press({ key: 'a' })).toBe(false);
-  written = 1;
-  expect(press({ key: 'ArrowLeft' })).toBe(false);
+  expect(press('p', { key: 'ArrowLeft', metaKey: true })).toBe(false);
+  expect(press('p', { key: 'a' })).toBe(false);
+  // Nothing moves, or one element.
+  writes = null;
+  expect(press('p', { key: 'ArrowLeft' })).toBe(false);
+  writes = { elements: 1, values: 1 };
+  expect(press('p', { key: 'ArrowLeft' })).toBe(false);
   expect(userToast).toHaveBeenCalledTimes(2);
 });
 
 // Epo 2026-11-25: the element toolbar writes every selected element, one
 // call each in one task; on a full board the first call on the selection
-// decides, so the change goes whole or not at all.
-it("refuses a toolbar change of several elements past a full board's cap whole, and takes it with room", async () => {
-  const near = fullBoard(BOARD_WRITE_BYTES * 3 - 1);
+// decides, so the change goes whole or not at all. Review of 8d813a7cc,
+// finding 5: each element takes every value the call names, and a stroke's
+// width its points and box too. Fails if a change naming several values
+// counts one an element.
+it("refuses a toolbar change of several elements past a full board's cap whole, counting each value, and takes it with room", async () => {
+  const near = fullBoard(BOARD_WRITE_BYTES * 6);
   const updateElement = vi.fn();
   const crud = { updateElement };
   const selected = new Set(['a', 'b', 'c']);
   gateElementUpdates(near.store, crud, (id) =>
     selected.has(id) ? selected.size : 0
   );
-  for (const id of selected) crud.updateElement(id, { fillColor: 'red' });
+  const change = (props: Record<string, unknown>) => {
+    for (const id of selected) crud.updateElement(id, props);
+  };
+  // A font: its family, weight and style.
+  change({ fontFamily: 'Inter', fontStyle: 'normal', fontWeight: '400' });
   expect(updateElement).not.toHaveBeenCalled();
   expect(userToast).toHaveBeenCalledOnce();
+  await Promise.resolve();
+  // A stroke's width, its points and its box.
+  change({ lineWidth: 8 });
+  expect(updateElement).not.toHaveBeenCalled();
+  await Promise.resolve();
+  change({ fillColor: 'red', strokeColor: 'blue' });
+  expect(updateElement).toHaveBeenCalledTimes(3);
   await Promise.resolve();
   // One element's change always goes.
   selected.clear();
   selected.add('a');
-  crud.updateElement('a', { fillColor: 'red' });
-  expect(updateElement).toHaveBeenCalledOnce();
-  const roomy = fullBoard(BOARD_WRITE_BYTES * 3);
-  const update = vi.fn();
-  const fits = { updateElement: update };
-  gateElementUpdates(roomy.store, fits, () => 3);
-  for (const id of ['a', 'b', 'c'])
-    fits.updateElement(id, { fillColor: 'red' });
-  expect(update).toHaveBeenCalledTimes(3);
-  expect(userToast).toHaveBeenCalledOnce();
+  change({ fontFamily: 'Inter', fontStyle: 'normal', fontWeight: '400' });
+  expect(updateElement).toHaveBeenCalledTimes(4);
+  expect(userToast).toHaveBeenCalledTimes(2);
 });
