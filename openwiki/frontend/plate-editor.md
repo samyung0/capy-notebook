@@ -6609,9 +6609,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
         fails to integrate such an item where Yjs collects it, so a board storing
         one would never replay again (no fold, trial or projection). No editor
         writes one. An item under a unit the stored base holds deleted is taken and
-        collected; one under a unit deleted since the base is refused, since a
-        replay applies the base and its rows in one transaction, where that unit
-        keeps its content (`Board::read`, `Board::parent_type`);
+        collected; one under a value deleted since the base is refused, since a
+        replay applies the base and its rows in one transaction, where that value
+        keeps its content. A block or other type deleted since the base is still
+        a parent, as it is in that replay: a stale tab's key set in a deleted
+        block is taken (`Board::read`, `Board::parent_type`);
       - keeps the state within `CANVAS_BOARD_MAX`, 4 MiB (Epo 2026-11-18), the largest
         sync message the server takes (`NOTE_MAX_SYNC_BYTES`). The validator keeps an
         upper bound of the state's bytes; while the bound plus the most the update

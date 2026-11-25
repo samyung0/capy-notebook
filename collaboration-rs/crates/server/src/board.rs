@@ -2150,6 +2150,23 @@ mod tests {
             }
         }
 
+        /// `sent`, an update with new types the index has no depth for,
+        /// reaches the reference and the room through a trial, as the room
+        /// tries one (`room.rs`'s `board_trial`): applied to the board's
+        /// replica, which gives what depths it can ([Fresh::take_depths]),
+        /// then appended.
+        fn deliver_tried(&mut self, sent: &[u8]) {
+            apply(&self.reference, sent);
+            let Read::New(mut fresh) = read(&self.board, sent) else {
+                panic!("nothing new");
+            };
+            assert!(fresh.unplaced_types());
+            let replica = self.board.replica().unwrap();
+            apply(&replica, fresh.bytes());
+            fresh.take_depths(&replica);
+            apply(&self.peer, self.board.append(fresh));
+        }
+
         /// `sent` reaches the reference and the room. One the room cannot
         /// place yet waits for its writer's resync, tried again after every
         /// update the room appends.
@@ -4171,11 +4188,14 @@ mod tests {
     /// base does not hold it deleted), under an element's value collected
     /// with its block since the base (a replay holds each as it was), and
     /// under a value of its own update. The board still replays and folds.
-    /// Fails without the parent check (all but the map are small edits,
-    /// appended at once; those deleted, collected or in the same update
-    /// pass a trial too, and the replica no longer replays), or if a fold's
-    /// base part of the delete-set index takes deletions appended while it
-    /// ran.
+    /// Fails without the parent check: all but the map are small edits,
+    /// appended at once with no trial. A trial would fail those under live
+    /// content and the one under a value of its own update (`InvalidParent`
+    /// on the replica too), but those under a value deleted or collected
+    /// since the base pass one, as the replica collected that value before
+    /// the update met it, and the board no longer replays. Fails too if a
+    /// fold's base part of the delete-set index takes deletions appended
+    /// while it ran.
     #[test]
     fn an_item_under_content_no_type_is_refused() {
         let mut room = Room::new();
@@ -4292,11 +4312,24 @@ mod tests {
         }
     }
 
+    /// The first item `sent` writes.
+    fn first_item(sent: &[u8]) -> ID {
+        decode(sent)
+            .blocks()
+            .find_map(|block| match block {
+                UpdateBlock::Item(item) => Some(*item.id()),
+                _ => None,
+            })
+            .unwrap()
+    }
+
     /// A type the type-depth index has no depth for is still a parent: a
-    /// map that replaced another under a block (its parent implicit), read
-    /// from the rows of the next room life, takes a new element (tried
-    /// first, as it has no depth either) and a new key, a small edit. Fails
-    /// if the check takes only types with a depth.
+    /// map that replaced another under a block (its parent implicit) takes
+    /// a key appended after it (this room runs no trial, so the map stays
+    /// without a depth until the fold) and, read from the rows of the next
+    /// room life, a new element (tried first, as it has no depth either)
+    /// and a new key, a small edit. Fails if the check takes only types
+    /// with a depth, or if [Board::append] drops the types it has none for.
     #[test]
     fn a_key_set_in_a_type_without_a_depth_is_taken() {
         let mut room = Room::new();
@@ -4314,16 +4347,18 @@ mod tests {
         });
         assert_eq!(checked(&room.board, &replaced), Check::Flagged);
         room.deliver(&replaced);
+        // Written after the map it replaced, it names no key.
+        let elements = first_item(&replaced);
+        assert!(room.board.depths.get(&elements).is_none());
+        let first = edited(&writer, |txn, blocks| {
+            if let Some(Out::YMap(elements)) = block(txn, blocks, "x").get(txn, "prop:elements") {
+                elements.insert(txn, "k0", "v");
+            }
+        });
+        assert_eq!(checked(&room.board, &first), Check::Small);
+        room.deliver(&first);
         room.store();
         let mut next = room.reload();
-        // Written after the map it replaced, it names no key.
-        let elements = decode(&replaced)
-            .blocks()
-            .find_map(|block| match block {
-                UpdateBlock::Item(item) => Some(*item.id()),
-                _ => None,
-            })
-            .unwrap();
         assert!(next.board.depths.get(&elements).is_none());
         let element = edited(&synced(&next, 12), |txn, blocks| {
             if let Some(Out::YMap(elements)) = block(txn, blocks, "x").get(txn, "prop:elements") {
@@ -4339,6 +4374,48 @@ mod tests {
         assert_eq!(checked(&next.board, &value), Check::Small);
         next.deliver(&value);
         assert!(held(&next.join()) == held(&next.reference));
+    }
+
+    /// A type its trial's replica collected is still a parent: a stale tab
+    /// puts a map in a list another tab deleted (after the list's item, so
+    /// its parent is implicit and it is tried), the replica collects the
+    /// map and gives it no depth, and the tab's next key in it is taken;
+    /// every replica collects both, and the board replays, folds and joins
+    /// to what the reference holds. Fails if [Fresh::take_depths] drops the
+    /// types it finds no depth for.
+    #[test]
+    fn a_key_set_in_a_type_its_trial_collected_is_taken() {
+        let mut room = Room::new();
+        let writer = synced(&room, 11);
+        room.deliver(&edited(&writer, |txn, blocks| {
+            blocks
+                .insert(txn, "x", MapPrelim::default())
+                .insert(txn, "prop:list", ArrayPrelim::default())
+                .push_back(txn, 1);
+        }));
+        let stale = synced(&room, 12);
+        room.deliver(&edited(&writer, |txn, blocks| {
+            block(txn, blocks, "x").remove(txn, "prop:list");
+        }));
+        let mut map = None;
+        let put = edited(&stale, |txn, blocks| {
+            map = Some(list(txn, blocks, "x").push_back(txn, MapPrelim::default()));
+        });
+        room.deliver_tried(&put);
+        assert!(room.board.depths.get(&first_item(&put)).is_none());
+        let map = map.unwrap();
+        let set = edited(&stale, |txn, _| {
+            map.insert(txn, "k", "v");
+        });
+        room.deliver(&set);
+        assert!(room.waiting.is_empty());
+        let replica = room.board.replica().unwrap();
+        for doc in [&room.join(), &room.peer, &replica] {
+            assert!(held(doc) == held(&room.reference));
+        }
+        room.store();
+        room.fold();
+        assert!(held(&room.join()) == held(&room.reference));
     }
 
     /// An item beside a unit the room collected since the base (its origin
