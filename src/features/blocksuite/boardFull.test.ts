@@ -3,6 +3,7 @@ import type { BaseTool, GfxModel } from '@blocksuite/affine/std/gfx';
 import type { Store } from '@blocksuite/affine/store';
 import { parseHTML } from 'linkedom';
 import { beforeEach, expect, it, vi } from 'vitest';
+import * as Y from 'yjs';
 import type { Writes } from './boardFull';
 
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
@@ -194,23 +195,32 @@ function fullBoard(room: number) {
 }
 
 // Epo 2026-11-25: a write of several elements on a full board goes only when
-// a 16 B stub for each value it writes fits under the cap. Review of
-// 8d813a7cc, finding 6: the size as it stands is never below the board's, so
-// a write it fits goes unmeasured (a held arrow key measured the whole board
-// at every repeat); one it doesn't is measured, and goes once deletions
-// freed room. Fails if a write that fits measures, or a refusal acts on the
-// size as it stood.
+// a 16 B stub for each value it writes, and what those values may grow by
+// (the guard's fourth review), fit under the cap. Review of 8d813a7cc,
+// finding 6: the size as it stands is never below the board's, so a write it
+// fits goes unmeasured (a held arrow key measured the whole board at every
+// repeat); one it doesn't is measured, and goes once deletions freed room.
+// Fails if a write that fits measures, a refusal acts on the size as it
+// stood, or the growth is left out.
 it('takes a write that fits the size as it stands unmeasured, and measures one that does not before refusing it', () => {
   const board = fullBoard(BOARD_WRITE_BYTES * 10);
-  expect(refusesWrites(board.store, { elements: 5, values: 10 })).toBe(false);
+  expect(
+    refusesWrites(board.store, { elements: 5, grows: 0, values: 10 })
+  ).toBe(false);
   expect(board.check).not.toHaveBeenCalled();
-  expect(refusesWrites(board.store, { elements: 5, values: 11 })).toBe(true);
+  expect(
+    refusesWrites(board.store, { elements: 5, grows: 1, values: 10 })
+  ).toBe(true);
   expect(board.check).toHaveBeenCalledOnce();
   expect(userToast).toHaveBeenCalledOnce();
-  board.freeing(BOARD_WRITE_BYTES);
-  expect(refusesWrites(board.store, { elements: 5, values: 11 })).toBe(false);
+  board.freeing(1);
+  expect(
+    refusesWrites(board.store, { elements: 5, grows: 1, values: 10 })
+  ).toBe(false);
   // One element's gesture always goes.
-  expect(refusesWrites(board.store, { elements: 1, values: 100 })).toBe(false);
+  expect(
+    refusesWrites(board.store, { elements: 1, grows: 0, values: 100 })
+  ).toBe(false);
   expect(userToast).toHaveBeenCalledOnce();
 });
 
@@ -226,7 +236,7 @@ it("stops an arrow key that nudges several elements past a full board's cap, and
   );
   const board = document.querySelector('div') as Element;
   const near = fullBoard(BOARD_WRITE_BYTES * 10 - 1);
-  let writes: Writes | null = { elements: 10, values: 10 };
+  let writes: Writes | null = { elements: 10, grows: 0, values: 10 };
   gateNudges(board, near.store, () => writes);
   /** A key pressed on `target`: whether the board's gate stopped it. */
   const press = (target: string, keys: Partial<KeyboardEvent>) => {
@@ -251,7 +261,7 @@ it("stops an arrow key that nudges several elements past a full board's cap, and
   // Nothing moves, or one element.
   writes = null;
   expect(press('p', { key: 'ArrowLeft' })).toBe(false);
-  writes = { elements: 1, values: 1 };
+  writes = { elements: 1, grows: 0, values: 1 };
   expect(press('p', { key: 'ArrowLeft' })).toBe(false);
   expect(userToast).toHaveBeenCalledTimes(2);
 });
@@ -260,17 +270,33 @@ it("stops an arrow key that nudges several elements past a full board's cap, and
 // call each in one task; on a full board the first call on the selection
 // decides, so the change goes whole or not at all. Review of 8d813a7cc,
 // finding 5: each element takes every value the call names, and a stroke's
-// width its points and box too. Fails if a change naming several values
-// counts one an element.
+// width its points and box too. Fourth review: a value written longer than
+// it is stored keeps room for what it grows by. Fails if a change naming
+// several values counts one an element, or a colour written longer counts its
+// stub alone.
 it("refuses a toolbar change of several elements past a full board's cap whole, counting each value, and takes it with room", async () => {
   const near = fullBoard(BOARD_WRITE_BYTES * 6);
   const updateElement = vi.fn();
   const crud = { updateElement };
   const selected = new Set(['a', 'b', 'c']);
+  // Each stores what the changes below name (as a block stores its values).
+  const doc = new Y.Doc();
+  const model = (id: string) => {
+    const yBlock = doc.getMap(id);
+    for (const [key, value] of Object.entries({
+      fillColor: 'red',
+      fontFamily: 'Inter',
+      fontStyle: 'normal',
+      fontWeight: '400',
+      lineWidth: 4,
+      strokeColor: 'blue',
+      xywh: '[0,0,10,10]',
+    }))
+      yBlock.set(`prop:${key}`, value);
+    return { id, yBlock } as unknown as GfxModel;
+  };
   gateElementUpdates(near.store, crud, (id) =>
-    selected.has(id)
-      ? [...selected].map((each) => ({ id: each }) as GfxModel)
-      : null
+    selected.has(id) ? [...selected].map(model) : null
   );
   const change = (props: Record<string, unknown>) => {
     for (const id of selected) crud.updateElement(id, props);
@@ -284,6 +310,10 @@ it("refuses a toolbar change of several elements past a full board's cap whole, 
   change({ lineWidth: 8 });
   expect(updateElement).not.toHaveBeenCalled();
   await Promise.resolve();
+  // A colour written longer: one value an element, and 26 B more each.
+  change({ fillColor: '--affine-palette-shape-yellow' });
+  expect(updateElement).not.toHaveBeenCalled();
+  await Promise.resolve();
   change({ fillColor: 'red', strokeColor: 'blue' });
   expect(updateElement).toHaveBeenCalledTimes(3);
   await Promise.resolve();
@@ -292,5 +322,5 @@ it("refuses a toolbar change of several elements past a full board's cap whole, 
   selected.add('a');
   change({ fontFamily: 'Inter', fontStyle: 'normal', fontWeight: '400' });
   expect(updateElement).toHaveBeenCalledTimes(4);
-  expect(userToast).toHaveBeenCalledTimes(2);
+  expect(userToast).toHaveBeenCalledTimes(3);
 });

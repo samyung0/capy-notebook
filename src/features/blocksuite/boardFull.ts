@@ -14,6 +14,7 @@ import {
   isGfxGroupCompatibleModel,
 } from '@blocksuite/affine/std/gfx';
 import type { Store } from '@blocksuite/affine/store';
+import * as Y from 'yjs';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 
@@ -72,11 +73,18 @@ export function refusesAdds(store: Store) {
  * select-all move adds to the room's collected state (`collectedSize`) was
  * measured at 12 B an element on a fresh board, 14 B once its clocks passed
  * 10^5 and 16 B past 2.1 × 10^6 (3- and 4-byte clocks); a value written for
- * the first time adds its key too (`NEW_KEY`). */
+ * the first time adds its key too (`NEW_KEY`). A value written longer than
+ * it was adds the difference besides (`Writes.grows`). */
 export const BOARD_WRITE_BYTES = 16;
 
-/** What a write reaches: its elements, and the values it writes on them. */
-export type Writes = { elements: number; values: number };
+/** What a write reaches: its elements, the values it writes on them (a stub
+ * each, `BOARD_WRITE_BYTES`) and the bytes those values may grow by, each at
+ * the longest its format allows less what it stores now (`anyBytes`). */
+export type Writes = { elements: number; grows: number; values: number };
+
+/** The bytes a full board keeps for `writes`. */
+export const bytesOf = (writes: Writes) =>
+  BOARD_WRITE_BYTES * writes.values + writes.grows;
 
 /** How a gesture writes each element: a drag or an arrow key moves it, the
  * alignment menu, an arrange and a resize to one size place it
@@ -108,10 +116,173 @@ export function elementsWritten(models: Iterable<GfxModel>) {
   return written;
 }
 
-/** A value written for the first time adds its key beside its stub: about
- * 20 B (a note's collapse, collapsed height and scale, measured at 19-21 B
- * across those clocks), two values' worth. */
+/** A value written for the first time adds its item's header and key
+ * beside its stub, two values' worth: a note's collapse and collapsed height
+ * added 25 B of headers between them besides their keys and values, so 32 B
+ * holds a key of 19 characters (each value's own bytes count as growth). */
 const NEW_KEY = 2;
+
+/* How much a written value may grow (the guard's fourth review): Yjs keeps
+ * the new value whole and the old one as a stub, so a value written longer
+ * than it was adds the difference. BlockSuite's `Bound.serialize` writes 17
+ * significant digits at any zoom but 1, so a drag of shapes placed on whole
+ * numbers grows each box by about 30 B. Each bound is the longest the
+ * value's format allows less what it stores now, one read a value and no
+ * encode; positions are never rounded (that would change stored data). */
+
+/** The value `model` stores under `key`, as the room holds it (not a size
+ * it shows or a stashed value). */
+const stored = (model: GfxModel, key: string): unknown =>
+  model instanceof GfxPrimitiveElementModel
+    ? model.yMap.get(key)
+    : model.yBlock.get(`prop:${key}`);
+
+const storesKey = (model: GfxModel, key: string) =>
+  model instanceof GfxPrimitiveElementModel
+    ? model.yMap.has(key)
+    : model.yBlock.has(`prop:${key}`);
+
+const varUintBytes = (n: number) =>
+  n < 2 ** 7 ? 1 : n < 2 ** 14 ? 2 : n < 2 ** 21 ? 3 : n < 2 ** 28 ? 4 : 5;
+
+const utf8Bytes = (text: string) => {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i++) {
+    const code = text.charCodeAt(i);
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x8_00) bytes += 2;
+    else if (code >= 0xd8_00 && code < 0xdc_00) {
+      bytes += 4;
+      i++;
+    } else bytes += 3;
+  }
+  return bytes;
+};
+
+/** The bytes lib0's `writeAny` stores `value` in, as a Y.Map's value: a
+ * type byte, then an integer within 2^31 as a varint (6 bits, then 7 a
+ * byte), another number as a float32 when it is one (4) or a float64 (8); a
+ * string or bytes their length's varint and their bytes (UTF-8); an array or
+ * an object its length's varint and each entry, an object's key as a string;
+ * nothing else more. A shared type (a block's object value) is counted as
+ * its JSON. */
+export function anyBytes(value: unknown): number {
+  if (value instanceof Y.AbstractType) return anyBytes(value.toJSON());
+  if (typeof value === 'number') {
+    if (Number.isInteger(value) && Math.abs(value) <= 0x7f_ff_ff_ff) {
+      const n = Math.abs(value);
+      return n < 2 ** 6
+        ? 2
+        : n < 2 ** 13
+          ? 3
+          : n < 2 ** 20
+            ? 4
+            : n < 2 ** 27
+              ? 5
+              : 6;
+    }
+    return Math.fround(value) === value ? 5 : 9;
+  }
+  if (typeof value === 'bigint') return 9;
+  if (typeof value === 'string') {
+    const n = utf8Bytes(value);
+    return 1 + varUintBytes(n) + n;
+  }
+  if (value instanceof Uint8Array)
+    return 1 + varUintBytes(value.length) + value.length;
+  if (Array.isArray(value))
+    return value.reduce<number>(
+      (sum, entry) => sum + anyBytes(entry),
+      1 + varUintBytes(value.length)
+    );
+  if (value && typeof value === 'object') {
+    const entries = Object.entries(value);
+    return entries.reduce(
+      (sum, [key, entry]) => sum + anyBytes(key) - 1 + anyBytes(entry),
+      1 + varUintBytes(entries.length)
+    );
+  }
+  return 1;
+}
+
+/** A number at its longest: a float64, its type byte and 8. One stored
+ * whole takes 2 at least; one written for the first time grows from none. */
+const NUMBER_LONGEST = 9;
+const numberGrowth = (value: unknown) =>
+  NUMBER_LONGEST - (typeof value === 'number' ? anyBytes(value) : 0);
+
+/** The longest box, `[x,y,w,h]` with each number as JS writes it (the
+ * shortest that reads back, at most 17 significant digits): 25 characters at
+ * most, a sign, `0.`, five zeros and 17 digits (-0.0000012345678901234567;
+ * below 10^-6 and from 10^21 JS writes an exponent, at most 24:
+ * -1.7976931348623157e+308), so 4 × 25 + 5. Its length's varint is one byte
+ * either way (under 128). */
+const XYWH_LONGEST = 105;
+const boxGrowth = (model: GfxModel) =>
+  XYWH_LONGEST - String(stored(model, 'xywh') ?? '').length;
+
+/** A connector's free end, `{position: [x, y]}`, grows by its two numbers
+ * (`moveTo` writes them); a bound end is left as it is. */
+const endGrowth = (end: unknown) => {
+  const { id, position } = (end ?? {}) as { id?: string; position?: number[] };
+  return id ? 0 : numberGrowth(position?.[0]) + numberGrowth(position?.[1]);
+};
+
+/** A connector's label's place, `[x, y, w, h]`, by its four numbers (and
+ * the array's two bytes when it has none yet). */
+const labelGrowth = (connector: ConnectorElementModel) => {
+  const label = stored(connector, 'labelXYWH') as unknown[] | undefined;
+  return [0, 1, 2, 3].reduce(
+    (sum, i) => sum + numberGrowth(label?.[i]),
+    label ? 0 : 2
+  );
+};
+
+/** The longest index among `models`. */
+export const longestIndex = (models: Iterable<GfxModel>) => {
+  let longest = 0;
+  for (const model of models) longest = Math.max(longest, model.index.length);
+  return longest;
+};
+
+/** What new indexes for `models` grow by (a reorder's, an ungroup's):
+ * fractional-indexing's `generateKeyBetween` makes a key at most one
+ * character longer than the longer of the two it goes between, each a key on
+ * the board (`longest` at most) or one this write made before it, so the
+ * i-th of n is at most `longest` + i long: n·longest + n(n + 1)/2 less their
+ * lengths now. */
+export function indexGrowth(models: readonly GfxModel[], longest: number) {
+  const n = models.length;
+  const now = models.reduce((sum, model) => sum + model.index.length, 0);
+  return n * longest + (n * (n + 1)) / 2 - now;
+}
+
+/** A node's place in a mind map's tree, `{index, parent}` under its id, at
+ * its longest in `map`: an index one character longer than the map's
+ * longest (`indexGrowth`) and the longest of its nodes' ids as its parent. */
+const treePlaceBytes = (map: MindmapElementModel, place: object) => {
+  let index = 0;
+  let id = 0;
+  map.children.forEach((entry, key) => {
+    index = Math.max(index, entry.index.length);
+    id = Math.max(id, key.length);
+  });
+  return anyBytes({
+    ...place,
+    index: 'i'.repeat(index + 1),
+    parent: 'p'.repeat(id),
+  });
+};
+
+/** A note's stored `edgeless` values (its own map). */
+const edgelessOf = (model: GfxModel) => {
+  const edgeless = stored(model, 'edgeless');
+  return (edgeless instanceof Y.Map ? edgeless.toJSON() : (edgeless ?? {})) as {
+    collapse?: boolean;
+    collapsedHeight?: number;
+    scale?: number;
+  };
+};
 
 /** What a resize writes on an element besides its box: a text label its
  * font size (a corner) or wrap (a side), a note its scale (`NEW_KEY` the
@@ -174,13 +345,55 @@ const isBranch = (model: GfxModel) =>
   model.group instanceof MindmapElementModel &&
   model.group.tree?.id !== model.id;
 
-/** What `gesture` on `models` writes (`elementsWritten`, `valuesWritten`),
- * with the label of each labelled connector hanging on one of them
- * (`connectorsOf`), which the tab moving its end places (vendor/blocksuite
- * local change 63). A mind map's node dragged alone may land in another
- * branch: its map lays out again and restyles what moved (Style one
- * colours by first-level branch, the others by depth), at worst the whole
- * map at its Style count. */
+/** What `gesture`'s values on `model` grow by at most (`valuesWritten`):
+ * a box (`XYWH_LONGEST`) and the numbers written with it, a rotation's
+ * angle, a text label's font size, a plane's view corner, a note's scale and
+ * collapsed height; a connector its free ends and its label's place; a mind
+ * map's style and layout are whole numbers, written as such. A stroke's
+ * points keep their length (four bytes a value, vendor/blocksuite local
+ * change 79). */
+export function growthOf(model: GfxModel, gesture: Gesture) {
+  if (model instanceof MindmapElementModel || isGfxGroupCompatibleModel(model))
+    return 0;
+  if (model instanceof ConnectorElementModel)
+    return (
+      endGrowth(stored(model, 'source')) +
+      endGrowth(stored(model, 'target')) +
+      (model.hasLabel() ? labelGrowth(model) : 0)
+    );
+  const box = boxGrowth(model);
+  if (model.group instanceof MindmapElementModel) return box;
+  const kind =
+    model instanceof GfxPrimitiveElementModel ? model.type : model.flavour;
+  const note = kind === 'affine:note' ? edgelessOf(model) : null;
+  if (gesture === 'rotate') return box + numberGrowth(stored(model, 'rotate'));
+  if (gesture === 'resize') {
+    if (kind === 'text') return box + numberGrowth(stored(model, 'fontSize'));
+    if (kind === 'plane')
+      return (
+        box +
+        numberGrowth(stored(model, 'x0')) +
+        numberGrowth(stored(model, 'y0'))
+      );
+    return box + (note ? numberGrowth(note.scale) : 0);
+  }
+  if (note && gesture === 'place')
+    return (
+      box +
+      numberGrowth(note.collapsedHeight) +
+      (note.collapse === undefined ? 1 : 0)
+    );
+  if (note && gesture === 'scale') return box + numberGrowth(note.scale);
+  return box;
+}
+
+/** What `gesture` on `models` writes (`elementsWritten`, `valuesWritten`,
+ * `growthOf`), with the label of each labelled connector hanging on one of
+ * them (`connectorsOf`), which the tab moving its end places
+ * (vendor/blocksuite local change 63). A mind map's node dragged alone may
+ * land in another branch: its place in the tree is written again, its map
+ * lays out again and restyles what moved (Style one colours by first-level
+ * branch, the others by depth), at worst the whole map at its Style count. */
 export function writesOf(
   models: Iterable<GfxModel>,
   gesture: Gesture,
@@ -188,23 +401,36 @@ export function writesOf(
 ): Writes {
   const list = [...models];
   const written = elementsWritten(list);
-  const each =
-    gesture === 'move' && list.length === 1 && isBranch(list[0])
-      ? 'style'
-      : gesture;
+  const [first] = list;
+  const branch =
+    gesture === 'move' && list.length === 1 && isBranch(first)
+      ? (first.group as MindmapElementModel)
+      : null;
+  const each = branch ? 'style' : gesture;
   let values = 0;
+  let grows = 0;
+  if (branch) {
+    const place = branch.children.get(first.id) ?? {};
+    grows += treePlaceBytes(branch, place) - anyBytes(place);
+  }
   const labels = new Set<ConnectorElementModel>();
   for (const model of written) {
     values += valuesWritten(model, each);
+    grows += growthOf(model, each);
     for (const connector of connectorsOf(model.id))
       if (!written.has(connector) && connector.hasLabel())
         labels.add(connector);
   }
-  return { elements: written.size + labels.size, values: values + labels.size };
+  for (const connector of labels) grows += labelGrowth(connector);
+  return {
+    elements: written.size + labels.size,
+    grows,
+    values: values + labels.size,
+  };
 }
 
-/** Whether `writes` is refused: on a full board, when the size and
- * `BOARD_WRITE_BYTES` a value pass the cap, with the cap's line. The size as
+/** Whether `writes` is refused: on a full board, when the size and what it
+ * keeps for them (`bytesOf`) pass the cap, with the cap's line. The size as
  * it stands is never below the board's (deletions since its last measure
  * leave it high), so a write it fits goes unmeasured: a held arrow key's
  * repeats measure nothing. One that doesn't fit goes once a measure finds
@@ -215,7 +441,7 @@ export function refusesWrites(store: Store, writes: Writes) {
   if (writes.elements <= 1 || store.readonly || !full.has(store)) return false;
   const fits = () => {
     const size = sizers.get(store)?.size();
-    return !size || size.bytes + BOARD_WRITE_BYTES * writes.values <= size.max;
+    return !size || size.bytes + bytesOf(writes) <= size.max;
   };
   if (fits()) return false;
   checkBoardSize(store);
@@ -284,20 +510,61 @@ export function gateNudges(
   return () => target.removeEventListener('keydown', refuse, true);
 }
 
+/** Whether a change of `props` on `model` places a labelled connector's
+ * label again on the new path (vendor/blocksuite local change 63). */
+const placesLabel = (model: GfxModel, props: Record<string, unknown>) =>
+  model instanceof ConnectorElementModel &&
+  model.hasLabel() &&
+  ('mode' in props || 'source' in props || 'target' in props);
+
+/** The values of an object a block stores as its own map, one a key. */
+const leavesOf = (value: unknown): number =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.values(value).reduce<number>(
+        (sum, entry) => sum + leavesOf(entry),
+        0
+      )
+    : 1;
+
 /** The values a change `props` through the board's `updateElement` writes
- * on `model`: each it names, a stroke's width its points and box too (its
- * derive), and a labelled connector's mode or end its label, placed again
- * on the new path (vendor/blocksuite local change 63). */
+ * on `model`: each it names (`NEW_KEY` more for one it stores for the first
+ * time; a block's object, stored as a map of its own, a new value for each
+ * of its leaves and a stub for each it held), a stroke's width its points
+ * and box too (its derive), and a labelled connector's mode or end its
+ * label (`placesLabel`). */
 export function valuesUpdated(model: GfxModel, props: Record<string, unknown>) {
-  let values = Object.keys(props).length;
-  if ('lineWidth' in props) values += 2;
-  if (
-    model instanceof ConnectorElementModel &&
-    model.hasLabel() &&
-    ('mode' in props || 'source' in props || 'target' in props)
-  )
+  let values = 0;
+  for (const [key, value] of Object.entries(props)) {
     values += 1;
+    if (!storesKey(model, key)) values += NEW_KEY;
+    else if (!(model instanceof GfxPrimitiveElementModel)) {
+      const now = stored(model, key);
+      if (now instanceof Y.AbstractType) values += leavesOf(now.toJSON());
+      if (value && typeof value === 'object') values += leavesOf(value);
+    }
+  }
+  if ('lineWidth' in props) values += 2;
+  if (placesLabel(model, props)) values += 1;
   return values;
+}
+
+/** What a change `props` through the board's `updateElement` grows `model`
+ * by: each value it names by its new bytes less those it stores
+ * (`anyBytes`, known before the write), a stroke's width its box
+ * (`XYWH_LONGEST`), and a labelled connector's mode or end its label's
+ * place. */
+export function growthUpdated(model: GfxModel, props: Record<string, unknown>) {
+  let grows = 0;
+  for (const [key, value] of Object.entries(props))
+    grows += Math.max(
+      0,
+      anyBytes(value) -
+        (storesKey(model, key) ? anyBytes(stored(model, key)) : 0)
+    );
+  if ('lineWidth' in props) grows += boxGrowth(model);
+  if (placesLabel(model, props))
+    grows += labelGrowth(model as ConnectorElementModel);
+  return grows;
 }
 
 /** The element toolbar's changes (a colour, a stroke, a font, an alignment,
@@ -318,11 +585,17 @@ export function gateElementUpdates(
     if (refused === null && full.has(store)) {
       const models = written(id);
       if (models && models.length > 1) {
-        const values = models.reduce(
-          (sum, model) => sum + valuesUpdated(model, props),
-          0
-        );
-        refused = refusesWrites(store, { elements: models.length, values });
+        let values = 0;
+        let grows = 0;
+        for (const model of models) {
+          values += valuesUpdated(model, props);
+          grows += growthUpdated(model, props);
+        }
+        refused = refusesWrites(store, {
+          elements: models.length,
+          grows,
+          values,
+        });
         queueMicrotask(() => {
           refused = null;
         });
@@ -342,23 +615,75 @@ export type GatedCommands = {
   ungroup: unknown;
 };
 
+/** What a reorder of `models` writes: each one's index, made next to the
+ * board's (`indexGrowth`, `longest` the board's longest). An ungroup writes
+ * the index of each element its group holds directly the same way. */
+export const orderWrites = (
+  models: readonly GfxModel[],
+  longest: number
+): Writes => ({
+  elements: models.length,
+  grows: indexGrowth(models, longest),
+  values: models.length,
+});
+
+/** What an Unlock of several writes: each element's lock (a boolean, as long
+ * either way) and, for a group, what its ungroup writes, the groups' keys
+ * made one after another. */
+export function unlockWrites(models: readonly GfxModel[], longest: number) {
+  const held = models.flatMap((model) =>
+    model instanceof GroupElementModel ? model.childElements : []
+  );
+  const locks = models.length - models.filter(isGfxGroupCompatibleModel).length;
+  const ungrouped = orderWrites(held, longest);
+  return {
+    elements: ungrouped.elements + locks,
+    grows: ungrouped.grows,
+    values: ungrouped.values + locks,
+  };
+}
+
+/** What a node and the nodes under it (`moved`) dropped into another mind
+ * map (`into`) write: the map they leave laid out again and restyled at
+ * worst, their own restyle among it, the map they join laid out again, and
+ * each one's place in the tree it joins, a new key there (`NEW_KEY`, its id
+ * and its place at the longest, `treePlaceBytes`). */
+export function mergeWrites(
+  into: GfxModel,
+  moved: GfxModel[],
+  written: (models: GfxModel[], gesture: Gesture) => Writes
+): Writes {
+  const left = written(moved, 'style');
+  const joined = written([into], 'layout');
+  let grows = left.grows + joined.grows;
+  if (into instanceof MindmapElementModel)
+    for (const model of moved)
+      grows += anyBytes(model.id) - 1 + treePlaceBytes(into, {});
+  return {
+    elements: left.elements + joined.elements,
+    grows,
+    values: left.values + joined.values + moved.length * NEW_KEY,
+  };
+}
+
 /** Runs `command`'s gated commands (`commands`) on a full board only as
  * `refusesAdds` and `refusesWrites` allow, what a place writes from
- * `placed`; a refused one runs nothing and answers as a failed command. */
+ * `placed`, an ungroup's indexes from the board's `longest`; a refused one
+ * runs nothing and answers as a failed command. */
 export function gateCommands(
   store: Store,
   command: Pick<CommandManager, 'exec'>,
   commands: GatedCommands,
-  placed: () => Writes
+  placed: () => Writes,
+  longest: () => number
 ) {
   const exec = command.exec.bind(command);
   const refuses = (run: unknown, input: unknown) => {
     if (commands.adds.includes(run)) return refusesAdds(store);
     if (commands.places.includes(run)) return refusesWrites(store, placed());
     if (run !== commands.ungroup) return false;
-    const { length } = (input as { group: GfxGroupCompatibleInterface }).group
-      .childElements;
-    return refusesWrites(store, { elements: length, values: length });
+    const { group } = input as { group: GfxGroupCompatibleInterface };
+    return refusesWrites(store, orderWrites(group.childElements, longest()));
   };
   command.exec = ((run, ...rest) =>
     refuses(run, rest[0])
@@ -370,42 +695,26 @@ export function gateCommands(
  * (`boardWrites`, vendor/blocksuite local change 82) asks the board before
  * any write: an add (a Lock of several groups them, a mind map's node
  * dragged off its map makes a new map) is refused as one (`refusesAdds`); a
- * reorder writes each element's index, an Unlock each element's lock or a
- * group's elements' (it ungroups); a node merged into another mind map lays
- * both maps out again, restyling the one it leaves at worst; the rest
- * write what `written` counts for their gesture (the alignment menu's
- * `place`, a note's Scale or height, a mind map's Style or Layout). Returns
- * the stop. */
+ * reorder writes each element's index (`orderWrites`, the board's `longest`
+ * index), an Unlock each element's lock or a group's elements' indexes (it
+ * ungroups, `unlockWrites`); a node merged into another mind map is checked
+ * once, at the drop, for both maps (`mergeWrites`); the rest write what
+ * `written` counts for their gesture (the alignment menu's `place`, a note's
+ * Scale or height, a mind map's Style or Layout). Returns the stop. */
 export function gateToolbarWrites(
   store: Store,
-  written: (models: GfxModel[], gesture: Gesture) => Writes
+  written: (models: GfxModel[], gesture: Gesture) => Writes,
+  longest: () => number
 ) {
   boardWrites.gate(store, (models, write) => {
     if (write === 'add') return refusesAdds(store);
     if (write === 'order')
-      return refusesWrites(store, {
-        elements: models.length,
-        values: models.length,
-      });
-    if (write === 'unlock') {
-      const each = models.map((model) =>
-        model instanceof GroupElementModel ? model.childElements.length : 1
-      );
-      const length = each.reduce((sum, n) => sum + n, 0);
-      return refusesWrites(store, { elements: length, values: length });
-    }
+      return refusesWrites(store, orderWrites(models, longest()));
+    if (write === 'unlock')
+      return refusesWrites(store, unlockWrites(models, longest()));
     if (write === 'merge') {
-      // Checked once, at the drop, for both maps: the one it leaves (its
-      // whole map, `elementsWritten`) lays out again and may restyle, its
-      // moved nodes restyled in the other map among them; the one it joins
-      // lays out again.
       const [into, ...moved] = models;
-      const left = written(moved, 'style');
-      const joined = written([into], 'layout');
-      return refusesWrites(store, {
-        elements: left.elements + joined.elements,
-        values: left.values + joined.values,
-      });
+      return refusesWrites(store, mergeWrites(into, moved, written));
     }
     return refusesWrites(store, written(models, write));
   });

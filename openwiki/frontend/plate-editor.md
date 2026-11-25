@@ -6916,7 +6916,32 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       the room's collected state (`collectedSize`) at 12 B an element on a
       fresh board, 14 B once its clocks passed 10^5 and 16 B past 2.1 × 10^6,
       and a value written for the first time adds its key (about 20 B, two
-      values' worth: `NEW_KEY`).
+      values' worth: `NEW_KEY`). A value written longer than it was adds the
+      difference besides (the guard's fourth review: BlockSuite's
+      `Bound.serialize` writes 17 significant digits at any zoom but 1, so a
+      drag at zoom 0.73 of shapes placed on whole numbers grew each by 40 B,
+      its stub 14 of it), so each written value keeps room for the most it
+      can grow, the longest its format allows less what it stores now
+      (`Writes.grows`, `bytesOf`; one read a value, no encode; positions are
+      never rounded): a box 105 characters (`[x,y,w,h]`, each number at most
+      25 as JS writes it: a sign, `0.`, five zeros and 17 digits), a number 9
+      bytes (a float64 in lib0's `writeAny`: a rotation's angle, a text
+      label's font size, a plane's view corner, a note's scale and collapsed
+      height), a connector's free end its two numbers and a label's place its
+      four, a toolbar change's values their new bytes less their stored ones
+      (`anyBytes`, known before the write: a colour turned themed), a
+      reorder's or an ungroup's n indexes n·longest + n(n + 1)/2 characters
+      less theirs (fractional-indexing makes a key at most one character
+      longer than the longer of its two neighbours, the board's longest or
+      one the write made before it), and a mind map node's place in its tree
+      an index one character longer and the longest id as its parent (a new
+      key, with its id, in the tree a merge joins). A block's object value
+      (a note's `edgeless` through its style panel) is its own map, written
+      whole: a value for each leaf it held and each it writes. A select-all
+      move of 1,000 shapes placed on whole numbers (boxes of 18 characters,
+      `[1234,567,100,100]`) keeps 103,000 B now (16,000 before, against the
+      40,000 or so it adds at zoom 0.73): more than the 64 KiB a full board
+      has left at most, so a full board refuses it outright.
       Back-to-back overwrites of one value by one tab merge (1,000 drags of one
       shape add 35 B), but not where values alternate: several elements'
       writes interleave, and so do one element's when it writes two or more

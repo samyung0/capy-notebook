@@ -26,8 +26,10 @@ import {
 import { MindmapStoreExtension } from '@blocksuite/affine/gfx/mindmap/store';
 import { ShapeStoreExtension } from '@blocksuite/affine/gfx/shape/store';
 import { TextStoreExtension } from '@blocksuite/affine/gfx/text/store';
+import { Bound } from '@blocksuite/affine/global/gfx';
 import {
   type ConnectorElementModel,
+  type GroupElementModel,
   LayoutType,
   type MindmapElementModel,
   MindmapStyle,
@@ -64,21 +66,30 @@ import { Slider } from '../../../vendor/blocksuite/affine/components/src/slider/
 import { collectedSize } from '../collaboration/collectedSize';
 import { boardFirstState } from './boardFirstState';
 import { gateBoardWrites } from './boardGates';
+import { PlaneElementModel } from './boardPlane';
 import { openRoomStore } from './roomStore';
 
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 const { userToast } = await import('@/components/ui/userToast');
 const {
   BOARD_WRITE_BYTES,
+  bytesOf,
   gateCommands,
   gateElementUpdates,
   gateSelectionWrites,
   gateToolbarWrites,
+  anyBytes,
+  growthUpdated,
+  longestIndex,
+  mergeWrites,
+  orderWrites,
   setBoardFull,
   setBoardSizer,
+  unlockWrites,
   valuesUpdated,
   writesOf,
 } = await import('./boardFull');
+type Writes = import('./boardFull').Writes;
 
 /* What a full board's write gate counts and where it sits (Epo 2026-11-25),
  * on BlockSuite's own std, interactivity manager, DefaultTool, element CRUD,
@@ -172,9 +183,13 @@ function board() {
     size: () => ({ bytes, max: MAX }),
   });
   setBoardFull(store, true);
-  /** Leaves room for `values` values' stubs. */
-  const roomFor = (values: number) => {
-    bytes = MAX - BOARD_WRITE_BYTES * values;
+  /** Leaves room for `values` values' stubs and `grows` bytes more. */
+  const roomFor = (values: number, grows = 0) => {
+    bytes = MAX - BOARD_WRITE_BYTES * values - grows;
+  };
+  /** Leaves room for what `writes` keeps, less `short` bytes. */
+  const roomShort = (writes: Writes, short: number) => {
+    bytes = MAX - bytesOf(writes) + short;
   };
   const at = (id: string) => surface.getElementById(id) as GfxModel;
   const shape = (x: number) =>
@@ -187,7 +202,21 @@ function board() {
     models: GfxModel[],
     gesture: Parameters<typeof writesOf>[1]
   ) => writesOf(models, gesture, (id) => surface.getConnectors(id));
-  return { at, doc, gfx, roomFor, sent, shape, std, store, surface, written };
+  const longest = () => longestIndex(gfx.gfxElements);
+  return {
+    at,
+    doc,
+    gfx,
+    longest,
+    roomFor,
+    roomShort,
+    sent,
+    shape,
+    std,
+    store,
+    surface,
+    written,
+  };
 }
 
 type Board = ReturnType<typeof board>;
@@ -235,13 +264,59 @@ function mindmap(b: Board, x: number, children: number) {
   return { ids, map };
 }
 
+/** What the toolbar's change `props` on `models` writes, as the board's
+ * gate counts it. */
+const updated = (
+  models: GfxModel[],
+  props: Record<string, unknown>
+): Writes => ({
+  elements: models.length,
+  grows: models.reduce((sum, model) => sum + growthUpdated(model, props), 0),
+  values: models.reduce((sum, model) => sum + valuesUpdated(model, props), 0),
+});
+
+/** BlockSuite's own drag of the node `moved` of `from` dropped on the root
+ * of `into` (`MindMapDragExtension`, the pointer over that root), merging
+ * it there. */
+function dropOnRoot(
+  b: Board,
+  from: MindmapElementModel,
+  moved: string,
+  into: MindmapElementModel
+) {
+  const target = into.tree.element.elementBound.center;
+  const drag = new MindMapDragExtension(b.gfx) as unknown as {
+    _calcDragResponseArea: (map: MindmapElementModel) => void;
+    _createManipulationHandlers: (ctx: unknown) => {
+      onDragEnd: (context: unknown) => void;
+      onDragMove: (context: unknown) => void;
+    };
+    _getHoveredMindMap: () => MindmapElementModel;
+  };
+  drag._getHoveredMindMap = () => {
+    drag._calcDragResponseArea(into);
+    return into;
+  };
+  const { onDragEnd, onDragMove } = drag._createManipulationHandlers({
+    isRoot: false,
+    mindmap: from,
+    node: from.getNode(moved),
+    originalMindMapBound: from.elementBound,
+  });
+  const at = { x: target[0], y: target[1] };
+  onDragMove({ dragLastPos: at });
+  onDragEnd({ dragLastPos: at, dragStartPos: at });
+}
+
 /** The connector watcher works a microtask after a change. */
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 // Review of 8d813a7cc, findings 1, 2 and 5: what a gesture writes is every
-// element it reaches, each with every value it writes there. Fails if a
-// group counts as one, a mind map's node as one, or a connector, a text
-// label's resize, a stroke's resize or a rotation as one value each.
+// element it reaches, each with every value it writes there. Fourth review:
+// and what each value may grow by, a box to 105 characters (`[0,0,10,10]`
+// by 94), a whole number to a float64 (by 7). Fails if a group counts as
+// one, a mind map's node as one, a connector, a text label's resize, a
+// stroke's resize or a rotation as one value each, or a growth is left out.
 it("counts a group's elements, a mind map's nodes, each value written and the labels hanging on them", async () => {
   const b = board();
   const [a1, a2, x] = [b.shape(0), b.shape(20), b.shape(40)];
@@ -269,26 +344,41 @@ it("counts a group's elements, a mind map's nodes, each value written and the la
     type: 'brush',
   });
   await settled();
-  // The group (nothing of its own), its two shapes, and the label of the
-  // connector hanging on one of them.
-  expect(b.written([b.at(g)], 'move')).toEqual({ elements: 4, values: 3 });
+  // The group (nothing of its own), its two shapes (their boxes 94 and 93),
+  // and the label of the connector hanging on one of them (four whole
+  // numbers, 7 each).
+  expect(b.written([b.at(g)], 'move')).toEqual({
+    elements: 4,
+    grows: 94 + 93 + 4 * 7,
+    values: 3,
+  });
   // A node dragged alone may restyle its whole map: the map's tree and both
-  // nodes at the Style count (9 a node).
-  expect(b.written([b.at(node)], 'move')).toEqual({ elements: 3, values: 19 });
-  // A connector moved with its ends: its free ends and label, at most.
+  // nodes at the Style count (9 a node), their boxes, and the node's place in
+  // the tree (an index one character longer).
+  expect(b.written([b.at(node)], 'move')).toEqual({
+    elements: 3,
+    grows: 94 + 93 + 1,
+    values: 19,
+  });
+  // A connector moved with its ends: its free ends and label, at most (its
+  // ends bound, so its label's growth alone).
   expect(b.written([b.at(hanging), b.at(a1), b.at(x)], 'move')).toEqual({
     elements: 3,
+    grows: 94 + 93 + 4 * 7,
     values: 5,
   });
   // A text label's resize writes its box and font size, a stroke's its box
-  // and points; the shape's box moves the label hanging on it.
+  // and points (as long as they were); the shape's box moves the label
+  // hanging on it.
   expect(b.written([b.at(text), b.at(stroke), b.at(x)], 'resize')).toEqual({
     elements: 4,
+    grows: 93 + 7 + 92 + 93 + 4 * 7,
     values: 6,
   });
   // A rotation writes an angle and a place.
   expect(b.written([b.at(text), b.at(stroke)], 'rotate')).toEqual({
     elements: 2,
+    grows: 93 + 7 + 92 + 7,
     values: 4,
   });
 });
@@ -316,38 +406,76 @@ it("counts a mind map's Style and Layout per node, a node's drag as its map's St
     type: 'connector',
   });
   await settled();
-  // The map's value and 9 a node (measured below).
-  expect(b.written([map], 'style')).toEqual({ elements: 5, values: 37 });
-  expect(b.written([map], 'layout')).toEqual({ elements: 5, values: 9 });
-  // A node dragged alone: its whole map at its Style count; its root moves
-  // the map.
+  // The map's value and 9 a node (measured below), each node's box at its
+  // longest (`[0,0,10,10]` by 94, the others by 93).
+  const boxes = 94 + 3 * 93;
+  expect(b.written([map], 'style')).toEqual({
+    elements: 5,
+    grows: boxes,
+    values: 37,
+  });
+  expect(b.written([map], 'layout')).toEqual({
+    elements: 5,
+    grows: boxes,
+    values: 9,
+  });
+  // A node dragged alone: its whole map at its Style count and its place in
+  // the tree; its root moves the map.
   expect(b.written([b.at(ids[1])], 'move')).toEqual({
     elements: 5,
+    grows: boxes + 1,
     values: 37,
   });
   expect(b.written([b.at(ids[0])], 'move')).toEqual({
     elements: 5,
+    grows: boxes,
     values: 5,
   });
   expect(b.written([note, b.at(b.shape(500))], 'move')).toEqual({
     elements: 2,
+    grows: 91 + 92,
     values: 3,
   });
   expect(valuesUpdated(b.at(labelled), { mode: 1 })).toBe(2);
   expect(valuesUpdated(b.at(bare), { mode: 1 })).toBe(1);
   expect(valuesUpdated(b.at(labelled), { stroke: 'red' })).toBe(1);
+  // A mode change places the label again, its four numbers at their
+  // longest (an array's two bytes, then 9 each); a colour turned themed
+  // grows by its object less its string.
+  expect(growthUpdated(b.at(labelled), { mode: 1 })).toBe(
+    2 +
+      4 * 9 -
+      anyBytes((b.at(labelled) as ConnectorElementModel).yMap.get('labelXYWH'))
+  );
+  expect(growthUpdated(b.at(bare), { mode: 1 })).toBe(0);
+  expect(
+    growthUpdated(b.at(bare), {
+      stroke: { dark: '#000000', light: '#ffffff' },
+    })
+  ).toBe(
+    1 +
+      1 +
+      (1 + 4 + 1 + 1 + 7) +
+      (1 + 5 + 1 + 1 + 7) -
+      anyBytes((b.at(bare) as ConnectorElementModel).yMap.get('stroke'))
+  );
 });
 
-// Second and third reviews of the guard: what the gate counts for each
-// gesture bounds what it adds to the room's collected state
+// Second, third and fourth reviews of the guard: what the gate counts for
+// each gesture bounds what it adds to the room's collected state
 // (`collectedSize`, what the room measures), on a board whose clocks passed
 // 10^5: each overwritten value's stub carries its clock twice, 3 bytes each
-// there (a fresh board's are 1 or 2), and a value written for the first time
-// adds its key. Each gesture writes as BlockSuite's does: the board's
-// `updateElement` and `updateBlock` in one change, a connector's drag through
-// its view, a mind map's Style and Layout on its own layout (the view's) over
-// every change of style and layout of a 21-node map. Fails if one grows the
-// board past its count's `BOARD_WRITE_BYTES` a value.
+// there (a fresh board's are 1 or 2), a value written for the first time
+// adds its key, and a value written longer than it was the difference (a box
+// placed on whole numbers dragged at zoom 0.73, a whole angle turned to a
+// float, a colour turned themed). Each gesture writes as BlockSuite's does:
+// the board's `updateElement` and `updateBlock` in one change, a connector's
+// drag through its view, a resize by its handlers' stashes, the toolbar's
+// reorder and Unlock through their actions, an ungroup through its command,
+// a mind map's Style and Layout on its own layout (the view's) over every
+// change of style and layout of a 21-node map, and a node dropped on another
+// map through its drag. Fails if one grows the board past what its count
+// keeps (`bytesOf`).
 it('grows a board whose clocks passed 10^5 by no more than the gate counts for each gesture', async () => {
   const b = board();
   const aged = b.doc.getText('aged');
@@ -398,17 +526,17 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
   vi.stubGlobal('document', { body: measured(), createElement: measured });
   map.layout();
   await settled();
-  const fits = async (
-    counted: { values: number },
-    change: () => void,
-    label: string
-  ) => {
+  const fits = async (counted: Writes, change: () => void, label: string) => {
     const before = collectedSize(b.doc);
     b.store.transact(change);
     await settled();
     const grew = collectedSize(b.doc) - before;
-    expect(grew, label).toBeLessThanOrEqual(BOARD_WRITE_BYTES * counted.values);
+    expect(grew, label).toBeLessThanOrEqual(bytesOf(counted));
   };
+  /** At zoom 0.73 a drag or resize writes 17 significant digits
+   * (`Bound.serialize`). */
+  const zoomed = (bound: Bound, dx: number, dy: number) =>
+    new Bound(bound.x + dx / 0.73, bound.y + dy / 0.73, bound.w, bound.h);
   const models = (ids: string[]) => ids.map(b.at);
   const crud = b.std.get(EdgelessCRUDIdentifier);
   await fits(
@@ -420,12 +548,33 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     'a move'
   );
   await fits(
+    b.written(models(shapes), 'move'),
+    () => {
+      for (const model of models(shapes))
+        crud.updateElement(model.id, {
+          xywh: zoomed(Bound.deserialize(model.xywh), 37, 11).serialize(),
+        });
+    },
+    'a move from whole numbers to floats at zoom 0.73'
+  );
+  await fits(
     b.written(models(shapes), 'rotate'),
     () => {
       for (const [i, id] of shapes.entries())
         crud.updateElement(id, { rotate: 30, xywh: `[${20 * i},8,10,10]` });
     },
     'a rotation'
+  );
+  await fits(
+    b.written(models(shapes), 'rotate'),
+    () => {
+      for (const model of models(shapes))
+        crud.updateElement(model.id, {
+          rotate: 30 / 0.73,
+          xywh: zoomed(Bound.deserialize(model.xywh), 5, 0).serialize(),
+        });
+    },
+    'a rotation from a whole angle to a float'
   );
   await fits(
     b.written(models(texts), 'resize'),
@@ -436,23 +585,38 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
     "a text label's resize"
   );
   await fits(
-    {
-      values: models(strokes).reduce(
-        (sum, model) => sum + valuesUpdated(model, { lineWidth: 8 }),
-        0
-      ),
-    },
+    updated(models(strokes), { lineWidth: 8 }),
     () => {
       for (const id of strokes) crud.updateElement(id, { lineWidth: 8 });
     },
     "a stroke's width"
   );
   await fits(
-    { values: models(shapes).length },
+    b.written(models(strokes), 'resize'),
+    () => {
+      for (const model of models(strokes)) {
+        const { x, y, w, h } = Bound.deserialize(model.xywh);
+        crud.updateElement(model.id, {
+          xywh: new Bound(x, y, w / 0.73, h / 0.73).serialize(),
+        });
+      }
+    },
+    "a stroke's resize"
+  );
+  await fits(
+    updated(models(shapes), { fillColor: '#ff0000' }),
     () => {
       for (const id of shapes) crud.updateElement(id, { fillColor: '#ff0000' });
     },
     'a fill'
+  );
+  const themed = { dark: '#252525', light: '#ffffff' };
+  await fits(
+    updated(models(shapes), { fillColor: themed }),
+    () => {
+      for (const id of shapes) crud.updateElement(id, { fillColor: themed });
+    },
+    'a fill from a colour to a themed one'
   );
   await fits(
     b.written(models(connectors), 'move'),
@@ -472,6 +636,13 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
       }
     },
     "a connector's drag"
+  );
+  await fits(
+    updated(models(connectors), { mode: 1 }),
+    () => {
+      for (const id of connectors) crud.updateElement(id, { mode: 1 });
+    },
+    "a connector's mode"
   );
   // A note placed and scaled for the first time adds its collapse, its
   // collapsed height and its scale.
@@ -498,6 +669,115 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
         });
     },
     "a note's Scale"
+  );
+  await fits(
+    b.written(notes, 'resize'),
+    () => {
+      // A corner, as the note's resize handlers write it.
+      for (const note of notes) {
+        const { x, y, w, h } = Bound.deserialize(note.xywh);
+        note.stash('xywh');
+        note.stash('edgeless');
+        note.props.edgeless = { ...note.props.edgeless, scale: 2 / 0.73 };
+        note.props.xywh = new Bound(x, y, w / 0.73, h / 0.73).serialize();
+        note.pop('xywh');
+        note.pop('edgeless');
+      }
+    },
+    "a note's resize"
+  );
+  await fits(
+    b.written(notes, 'height'),
+    () => {
+      // Its Customized height, as the toolbar writes it.
+      for (const note of notes)
+        b.store.updateBlock(note, () => {
+          const bound = Bound.deserialize(note.xywh);
+          bound.h = 90 * (note.props.edgeless.scale ?? 1);
+          note.xywh = bound.serialize();
+          note.props.edgeless.collapse = true;
+        });
+    },
+    "a note's height"
+  );
+  const panel = notes.map((note) => ({
+    edgeless: {
+      ...note.props.edgeless,
+      style: { ...note.props.edgeless.style, borderRadius: 8 },
+    },
+  }));
+  await fits(
+    notes
+      .map((note, i) => updated([note], panel[i]))
+      .reduce((sum, each) => ({
+        elements: sum.elements + each.elements,
+        grows: sum.grows + each.grows,
+        values: sum.values + each.values,
+      })),
+    () => {
+      for (const [i, note] of notes.entries())
+        crud.updateElement(note.id, panel[i]);
+    },
+    "a note's corners through its style panel"
+  );
+  await fits(
+    orderWrites(models(shapes), b.longest()),
+    () =>
+      action(moreActions, 'a.bring-to-front').run(toolbar(b, models(shapes))),
+    'a reorder'
+  );
+  const locked = [
+    b.at(
+      group(
+        b,
+        each((i) => b.shape(20 * i))
+      )
+    ),
+    ...models(strokes),
+  ];
+  for (const model of locked) model.lock();
+  await fits(
+    unlockWrites(locked, b.longest()),
+    () =>
+      action(builtinLockedToolbarConfig.actions, 'b.unlock').run(
+        toolbar(b, locked)
+      ),
+    'an Unlock'
+  );
+  const grouped = b.at(group(b, texts)) as GroupElementModel;
+  await fits(
+    orderWrites(grouped.childElements, b.longest()),
+    () => b.std.command.exec(ungroupCommand, { group: grouped as never }),
+    'an ungroup'
+  );
+  const planes = models(
+    each((i) =>
+      b.surface.addElement({
+        type: 'plane',
+        x0: -1,
+        xywh: `[${200 * i},900,160,120]`,
+        y0: 1,
+      })
+    )
+  ) as PlaneElementModel[];
+  expect(planes.every((plane) => plane instanceof PlaneElementModel)).toBe(
+    true
+  );
+  await fits(
+    b.written(planes, 'resize'),
+    () => {
+      // As its resize handlers write it: its view follows the dragged side.
+      for (const plane of planes) {
+        const { x, y, w, h } = Bound.deserialize(plane.xywh);
+        plane.fit = false;
+        for (const key of ['xywh', 'x0', 'y0']) plane.stash(key);
+        plane.xywh = new Bound(x + 7 / 0.73, y, w - 7 / 0.73, h).serialize();
+        plane.x0 = -1 + 7 / 0.73 / plane.ppu;
+        plane.y0 = 1 - 3 / 0.73 / plane.ppu;
+        for (const key of ['xywh', 'x0', 'y0']) plane.pop(key);
+      }
+    },
+    "a plane's resize"
   );
   const node = b.at(map.tree.children[0].id) as unknown as {
     strokeColor: unknown;
@@ -538,6 +818,28 @@ it('grows a board whose clocks passed 10^5 by no more than the gate counts for e
       },
       `Layout ${layout}`
     );
+  // A node of one map dropped on another's root, both laid out.
+  const from = mindmap(b, 2000, 4);
+  const into = mindmap(b, 3000, 4);
+  for (const laid of [from.map, into.map]) {
+    (
+      MindMapView.prototype as unknown as { _setLayoutMethod: () => void }
+    )._setLayoutMethod.call({ model: laid });
+    laid.layout();
+  }
+  await settled();
+  const branch = from.map.getNode(from.ids[1]);
+  if (!branch) throw new Error('no node');
+  const moving = [
+    branch.element,
+    ...branch.children.map((child) => child.element),
+  ];
+  await fits(
+    mergeWrites(into.map, moving, b.written),
+    () => dropOnRoot(b, from.map, from.ids[1], into.map),
+    'a merge'
+  );
+  expect(into.map.getNode(from.ids[1])).not.toBeNull();
 });
 
 // Review of 8d813a7cc, tests: the gate sits on the board's one
@@ -568,23 +870,29 @@ it("gates the drag DefaultTool starts and the frame's resize and rotation on the
       keys: { alt: false },
       raw: {},
     } as unknown as PointerEventState);
-  b.roomFor(1);
+  // Two boxes, and what they may grow by.
+  const moved = b.written([b.at(g)], 'move');
+  expect(moved).toEqual({ elements: 3, grows: 94 + 93, values: 2 });
+  b.roomShort(moved, 1);
   await drag();
   expect(started.handleElementMove).not.toHaveBeenCalled();
   expect(userToast).toHaveBeenCalledOnce();
-  b.roomFor(2);
+  b.roomShort(moved, 0);
   await drag();
   expect(started.handleElementMove).toHaveBeenCalledOnce();
 
-  // What the selection frame calls at a press on its handles.
+  // What the selection frame calls at a press on its handles: a rotation
+  // writes an angle too.
   const frame = b.std.getOptional(InteractivityIdentifier);
   const elements = [b.at(a1), b.at(a2)];
-  b.roomFor(3);
+  const turned = b.written(elements, 'rotate');
+  expect(turned).toEqual({ elements: 2, grows: 94 + 93 + 2 * 7, values: 4 });
+  b.roomShort(turned, 1);
   frame?.handleElementRotate({ elements } as never);
   expect(started.handleElementRotate).not.toHaveBeenCalled();
   frame?.handleElementResize({ elements } as never);
   expect(started.handleElementResize).toHaveBeenCalledOnce();
-  b.roomFor(4);
+  b.roomShort(turned, 0);
   frame?.handleElementRotate({ elements } as never);
   expect(started.handleElementRotate).toHaveBeenCalledOnce();
   expect(userToast).toHaveBeenCalledTimes(2);
@@ -625,16 +933,24 @@ it('ungroups a group when its direct elements fit, however many its groups hold,
     b.store,
     b.std.command,
     { adds: [], places: [], ungroup: ungroupCommand },
-    () => ({ elements: 0, values: 0 })
+    () => ({ elements: 0, grows: 0, values: 0 }),
+    b.longest
   );
-  b.roomFor(1);
+  // Its two direct elements' indexes, made next to the board's (two
+  // characters long): the first at most 3 long, the second 4.
+  const ungrouped = orderWrites(
+    (b.at(outer) as GroupElementModel).childElements,
+    b.longest()
+  );
+  expect(ungrouped).toEqual({ elements: 2, grows: 3 + 4 - 2 - 2, values: 2 });
+  b.roomShort(ungrouped, 1);
   b.sent.length = 0;
   const [refused] = b.std.command.exec(ungroupCommand, {
     group: b.at(outer) as never,
   });
   expect(refused).toBe(false);
   expect(b.sent).toEqual([]);
-  b.roomFor(2);
+  b.roomShort(ungrouped, 0);
   const [done] = b.std.command.exec(ungroupCommand, {
     group: b.at(outer) as never,
   });
@@ -687,7 +1003,7 @@ it('refuses a lock of several and a reorder past a full board before either writ
   const b = board();
   const [a1, a2, x] = [b.shape(0), b.shape(20), b.shape(40)];
   group(b, [a1, a2]);
-  const stop = gateToolbarWrites(b.store, b.written);
+  const stop = gateToolbarWrites(b.store, b.written, b.longest);
   onTestFinished(stop);
   b.roomFor(10);
   b.sent.length = 0;
@@ -695,11 +1011,15 @@ it('refuses a lock of several and a reorder past a full board before either writ
   action(builtinMiscToolbarConfig.actions, 'b.lock').run(toolbar(b, models));
   expect(b.sent).toEqual([]);
   expect(b.at(a1).group).not.toBeNull();
-  b.roomFor(1);
+  // Two indexes made next to the board's (two characters long): the first
+  // at most 3 long, the second 4.
+  const reordered = orderWrites(models, b.longest());
+  expect(reordered).toEqual({ elements: 2, grows: 3 + 4 - 2 - 2, values: 2 });
+  b.roomShort(reordered, 1);
   action(moreActions, 'a.bring-to-front').run(toolbar(b, models));
   expect(b.sent).toEqual([]);
   expect(userToast).toHaveBeenCalledTimes(2);
-  b.roomFor(2);
+  b.roomShort(reordered, 0);
   action(moreActions, 'a.bring-to-front').run(toolbar(b, models));
   expect(b.sent).not.toEqual([]);
 });
@@ -742,7 +1062,7 @@ it("refuses the alignment menu's pick past a full board before any element moves
   const b = board();
   const loose = connector(b, [0, 100], [50, 150]);
   const models = [b.at(loose), b.at(b.shape(20)), b.at(b.shape(40))];
-  const stop = gateToolbarWrites(b.store, b.written);
+  const stop = gateToolbarWrites(b.store, b.written, b.longest);
   onTestFinished(stop);
   const align = () => {
     const menu = (
@@ -754,12 +1074,16 @@ it("refuses the alignment menu's pick past a full board before any element moves
     // Its first item is Align left.
     handlers(menu, '@click')[0]();
   };
-  b.roomFor(4);
+  // The connector's free ends and label, and the two shapes' boxes, with
+  // what each may grow by.
+  const placed = b.written(models, 'place');
+  expect(placed).toMatchObject({ elements: 3, values: 5 });
+  b.roomShort(placed, 1);
   b.sent.length = 0;
   align();
   expect(b.sent).toEqual([]);
   expect(userToast).toHaveBeenCalledOnce();
-  b.roomFor(5);
+  b.roomShort(placed, 0);
   align();
   expect(b.sent).not.toEqual([]);
 });
@@ -782,7 +1106,7 @@ it("refuses a note's Scale and height of several notes past a full board before 
     b.store.updateBlock(note, () => {
       note.props.edgeless.collapse = true;
     });
-  const stop = gateToolbarWrites(b.store, b.written);
+  const stop = gateToolbarWrites(b.store, b.written, b.longest);
   onTestFinished(stop);
   let module: { config: { actions: unknown[] } } | undefined;
   for (const extension of createBuiltinToolbarConfigExtension('affine:note'))
@@ -812,18 +1136,23 @@ it("refuses a note's Scale and height of several notes past a full board before 
       .generate(ctx)
       .run(ctx);
   };
-  // Two notes: a Scale four values each (its scale a new key), a height
-  // three.
-  b.roomFor(7);
+  // Two notes: a Scale four values each (its scale a new key) and its box
+  // and scale at their longest (`[0,0,200,80]` by 93, `[300,0,200,80]` by
+  // 91, a scale from none by 9), a height three and its box.
+  const scaled = b.written(notes, 'scale');
+  expect(scaled).toEqual({ elements: 2, grows: 93 + 91 + 2 * 9, values: 8 });
+  const sized = b.written(notes, 'height');
+  expect(sized).toEqual({ elements: 2, grows: 93 + 91, values: 6 });
+  b.roomShort(scaled, 1);
   b.sent.length = 0;
   scale(200);
-  b.roomFor(5);
+  b.roomShort(sized, 1);
   height();
   expect(b.sent).toEqual([]);
   expect(userToast).toHaveBeenCalledTimes(2);
-  b.roomFor(8);
+  b.roomShort(scaled, 0);
   scale(200);
-  b.roomFor(6);
+  b.roomShort(sized, 0);
   height();
   expect(notes.map((note) => note.props.edgeless.scale)).toEqual([2, 2]);
   expect(notes.map((note) => note.props.edgeless.collapse)).toEqual([
@@ -875,7 +1204,7 @@ it("refuses a mind map's node dragged off its map on a full board, an add, and w
     },
     type: 'mindmap',
   });
-  const stop = gateToolbarWrites(b.store, b.written);
+  const stop = gateToolbarWrites(b.store, b.written, b.longest);
   onTestFinished(stop);
   const mindmap = b.at(map) as MindmapElementModel;
   const dragOff = () => {
@@ -911,7 +1240,7 @@ it("refuses a mind map's node dragged off its map on a full board, an add, and w
 it("refuses a mind map's Style and Layout past a full board before any node changes", () => {
   const b = board();
   const { map } = mindmap(b, 0, 2);
-  const stop = gateToolbarWrites(b.store, b.written);
+  const stop = gateToolbarWrites(b.store, b.written, b.longest);
   onTestFinished(stop);
   // The menus' items, in order: Style's one, four, three, two; Layout's
   // left, radial, right.
@@ -922,18 +1251,23 @@ it("refuses a mind map's Style and Layout past a full board before any node chan
       ),
       '@click'
     )[item]();
-  // The map's value, and 9 or 2 for each of its three nodes.
-  b.roomFor(27);
+  // The map's value, and 9 or 2 for each of its three nodes, with their
+  // boxes at their longest.
+  const styled = b.written([map], 'style');
+  expect(styled).toEqual({ elements: 4, grows: 94 + 93 + 93, values: 28 });
+  const laidOut = b.written([map], 'layout');
+  expect(laidOut).toEqual({ elements: 4, grows: 94 + 93 + 93, values: 7 });
+  b.roomShort(styled, 1);
   b.sent.length = 0;
   pick('a.style', 3);
-  b.roomFor(6);
+  b.roomShort(laidOut, 1);
   pick('b.layout', 0);
   expect(b.sent).toEqual([]);
   expect(userToast).toHaveBeenCalledTimes(2);
-  b.roomFor(28);
+  b.roomShort(styled, 0);
   pick('a.style', 3);
   expect(map.style).toBe(MindmapStyle.TWO);
-  b.roomFor(7);
+  b.roomShort(laidOut, 0);
   pick('b.layout', 0);
   expect(map.layoutType).toBe(LayoutType.LEFT);
 });
@@ -946,19 +1280,27 @@ it('refuses an Unlock of several past a full board before any element unlocks', 
   const g = group(b, [b.shape(0), b.shape(20), b.shape(40)]);
   const models = [b.at(g), b.at(b.shape(60)), b.at(b.shape(80))];
   for (const model of models) model.lock();
-  const stop = gateToolbarWrites(b.store, b.written);
+  const stop = gateToolbarWrites(b.store, b.written, b.longest);
   onTestFinished(stop);
   const unlock = () =>
     action(builtinLockedToolbarConfig.actions, 'b.unlock').run(
       toolbar(b, models)
     );
-  // The group's three elements and two locks.
-  b.roomFor(4);
+  // The group's three elements' indexes, made next to the board's (two
+  // characters long, the i-th at most 2 + i), and two locks (as long either
+  // way).
+  const unlocked = unlockWrites(models, b.longest());
+  expect(unlocked).toEqual({
+    elements: 5,
+    grows: 3 + 4 + 5 - 3 * 2,
+    values: 5,
+  });
+  b.roomShort(unlocked, 1);
   b.sent.length = 0;
   unlock();
   expect(b.sent).toEqual([]);
   expect(userToast).toHaveBeenCalledOnce();
-  b.roomFor(5);
+  b.roomShort(unlocked, 0);
   unlock();
   expect(models.slice(1).map((model) => model.isLocked())).toEqual([
     false,
@@ -981,44 +1323,29 @@ it('refuses a node merged into another mind map past a full board, and writes no
     b.surface.updateElement(id, {
       xywh: b.at(id).elementBound.moveDelta(0, 500).serialize(),
     });
-  const stop = gateToolbarWrites(b.store, b.written);
+  const stop = gateToolbarWrites(b.store, b.written, b.longest);
   onTestFinished(stop);
   const [, moved] = from.ids;
-  const target = b.at(into.ids[0]).elementBound.center;
-  const drop = () => {
-    const drag = new MindMapDragExtension(b.gfx) as unknown as {
-      _calcDragResponseArea: (map: MindmapElementModel) => void;
-      _createManipulationHandlers: (ctx: unknown) => {
-        onDragEnd: (context: unknown) => void;
-        onDragMove: (context: unknown) => void;
-      };
-      _getHoveredMindMap: () => MindmapElementModel;
-    };
-    // The pointer is over the second map's root.
-    drag._getHoveredMindMap = () => {
-      drag._calcDragResponseArea(into.map);
-      return into.map;
-    };
-    const { onDragEnd, onDragMove } = drag._createManipulationHandlers({
-      isRoot: false,
-      mindmap: from.map,
-      node: from.map.getNode(moved),
-      originalMindMapBound: from.map.elementBound,
-    });
-    const at = { x: target[0], y: target[1] };
-    onDragMove({ dragLastPos: at });
-    onDragEnd({ dragLastPos: at, dragStartPos: at });
-  };
+  const drop = () => dropOnRoot(b, from.map, moved, into.map);
   // Checked once, at the drop, for both maps: the first at its Style count
   // (its value, 9 for each of its two nodes), the second laid out (its value,
-  // 2 for each of its two nodes).
-  b.roomFor(23);
+  // 2 for each of its two nodes), each node's box at its longest, and the
+  // moved node's place in the second map's tree, a new key (its id of 10
+  // characters, 11 bytes, and its place at the longest, 32).
+  expect(moved).toHaveLength(10);
+  const merged = mergeWrites(into.map, [b.at(moved)], b.written);
+  expect(merged).toEqual({
+    elements: 6,
+    grows: 94 + 93 + 92 + 91 + 11 + 32,
+    values: 19 + 5 + 2,
+  });
+  b.roomShort(merged, 1);
   b.sent.length = 0;
   drop();
   expect(b.sent).toEqual([]);
   expect(userToast).toHaveBeenCalledOnce();
   expect(from.map.getNode(moved)).not.toBeNull();
-  b.roomFor(24);
+  b.roomShort(merged, 0);
   drop();
   expect(into.map.getNode(moved)).not.toBeNull();
 });
@@ -1049,27 +1376,33 @@ it("gates the board's arrow keys, toolbar updates, commands and toolbar writes a
   };
   // An arrow key on the group: its two shapes.
   b.gfx.selection.set({ editing: false, elements: [g] });
-  b.roomFor(1);
+  const nudged = b.written([b.at(g)], 'move');
+  b.roomShort(nudged, 1);
   expect(nudge()).toBe(true);
-  b.roomFor(2);
+  b.roomShort(nudged, 0);
   expect(nudge()).toBe(false);
   // The toolbar's fill on the group's elements: the group and its shapes.
   const crud = b.std.get(EdgelessCRUDIdentifier);
+  const filled = updated([g, a1, a2].map(b.at), { fillColor: 'red' });
+  b.roomShort(filled, 1);
   b.sent.length = 0;
   for (const id of [a1, a2]) crud.updateElement(id, { fillColor: 'red' });
   expect(b.sent).toEqual([]);
   await Promise.resolve();
-  b.roomFor(3);
+  b.roomShort(filled, 0);
   for (const id of [a1, a2]) crud.updateElement(id, { fillColor: 'red' });
   expect(b.sent).not.toEqual([]);
   await Promise.resolve();
   // A mode change on two labelled connectors: each its mode and label.
   b.gfx.selection.set({ editing: false, elements: labelled });
+  const moded = updated(labelled.map(b.at), { mode: 1 });
+  expect(moded.values).toBe(4);
+  b.roomShort(moded, 1);
   b.sent.length = 0;
   for (const id of labelled) crud.updateElement(id, { mode: 1 });
   expect(b.sent).toEqual([]);
   await Promise.resolve();
-  b.roomFor(4);
+  b.roomShort(moded, 0);
   for (const id of labelled) crud.updateElement(id, { mode: 1 });
   expect(b.sent).not.toEqual([]);
   await Promise.resolve();
@@ -1083,17 +1416,23 @@ it("gates the board's arrow keys, toolbar updates, commands and toolbar writes a
   b.gfx.selection.set({ editing: false, elements: notes });
   vi.mocked(userToast).mockClear();
   b.sent.length = 0;
+  const arranged = b.written(
+    notes.map((id) => b.store.getModelById(id) as NoteBlockModel),
+    'place'
+  );
+  expect(arranged.values).toBe(12);
   b.std.command.exec(createGroupFromSelectedCommand);
-  b.roomFor(11);
+  b.roomShort(arranged, 1);
   b.std.command.exec(autoArrangeElementsCommand);
   expect(b.sent).toEqual([]);
   expect(userToast).toHaveBeenCalledTimes(2);
-  b.roomFor(12);
+  b.roomShort(arranged, 0);
   b.std.command.exec(autoArrangeElementsCommand);
   expect(b.sent).not.toEqual([]);
   // A mind map's Style, through the board's count.
-  b.roomFor(27);
+  const styled = b.written([map], 'style');
+  b.roomShort(styled, 1);
   expect(boardWrites.refuses(b.store, [map], 'style')).toBe(true);
-  b.roomFor(28);
+  b.roomShort(styled, 0);
   expect(boardWrites.refuses(b.store, [map], 'style')).toBe(false);
 });

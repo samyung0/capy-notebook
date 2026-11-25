@@ -25,6 +25,7 @@ import {
   gateNudges,
   gateSelectionWrites,
   gateToolbarWrites,
+  longestIndex,
   writesOf,
 } from './boardFull';
 
@@ -67,7 +68,8 @@ export function gateBoardWrites(board: EventTarget, std: BlockStdScope) {
     const elements = [...elementsWritten(gfx.selection.selectedElements)];
     return elements.some((element) => element.id === id) ? elements : null;
   });
-  const ungateToolbar = gateToolbarWrites(store, written);
+  const longest = () => longestIndex(gfx.gfxElements);
+  const ungateToolbar = gateToolbarWrites(store, written, longest);
   gateCommands(
     store,
     std.command,
@@ -80,7 +82,8 @@ export function gateBoardWrites(board: EventTarget, std: BlockStdScope) {
       places: [autoArrangeElementsCommand, autoResizeElementsCommand],
       ungroup: ungroupCommand,
     },
-    () => written(gfx.selection.selectedElements, 'place')
+    () => written(gfx.selection.selectedElements, 'place'),
+    longest
   );
   return () => {
     ungateNudges();
