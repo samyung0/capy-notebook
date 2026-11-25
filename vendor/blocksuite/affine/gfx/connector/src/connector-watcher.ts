@@ -3,9 +3,12 @@ import {
   type SurfaceMiddleware,
   surfaceMiddlewareExtension,
 } from '@blocksuite/affine-block-surface';
-import type { ConnectorElementModel } from '@blocksuite/affine-model';
+import {
+  type ConnectorElementModel,
+  MindmapElementModel,
+} from '@blocksuite/affine-model';
 import { noteSizeWrites } from '@blocksuite/affine-shared/utils';
-import { type GfxModel, GfxPrimitiveElementModel } from '@blocksuite/std/gfx';
+import { activeInteractionOf, type GfxModel } from '@blocksuite/std/gfx';
 
 import { ConnectorPathGenerator } from './connector-manager';
 
@@ -22,29 +25,52 @@ export const connectorWatcher: SurfaceMiddleware = (
    * read-only store the path is drawn again and the label's place stays as
    * the document has it (the tab that made the change writes it; local change
    * 75 shows the label on the path drawn). */
-  /* Capy (vendor/blocksuite/README.md, local change 83): an element in the
-   * middle of this tab's gesture (a drag, a resize, a turn) shows a place or
-   * turn BlockSuite stashed, not the stored one, until the gesture ends. The
-   * label of a connector hanging on it then moves this tab's alone (`held`),
-   * and is written once, inside the change that stores the element's place at
-   * the end, so Undo takes them back together. */
-  const held = new WeakSet<ConnectorElementModel>();
-  const stored = (element: GfxModel, key: 'rotate' | 'xywh') =>
-    element instanceof GfxPrimitiveElementModel
-      ? element.yMap.get(key)
-      : element.yBlock.get(`prop:${key}`);
-  const midGesture = (id: string | undefined) => {
+  /* Capy (vendor/blocksuite/README.md, local change 83): the elements in this
+   * tab's gesture (a drag, a resize, a turn) show places BlockSuite stashed
+   * until it ends. The label of a connector hanging on one of them moves this
+   * tab's alone (`held`), and is written once, inside the change that stores
+   * the element's place at the end, so Undo takes them back together; one
+   * whose ends were stored unchanged is released after the gesture, writing
+   * nothing. A mind map's root dragged lays its whole map out at every
+   * frame. */
+  const held = new Set<ConnectorElementModel>();
+  let watching: (() => void) | null = null;
+  const inGesture = (elements: readonly GfxModel[], id: string | undefined) => {
     const element = id ? elementGetter(id) : null;
+    if (!element) return false;
+    const map = element.group;
     return (
-      !!element &&
-      (['rotate', 'xywh'] as const).some(key => {
-        const value = stored(element, key);
-        return value !== undefined && value !== element[key];
-      })
+      elements.includes(element) ||
+      (map instanceof MindmapElementModel &&
+        !!map.tree &&
+        elements.includes(map.tree.element))
     );
   };
-  const endsMidGesture = (connector: ConnectorElementModel) =>
-    midGesture(connector.source?.id) || midGesture(connector.target?.id);
+  const endsMidGesture = (connector: ConnectorElementModel) => {
+    const elements = activeInteractionOf(surface.store)?.peek()?.elements;
+    return (
+      !!elements &&
+      (inGesture(elements, connector.source?.id) ||
+        inGesture(elements, connector.target?.id))
+    );
+  };
+  const hold = (connector: ConnectorElementModel) => {
+    held.add(connector);
+    connector.stash('labelXYWH');
+    const gesture = activeInteractionOf(surface.store);
+    if (watching || !gesture) return;
+    watching = gesture.subscribe(active => {
+      if (active) return;
+      watching?.();
+      watching = null;
+      queueMicrotask(() => {
+        held.forEach(connector => {
+          if (surface.hasElementById(connector.id)) connector.pop('labelXYWH');
+        });
+        held.clear();
+      });
+    });
+  };
   const updateConnectorPath = (
     connector: ConnectorElementModel,
     own: boolean
@@ -56,14 +82,13 @@ export const connectorWatcher: SurfaceMiddleware = (
         (!connector.target?.id && connector.target?.position))
     ) {
       const place = own && !surface.store.readonly;
-      // Capy (local change 83): held while an end is mid-gesture.
-      const hold = place && connector.hasLabel() && endsMidGesture(connector);
-      if (hold) {
-        held.add(connector);
-        connector.stash('labelXYWH');
-      }
+      // Capy (local change 83): held while an end is in this tab's gesture.
+      const holding =
+        place && connector.hasLabel() && endsMidGesture(connector);
+      if (holding) hold(connector);
       ConnectorPathGenerator.updatePath(connector, null, elementGetter, place);
-      if (place && !hold && held.delete(connector)) connector.pop('labelXYWH');
+      if (place && !holding && held.delete(connector))
+        connector.pop('labelXYWH');
     }
   };
   const pendingList = new Map<ConnectorElementModel, boolean>();
@@ -151,6 +176,7 @@ export const connectorWatcher: SurfaceMiddleware = (
     );
 
   return () => {
+    watching?.();
     pendingFlag = false;
     pendingList.clear();
     disposables.forEach(d => d.unsubscribe());

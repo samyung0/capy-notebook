@@ -1129,10 +1129,13 @@ Outside this directory, for BlockSuite:
     `moveTo`, which the drag calls on every frame, stored a free end's `source` or
     `target` each time. Interleaved with the other connectors', those writes never
     merge: a select-all drag of a board with free-ended connectors grew it by about
-    20 B a connector a frame. The drag now stashes `labelXYWH`, `source` and
-    `target` and pops all three, each written once if it changed. Pinned by "drags a
-    connector with its free ends and label this tab's" in
-    `src/features/blocksuite/connectorLabel.test.ts`.
+    20 B a connector a frame. The drag now stashes `labelXYWH` and each free end
+    (`source`, `target` with no `id`) and pops them, each written once if it
+    changed. A bound end, which `moveTo` never changes, stays stored, so a peer's
+    re-attach or detach made mid-drag stands (the second guard review found the
+    first version writing the stale end back over it). Pinned by "drags a
+    connector with its free ends and label this tab's" and "keeps a peer's
+    re-attach of a bound end" in `src/features/blocksuite/connectorLabel.test.ts`.
 
 81. A resized pen or highlighter stroke keeps its points this tab's until the
     resize ends (`affine/gfx/brush` `interaction.ts`, registered in `view.ts`, marked
@@ -1166,29 +1169,55 @@ Outside this directory, for BlockSuite:
 
 83. The label of a connector hanging on an element in the middle of this tab's
     gesture stays this tab's until the gesture ends (`affine/gfx/connector`
-    `connector-watcher.ts`, marked `Capy (local change 83)`; found 2026-11-25 with
-    local change 80). A drag, resize or turn shows the element's place from
+    `connector-watcher.ts`, and `framework/std` `gfx/interactivity/manager.ts`'s
+    `activeInteractionOf`, exported from `gfx/interactivity/index.ts` and
+    `gfx/index.ts`, marked `Capy (local change 83)`; found 2026-11-25 with local
+    change 80). A drag, resize or turn shows the element's place from
     BlockSuite's stash, and local change 63's watcher took each frame's change as
     this tab's own and stored the label's new place every frame: a 60-frame drag
     of a shape grew the board 799 B with one labelled connector on it, 2,607 B with
-    two and 13,050 B with ten (about 20 B a label a frame, on any board). While an
-    end's shown `xywh` or `rotate` is not its stored one, the label is stashed
-    (`held`); the change that stores the end's place at the gesture's end writes
-    it, inside that change, so Undo takes them back together. The same drags now
-    write nothing over their frames and grow the board 37, 46 and 129 B. A
-    connector's own drag keeps its label as local change 80 does. Pinned by "holds
-    the labels hanging on a shape mid-drag this tab's" in
-    `src/features/blocksuite/connectorLabel.test.ts`.
+    two and 13,050 B with ten (about 20 B a label a frame, on any board). Each
+    mounted board's `InteractivityManager` is kept by its store, and while one of
+    a connector's ends is among the elements of its `activeInteraction$` (a
+    node of a mind map whose root is among them too: a root's drag lays its map
+    out at every frame), the label is stashed (`held`). The change that stores
+    the end's place at the gesture's end writes it, inside that change, so Undo
+    takes them back together; a label still held once the gesture ended (its
+    ends stored unchanged) is popped a microtask later, writing nothing. The
+    same drags now write nothing over their frames and grow the board 37, 46 and
+    129 B. The first version took an end whose shown `xywh` differed from its
+    stored one as mid-gesture, and a note showing a size it measured (local
+    change 75) keeps its `xywh` stashed for as long as it shows it: the label of
+    a connector on it stayed local, and Undo took a move back without it (second
+    guard review). A connector's own drag keeps its label as local change 80
+    does. Pinned by "holds the labels hanging on a shape mid-gesture this tab's"
+    in `src/features/blocksuite/connectorLabel.test.ts` and "stores the label of a
+    connector hanging on a note that shows a measured size" in
+    `src/features/blocksuite/noteSize.test.ts`.
 
-84. The width slider picks a value once a drag, as it changes
-    (`affine/components` `slider/slider.ts`, marked `Capy (local change 84)`; found
-    2026-11-25 with local change 82). It picked again at every pointer move, the
-    value unchanged too, and each pick rewrites every selected element's width
-    (a stroke's, a shape's or a connector's through the board's `updateElement`, a
-    card note's border through its style panel): a drag over a selection stored
-    each element's width at every pointer move. A press starts from the shown
-    value, and a move picks only a value this drag has not just picked. Pinned by
-    "picks a width once a drag" in `src/features/blocksuite/boardWrites.test.ts`.
+84. The width slider picks a value at its press and as a drag changes it
+    (`affine/components` `slider/slider.ts`, marked `Capy (local change 84)`;
+    found 2026-11-25 with local change 82). It picked again at every pointer
+    move, the value unchanged too, and each pick rewrites every selected
+    element's width (a stroke's, a shape's or a connector's through the board's
+    `updateElement`, a card note's border through its style panel): a drag over a
+    selection stored each element's width at every pointer move. A press always
+    picks (the shown value is the most common of mixed widths, and a press on it
+    makes them all that width, as upstream), and a move picks only a value this
+    drag has not just picked. Pinned by "picks a width at the press and as a drag
+    changes it" in `src/features/blocksuite/boardWrites.test.ts`, through the
+    slider's own press.
+
+85. A connector's end dragged by its handle keeps the end and its label this
+    tab's until the pointer is up (`affine/gfx/connector`
+    `components/connector-handle.ts`, marked `Capy (local change 85)`; second
+    review of the full board's write gate, 2026-11-25). Upstream set the end at
+    every pointer move, and local change 63's watcher placed the label on the
+    new path each time: about 20 B a frame, never merged, on any board. The
+    press stashes the end and `labelXYWH` and the pointer's release pops both in
+    one change before its `captureSync`, each written once if it changed. Pinned
+    by "drags a connector's end by its handle with its label this tab's" in
+    `src/features/blocksuite/connectorLabel.test.ts`.
 
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and

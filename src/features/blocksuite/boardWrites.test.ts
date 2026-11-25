@@ -519,28 +519,31 @@ it("refuses a note's Scale of several notes past a full board before any is scal
 
 // Leftovers of 0366a0a15, item 2 (local change 84): the width slider picked
 // again at every pointer move, the value unchanged too, and each pick
-// rewrites every selected element's width. Fails if a move that keeps the
-// value picks.
-it('picks a width once a drag, as it changes, not at every move', () => {
+// rewrites every selected element's width. Second review: a press on the
+// shown width (the most common of mixed widths) must still pick it. Fails if
+// a move that keeps the value picks, or a press does not.
+it('picks a width at the press and as a drag changes it, not at every move', () => {
+  const slider = new Slider();
+  Object.assign(slider, { range: { points: [2, 4, 6, 8] }, value: 4 });
+  // 100 px wide, unrendered.
+  slider.getBoundingClientRect = () => ({ width: 100 }) as DOMRect;
   const picked: number[] = [];
-  // The slider as it stands, unrendered: 100 px wide, four widths.
-  const slider = Object.create(Slider.prototype, {
-    _onSelect: { value: (value: number) => picked.push(value) },
-    getBoundingClientRect: { value: () => ({ width: 100 }) },
-    range: { value: { points: [2, 4, 6, 8] } },
-    sliderStyle: { value: undefined },
-    value: { value: 4 },
-  }) as {
-    _picked: number | null;
-    _updateLineWidthPanelByDragHandlePosition: (x: number) => void;
-    value: number;
-  };
-  const move = (x: number) =>
-    slider._updateLineWidthPanelByDragHandlePosition(x);
-  // A press starts from the shown width.
-  slider._picked = slider.value;
-  for (const x of [40, 41, 42, 90, 91, 92, 40]) move(x);
-  expect(picked).toEqual([8, 4]);
+  slider.addEventListener('select', (event) =>
+    picked.push((event as CustomEvent<{ value: number }>).detail.value)
+  );
+  const at = (type: string, offsetX: number) =>
+    Object.assign(new Event(type), { offsetX }) as PointerEvent;
+  const press = (offsetX: number) =>
+    (
+      slider as unknown as { _onPointerDown: (e: PointerEvent) => void }
+    )._onPointerDown(at('pointerdown', offsetX));
+  // Widths 4, 4 and 8 selected: 4 shows, and a press on it makes all three 4.
+  press(40);
+  for (const x of [41, 42, 90, 91, 92, 40])
+    slider.dispatchEvent(at('pointermove', x));
+  slider.dispatchEvent(new Event('pointerup'));
+  press(40);
+  expect(picked).toEqual([4, 8, 4, 4]);
 });
 
 // Leftovers of 0366a0a15, item 3 (local change 82): a mind map's node
