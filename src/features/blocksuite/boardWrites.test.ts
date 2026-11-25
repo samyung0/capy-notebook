@@ -51,7 +51,15 @@ import {
 } from '@blocksuite/affine/std/gfx';
 import { MemoryBlobSource } from '@blocksuite/affine/sync';
 import { parseHTML } from 'linkedom';
-import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from 'vitest';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 // BlockSuite's slider and element toolbar actions, which their entries don't
@@ -486,10 +494,80 @@ it("counts a mind map's Style and Layout per node, a node's drag as its map's St
   );
 });
 
-// Second to fifth reviews of the guard: what the gate counts for each
+/** Each kind's elements an aged board's test makes. */
+const n = 20;
+
+/** A board whose clocks passed 10^5 (one insert of 200,000 characters,
+ * deleted: an insert moves its client's clock by its length) and the
+ * room's replica beside it: a collected copy that takes each update the
+ * board sends in turn, as the room judges each on its own (a change a
+ * write's observer makes, as an emptied group's removal, is already on
+ * the board when the update before it is sent). */
+function aged() {
+  const b = board();
+  const text = b.doc.getText('aged');
+  text.insert(0, 'x'.repeat(200_000));
+  text.delete(0, 200_000);
+  const room = new Y.Doc();
+  Y.applyUpdate(room, Y.encodeStateAsUpdate(b.doc));
+  const content = () => JSON.stringify(room.getMap('blocks').toJSON());
+  let before = 0;
+  let grew: number[] | null = null;
+  b.doc.on('update', (update: Uint8Array) => {
+    Y.applyUpdate(room, update);
+    grew?.push(collectedSize(room) - before);
+  });
+  /** Whether `change` fits what its count keeps after each update it
+   * sends: one change, as a gesture's end writes, or `apart`, each write
+   * its own (a toolbar action's loop, a command, a drop). The board must
+   * change: a case that writes what it holds proves nothing. */
+  const fits = async (
+    counted: Writes,
+    change: () => void,
+    label: string,
+    apart = false
+  ) => {
+    const was = content();
+    before = collectedSize(room);
+    const sent: number[] = [];
+    grew = sent;
+    if (apart) change();
+    else b.store.transact(change);
+    await settled();
+    grew = null;
+    // biome-ignore lint/suspicious/noMisplacedAssertion: `fits` runs only inside the aged board's tests.
+    expect(content(), label).not.toBe(was);
+    // biome-ignore lint/suspicious/noMisplacedAssertion: as above; the board changed, so an update came.
+    expect(Math.max(...sent), label).toBeLessThanOrEqual(bytesOf(counted));
+  };
+  const root = b.store.root;
+  if (!root) throw new Error('no root');
+  return {
+    ...b,
+    crud: b.std.get(EdgelessCRUDIdentifier),
+    each: (make: (i: number) => string) =>
+      Array.from({ length: n }, (_, i) => make(i)),
+    fits,
+    models: (ids: string[]) => ids.map(b.at),
+    root,
+  };
+}
+
+/** At zoom 0.73 a drag or resize writes 17 significant digits
+ * (`Bound.serialize`). */
+const zoomed = (bound: Bound, dx: number, dy: number) =>
+  new Bound(bound.x + dx / 0.73, bound.y + dy / 0.73, bound.w, bound.h);
+
+const summed = (writes: Writes[]) =>
+  writes.reduce((sum, each) => ({
+    elements: sum.elements + each.elements,
+    grows: sum.grows + each.grows,
+    values: sum.values + each.values,
+  }));
+
+// Second to sixth reviews of the guard: what the gate counts for each
 // gesture bounds what each update it sends adds to the room's collected
-// state (a collected copy takes each update in turn, as the room's replica
-// does), on a board whose clocks passed 10^5: each overwritten value's stub
+// state, on a board whose clocks passed 10^5: each overwritten value's stub
 // carries its clock twice, 3 bytes each there (a fresh board's are 1 or 2),
 // a value written for the first time adds its key, and a value written
 // longer than it was the difference (a box placed on whole numbers dragged
@@ -502,602 +580,618 @@ it("counts a mind map's Style and Layout per node, a node's drag as its map's St
 // stashes, the toolbar's reorder and Unlock through their actions, an
 // ungroup through its command, a mind map's Style and Layout on its own
 // layout (the view's) over every change of style and layout of a 21-node
-// map, and a node dropped on another map through its drag. Fails if one
+// map, and a node dropped on another map through its drag. Each test builds
+// its own board, holding the elements its gestures write. Fails if one
 // update grows the board past what its gesture's count keeps (`bytesOf`).
-it('grows a board whose clocks passed 10^5 by no more than the gate counts for each gesture', async () => {
-  const b = board();
-  const aged = b.doc.getText('aged');
-  aged.insert(0, 'x'.repeat(200_000));
-  aged.delete(0, 200_000);
-  const n = 20;
-  const each = (make: (i: number) => string) =>
-    Array.from({ length: n }, (_, i) => make(i));
-  const shapes = each((i) => b.shape(20 * i));
-  const texts = each((i) =>
-    b.add({
-      text: new Y.Text('t'),
-      type: 'text',
-      xywh: `[${20 * i},100,20,10]`,
-    })
-  );
-  const strokes = each((i) =>
-    b.add({
-      lineWidth: 4,
-      points: [
-        [i, 300],
-        [i + 10, 310],
-      ],
-      type: 'brush',
-    })
-  );
-  const connectors = each((i) =>
-    connector(b, [20 * i, 200], [20 * i + 10, 250])
-  );
-  const root = b.store.root;
-  if (!root) throw new Error('no root');
-  const notes = each((i) =>
-    b.store.addBlock('affine:note', { xywh: `[${300 * i},500,200,80]` }, root)
-  ).map((id) => b.store.getModelById(id) as NoteBlockModel);
-  const { map } = mindmap(b, 0, 20);
-  (
-    MindMapView.prototype as unknown as { _setLayoutMethod: () => void }
-  )._setLayoutMethod.call({ model: map });
-  // Its nodes fit their text, measured through the DOM (here every line 20
-  // px high).
-  const measured = () => ({
-    append: () => {},
-    getBoundingClientRect: () => ({ height: 20 }),
-    innerText: '',
-    remove: () => {},
-    style: {},
-  });
-  vi.stubGlobal('document', { body: measured(), createElement: measured });
-  map.layout();
-  await settled();
-  /** Whether `change` fits what its count keeps after each update it
-   * sends, as the room judges each on its own (a copy of the board takes
-   * each in turn: a change a write's observer makes, as an emptied group's
-   * removal, is already on the board when the update before it is sent):
-   * one change, as a gesture's end writes, or `apart`, each write its own (a
-   * toolbar action's loop, a command, a drop). The board must change: a
-   * case that writes what it holds proves nothing. */
-  const fits = async (
-    counted: Writes,
-    change: () => void,
-    label: string,
-    apart = false
-  ) => {
-    const room = new Y.Doc();
-    Y.applyUpdate(room, Y.encodeStateAsUpdate(b.doc));
-    const board = () => JSON.stringify(room.getMap('blocks').toJSON());
-    const was = board();
-    const before = collectedSize(room);
-    const grew: number[] = [];
-    const measure = (update: Uint8Array) => {
-      Y.applyUpdate(room, update);
-      grew.push(collectedSize(room) - before);
-    };
-    b.doc.on('update', measure);
-    if (apart) change();
-    else b.store.transact(change);
-    await settled();
-    b.doc.off('update', measure);
-    expect(board(), label).not.toBe(was);
-    expect(grew.length, label).toBeGreaterThan(0);
-    expect(Math.max(...grew), label).toBeLessThanOrEqual(bytesOf(counted));
-  };
-  /** At zoom 0.73 a drag or resize writes 17 significant digits
-   * (`Bound.serialize`). */
-  const zoomed = (bound: Bound, dx: number, dy: number) =>
-    new Bound(bound.x + dx / 0.73, bound.y + dy / 0.73, bound.w, bound.h);
-  const models = (ids: string[]) => ids.map(b.at);
-  const crud = b.std.get(EdgelessCRUDIdentifier);
-  const summed = (writes: Writes[]) =>
-    writes.reduce((sum, each) => ({
-      elements: sum.elements + each.elements,
-      grows: sum.grows + each.grows,
-      values: sum.values + each.values,
-    }));
-  await fits(
-    b.written(models(shapes), 'move'),
-    () => {
-      for (const [i, id] of shapes.entries())
-        crud.updateElement(id, { xywh: `[${20 * i},5,10,10]` });
-    },
-    'a move'
-  );
-  await fits(
-    b.written(models(shapes), 'move'),
-    () => {
-      for (const model of models(shapes))
-        crud.updateElement(model.id, {
-          xywh: zoomed(Bound.deserialize(model.xywh), 37, 11).serialize(),
-        });
-    },
-    'a move from whole numbers to floats at zoom 0.73'
-  );
-  await fits(
-    b.written(models(shapes), 'rotate'),
-    () => {
-      for (const [i, id] of shapes.entries())
-        crud.updateElement(id, { rotate: 30, xywh: `[${20 * i},8,10,10]` });
-    },
-    'a rotation'
-  );
-  await fits(
-    b.written(models(shapes), 'rotate'),
-    () => {
-      for (const model of models(shapes))
-        crud.updateElement(model.id, {
-          rotate: 30 / 0.73,
-          xywh: zoomed(Bound.deserialize(model.xywh), 5, 0).serialize(),
-        });
-    },
-    'a rotation from a whole angle to a float'
-  );
-  await fits(
-    b.written(models(texts), 'resize'),
-    () => {
-      for (const [i, id] of texts.entries())
-        crud.updateElement(id, { fontSize: 30, xywh: `[${20 * i},100,40,20]` });
-    },
-    "a text label's resize"
-  );
-  await fits(
-    updated(models(strokes), { lineWidth: 8 }),
-    () => {
-      for (const id of strokes) crud.updateElement(id, { lineWidth: 8 });
-    },
-    "a stroke's width",
-    true
-  );
-  await fits(
-    b.written(models(strokes), 'resize'),
-    () => {
-      for (const model of models(strokes)) {
-        const { x, y, w, h } = Bound.deserialize(model.xywh);
-        crud.updateElement(model.id, {
-          xywh: new Bound(x, y, w / 0.73, h / 0.73).serialize(),
-        });
-      }
-    },
-    "a stroke's resize"
-  );
-  await fits(
-    updated(models(shapes), { fillColor: '#ff0000' }),
-    () => {
-      for (const id of shapes) crud.updateElement(id, { fillColor: '#ff0000' });
-    },
-    'a fill',
-    true
-  );
-  const themed = { dark: '#252525', light: '#ffffff' };
-  await fits(
-    updated(models(shapes), { fillColor: themed }),
-    () => {
-      for (const id of shapes) crud.updateElement(id, { fillColor: themed });
-    },
-    'a fill from a colour to a themed one',
-    true
-  );
-  /** Drags each of `ids`' connectors through its view by `dx` and `dy`. */
-  const dragged = (ids: string[], dx: number, dy: number) => () => {
-    for (const model of models(ids)) {
-      const view = new ConnectorElementView(
-        model as ConnectorElementModel,
-        b.gfx
-      );
-      view.onDragStart({} as DragStartContext);
-      view.onDragMove({
-        currentBound: model.elementBound,
-        dx,
-        dy,
-      } as DragMoveContext);
-      view.onDragEnd({} as DragEndContext);
-    }
-  };
-  await fits(
-    b.written(models(connectors), 'move'),
-    dragged(connectors, 0, 40),
-    "a connector's drag"
-  );
-  // At zoom 0.73: the free ends and the label to 17 digits.
-  await fits(
-    b.written(models(connectors), 'move'),
-    dragged(connectors, 3 / 0.73, 7 / 0.73),
-    "a connector's drag at zoom 0.73"
-  );
-  /** Labelled connectors from `source` to `target` (`i` each's place), their
-   * labels `w` by `h`, at `distance` along their paths. */
-  const labelled = (
-    source: (i: number) => { id: string } | { position: number[] },
-    target: (i: number) => number[],
-    [w, h, distance]: number[]
-  ) =>
-    each((i) =>
+describe('grows a board whose clocks passed 10^5 by no more than the gate counts', () => {
+  it("for a move, a rotation, a text label's resize, a stroke's width and resize, and a fill", async () => {
+    const b = aged();
+    const shapes = b.each((i) => b.shape(20 * i));
+    const texts = b.each((i) =>
       b.add({
-        labelDisplay: true,
-        labelOffset: { distance },
-        labelXYWH: [0, 0, w, h],
-        mode: 0,
-        source: source(i),
-        target: { position: target(i) },
-        text: new Y.Text('l'),
-        type: 'connector',
+        text: new Y.Text('t'),
+        type: 'text',
+        xywh: `[${20 * i},100,20,10]`,
       })
     );
-  // Free ends on whole numbers, their labels' measured sizes placing them to
-  // 17 digits already: a drag at zoom 0.73 takes the ends to 17 digits.
-  const sized = labelled(
-    (i) => ({ position: [20 * i, 900] }),
-    (i) => [20 * i + 10, 950],
-    [20.3, 10.7, 0.5]
-  );
-  await settled();
-  await fits(
-    b.written(models(sized), 'move'),
-    dragged(sized, 3 / 0.73, 7 / 0.73),
-    "a connector's free ends from whole numbers at zoom 0.73"
-  );
-  await fits(
-    updated(models(connectors), { mode: 1 }),
-    () => {
-      for (const id of connectors) crud.updateElement(id, { mode: 1 });
-    },
-    "a connector's mode",
-    true
-  );
-  // Labels on whole numbers (a third along a straight path), curved: each
-  // placed again on its new path, to 17 digits.
-  const curved = labelled(
-    (i) => ({ id: b.shape(1000 + 30 * i) }),
-    (i) => [1045 + 30 * i, 120],
-    [20, 10, 0.3]
-  );
-  await settled();
-  await fits(
-    updated(models(curved), { mode: 2 }),
-    () => {
-      for (const id of curved) crud.updateElement(id, { mode: 2 });
-    },
-    "a connector's label from whole numbers at a mode change",
-    true
-  );
-  // A note placed and scaled for the first time adds its collapse, its
-  // collapsed height and its scale.
-  await fits(
-    b.written(notes, 'place'),
-    () => {
-      for (const [i, note] of notes.entries()) {
-        b.store.updateBlock(note, () => {
-          note.props.edgeless.collapse = true;
-          note.props.edgeless.collapsedHeight = 90;
-        });
-        crud.updateElement(note.id, { xywh: `[${300 * i},600,200,90]` });
+    const strokes = b.each((i) =>
+      b.add({
+        lineWidth: 4,
+        points: [
+          [i, 300],
+          [i + 10, 310],
+        ],
+        type: 'brush',
+      })
+    );
+    await settled();
+    const { crud, fits, models } = b;
+    await fits(
+      b.written(models(shapes), 'move'),
+      () => {
+        for (const [i, id] of shapes.entries())
+          crud.updateElement(id, { xywh: `[${20 * i},5,10,10]` });
+      },
+      'a move'
+    );
+    await fits(
+      b.written(models(shapes), 'move'),
+      () => {
+        for (const model of models(shapes))
+          crud.updateElement(model.id, {
+            xywh: zoomed(Bound.deserialize(model.xywh), 37, 11).serialize(),
+          });
+      },
+      'a move from whole numbers to floats at zoom 0.73'
+    );
+    await fits(
+      b.written(models(shapes), 'rotate'),
+      () => {
+        for (const [i, id] of shapes.entries())
+          crud.updateElement(id, { rotate: 30, xywh: `[${20 * i},8,10,10]` });
+      },
+      'a rotation'
+    );
+    await fits(
+      b.written(models(shapes), 'rotate'),
+      () => {
+        for (const model of models(shapes))
+          crud.updateElement(model.id, {
+            rotate: 30 / 0.73,
+            xywh: zoomed(Bound.deserialize(model.xywh), 5, 0).serialize(),
+          });
+      },
+      'a rotation from a whole angle to a float'
+    );
+    await fits(
+      b.written(models(texts), 'resize'),
+      () => {
+        for (const [i, id] of texts.entries())
+          crud.updateElement(id, {
+            fontSize: 30,
+            xywh: `[${20 * i},100,40,20]`,
+          });
+      },
+      "a text label's resize"
+    );
+    await fits(
+      updated(models(strokes), { lineWidth: 8 }),
+      () => {
+        for (const id of strokes) crud.updateElement(id, { lineWidth: 8 });
+      },
+      "a stroke's width",
+      true
+    );
+    await fits(
+      b.written(models(strokes), 'resize'),
+      () => {
+        for (const model of models(strokes)) {
+          const { x, y, w, h } = Bound.deserialize(model.xywh);
+          crud.updateElement(model.id, {
+            xywh: new Bound(x, y, w / 0.73, h / 0.73).serialize(),
+          });
+        }
+      },
+      "a stroke's resize"
+    );
+    await fits(
+      updated(models(shapes), { fillColor: '#ff0000' }),
+      () => {
+        for (const id of shapes)
+          crud.updateElement(id, { fillColor: '#ff0000' });
+      },
+      'a fill',
+      true
+    );
+    const themed = { dark: '#252525', light: '#ffffff' };
+    await fits(
+      updated(models(shapes), { fillColor: themed }),
+      () => {
+        for (const id of shapes) crud.updateElement(id, { fillColor: themed });
+      },
+      'a fill from a colour to a themed one',
+      true
+    );
+  });
+
+  it("for a connector's drag and mode", async () => {
+    const b = aged();
+    const { crud, each, fits, models } = b;
+    const connectors = each((i) =>
+      connector(b, [20 * i, 200], [20 * i + 10, 250])
+    );
+    await settled();
+    /** Drags each of `ids`' connectors through its view by `dx` and `dy`. */
+    const dragged = (ids: string[], dx: number, dy: number) => () => {
+      for (const model of models(ids)) {
+        const view = new ConnectorElementView(
+          model as ConnectorElementModel,
+          b.gfx
+        );
+        view.onDragStart({} as DragStartContext);
+        view.onDragMove({
+          currentBound: model.elementBound,
+          dx,
+          dy,
+        } as DragMoveContext);
+        view.onDragEnd({} as DragEndContext);
       }
-    },
-    "a note's place"
-  );
-  await fits(
-    b.written(notes, 'scale'),
-    () => {
-      for (const [i, note] of notes.entries())
-        b.store.updateBlock(note, () => {
-          note.xywh = `[${300 * i},600,400,180]`;
-          note.props.edgeless.scale = 2;
-        });
-    },
-    "a note's Scale"
-  );
-  await fits(
-    b.written(notes, 'resize'),
-    () => {
-      // A corner, as the note's resize handlers write it.
-      for (const note of notes) {
-        const { x, y, w, h } = Bound.deserialize(note.xywh);
-        note.stash('xywh');
-        note.stash('edgeless');
-        note.props.edgeless = { ...note.props.edgeless, scale: 2 / 0.73 };
-        note.props.xywh = new Bound(x, y, w / 0.73, h / 0.73).serialize();
-        note.pop('xywh');
-        note.pop('edgeless');
-      }
-    },
-    "a note's resize"
-  );
-  await fits(
-    b.written(notes, 'height'),
-    () => {
-      // Its Customized height, as the toolbar writes it.
-      for (const note of notes)
-        b.store.updateBlock(note, () => {
-          const bound = Bound.deserialize(note.xywh);
-          bound.h = 90 * (note.props.edgeless.scale ?? 1);
-          note.xywh = bound.serialize();
-          note.props.edgeless.collapse = true;
-        });
-    },
-    "a note's height"
-  );
-  const panel = notes.map((note) => ({
-    edgeless: {
-      ...note.props.edgeless,
-      style: { ...note.props.edgeless.style, borderRadius: 16 },
-    },
-  }));
-  await fits(
-    summed(notes.map((note, i) => updated([note], panel[i]))),
-    () => {
-      for (const [i, note] of notes.entries())
-        crud.updateElement(note.id, panel[i]);
-    },
-    "a note's corners through its style panel",
-    true
-  );
-  // A note's background turned themed: its own map of two values.
-  const background = { dark: '#1f1f1f', light: '#fefefe' };
-  await fits(
-    updated(notes, { background }),
-    () => {
-      for (const note of notes) crud.updateElement(note.id, { background });
-    },
-    "a note's background through its style panel",
-    true
-  );
-  // Notes stored with an empty style given all four of its values: each a
-  // new item of the note's new map, a header and key more than its bytes.
-  const plain = each((i) =>
-    b.store.addBlock(
-      'affine:note',
-      { edgeless: { style: {} }, xywh: `[${300 * i},700,200,80]` },
-      root
-    )
-  ).map((id) => b.store.getModelById(id) as NoteBlockModel);
-  await settled();
-  const style = {
-    borderRadius: 8,
-    borderSize: 4,
-    borderStyle: 'solid',
-    shadowType: '--affine-note-shadow-sticker',
-  };
-  const styled = plain.map((note) => ({
-    edgeless: { ...note.props.edgeless, style },
-  }));
-  await fits(
-    summed(plain.map((note, i) => updated([note], styled[i]))),
-    () => {
-      for (const [i, note] of plain.entries())
-        crud.updateElement(note.id, styled[i]);
-    },
-    "a note's whole style through its style panel",
-    true
-  );
-  // An array in a block's object is a Y.Array of its own: an item for its
-  // run of plain values and a map, with its own items, for each object in
-  // it (the item rule's bound for arrays).
-  const listed = plain.map((note) => ({
-    edgeless: {
-      ...note.props.edgeless,
-      marks: [1, 2, ...Array.from({ length: 12 }, (_, k) => ({ k }))],
-    },
-  }));
-  await fits(
-    summed(plain.map((note, i) => updated([note], listed[i]))),
-    () => {
-      for (const [i, note] of plain.entries())
-        crud.updateElement(note.id, listed[i]);
-    },
-    "a block's object holding an array",
-    true
-  );
-  await fits(
-    orderWrites(models(shapes), b.longest(), 'end'),
-    () =>
-      action(moreActions, 'a.bring-to-front').run(toolbar(b, models(shapes))),
-    'a reorder',
-    true
-  );
-  // A reorder of 200 elements, each added with its own index past the last
-  // as the board adds them: to the front each key past the last (an integer
-  // part one longer at most); forward each between two, the top one first,
-  // so each next key goes between the last it made, a chain longer than
-  // `end` keys keep; then to the front again past those long keys, their
-  // integer parts alone counted.
-  const many = Array.from({ length: 200 }, (_, i) =>
-    crud.addElement('shape', {
-      shapeType: 'rect',
-      xywh: `[${5 * i},600,10,10]`,
-    })
-  ) as string[];
-  await settled();
-  await fits(
-    orderWrites(models(many), b.longest(), 'end'),
-    () => action(moreActions, 'a.bring-to-front').run(toolbar(b, models(many))),
-    'a reorder of 200 to the front',
-    true
-  );
-  const topFirst = models(many).sort((one, other) =>
-    one.index < other.index ? 1 : -1
-  );
-  await fits(
-    orderWrites(topFirst, b.longest(), 'step'),
-    () => action(moreActions, 'b.bring-forward').run(toolbar(b, topFirst)),
-    'a reorder of 200 forward, top first',
-    true
-  );
-  const chained = b.longest();
-  expect(chained.whole).toBeGreaterThan(27);
-  await fits(
-    orderWrites(models(many), chained, 'end'),
-    () => action(moreActions, 'a.bring-to-front').run(toolbar(b, models(many))),
-    'a reorder of 200 to the front past long keys',
-    true
-  );
+    };
+    await fits(
+      b.written(models(connectors), 'move'),
+      dragged(connectors, 0, 40),
+      "a connector's drag"
+    );
+    // At zoom 0.73: the free ends and the label to 17 digits.
+    await fits(
+      b.written(models(connectors), 'move'),
+      dragged(connectors, 3 / 0.73, 7 / 0.73),
+      "a connector's drag at zoom 0.73"
+    );
+    /** Labelled connectors from `source` to `target` (`i` each's place),
+     * their labels `w` by `h`, at `distance` along their paths. */
+    const labelled = (
+      source: (i: number) => { id: string } | { position: number[] },
+      target: (i: number) => number[],
+      [w, h, distance]: number[]
+    ) =>
+      each((i) =>
+        b.add({
+          labelDisplay: true,
+          labelOffset: { distance },
+          labelXYWH: [0, 0, w, h],
+          mode: 0,
+          source: source(i),
+          target: { position: target(i) },
+          text: new Y.Text('l'),
+          type: 'connector',
+        })
+      );
+    // Free ends on whole numbers, their labels' measured sizes placing them
+    // to 17 digits already: a drag at zoom 0.73 takes the ends to 17 digits.
+    const sized = labelled(
+      (i) => ({ position: [20 * i, 900] }),
+      (i) => [20 * i + 10, 950],
+      [20.3, 10.7, 0.5]
+    );
+    await settled();
+    await fits(
+      b.written(models(sized), 'move'),
+      dragged(sized, 3 / 0.73, 7 / 0.73),
+      "a connector's free ends from whole numbers at zoom 0.73"
+    );
+    await fits(
+      updated(models(connectors), { mode: 1 }),
+      () => {
+        for (const id of connectors) crud.updateElement(id, { mode: 1 });
+      },
+      "a connector's mode",
+      true
+    );
+    // Labels on whole numbers (a third along a straight path), curved: each
+    // placed again on its new path, to 17 digits.
+    const curved = labelled(
+      (i) => ({ id: b.shape(1000 + 30 * i) }),
+      (i) => [1045 + 30 * i, 120],
+      [20, 10, 0.3]
+    );
+    await settled();
+    await fits(
+      updated(models(curved), { mode: 2 }),
+      () => {
+        for (const id of curved) crud.updateElement(id, { mode: 2 });
+      },
+      "a connector's label from whole numbers at a mode change",
+      true
+    );
+  });
+
+  it("for a note's place, Scale, resize and height, and its style panel", async () => {
+    const b = aged();
+    const { crud, each, fits, root } = b;
+    const notes = each((i) =>
+      b.store.addBlock('affine:note', { xywh: `[${300 * i},500,200,80]` }, root)
+    ).map((id) => b.store.getModelById(id) as NoteBlockModel);
+    await settled();
+    // A note placed and scaled for the first time adds its collapse, its
+    // collapsed height and its scale.
+    await fits(
+      b.written(notes, 'place'),
+      () => {
+        for (const [i, note] of notes.entries()) {
+          b.store.updateBlock(note, () => {
+            note.props.edgeless.collapse = true;
+            note.props.edgeless.collapsedHeight = 90;
+          });
+          crud.updateElement(note.id, { xywh: `[${300 * i},600,200,90]` });
+        }
+      },
+      "a note's place"
+    );
+    await fits(
+      b.written(notes, 'scale'),
+      () => {
+        for (const [i, note] of notes.entries())
+          b.store.updateBlock(note, () => {
+            note.xywh = `[${300 * i},600,400,180]`;
+            note.props.edgeless.scale = 2;
+          });
+      },
+      "a note's Scale"
+    );
+    await fits(
+      b.written(notes, 'resize'),
+      () => {
+        // A corner, as the note's resize handlers write it.
+        for (const note of notes) {
+          const { x, y, w, h } = Bound.deserialize(note.xywh);
+          note.stash('xywh');
+          note.stash('edgeless');
+          note.props.edgeless = { ...note.props.edgeless, scale: 2 / 0.73 };
+          note.props.xywh = new Bound(x, y, w / 0.73, h / 0.73).serialize();
+          note.pop('xywh');
+          note.pop('edgeless');
+        }
+      },
+      "a note's resize"
+    );
+    await fits(
+      b.written(notes, 'height'),
+      () => {
+        // Its Customized height, as the toolbar writes it.
+        for (const note of notes)
+          b.store.updateBlock(note, () => {
+            const bound = Bound.deserialize(note.xywh);
+            bound.h = 90 * (note.props.edgeless.scale ?? 1);
+            note.xywh = bound.serialize();
+            note.props.edgeless.collapse = true;
+          });
+      },
+      "a note's height"
+    );
+    const panel = notes.map((note) => ({
+      edgeless: {
+        ...note.props.edgeless,
+        style: { ...note.props.edgeless.style, borderRadius: 16 },
+      },
+    }));
+    await fits(
+      summed(notes.map((note, i) => updated([note], panel[i]))),
+      () => {
+        for (const [i, note] of notes.entries())
+          crud.updateElement(note.id, panel[i]);
+      },
+      "a note's corners through its style panel",
+      true
+    );
+    // A note's background turned themed: its own map of two values.
+    const background = { dark: '#1f1f1f', light: '#fefefe' };
+    await fits(
+      updated(notes, { background }),
+      () => {
+        for (const note of notes) crud.updateElement(note.id, { background });
+      },
+      "a note's background through its style panel",
+      true
+    );
+    // Notes stored with an empty style given all four of its values: each a
+    // new item of the note's new map, a header and key more than its bytes.
+    const plain = each((i) =>
+      b.store.addBlock(
+        'affine:note',
+        { edgeless: { style: {} }, xywh: `[${300 * i},700,200,80]` },
+        root
+      )
+    ).map((id) => b.store.getModelById(id) as NoteBlockModel);
+    await settled();
+    const style = {
+      borderRadius: 8,
+      borderSize: 4,
+      borderStyle: 'solid',
+      shadowType: '--affine-note-shadow-sticker',
+    };
+    const styled = plain.map((note) => ({
+      edgeless: { ...note.props.edgeless, style },
+    }));
+    await fits(
+      summed(plain.map((note, i) => updated([note], styled[i]))),
+      () => {
+        for (const [i, note] of plain.entries())
+          crud.updateElement(note.id, styled[i]);
+      },
+      "a note's whole style through its style panel",
+      true
+    );
+    // An array in a block's object is a Y.Array of its own: an item for its
+    // run of plain values and a map, with its own items, for each object in
+    // it (the item rule's bound for arrays).
+    const listed = plain.map((note) => ({
+      edgeless: {
+        ...note.props.edgeless,
+        marks: [1, 2, ...Array.from({ length: 12 }, (_, k) => ({ k }))],
+      },
+    }));
+    await fits(
+      summed(plain.map((note, i) => updated([note], listed[i]))),
+      () => {
+        for (const [i, note] of plain.entries())
+          crud.updateElement(note.id, listed[i]);
+      },
+      "a block's object holding an array",
+      true
+    );
+  });
+
+  // A reorder of 200 elements: to the front each key past the last (an
+  // integer part one longer at most); forward each between two, the top one
+  // first, so each next key goes between the last it made, a chain longer
+  // than `end` keys keep; then to the front again past those long keys,
+  // their integer parts alone counted. A reorder writes indexes alone, so
+  // the 200 are strokes, the board's smallest elements: the replica is
+  // measured after each of their 600 updates.
+  it('for a reorder', async () => {
+    const b = aged();
+    const { each, fits, models } = b;
+    const shapes = each((i) => b.shape(20 * i));
+    const many = Array.from({ length: 200 }, (_, i) =>
+      b.add({
+        lineWidth: 4,
+        points: [
+          [5 * i, 600],
+          [5 * i + 10, 610],
+        ],
+        type: 'brush',
+      })
+    );
+    await settled();
+    await fits(
+      orderWrites(models(shapes), b.longest(), 'end'),
+      () =>
+        action(moreActions, 'a.bring-to-front').run(toolbar(b, models(shapes))),
+      'a reorder',
+      true
+    );
+    await fits(
+      orderWrites(models(many), b.longest(), 'end'),
+      () =>
+        action(moreActions, 'a.bring-to-front').run(toolbar(b, models(many))),
+      'a reorder of 200 to the front',
+      true
+    );
+    const topFirst = models(many).sort((one, other) =>
+      one.index < other.index ? 1 : -1
+    );
+    await fits(
+      orderWrites(topFirst, b.longest(), 'step'),
+      () => action(moreActions, 'b.bring-forward').run(toolbar(b, topFirst)),
+      'a reorder of 200 forward, top first',
+      true
+    );
+    const chained = b.longest();
+    expect(chained.whole).toBeGreaterThan(27);
+    await fits(
+      orderWrites(models(many), chained, 'end'),
+      () =>
+        action(moreActions, 'a.bring-to-front').run(toolbar(b, models(many))),
+      'a reorder of 200 to the front past long keys',
+      true
+    );
+  });
+
   // Each group sits between two elements, so its ungroup bisects between
   // two distinct keys (`split`), as it does on most boards; `bisected` says
   // its elements landed between them.
-  const bisected = (held: GfxModel[], low: GfxModel, high: GfxModel) =>
-    held.every(({ index }) => index > low.index && index < high.index);
-  const lockedBelow = b.at(b.shape(1480));
-  const lockedGroup = b.at(
-    group(
-      b,
-      each((i) => b.shape(20 * i))
-    )
-  ) as GroupElementModel;
-  const lockedHeld = lockedGroup.childElements;
-  const lockedAbove = b.at(b.shape(1500));
-  const locked = [lockedGroup, ...models(strokes)];
-  for (const model of locked) model.lock();
-  await fits(
-    unlockWrites(locked, b.longest()),
-    () =>
-      action(builtinLockedToolbarConfig.actions, 'b.unlock').run(
-        toolbar(b, locked)
-      ),
-    'an Unlock',
-    true
-  );
-  expect(bisected(lockedHeld, lockedBelow, lockedAbove)).toBe(true);
-  const grouped = b.at(group(b, texts)) as GroupElementModel;
-  const groupedHeld = grouped.childElements;
-  const groupedAbove = b.at(b.shape(1520));
-  await fits(
-    ungroupWrites(grouped, b.longest()),
-    () => b.std.command.exec(ungroupCommand, { group: grouped as never }),
-    'an ungroup',
-    true
-  );
-  expect(bisected(groupedHeld, lockedAbove, groupedAbove)).toBe(true);
-  // A group of 50 inside another, between two of its elements: its ungroup
-  // writes each element's id into the outer group's children too, in its
-  // first update, before the emptied group goes in one of its own.
-  const nested = () => {
-    const low = b.at(b.shape(0));
-    const inner = b.at(
+  it('for an Unlock and an ungroup, of a group in a group too', async () => {
+    const b = aged();
+    const { each, fits, models } = b;
+    const bisected = (held: GfxModel[], low: GfxModel, high: GfxModel) =>
+      held.every(({ index }) => index > low.index && index < high.index);
+    const strokes = each((i) =>
+      b.add({
+        lineWidth: 4,
+        points: [
+          [i, 300],
+          [i + 10, 310],
+        ],
+        type: 'brush',
+      })
+    );
+    const texts = each((i) =>
+      b.add({
+        text: new Y.Text('t'),
+        type: 'text',
+        xywh: `[${20 * i},100,20,10]`,
+      })
+    );
+    const lockedBelow = b.at(b.shape(1480));
+    const lockedGroup = b.at(
       group(
         b,
-        Array.from({ length: 50 }, (_, i) => b.shape(7 * i))
+        each((i) => b.shape(20 * i))
       )
     ) as GroupElementModel;
-    const high = b.at(b.shape(400));
-    group(b, [low.id, inner.id, high.id]);
-    return { held: inner.childElements, high, inner, low };
-  };
-  const inGroup = nested();
-  await fits(
-    ungroupWrites(inGroup.inner, b.longest()),
-    () => b.std.command.exec(ungroupCommand, { group: inGroup.inner as never }),
-    'an ungroup of 50 in a group',
-    true
-  );
-  expect(bisected(inGroup.held, inGroup.low, inGroup.high)).toBe(true);
-  const lockedIn = nested();
-  lockedIn.inner.lock();
-  await fits(
-    unlockWrites([lockedIn.inner], b.longest()),
-    () =>
-      action(builtinLockedToolbarConfig.actions, 'b.unlock').run(
-        toolbar(b, [lockedIn.inner])
-      ),
-    'an Unlock of 50 in a group',
-    true
-  );
-  expect(bisected(lockedIn.held, lockedIn.low, lockedIn.high)).toBe(true);
-  const planes = models(
-    each((i) =>
-      b.add({
-        fit: true,
-        type: 'plane',
-        x0: -1,
-        xywh: `[${200 * i},900,160,120]`,
-        y0: 1,
-      })
-    )
-  ) as PlaneElementModel[];
-  expect(planes.every((plane) => plane instanceof PlaneElementModel)).toBe(
-    true
-  );
-  // A fitted plane's resize writes its fit too, as its handler does.
-  expect(b.written(planes, 'resize').values).toBe(4 * n);
-  await fits(
-    b.written(planes, 'resize'),
-    () => {
-      // As its resize handlers write it: its view follows the dragged side.
-      for (const plane of planes) {
-        const { x, y, w, h } = Bound.deserialize(plane.xywh);
-        if (plane.fit) plane.fit = false;
-        for (const key of ['xywh', 'x0', 'y0']) plane.stash(key);
-        plane.xywh = new Bound(x + 7 / 0.73, y, w - 7 / 0.73, h).serialize();
-        plane.x0 = -1 + 7 / 0.73 / plane.ppu;
-        plane.y0 = 1 - 3 / 0.73 / plane.ppu;
-        for (const key of ['xywh', 'x0', 'y0']) plane.pop(key);
-      }
-    },
-    "a plane's resize"
-  );
-  const node = b.at(map.tree.children[0].id) as unknown as {
-    strokeColor: unknown;
-  };
-  const colour = node.strokeColor;
-  let restyled = false;
-  for (const style of [
-    MindmapStyle.TWO,
-    MindmapStyle.THREE,
-    MindmapStyle.FOUR,
-    MindmapStyle.ONE,
-    MindmapStyle.THREE,
-    MindmapStyle.TWO,
-    MindmapStyle.FOUR,
-    MindmapStyle.ONE,
-  ]) {
+    const lockedHeld = lockedGroup.childElements;
+    const lockedAbove = b.at(b.shape(1500));
+    const locked = [lockedGroup, ...models(strokes)];
+    for (const model of locked) model.lock();
+    await settled();
     await fits(
-      b.written([map], 'style'),
-      () => {
-        map.style = style;
-      },
-      `Style ${style}`
+      unlockWrites(locked, b.longest()),
+      () =>
+        action(builtinLockedToolbarConfig.actions, 'b.unlock').run(
+          toolbar(b, locked)
+        ),
+      'an Unlock',
+      true
     );
-    restyled ||= node.strokeColor !== colour;
-  }
-  expect(restyled).toBe(true);
-  for (const layout of [
-    LayoutType.LEFT,
-    LayoutType.BALANCE,
-    LayoutType.RIGHT,
-    LayoutType.BALANCE,
-  ])
+    expect(bisected(lockedHeld, lockedBelow, lockedAbove)).toBe(true);
+    const grouped = b.at(group(b, texts)) as GroupElementModel;
+    const groupedHeld = grouped.childElements;
+    const groupedAbove = b.at(b.shape(1520));
     await fits(
-      b.written([map], 'layout'),
-      () => {
-        map.layoutType = layout;
-        map.layout();
-      },
-      `Layout ${layout}`
+      ungroupWrites(grouped, b.longest()),
+      () => b.std.command.exec(ungroupCommand, { group: grouped as never }),
+      'an ungroup',
+      true
     );
-  // A node of one map dropped on another's root, both laid out.
-  const from = mindmap(b, 2000, 4);
-  const into = mindmap(b, 3000, 4);
-  for (const laid of [from.map, into.map]) {
-    (
-      MindMapView.prototype as unknown as { _setLayoutMethod: () => void }
-    )._setLayoutMethod.call({ model: laid });
-    laid.layout();
-  }
-  await settled();
-  const branch = from.map.getNode(from.ids[1]);
-  if (!branch) throw new Error('no node');
-  const moving = [
-    branch.element,
-    ...branch.children.map((child) => child.element),
-  ];
-  await fits(
-    mergeWrites(into.map, moving, b.written),
-    () => dropOnRoot(b, from.map, from.ids[1], into.map),
-    'a merge',
-    true
-  );
-  expect(into.map.getNode(from.ids[1])).not.toBeNull();
+    expect(bisected(groupedHeld, lockedAbove, groupedAbove)).toBe(true);
+    // A group of 50 inside another, between two of its elements: its
+    // ungroup writes each element's id into the outer group's children too,
+    // in its first update, before the emptied group goes in one of its own.
+    const nested = () => {
+      const low = b.at(b.shape(0));
+      const inner = b.at(
+        group(
+          b,
+          Array.from({ length: 50 }, (_, i) => b.shape(7 * i))
+        )
+      ) as GroupElementModel;
+      const high = b.at(b.shape(400));
+      group(b, [low.id, inner.id, high.id]);
+      return { held: inner.childElements, high, inner, low };
+    };
+    const inGroup = nested();
+    await fits(
+      ungroupWrites(inGroup.inner, b.longest()),
+      () =>
+        b.std.command.exec(ungroupCommand, { group: inGroup.inner as never }),
+      'an ungroup of 50 in a group',
+      true
+    );
+    expect(bisected(inGroup.held, inGroup.low, inGroup.high)).toBe(true);
+    const lockedIn = nested();
+    lockedIn.inner.lock();
+    await fits(
+      unlockWrites([lockedIn.inner], b.longest()),
+      () =>
+        action(builtinLockedToolbarConfig.actions, 'b.unlock').run(
+          toolbar(b, [lockedIn.inner])
+        ),
+      'an Unlock of 50 in a group',
+      true
+    );
+    expect(bisected(lockedIn.held, lockedIn.low, lockedIn.high)).toBe(true);
+  });
+
+  it("for a plane's resize", async () => {
+    const b = aged();
+    const planes = b.models(
+      b.each((i) =>
+        b.add({
+          fit: true,
+          type: 'plane',
+          x0: -1,
+          xywh: `[${200 * i},900,160,120]`,
+          y0: 1,
+        })
+      )
+    ) as PlaneElementModel[];
+    await settled();
+    expect(planes.every((plane) => plane instanceof PlaneElementModel)).toBe(
+      true
+    );
+    // A fitted plane's resize writes its fit too, as its handler does.
+    expect(b.written(planes, 'resize').values).toBe(4 * n);
+    await b.fits(
+      b.written(planes, 'resize'),
+      () => {
+        // As its resize handlers write it: its view follows the dragged side.
+        for (const plane of planes) {
+          const { x, y, w, h } = Bound.deserialize(plane.xywh);
+          if (plane.fit) plane.fit = false;
+          for (const key of ['xywh', 'x0', 'y0']) plane.stash(key);
+          plane.xywh = new Bound(x + 7 / 0.73, y, w - 7 / 0.73, h).serialize();
+          plane.x0 = -1 + 7 / 0.73 / plane.ppu;
+          plane.y0 = 1 - 3 / 0.73 / plane.ppu;
+          for (const key of ['xywh', 'x0', 'y0']) plane.pop(key);
+        }
+      },
+      "a plane's resize"
+    );
+  });
+
+  it("for a mind map's Style and Layout, and a node merged into another map", async () => {
+    const b = aged();
+    const { fits } = b;
+    /** Lays `map` out on BlockSuite's own layout (the view's). */
+    const laidOut = (map: MindmapElementModel) => {
+      (
+        MindMapView.prototype as unknown as { _setLayoutMethod: () => void }
+      )._setLayoutMethod.call({ model: map });
+      map.layout();
+    };
+    // Its nodes fit their text, measured through the DOM (here every line 20
+    // px high).
+    const measured = () => ({
+      append: () => {},
+      getBoundingClientRect: () => ({ height: 20 }),
+      innerText: '',
+      remove: () => {},
+      style: {},
+    });
+    vi.stubGlobal('document', { body: measured(), createElement: measured });
+    const { map } = mindmap(b, 0, 20);
+    laidOut(map);
+    await settled();
+    const node = b.at(map.tree.children[0].id) as unknown as {
+      strokeColor: unknown;
+    };
+    const colour = node.strokeColor;
+    let restyled = false;
+    for (const style of [
+      MindmapStyle.TWO,
+      MindmapStyle.THREE,
+      MindmapStyle.FOUR,
+      MindmapStyle.ONE,
+      MindmapStyle.THREE,
+      MindmapStyle.TWO,
+      MindmapStyle.FOUR,
+      MindmapStyle.ONE,
+    ]) {
+      await fits(
+        b.written([map], 'style'),
+        () => {
+          map.style = style;
+        },
+        `Style ${style}`
+      );
+      restyled ||= node.strokeColor !== colour;
+    }
+    expect(restyled).toBe(true);
+    for (const layout of [
+      LayoutType.LEFT,
+      LayoutType.BALANCE,
+      LayoutType.RIGHT,
+      LayoutType.BALANCE,
+    ])
+      await fits(
+        b.written([map], 'layout'),
+        () => {
+          map.layoutType = layout;
+          map.layout();
+        },
+        `Layout ${layout}`
+      );
+    // A node of one map dropped on another's root, both laid out.
+    const from = mindmap(b, 2000, 4);
+    const into = mindmap(b, 3000, 4);
+    laidOut(from.map);
+    laidOut(into.map);
+    await settled();
+    const branch = from.map.getNode(from.ids[1]);
+    if (!branch) throw new Error('no node');
+    const moving = [
+      branch.element,
+      ...branch.children.map((child) => child.element),
+    ];
+    await fits(
+      mergeWrites(into.map, moving, b.written),
+      () => dropOnRoot(b, from.map, from.ids[1], into.map),
+      'a merge',
+      true
+    );
+    expect(into.map.getNode(from.ids[1])).not.toBeNull();
+  });
 });
 
 // Review of 8d813a7cc, tests: the gate sits on the board's one
