@@ -397,6 +397,57 @@ fn overlapping_structs_of_one_client_are_malformed() {
     );
 }
 
+/// An item under an item of its own update that holds no type (`"x"` typed
+/// after the room's text, then `true` at a key under that `"x"`): yrs
+/// integrates the text, then fails on the item (`InvalidParent`), and a
+/// document it was applied to keeps the text of an update its room
+/// refused. Malformed: the inspection refuses it before any apply. An item
+/// under a map of its own update, as an editor writes a new block's keys,
+/// is taken.
+#[test]
+fn an_item_under_its_own_updates_text_is_malformed() {
+    use yrs::encoding::write::Write;
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "hello");
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(1u32);
+    bytes.write_var(2u32);
+    bytes.write_var(77u64);
+    bytes.write_var(0u32);
+    bytes.write_u8(0x80 | 4);
+    bytes.write_var(1u64);
+    bytes.write_var(4u32);
+    bytes.write_string("x");
+    // A key, then one `true`, under struct 0 by its id.
+    bytes.write_u8(0x20 | 8);
+    bytes.write_var(0u32);
+    bytes.write_var(77u64);
+    bytes.write_var(0u32);
+    bytes.write_string("k");
+    bytes.write_var(1u32);
+    bytes.write_u8(120);
+    bytes.write_var(0u32);
+    let inspected = inspect_update(&room.transact(), &decode(&bytes).unwrap());
+    assert!(
+        matches!(inspected, Err(UpdateError::Decode(_))),
+        "{inspected:?}"
+    );
+    let applied = doc(3);
+    sync(&room, &applied);
+    assert!(apply(&applied, decode(&bytes).unwrap()).is_err());
+    let text = applied.get_or_insert_text("t");
+    assert_eq!(text.get_string(&applied.transact()), "hellox");
+    let client = doc(2);
+    let blocks = client.get_or_insert_map("blocks");
+    let written = delta(&client, |txn| {
+        blocks
+            .insert(txn, "b", MapPrelim::default())
+            .insert(txn, "k", true);
+    });
+    assert!(inspect_update(&room.transact(), &decode(&written).unwrap()).is_ok());
+}
+
 /// Updates of `count` concurrent writers each typing at the same place of a
 /// room's text, merged into one.
 fn concurrent_at_one_spot(room: &Doc, first_client: u64, count: u64) -> Vec<u8> {

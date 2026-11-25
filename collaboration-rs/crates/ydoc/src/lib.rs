@@ -1319,6 +1319,26 @@ fn inspected<T: ReadTxn>(
             UpdateParent::Item(parent) => Some(parent),
             _ => None,
         };
+        // yrs fails to integrate an item under an item of other content than
+        // a type (`InvalidParent`), and the room's document keeps the structs
+        // it integrated before: a refused update, partly applied. Under one
+        // the room holds, the update goes to a trial ([few_placed_structs]),
+        // which fails on the copy; under one of the update's own, it is
+        // refused here. No editor writes either.
+        if let Some(parent) = parent
+            && parent.clock >= held(&parent.client)
+            && incoming.item_at(parent).is_some_and(|parent| {
+                !matches!(
+                    parent.content(),
+                    ItemContent::Type(_) | ItemContent::Deleted(_)
+                )
+            })
+        {
+            let ID { client, clock } = *item.id();
+            return Err(UpdateError::Decode(format!(
+                "struct {clock} of client {client} names an item of its update that is no type as its parent"
+            )));
+        }
         for reference in [item.origin(), item.right_origin(), parent]
             .into_iter()
             .flatten()
