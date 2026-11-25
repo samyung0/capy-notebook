@@ -161,7 +161,8 @@ pub struct Fresh {
     /// Its new types' depths, where known.
     types: Vec<(ID, u32)>,
     /// Its new types whose depth the index cannot give (an implicit parent
-    /// among held items), until a trial reads them ([Fresh::take_depths]).
+    /// among held items), until a trial reads them ([Fresh::take_depths]);
+    /// those it finds none for join [Board::unplaced].
     unplaced: Vec<ID>,
     /// The most it adds to the board's state (`model::board_growth`).
     growth: u64,
@@ -187,19 +188,22 @@ impl Fresh {
     /// The depths of its new types the index could not give, read from
     /// `doc`: a replica its trial passed, with the update applied (the
     /// bytes-room plan's section 8). Without them, every later update under
-    /// such a type would go to a trial until the next fold names it.
+    /// such a type would go to a trial until the next fold names it. A type
+    /// the replica gives none (one it collected) stays without.
     pub fn take_depths(&mut self, doc: &Doc) {
         let txn = doc.transact();
         let store = txn.store();
         let mut depths = HashMap::new();
-        for id in std::mem::take(&mut self.unplaced) {
-            if let Some(item) = store.get_item(&id) {
+        self.unplaced.retain(|id| {
+            if let Some(item) = store.get_item(id) {
                 held_depth(&item, &mut depths);
             }
-            if let Some(depth) = depths.get(&id) {
-                self.types.push((id, *depth));
-            }
-        }
+            let Some(depth) = depths.get(id) else {
+                return true;
+            };
+            self.types.push((*id, *depth));
+            false
+        });
     }
 }
 
@@ -671,7 +675,8 @@ impl Depths {
 /// inserts and lookups cost the same however much the room holds (an
 /// [IdSet] merge rebuilds the client's whole array: 0.65 ms an update at
 /// 80,000 updates). The newer runs join the base at a fold
-/// ([Units::settle]).
+/// ([Units::settle]); the delete-set index's base becomes the new base's
+/// delete set instead ([Units::rebase]).
 #[derive(Clone, Debug, Default)]
 pub struct Units {
     base: IdSet,
@@ -802,6 +807,27 @@ impl Units {
         self.base.merge_with(newer);
         self.base.merge_with(more);
         self.base = compact(&self.base);
+    }
+
+    /// At a fold, for the delete-set index: `base`, the new base's whole
+    /// delete set, becomes the base part at its length, so that part holds
+    /// exactly what the stored base holds deleted ([Board::parent_type]).
+    /// It holds the old base, which the fold replayed; the newer runs it
+    /// does not hold, appended since the fold began, stay newer.
+    fn rebase(&mut self, base: IdSet) {
+        let base = compact(&base);
+        self.newer.retain(|&(client, start), end| {
+            let runs = base.get(&client).map_or(&[][..], |runs| runs.as_slice());
+            let at = runs.partition_point(|(run, _)| run.end <= start);
+            runs.get(at)
+                .is_none_or(|(run, _)| run.start > start || run.end < *end)
+        });
+        self.base = base;
+    }
+
+    /// Whether the base part holds `id`.
+    fn base_holds(&self, id: &ID) -> bool {
+        self.base.contains(id)
     }
 
     fn encode_v1(&self) -> Vec<u8> {
@@ -1203,15 +1229,22 @@ pub struct Board {
     /// What base, rows and recent updates hold: a plain state vector, since
     /// unheld updates are dropped.
     sv: StateVector,
-    /// Every deletion the room holds by name: the base's whole delete set and
-    /// each appended update's new deletions. It lacks implicit deletions (a
-    /// concurrent overwrite's loser, content added to a type deleted at the
-    /// same time) until a fold's base names them.
+    /// Every deletion the room holds by name: the base's whole delete set
+    /// (its base part, exactly: [Units::rebase]) and each appended update's
+    /// new deletions. It lacks implicit deletions (a concurrent overwrite's
+    /// loser, content added to a type deleted at the same time) until a
+    /// fold's base names them.
     deleted: Units,
     /// The base's and every appended item's origins and places.
     origins: Origins,
     /// The base's and every appended type's depth.
     depths: Depths,
+    /// The types appended or loaded past the base whose depth the index
+    /// cannot give (an implicit parent among held items, and nothing a trial
+    /// found): types still, so an item may name one as its parent
+    /// ([Board::parent_type]). A fold's base holds each live, with a depth,
+    /// or deleted.
+    unplaced: HashSet<ID>,
     /// Earlier room lives' marker clients ([Indexes::markers]).
     marker_clients: HashSet<ClientID>,
     /// How many updates were appended.
@@ -1252,6 +1285,7 @@ impl Board {
             deleted: deleted.into(),
             origins,
             depths,
+            unplaced: HashSet::new(),
             marker_clients: markers,
             appended: 0,
             last_put: HashMap::new(),
@@ -1325,10 +1359,13 @@ impl Board {
                 {
                     self.marker_clients.insert(client);
                 }
-                if matches!(item.content(), ItemContent::Type(_))
-                    && let Some(depth) = depth(item, &items, &held, &self.depths, &mut memo)
-                {
-                    types.push((*item.id(), depth));
+                if matches!(item.content(), ItemContent::Type(_)) {
+                    match depth(item, &items, &held, &self.depths, &mut memo) {
+                        Some(depth) => types.push((*item.id(), depth)),
+                        None => {
+                            self.unplaced.insert(*item.id());
+                        }
+                    }
                 }
                 taken.add(item);
                 if item.origin().is_none() {
@@ -1379,10 +1416,11 @@ impl Board {
     /// (the bound `few_new_deletions` puts on the blocks its ranges cover),
     /// of one writing client, with no new type whose parent is implicit or
     /// whose depth the index cannot give, and every new item placed by
-    /// [Board::placed]. Refused too: a new type [BOARD_DEPTH] deep, and a
-    /// new struct under, or naming a unit of, an earlier room life's marker
-    /// client, or a fresh deletion naming one (its markers all hold deleted,
-    /// so no honest update deletes one anew; this life's are the marker
+    /// [Board::placed]. Refused too: a new type [BOARD_DEPTH] deep, a new
+    /// item whose parent is no type ([Board::parent_type]), and a new struct
+    /// under, or naming a unit of, an earlier room life's marker client, or
+    /// a fresh deletion naming one (its markers all hold deleted, so no
+    /// honest update deletes one anew; this life's are the marker
     /// document's, which `markers::check` reads).
     pub fn read(&self, sent: &[u8], update: &Update) -> Result<Read, BoardError> {
         refuse_malformed(update)?;
@@ -1437,6 +1475,11 @@ impl Board {
                 }
                 UpdateParent::Unknown => {
                     flagged |= matches!(item.content(), ItemContent::Type(_));
+                }
+                UpdateParent::Item(parent) if !self.parent_type(parent, &held, &items) => {
+                    return Err(BoardError::Refused(
+                        "a board update puts an item under one that is no type".into(),
+                    ));
                 }
                 _ => {}
             }
@@ -1515,6 +1558,7 @@ impl Board {
             deleted,
             taken,
             types,
+            unplaced,
             ..
         } = *fresh;
         self.sv.merge(ends);
@@ -1523,6 +1567,7 @@ impl Board {
         for (id, depth) in types {
             self.depths.insert(id, depth);
         }
+        self.unplaced.extend(unplaced);
         let now = self.appended;
         self.appended += 1;
         for place in touched.places {
@@ -1606,11 +1651,13 @@ impl Board {
     }
 
     /// The running fold's new base and its indexes (`note_store::fold`)
-    /// replace the base and the rows it covered. The index keeps what it
-    /// held and takes the implicit deletions the new base names, the unit
-    /// sets' newer runs joining their base ([Units::settle]); the fold's
-    /// places and depths become the base's part of theirs, its heads and
-    /// marker clients join the room's, and its first of each sequence is
+    /// replace the base and the rows it covered. The delete-set index's base
+    /// becomes the new base's delete set, implicit deletions included
+    /// ([Units::rebase]); the unit sets' newer runs join their base
+    /// ([Units::settle]); the fold's places and depths become the base's
+    /// part of theirs, the types without a depth it holds leave
+    /// [Board::unplaced], its heads and marker clients join the room's,
+    /// and its first of each sequence is
     /// trusted again where no item with no origin was put since its rows
     /// end (anywhere, after a clear): a sequence an unplaceable insert or
     /// two tabs typing at its start at once left untrusted is trusted from
@@ -1644,8 +1691,9 @@ impl Board {
         } = indexes;
         self.base = base;
         self.sv.merge(sv.clone());
+        self.unplaced.retain(|id| id.clock >= sv.get(&id.client));
         self.base_sv = sv;
-        self.deleted.settle(deleted);
+        self.deleted.rebase(deleted);
         self.origins.named.settle(IdSet::default());
         self.origins.continued.settle(IdSet::default());
         let Origins {
@@ -1841,6 +1889,27 @@ impl Board {
             (None, Some(_)) => false,
             (None, None) => named_place(item).is_some_and(|place| !origins.keys.contains(&place)),
         }
+    }
+
+    /// Whether a new item may name `parent` as its parent: a type, of its
+    /// update or held (by [Board::depths] or [Board::unplaced]), a unit its
+    /// update collected, or a unit the base holds deleted. yrs collects an
+    /// item under the last two, as Yjs does under any unit not a type, but
+    /// fails to integrate one under other content (`InvalidParent`), so a
+    /// board holding it would never replay again: no fold, trial or
+    /// projection. A replay applies the base and the rows past it in one
+    /// transaction, where a unit deleted since the base keeps its content,
+    /// so only the base's deletions count. No editor writes any other
+    /// parent.
+    fn parent_type(&self, parent: &ID, held: &impl Fn(&ID) -> bool, items: &Items) -> bool {
+        if !held(parent) {
+            return items
+                .at(parent)
+                .is_none_or(|item| matches!(item.content(), ItemContent::Type(_)));
+        }
+        self.depths.get(parent).is_some()
+            || self.unplaced.contains(parent)
+            || self.deleted.base_holds(parent)
     }
 }
 
@@ -4028,5 +4097,296 @@ mod tests {
         assert!(refused(stored([&good; 3], &[(b, 8), (a, 7)], &[])));
         assert!(refused(stored([&good; 3], &heads, &[(8, a)])));
         assert!(refused(stored([&good; 3], &[], &[(7, a)])));
+    }
+
+    /// Client `client`'s struct at `clock`: `true` at `key` of the item
+    /// `parent` names by its id, or a map when `map`, with no origin, as an
+    /// editor writes into a type at a key holding nothing.
+    fn under(client: u64, clock: u32, parent: ID, key: &str, map: bool) -> Vec<u8> {
+        let mut sent = vec![1, 1];
+        sent.write_var(client);
+        sent.write_var(clock);
+        // A key, then the content: a type (a map), or one `true`.
+        sent.push(if map { 0x27 } else { 0x28 });
+        sent.write_var(0u32);
+        sent.write_var(parent.client.get());
+        sent.write_var(parent.clock);
+        sent.write_string(key);
+        sent.extend_from_slice(if map { &[1] } else { &[1, 120] });
+        sent.push(0);
+        sent
+    }
+
+    /// Client `client`'s first struct: `true` after `origin` or before
+    /// `right`, its parent theirs.
+    fn beside(client: u64, origin: Option<ID>, right: Option<ID>) -> Vec<u8> {
+        let mut sent = vec![1, 1];
+        sent.write_var(client);
+        sent.write_var(0u32);
+        let flags = u8::from(origin.is_some()) << 7 | u8::from(right.is_some()) << 6;
+        sent.push(flags | 0x08);
+        for id in origin.iter().chain(&right) {
+            sent.write_var(id.client.get());
+            sent.write_var(id.clock);
+        }
+        sent.extend([1, 120, 0]);
+        sent
+    }
+
+    /// The item `sent` writes at `key`.
+    fn at_key(sent: &[u8], key: &str) -> ID {
+        decode(sent)
+            .blocks()
+            .find_map(|block| match block {
+                UpdateBlock::Item(item) if item.parent_sub().is_some_and(|sub| &**sub == key) => {
+                    Some(*item.id())
+                }
+                _ => None,
+            })
+            .unwrap()
+    }
+
+    /// Whether the board replays with `sent` appended, as a fold, a trial's
+    /// replica and a projection replay it: the base, the rows past it and
+    /// the markers in one transaction.
+    fn replays_with(board: &Board, sent: &[u8]) -> bool {
+        let markers = board
+            .markers()
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        let mut rows = vec![board.tail.as_slice()];
+        rows.extend(board.recent.iter().map(Vec::as_slice));
+        rows.extend([markers.as_slice(), sent]);
+        rows.retain(|row| !row.is_empty());
+        ydoc::replay(&ydoc::scratch_doc(), &board.base, &rows).is_ok()
+    }
+
+    /// Security regression (an item under content no type, found reading
+    /// `Board::read`): yrs fails to integrate an item whose parent is a
+    /// held unit of other content (`InvalidParent`), where Yjs collects it,
+    /// so a board storing one would never replay again: no fold, no trial,
+    /// no projection. The room refuses each: `true` and a map under a
+    /// block's value, `true` under this life's marker, under a value a drag
+    /// deleted since the base, under one deleted while a fold ran (the new
+    /// base does not hold it deleted), under an element's value collected
+    /// with its block since the base (a replay holds each as it was), and
+    /// under a value of its own update. The board still replays and folds.
+    /// Fails without the parent check (all but the map are small edits,
+    /// appended at once; those deleted, collected or in the same update
+    /// pass a trial too, and the replica no longer replays), or if a fold's
+    /// base part of the delete-set index takes deletions appended while it
+    /// ran.
+    #[test]
+    fn an_item_under_content_no_type_is_refused() {
+        let mut room = Room::new();
+        let writer = synced(&room, 11);
+        let made = edited(&writer, |txn, blocks| {
+            let x = blocks.insert(txn, "x", MapPrelim::default());
+            x.insert(txn, "prop:xywh", "v0");
+            x.insert(txn, "prop:color", "c0");
+            x.insert(txn, "prop:size", "s0");
+            x.insert(txn, "prop:elements", MapPrelim::default())
+                .insert(txn, "e1", MapPrelim::default())
+                .insert(txn, "xywh", "w0");
+        });
+        room.deliver(&made);
+        room.store();
+        let (fold, through) = room.begin_fold();
+        room.deliver(&edited(&writer, |txn, blocks| {
+            block(txn, blocks, "x").insert(txn, "prop:size", "s1");
+        }));
+        room.end_fold(fold, through);
+        room.deliver(&edited(&writer, |txn, blocks| {
+            let x = block(txn, blocks, "x");
+            x.insert(txn, "prop:color", "c1");
+            x.remove(txn, "prop:elements");
+        }));
+        room.mark("writer");
+        let marker = ID::new(ClientID::new(ROOM), 0);
+        let [value, color, size, unit] =
+            ["prop:xywh", "prop:color", "prop:size", "xywh"].map(|key| at_key(&made, key));
+        // A value at the blocks root's key "s", and `true` under it.
+        let mut own = vec![1, 2, 21, 0, 0x28, 1];
+        own.write_string(BOARD_ROOT);
+        own.write_string("s");
+        own.extend([1, 120, 0x28, 0, 21, 0]);
+        own.write_string("k");
+        own.extend([1, 120, 0]);
+        for (case, sent) in [
+            ("a value", under(21, 0, value, "k", false)),
+            ("a map under a value", under(21, 0, value, "k", true)),
+            ("a marker", under(21, 0, marker, "k", false)),
+            ("a deleted value", under(21, 0, color, "k", false)),
+            ("one deleted in a fold", under(21, 0, size, "k", false)),
+            ("a collected unit", under(21, 0, unit, "k", false)),
+            ("its own value", own),
+        ] {
+            assert!(!replays_with(&room.board, &sent), "{case}");
+            assert!(refusal(&room.board, &sent).contains("no type"), "{case}");
+        }
+        assert!(held(&room.board.replica().unwrap()) == held(&room.reference));
+        room.store();
+        room.fold();
+        assert!(held(&room.join()) == held(&room.reference));
+    }
+
+    /// The parent check refuses no editor's update: a tab that missed a
+    /// block's deletion sets a property on it (its parent a deleted type)
+    /// while the type-depth index holds the block, after a fold drops it
+    /// there (the base holds it deleted) and in the next room life. Items
+    /// crafted under a value and a unit the base holds deleted are taken
+    /// too, every replica collecting them. Fails if the check refuses what
+    /// the base holds deleted.
+    #[test]
+    fn an_item_under_what_the_base_holds_deleted_is_taken() {
+        let mut room = Room::new();
+        let writer = synced(&room, 11);
+        let made = edited(&writer, |txn, blocks| {
+            let x = blocks.insert(txn, "x", MapPrelim::default());
+            x.insert(txn, "prop:color", "c0");
+            x.insert(txn, "prop:elements", MapPrelim::default())
+                .insert(txn, "e1", MapPrelim::default())
+                .insert(txn, "xywh", "w0");
+        });
+        room.deliver(&made);
+        room.store();
+        room.fold();
+        let stale: Vec<Tab> = (12..15).map(|client| synced(&room, client)).collect();
+        room.deliver(&edited(&writer, |txn, blocks| {
+            block(txn, blocks, "x").insert(txn, "prop:color", "c1");
+        }));
+        room.deliver(&edited(&writer, |txn, blocks| {
+            blocks.remove(txn, "x");
+        }));
+        // Each tab sets a key of its own, which holds nothing.
+        let set = |tab: &Tab| {
+            edited(tab, |txn, blocks| {
+                let key = format!("prop:{}", tab.doc.client_id());
+                block(txn, blocks, "x").insert(txn, key, "n");
+            })
+        };
+        let x = at_key(&made, "x");
+        assert!(room.board.depths.get(&x).is_some());
+        let sent = set(&stale[0]);
+        assert_eq!(checked(&room.board, &sent), Check::Small);
+        room.deliver(&sent);
+        room.store();
+        room.fold();
+        assert!(room.board.depths.get(&x).is_none());
+        let sent = set(&stale[1]);
+        assert_eq!(checked(&room.board, &sent), Check::Small);
+        room.deliver(&sent);
+        for (client, key) in [(21, "prop:color"), (22, "xywh")] {
+            let sent = under(client, 0, at_key(&made, key), "k", false);
+            assert_eq!(checked(&room.board, &sent), Check::Small);
+            room.deliver(&sent);
+        }
+        room.store();
+        let mut next = room.reload();
+        let sent = set(&stale[2]);
+        assert_eq!(checked(&next.board, &sent), Check::Small);
+        next.deliver(&sent);
+        let replica = next.board.replica().unwrap();
+        for doc in [&next.join(), &next.peer, &replica] {
+            assert!(held(doc) == held(&next.reference));
+        }
+    }
+
+    /// A type the type-depth index has no depth for is still a parent: a
+    /// map that replaced another under a block (its parent implicit), read
+    /// from the rows of the next room life, takes a new element (tried
+    /// first, as it has no depth either) and a new key, a small edit. Fails
+    /// if the check takes only types with a depth.
+    #[test]
+    fn a_key_set_in_a_type_without_a_depth_is_taken() {
+        let mut room = Room::new();
+        let writer = synced(&room, 11);
+        room.deliver(&edited(&writer, |txn, blocks| {
+            blocks.insert(txn, "x", MapPrelim::default()).insert(
+                txn,
+                "prop:elements",
+                MapPrelim::default(),
+            );
+        }));
+        room.store();
+        let replaced = edited(&writer, |txn, blocks| {
+            block(txn, blocks, "x").insert(txn, "prop:elements", MapPrelim::default());
+        });
+        assert_eq!(checked(&room.board, &replaced), Check::Flagged);
+        room.deliver(&replaced);
+        room.store();
+        let mut next = room.reload();
+        // Written after the map it replaced, it names no key.
+        let elements = decode(&replaced)
+            .blocks()
+            .find_map(|block| match block {
+                UpdateBlock::Item(item) => Some(*item.id()),
+                _ => None,
+            })
+            .unwrap();
+        assert!(next.board.depths.get(&elements).is_none());
+        let element = edited(&synced(&next, 12), |txn, blocks| {
+            if let Some(Out::YMap(elements)) = block(txn, blocks, "x").get(txn, "prop:elements") {
+                elements.insert(txn, "e1", MapPrelim::default());
+            }
+        });
+        assert_eq!(checked(&next.board, &element), Check::Flagged);
+        let value = edited(&synced(&next, 13), |txn, blocks| {
+            if let Some(Out::YMap(elements)) = block(txn, blocks, "x").get(txn, "prop:elements") {
+                elements.insert(txn, "k", "v");
+            }
+        });
+        assert_eq!(checked(&next.board, &value), Check::Small);
+        next.deliver(&value);
+        assert!(held(&next.join()) == held(&next.reference));
+    }
+
+    /// An item beside a unit the room collected since the base (its origin
+    /// or right origin an element's value, the block deleted) is taken:
+    /// replicas that collected the unit collect it, as Yjs does, and a
+    /// replay holding the unit as it was puts it in the deleted element, so
+    /// the board replays, folds and joins to what the reference holds.
+    #[test]
+    fn an_item_beside_a_collected_unit_is_taken() {
+        let mut room = Room::new();
+        let writer = synced(&room, 11);
+        let made = edited(&writer, |txn, blocks| {
+            blocks
+                .insert(txn, "x", MapPrelim::default())
+                .insert(txn, "prop:elements", MapPrelim::default())
+                .insert(txn, "e1", MapPrelim::default())
+                .insert(txn, "xywh", "w0");
+        });
+        room.deliver(&made);
+        room.deliver(&edited(&writer, |txn, blocks| {
+            blocks.remove(txn, "x");
+        }));
+        let unit = at_key(&made, "xywh");
+        room.deliver(&beside(21, Some(unit), None));
+        room.deliver(&beside(22, None, Some(unit)));
+        assert!(room.waiting.is_empty());
+        let replica = room.board.replica().unwrap();
+        for doc in [&room.join(), &room.peer, &replica] {
+            assert!(held(doc) == held(&room.reference));
+        }
+        room.store();
+        room.fold();
+        assert!(held(&room.join()) == held(&room.reference));
+    }
+
+    /// An item naming a unit neither the room nor its update holds, as its
+    /// parent, origin or right origin, is unheld: dropped for its writer's
+    /// resync and never appended, so no stored row names it.
+    #[test]
+    fn an_item_naming_a_unit_no_side_holds_waits() {
+        let room = Room::new();
+        let absent = ID::new(ClientID::new(99), 5);
+        for sent in [
+            under(21, 0, absent, "k", false),
+            beside(21, Some(absent), None),
+            beside(21, None, Some(absent)),
+        ] {
+            assert!(matches!(read(&room.board, &sent), Read::Unheld));
+        }
     }
 }
