@@ -1159,6 +1159,22 @@ Outside this directory, for BlockSuite:
     full board before either writes" in `src/features/blocksuite/boardWrites.test.ts`;
     the alignment menu's pick, inside its rendered template, is not driven there.
 
+83. The label of a connector hanging on an element in the middle of this tab's
+    gesture stays this tab's until the gesture ends (`affine/gfx/connector`
+    `connector-watcher.ts`, marked `Capy (local change 83)`; found 2026-11-25 with
+    local change 80). A drag, resize or turn shows the element's place from
+    BlockSuite's stash, and local change 63's watcher took each frame's change as
+    this tab's own and stored the label's new place every frame: a 60-frame drag
+    of a shape grew the board 799 B with one labelled connector on it, 2,607 B with
+    two and 13,050 B with ten (about 20 B a label a frame, on any board). While an
+    end's shown `xywh` or `rotate` is not its stored one, the label is stashed
+    (`held`); the change that stores the end's place at the gesture's end writes
+    it, inside that change, so Undo takes them back together. The same drags now
+    write nothing over their frames and grow the board 37, 46 and 129 B. A
+    connector's own drag keeps its label as local change 80 does. Pinned by "holds
+    the labels hanging on a shape mid-drag this tab's" in
+    `src/features/blocksuite/connectorLabel.test.ts`.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

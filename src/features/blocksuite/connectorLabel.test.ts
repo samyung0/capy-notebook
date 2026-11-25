@@ -12,6 +12,7 @@ import type {
   DragMoveContext,
   DragStartContext,
   GfxController,
+  GfxPrimitiveElementModel,
 } from '@blocksuite/affine/std/gfx';
 import { MemoryBlobSource } from '@blocksuite/affine/sync';
 import { expect, it } from 'vitest';
@@ -174,6 +175,57 @@ it("drags a connector with its free ends and label this tab's, writing each once
   expect(stored.yMap.get('source')).toEqual({ position: [0, 30] });
   expect(stored.yMap.get('target')).toEqual({ position: [200, 30] });
   expect(stored.yMap.get('labelXYWH')).toEqual([70, 18, 60, 24]);
+});
+
+// Local change 83: a labelled connector hanging on a shape in the middle of a
+// drag wrote its label at every frame (about 20 B a label a frame, on any
+// board). Fails if a frame writes, or if the labels are not written inside the
+// change that ends the drag (Undo would take them back apart from it).
+it("holds the labels hanging on a shape mid-drag this tab's, and writes each once as the drag ends, taken back with it", async () => {
+  const maker = tab(boardFirstState());
+  const from = maker.surface.addElement(shape(0));
+  const to = maker.surface.addElement(shape(400));
+  const connectors = [0, 1].map(() =>
+    maker.surface.addElement({
+      labelDisplay: true,
+      labelOffset: { distance: 0.5 },
+      labelXYWH: [0, 0, 60, 24],
+      mode: 0,
+      source: { id: from },
+      target: { id: to },
+      text: new Y.Text('feeds'),
+      type: 'connector',
+    })
+  );
+  await settled();
+  const before = connectors.map((id) => labelOf(maker, id));
+  const moving = maker.surface.getElementById(from) as GfxPrimitiveElementModel;
+  maker.store.captureSync();
+  maker.sent.length = 0;
+  // BlockSuite's drag stashes the shape's box and sets it on every frame.
+  moving.stash('xywh');
+  for (const y of [100, 200, 300]) {
+    moving.xywh = `[0,${y},100,100]`;
+    await settled();
+  }
+  expect(maker.sent).toEqual([]);
+  const shown = connectors.map((id) => labelOf(maker, id));
+  expect(shown).not.toEqual(before);
+
+  // The drag's end stores the box, and the labels inside that change.
+  maker.store.transact(() => moving.pop('xywh'));
+  expect(maker.sent).toHaveLength(3);
+  expect(
+    connectors.map((id) =>
+      (maker.surface.getElementById(id) as ConnectorElementModel).yMap.get(
+        'labelXYWH'
+      )
+    )
+  ).toEqual(shown);
+  maker.store.captureSync();
+  maker.store.undo();
+  await settled();
+  expect(connectors.map((id) => labelOf(maker, id))).toEqual(before);
 });
 
 it('takes a move back with its label, and can do it again', async () => {
