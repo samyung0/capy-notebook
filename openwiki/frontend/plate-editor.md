@@ -6908,7 +6908,28 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       `boardFull.ts`), and whatever refuses an add (`refusesAdds`: a tool
       picked, a press on the board with a tool that adds, a paste, a drop, ⌘D, a
       formula, a piece, a link or quiz card, a double click on empty canvas) and
-      the menu as it opens call the check first. With
+      the menu as it opens call the check first. A gesture writing k > 1
+      elements on a full board goes only when the size plus 16 B an element
+      fits under the cap (`refusesWrites`, `BOARD_WRITE_BYTES`; Epo
+      2026-11-25): Yjs keeps a stub of about 10 B for each value overwritten,
+      one element's back-to-back overwrites merge (1,000 drags of one add
+      35 B) but several elements' interleave and never merge, and no board fold
+      collects them, so a select-all drag of thousands of elements would pass
+      the cap and send the tab to its copy-only recovery. Refused, it writes
+      nothing and shows the removals-only line, its size checked first; one
+      element's always goes, and a board under the line checks nothing. It
+      covers a drag, resize or rotation of a selection (at the interactivity's
+      `handleElementMove`, `handleElementResize` and `handleElementRotate`,
+      where the moving set is known: a press outside the selection selects
+      what is under it; a rotation counts two values, angle and place), an
+      arrow key's nudge (stopped as the board captures it), the element
+      toolbar's changes and aligns (its `updateElement` calls on what the
+      selection writes, decided whole for the task) and an arrange, a resize
+      to one size and an ungroup (their commands). A selection writes what is
+      selected and what its groups hold. A group (a lock of several makes one)
+      is an add, refused as one. Left out: a reorder (it writes each
+      element's `index` straight, through neither path), and a connector's
+      own writes at each move of a resize or rotation it follows. With
       deletions since the last measure it encodes once and the exact size reaches
       the board before it returns (`subscribeSize` is synchronous), so a board
       that peers cleared takes an add with no receipt. A tab that may not write

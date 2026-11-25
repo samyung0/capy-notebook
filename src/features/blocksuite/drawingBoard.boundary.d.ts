@@ -96,11 +96,15 @@ export function mountDrawingBoard(
   setLocked: (locked: boolean) => void;
   /** The room's size against its cap: the menu's last row from 75% of it, in the
    * error colour at it. null (no room) shows none. `sizer`: the room's check
-   * of that size, run before anything acts on it, and its note of each press
-   * (`boardFull.ts`). */
+   * of that size, run before anything acts on it, its note of each press and
+   * the size as it stands (`boardFull.ts`). */
   setRoomSize: (
     size: { bytes: number; max: number } | null,
-    sizer?: { check: () => void; pressed: () => void }
+    sizer?: {
+      check: () => void;
+      pressed: () => void;
+      size: () => { bytes: number; max: number } | null;
+    }
   ) => void;
   snapshot: () => string;
   /** Resolves once the board first shows (`image` draws it from then). */

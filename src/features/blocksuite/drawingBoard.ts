@@ -23,6 +23,8 @@ import { createElementsFromClipboardDataCommand } from '@blocksuite/affine/block
 import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
 import { RootViewExtension } from '@blocksuite/affine/blocks/root/view';
 import {
+  autoArrangeElementsCommand,
+  autoResizeElementsCommand,
   CanvasRenderer,
   DefaultTool,
   EdgelessClipboardConfig,
@@ -47,6 +49,11 @@ import { BrushStoreExtension } from '@blocksuite/affine/gfx/brush/store';
 import { BrushViewExtension } from '@blocksuite/affine/gfx/brush/view';
 import { ConnectorStoreExtension } from '@blocksuite/affine/gfx/connector/store';
 import { ConnectorViewExtension } from '@blocksuite/affine/gfx/connector/view';
+import {
+  createGroupCommand,
+  createGroupFromSelectedCommand,
+  ungroupCommand,
+} from '@blocksuite/affine/gfx/group';
 import { GroupStoreExtension } from '@blocksuite/affine/gfx/group/store';
 import { GroupViewExtension } from '@blocksuite/affine/gfx/group/view';
 import {
@@ -105,6 +112,8 @@ import {
   type GfxController,
   GfxControllerIdentifier,
   type GfxModel,
+  InteractivityIdentifier,
+  isGfxGroupCompatibleModel,
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_STEP,
@@ -158,8 +167,12 @@ import { forgetFormulas } from './boardFormulaDraw';
 import {
   type BoardSizer,
   checkBoardSize,
+  gateElementUpdates,
+  gateNudges,
   gatePresses,
+  gateSelectionWrites,
   refusesAdds,
+  refusesWrites,
   setBoardFull,
   setBoardSizer,
 } from './boardFull';
@@ -842,9 +855,10 @@ export function mountDrawingBoard(
   // A canvas near its room's cap (`fullAt`) takes only edits that remove
   // content: select, the eraser, delete and moving stay; a tool that adds, a
   // paste, a drop, ⌘D and Duplicate (`duplicates`), an Alt-drag's copy, a
-  // mind map's Tab or Enter child, a shape's auto-complete +, a double
-  // click's note or label, a piece, a picture, a link or quiz card, an image
-  // and a formula are refused with the cap's line (boardFull.ts). Typing in
+  // group, a mind map's Tab or Enter child, a shape's auto-complete +, a
+  // double click's note or label, a piece, a picture, a link or quiz card, an
+  // image and a formula are refused with the cap's line (boardFull.ts), and so
+  // is a write of several elements whose stubs would pass the cap (below). Typing in
   // what is there and Undo are not stopped; a refusal by the room still goes
   // to the copy-only recovery.
   let full = false;
@@ -907,13 +921,59 @@ export function mountDrawingBoard(
   };
   for (const type of ['paste', 'drop', 'keydown', 'pointerdown'])
     board.addEventListener(type, refuseAdd, true);
+  // A gesture writing several elements on a full board goes only when a stub
+  // for each fits under the cap (`refusesWrites`, Epo 2026-11-25): a drag, a
+  // resize or a rotation of a selection, an arrow key's nudge, the element
+  // toolbar's changes, an arrange or an ungroup. A selection writes what is
+  // selected and what its groups hold.
+  const selectionWrites = () => {
+    const { selectedElements } = gfx.selection;
+    return new Set([
+      ...selectedElements,
+      ...selectedElements.flatMap((element) =>
+        isGfxGroupCompatibleModel(element) ? element.descendantElements : []
+      ),
+    ]);
+  };
+  const interactivity = std.getOptional(InteractivityIdentifier);
+  if (interactivity) gateSelectionWrites(store, interactivity);
+  const ungateNudges = gateNudges(board, store, () => {
+    const { editing, selectedElements } = gfx.selection;
+    // A key on a mind map's node moves the selection, and nothing moves
+    // with a locked element selected (`edgeless-keyboard.ts`'s `_move`).
+    if (
+      editing ||
+      selectedElements.some(
+        (element) =>
+          element.group instanceof MindmapElementModel || element.isLocked()
+      )
+    )
+      return 0;
+    return selectionWrites().size;
+  });
+  gateElementUpdates(store, std.get(EdgelessCRUDIdentifier), (id) => {
+    const written = selectionWrites();
+    return [...written].some((element) => element.id === id) ? written.size : 0;
+  });
   // Duplicate (the element toolbar's, ⌘D's) and a paste of copied elements
-  // make their copies through one command.
+  // make their copies through one command, a group (a lock of several makes
+  // one) through another: adds. An arrange, a resize to one size and an
+  // ungroup write every selected element.
+  const ADDS = new Set<unknown>([
+    createElementsFromClipboardDataCommand,
+    createGroupCommand,
+    createGroupFromSelectedCommand,
+  ]);
+  const WRITES_SELECTION = new Set<unknown>([
+    autoArrangeElementsCommand,
+    autoResizeElementsCommand,
+    ungroupCommand,
+  ]);
   const { command } = std;
   const exec = command.exec.bind(command);
   command.exec = ((run, ...rest) =>
-    (run as unknown) === createElementsFromClipboardDataCommand &&
-    refusesAdds(store)
+    (ADDS.has(run) && refusesAdds(store)) ||
+    (WRITES_SELECTION.has(run) && refusesWrites(store, selectionWrites().size))
       ? [false, {}]
       : exec(run, ...rest)) as typeof command.exec;
   // The stylesheet shows the eraser's ring while it's the tool.
@@ -1523,6 +1583,7 @@ export function mountDrawingBoard(
       document.removeEventListener('keydown', slotKeys);
       for (const type of ['paste', 'drop', 'keydown', 'pointerdown'])
         board.removeEventListener(type, refuseAdd, true);
+      ungateNudges();
       window.removeEventListener('keydown', cardKeys, true);
       unwatchEditor?.();
       unfollow?.();

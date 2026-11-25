@@ -511,7 +511,11 @@ export function useCanvasBoard(
       mounted.setRoomSize(null);
       return;
     }
-    const sizer = { check: sized.checkSize, pressed: sized.pressed };
+    const sizer = {
+      check: sized.checkSize,
+      pressed: sized.pressed,
+      size: sized.size,
+    };
     const show = () => mounted.setRoomSize(sized.size(), sizer);
     show();
     return sized.subscribeSize(show);
