@@ -22,12 +22,17 @@ export class ConnectorElementView extends GfxElementModelView<ConnectorElementMo
   // it ends, then each is written once. Upstream stashed only the label and
   // stashed it again at the end, so a free end's place (`moveTo`) and the
   // label after the drag were stored on every frame. A bound end, which
-  // `moveTo` leaves, stays stored: a peer's re-attach mid-drag stands.
+  // `moveTo` leaves, stays stored: a peer's re-attach mid-drag stands. One a
+  // peer frees mid-drag is stashed at the next frame.
+  private _stashFreeEnds() {
+    if (!this.model.source.id) this.model.stash('source');
+    if (!this.model.target.id) this.model.stash('target');
+  }
+
   override onDragStart = (context: DragStartContext) => {
     super.onDragStart(context);
     this.model.stash('labelXYWH');
-    if (!this.model.source.id) this.model.stash('source');
-    if (!this.model.target.id) this.model.stash('target');
+    this._stashFreeEnds();
   };
 
   override onDragEnd = (context: DragEndContext) => {
@@ -40,6 +45,8 @@ export class ConnectorElementView extends GfxElementModelView<ConnectorElementMo
   override onDragMove = (context: DragMoveContext) => {
     const { dx, dy, currentBound } = context;
 
+    // Capy (local change 80).
+    this._stashFreeEnds();
     this.model.moveTo(currentBound.moveDelta(dx, dy));
   };
 

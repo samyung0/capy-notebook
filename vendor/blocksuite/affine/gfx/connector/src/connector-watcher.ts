@@ -8,7 +8,9 @@ import {
   MindmapElementModel,
 } from '@blocksuite/affine-model';
 import { noteSizeWrites } from '@blocksuite/affine-shared/utils';
+import type { XYWH } from '@blocksuite/global/gfx';
 import { activeInteractionOf, type GfxModel } from '@blocksuite/std/gfx';
+import isEqual from 'lodash-es/isEqual';
 
 import { ConnectorPathGenerator } from './connector-manager';
 
@@ -30,28 +32,37 @@ export const connectorWatcher: SurfaceMiddleware = (
    * until it ends. The label of a connector hanging on one of them moves this
    * tab's alone (`held`), and is written once, inside the change that stores
    * the element's place at the end, so Undo takes them back together; one
-   * whose ends were stored unchanged is released after the gesture, writing
-   * nothing. A mind map's root dragged lays its whole map out at every
-   * frame. */
+   * whose ends were stored unchanged is released after the gesture at its
+   * stored place, writing nothing. A mind map's root dragged lays its whole
+   * map out at every frame. */
   const held = new Set<ConnectorElementModel>();
   let watching: (() => void) | null = null;
-  const inGesture = (elements: readonly GfxModel[], id: string | undefined) => {
+  // The gesture's elements as a set, made once a gesture (its array stays
+  // the same until it ends): a frame looks each end up once.
+  const sets = new WeakMap<readonly GfxModel[], Set<GfxModel>>();
+  const setOf = (elements: readonly GfxModel[]) => {
+    let set = sets.get(elements);
+    if (!set) sets.set(elements, (set = new Set(elements)));
+    return set;
+  };
+  const inGesture = (moving: Set<GfxModel>, id: string | undefined) => {
     const element = id ? elementGetter(id) : null;
     if (!element) return false;
     const map = element.group;
     return (
-      elements.includes(element) ||
+      moving.has(element) ||
       (map instanceof MindmapElementModel &&
         !!map.tree &&
-        elements.includes(map.tree.element))
+        moving.has(map.tree.element))
     );
   };
   const endsMidGesture = (connector: ConnectorElementModel) => {
     const elements = activeInteractionOf(surface.store)?.peek()?.elements;
+    if (!elements) return false;
+    const moving = setOf(elements);
     return (
-      !!elements &&
-      (inGesture(elements, connector.source?.id) ||
-        inGesture(elements, connector.target?.id))
+      inGesture(moving, connector.source?.id) ||
+      inGesture(moving, connector.target?.id)
     );
   };
   const hold = (connector: ConnectorElementModel) => {
@@ -63,9 +74,15 @@ export const connectorWatcher: SurfaceMiddleware = (
       if (active) return;
       watching?.();
       watching = null;
+      // Its stored place stands (a peer's, or one this tab's path would put
+      // elsewhere): the stash takes it back, and the pop writes nothing.
       queueMicrotask(() => {
         held.forEach(connector => {
-          if (surface.hasElementById(connector.id)) connector.pop('labelXYWH');
+          if (!surface.hasElementById(connector.id)) return;
+          const stored = connector.yMap.get('labelXYWH') as XYWH | undefined;
+          if (!isEqual(connector.labelXYWH, stored))
+            connector.labelXYWH = stored;
+          connector.pop('labelXYWH');
         });
         held.clear();
       });

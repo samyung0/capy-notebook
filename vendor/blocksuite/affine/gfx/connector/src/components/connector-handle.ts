@@ -101,8 +101,9 @@ export class EdgelessConnectorHandle extends WithDisposable(LitElement) {
       this.requestUpdate();
     });
 
-    _disposables.addFromEvent(document, 'pointerup', () => {
-      // Capy (local change 85).
+    // Capy (local change 85): a cancelled pointer ends the drag as a release
+    // does, once.
+    const end = () => {
       this.doc.transact(() => {
         connector.pop(connection);
         connector.pop('labelXYWH');
@@ -112,7 +113,9 @@ export class EdgelessConnectorHandle extends WithDisposable(LitElement) {
       this._disposables = new DisposableGroup();
       this._bindEvent();
       slots.elementResizeEnd.next();
-    });
+    };
+    _disposables.addFromEvent(document, 'pointerup', end);
+    _disposables.addFromEvent(document, 'pointercancel', end);
   }
 
   override firstUpdated() {

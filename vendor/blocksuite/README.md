@@ -1133,7 +1133,9 @@ Outside this directory, for BlockSuite:
     (`source`, `target` with no `id`) and pops them, each written once if it
     changed. A bound end, which `moveTo` never changes, stays stored, so a peer's
     re-attach or detach made mid-drag stands (the second guard review found the
-    first version writing the stale end back over it). Pinned by "drags a
+    first version writing the stale end back over it); an end a peer frees
+    mid-drag is stashed at the next frame, before `moveTo` places it, so the
+    frames after write nothing (third guard review). Pinned by "drags a
     connector with its free ends and label this tab's" and "keeps a peer's
     re-attach of a bound end" in `src/features/blocksuite/connectorLabel.test.ts`.
 
@@ -1159,13 +1161,17 @@ Outside this directory, for BlockSuite:
     note's Scale each note's box and scale and its Auto or Customized height each
     note's box and collapse, an Unlock of several each element's lock (ungrouping
     a group), and a mind map's Style and Layout every node's look and place
-    (about 10 KB for a 200-node map), all through neither; a mind map's node
+    (up to about 125 B a node on a board whose clocks passed 10^5), all
+    through neither; a mind map's node
     dragged off its map makes a new map (`createFromTree`), an add, and one
-    dropped into another map takes that map's style and lays it out again,
-    neither refused: refused there, part of the change was already written.
+    dropped into another map takes that map's style and lays both maps out
+    again, neither refused: refused there, part of the change was already
+    written.
     `boardWrites.refuses(store, models, write)` now runs before any write
     (`place`, `order`, `scale`, `height`, `unlock`, `style`, `layout`, `merge` or
     `add`), and what it refuses writes nothing (a dragged node stays in its map).
+    A merge is asked once, at the drop, with both maps' counts together (third
+    guard review: the first version asked for the map it joins alone).
     The app sets the answer per store (`src/features/blocksuite/boardFull.ts`
     `gateToolbarWrites`); with none set, nothing is refused. Pinned by the
     alignment menu's Align left, a Lock and an Unlock of several, Bring to Front,
@@ -1187,10 +1193,13 @@ Outside this directory, for BlockSuite:
     mounted board's `InteractivityManager` is kept by its store, and while one of
     a connector's ends is among the elements of its `activeInteraction$` (a
     node of a mind map whose root is among them too: a root's drag lays its map
-    out at every frame), the label is stashed (`held`). The change that stores
-    the end's place at the gesture's end writes it, inside that change, so Undo
-    takes them back together; a label still held once the gesture ended (its
-    ends stored unchanged) is popped a microtask later, writing nothing. The
+    out at every frame; the elements are kept in a `Set` once a gesture), the
+    label is stashed (`held`). The change that stores the end's place at the
+    gesture's end writes it, inside that change, so Undo takes them back
+    together; a label still held once the gesture ended (its ends stored
+    unchanged) is set back to its stored place and popped a microtask later,
+    writing nothing, so a peer's place stored meanwhile stands (third guard
+    review: the first version wrote the place this tab showed over it). The
     same drags now write nothing over their frames and grow the board 37, 46 and
     129 B. The first version took an end whose shown `xywh` differed from its
     stored one as mid-gesture, and a note showing a size it measured (local
@@ -1221,8 +1230,9 @@ Outside this directory, for BlockSuite:
     review of the full board's write gate, 2026-11-25). Upstream set the end at
     every pointer move, and local change 63's watcher placed the label on the
     new path each time: about 20 B a frame, never merged, on any board. The
-    press stashes the end and `labelXYWH` and the pointer's release pops both in
-    one change before its `captureSync`, each written once if it changed. Pinned
+    press stashes the end and `labelXYWH` and the pointer's release, or its
+    cancel, pops both in one change before its `captureSync`, each written once
+    if it changed. Pinned
     by "drags a connector's end by its handle with its label this tab's" in
     `src/features/blocksuite/connectorLabel.test.ts`.
 

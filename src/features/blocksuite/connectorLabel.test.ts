@@ -206,8 +206,9 @@ it("drags a connector with its free ends and label this tab's, writing each once
 // drag wrote its label at every frame (about 20 B a label a frame, on any
 // board). Fails if a frame writes, if the labels are not written inside the
 // change that ends the drag (Undo would take them back apart from it), or if
-// a resize ending where it began leaves them this tab's (a peer's place would
-// not show).
+// a resize ending where it began writes them (a peer's place stored
+// meanwhile would be lost, in an Undo step of its own) or leaves them this
+// tab's (a later one would not show).
 it("holds the labels hanging on a shape mid-gesture this tab's, and writes each once as it ends, taken back with it", async () => {
   const maker = tab(boardFirstState());
   const gesture = gestureOn(maker.store);
@@ -258,30 +259,34 @@ it("holds the labels hanging on a shape mid-gesture this tab's, and writes each 
   await settled();
   expect(connectors.map((id) => labelOf(maker, id))).toEqual(before);
 
-  // A resize that ends where it began stores nothing, and the labels are
-  // this tab's no more: a peer's place shows.
+  // A resize that ends where it began stores nothing: a peer's place, stored
+  // meanwhile, stands, and the labels are this tab's no more.
   await settled();
+  const peer = tab(Y.encodeStateAsUpdate(maker.doc));
   maker.sent.length = 0;
   gesture.value = { elements: [moving], type: 'resize' };
   moving.stash('xywh');
   moving.xywh = '[0,0,300,300]';
   await settled();
+  peer.surface.updateElement(connectors[0], { labelXYWH: [5, 5, 60, 24] });
+  Y.applyUpdate(maker.doc, Y.encodeStateAsUpdate(peer.doc), 'room');
   moving.xywh = '[0,0,100,100]';
   await settled();
   gesture.value = null;
   maker.store.transact(() => moving.pop('xywh'));
   await settled();
   expect(maker.sent).toEqual([]);
-  const peer = tab(Y.encodeStateAsUpdate(maker.doc));
-  peer.surface.updateElement(connectors[0], { labelXYWH: [5, 5, 60, 24] });
-  Y.applyUpdate(maker.doc, Y.encodeStateAsUpdate(peer.doc), 'room');
   expect(labelOf(maker, connectors[0])).toEqual([5, 5, 60, 24]);
+  peer.surface.updateElement(connectors[1], { labelXYWH: [6, 6, 60, 24] });
+  Y.applyUpdate(maker.doc, Y.encodeStateAsUpdate(peer.doc), 'room');
+  expect(labelOf(maker, connectors[1])).toEqual([6, 6, 60, 24]);
 });
 
 // Review of local change 80: a drag stashed a bound end too, which `moveTo`
 // never changes, and wrote it back at the end. Fails if a peer's re-attach
-// made mid-drag is undone by the drag's end.
-it("keeps a peer's re-attach of a bound end made while this tab drags the connector", async () => {
+// made mid-drag is undone by the drag's end, or if an end a peer frees
+// mid-drag is stored at every frame after.
+it("keeps a peer's re-attach of a bound end made while this tab drags the connector, and holds an end a peer frees this tab's", async () => {
   const maker = tab(boardFirstState());
   const [a, b] = [
     maker.surface.addElement(shape(0)),
@@ -310,12 +315,32 @@ it("keeps a peer's re-attach of a bound end made while this tab drags the connec
   await settled();
   expect(connector.yMap.get('source')).toEqual({ id: b });
   expect(connector.yMap.get('target')).toEqual({ position: [200, 310] });
+
+  // A peer frees the bound end mid-drag: the frames after write nothing.
+  await settled();
+  Y.applyUpdate(peer.doc, Y.encodeStateAsUpdate(maker.doc), 'room');
+  const again = Bound.deserialize(connector.xywh);
+  view.onDragStart({} as DragStartContext);
+  peer.surface.updateElement(id, { source: { position: [0, 0] } });
+  Y.applyUpdate(maker.doc, Y.encodeStateAsUpdate(peer.doc), 'room');
+  await settled();
+  maker.sent.length = 0;
+  for (const dy of [10, 20, 30])
+    view.onDragMove({ currentBound: again, dx: 0, dy } as DragMoveContext);
+  await settled();
+  expect(maker.sent).toEqual([]);
+  const shown = connector.source;
+  expect(shown).not.toEqual({ position: [0, 0] });
+  view.onDragEnd({} as DragEndContext);
+  await settled();
+  expect(connector.yMap.get('source')).toEqual(shown);
 });
 
 // Review of local change 83 (local change 85): an end dragged by its handle
 // was stored at every pointer move, and the label the watcher places on its
-// path with it (about 20 B a frame). Fails if a move writes, or if the end
-// and label are not written once, in one change Undo takes back.
+// path with it (about 20 B a frame). Fails if a move writes, if the end and
+// label are not written once, in one change Undo takes back, or if a
+// cancelled pointer leaves them this tab's.
 it("drags a connector's end by its handle with its label this tab's, writing both once as the pointer is up", async () => {
   const maker = tab(boardFirstState());
   const from = maker.surface.addElement(shape(0));
@@ -372,6 +397,22 @@ it("drags a connector's end by its handle with its label this tab's, writing bot
   await settled();
   expect(connector.target).toEqual(before.target);
   expect(labelOf(maker, id)).toEqual(before.label);
+
+  // A cancelled pointer ends it as a release does.
+  maker.sent.length = 0;
+  handle._capPointerDown(new Event('pointerdown'), 'target');
+  page.dispatchEvent(
+    Object.assign(new Event('pointermove'), { x: 500, y: 50 })
+  );
+  await settled();
+  expect(maker.sent).toEqual([]);
+  page.dispatchEvent(new Event('pointercancel'));
+  await settled();
+  expect(maker.sent).toHaveLength(1);
+  expect(connector.yMap.get('target')).toEqual({ position: [500, 50] });
+  page.dispatchEvent(new Event('pointerup'));
+  await settled();
+  expect(maker.sent).toHaveLength(1);
 });
 
 it('takes a move back with its label, and can do it again', async () => {

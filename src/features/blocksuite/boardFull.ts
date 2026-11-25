@@ -61,15 +61,18 @@ export function refusesAdds(store: Store) {
 }
 
 /** What a full board counts for each value a gesture writes on several
- * elements (Epo 2026-11-25). Yjs keeps a stub of about 10 B (its id, origin
- * and deleted mark) for every value overwritten. Back-to-back overwrites of
- * one value by one tab merge (1,000 drags of one shape add 35 B), but not
- * where values alternate: a gesture on several elements interleaves their
- * writes, and one element's gesture writing two or more values (a
- * connector's ends and label, a rotation's angle and place, a text label's
- * box and font size) interleaves its own. Those never merge: a select-all
- * drag adds about 10 B an element, and no fold collects them. 16 B is the
- * margin over that measure. */
+ * elements (Epo 2026-11-25). Yjs keeps a stub (its id, origin and deleted
+ * mark) for every value overwritten, its clock twice: in the new value's
+ * origin and in the deleted range. Back-to-back overwrites of one value by
+ * one tab merge (1,000 drags of one shape add 35 B), but not where values
+ * alternate: a gesture on several elements interleaves their writes, and one
+ * element's gesture writing two or more values (a connector's ends and
+ * label, a rotation's angle and place, a text label's box and font size)
+ * interleaves its own. Those never merge, and no fold collects them. What a
+ * select-all move adds to the room's collected state (`collectedSize`) was
+ * measured at 12 B an element on a fresh board, 14 B once its clocks passed
+ * 10^5 and 16 B past 2.1 × 10^6 (3- and 4-byte clocks); a value written for
+ * the first time adds its key too (`NEW_KEY`). */
 export const BOARD_WRITE_BYTES = 16;
 
 /** What a write reaches: its elements, and the values it writes on them. */
@@ -105,11 +108,17 @@ export function elementsWritten(models: Iterable<GfxModel>) {
   return written;
 }
 
+/** A value written for the first time adds its key beside its stub: about
+ * 20 B (a note's collapse, collapsed height and scale, measured at 19-21 B
+ * across those clocks), two values' worth. */
+const NEW_KEY = 2;
+
 /** What a resize writes on an element besides its box: a text label its
- * font size (a corner) or wrap (a side), a note its scale, a stroke its
- * points (vendor/blocksuite local change 81), a plane its view's corner. */
+ * font size (a corner) or wrap (a side), a note its scale (`NEW_KEY` the
+ * first time), a stroke its points (vendor/blocksuite local change 81), a
+ * plane its view's corner. */
 const RESIZED: Record<string, number> = {
-  'affine:note': 2,
+  'affine:note': 1 + NEW_KEY,
   brush: 2,
   highlighter: 2,
   plane: 3,
@@ -117,12 +126,13 @@ const RESIZED: Record<string, number> = {
 };
 
 /** What a mind map's Style writes on each node: up to ten of its values (its
- * colours, font, padding, radius and shadow) and its box once, measured at
- * 216 B a node at most over every change of style (Yjs keeps each colour and
- * the shadow as a new object): 14 values' worth (`BOARD_WRITE_BYTES`). Its
- * Layout writes each node's box and a first-level node's place in the tree,
- * measured at 18 B a node at most: 2. */
-const NODE_STYLED = 14;
+ * colours, font, padding, radius and shadow) and its box once, measured in
+ * the room's collected state at 117 B a node at most over every change of
+ * style of a 21-node map on a fresh board, 125 B past 10^5 and 133 B past
+ * 2.1 × 10^6: 9 values' worth (`BOARD_WRITE_BYTES`). Its Layout writes each
+ * node's box and a first-level node's place in the tree, measured on a map
+ * of first-level nodes alone at 18, 20 and 22 B a node: 2. */
+const NODE_STYLED = 9;
 const NODE_LAID_OUT = 2;
 
 /** The values `gesture` writes on `model`, at most: a group's box is its
@@ -132,8 +142,9 @@ const NODE_LAID_OUT = 2;
  * (`NODE_LAID_OUT`); a connector writes its free ends and its label
  * (`moveTo`, its resize and rotation); a rotation an angle and a place; a
  * note placed its collapse and collapsed height too (`updateXYWH`), scaled
- * its scale, its height set its collapse. A note showing a size it measured
- * stores it first (vendor/blocksuite local change 75): one more. */
+ * its scale (each `NEW_KEY` the first time), its height set its collapse. A
+ * note showing a size it measured stores it first (vendor/blocksuite local
+ * change 75): one more. */
 export function valuesWritten(model: GfxModel, gesture: Gesture) {
   if (model instanceof MindmapElementModel)
     return gesture === 'move' || gesture === 'style' || gesture === 'layout'
@@ -150,25 +161,41 @@ export function valuesWritten(model: GfxModel, gesture: Gesture) {
   const shown = kind === 'affine:note' ? 1 : 0;
   if (gesture === 'rotate') return 2 + shown;
   if (gesture === 'resize') return (RESIZED[kind] ?? 1) + shown;
-  if (gesture === 'place' && kind === 'affine:note') return 3 + shown;
-  if (gesture === 'scale' || gesture === 'height') return 2 + shown;
+  if (gesture === 'place' && kind === 'affine:note')
+    return 1 + 2 * NEW_KEY + shown;
+  if (gesture === 'scale') return 1 + NEW_KEY + shown;
+  if (gesture === 'height') return 2 + shown;
   return 1 + shown;
 }
+
+/** A mind map's node other than its root (`MindMapDragExtension` drags it
+ * alone, into another branch or map). */
+const isBranch = (model: GfxModel) =>
+  model.group instanceof MindmapElementModel &&
+  model.group.tree?.id !== model.id;
 
 /** What `gesture` on `models` writes (`elementsWritten`, `valuesWritten`),
  * with the label of each labelled connector hanging on one of them
  * (`connectorsOf`), which the tab moving its end places (vendor/blocksuite
- * local change 63). */
+ * local change 63). A mind map's node dragged alone may land in another
+ * branch: its map lays out again and restyles what moved (Style one
+ * colours by first-level branch, the others by depth), at worst the whole
+ * map at its Style count. */
 export function writesOf(
   models: Iterable<GfxModel>,
   gesture: Gesture,
   connectorsOf: (id: string) => Iterable<ConnectorElementModel>
 ): Writes {
-  const written = elementsWritten(models);
+  const list = [...models];
+  const written = elementsWritten(list);
+  const each =
+    gesture === 'move' && list.length === 1 && isBranch(list[0])
+      ? 'style'
+      : gesture;
   let values = 0;
   const labels = new Set<ConnectorElementModel>();
   for (const model of written) {
-    values += valuesWritten(model, gesture);
+    values += valuesWritten(model, each);
     for (const connector of connectorsOf(model.id))
       if (!written.has(connector) && connector.hasLabel())
         labels.add(connector);
@@ -344,8 +371,8 @@ export function gateCommands(
  * any write: an add (a Lock of several groups them, a mind map's node
  * dragged off its map makes a new map) is refused as one (`refusesAdds`); a
  * reorder writes each element's index, an Unlock each element's lock or a
- * group's elements' (it ungroups); a node merged into another mind map takes
- * its style (`NODE_STYLED` a node) and lays that map out again; the rest
+ * group's elements' (it ungroups); a node merged into another mind map lays
+ * both maps out again, restyling the one it leaves at worst; the rest
  * write what `written` counts for their gesture (the alignment menu's
  * `place`, a note's Scale or height, a mind map's Style or Layout). Returns
  * the stop. */
@@ -368,11 +395,16 @@ export function gateToolbarWrites(
       return refusesWrites(store, { elements: length, values: length });
     }
     if (write === 'merge') {
+      // Checked once, at the drop, for both maps: the one it leaves (its
+      // whole map, `elementsWritten`) lays out again and may restyle, its
+      // moved nodes restyled in the other map among them; the one it joins
+      // lays out again.
       const [into, ...moved] = models;
-      const laidOut = written([into], 'layout');
+      const left = written(moved, 'style');
+      const joined = written([into], 'layout');
       return refusesWrites(store, {
-        elements: laidOut.elements + moved.length,
-        values: laidOut.values + moved.length * NODE_STYLED,
+        elements: left.elements + joined.elements,
+        values: left.values + joined.values,
       });
     }
     return refusesWrites(store, written(models, write));

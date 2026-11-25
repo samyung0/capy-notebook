@@ -14,9 +14,9 @@ import type { Store } from '@blocksuite/store';
  * elements' (an Unlock ungroups a group); `style`, each mind map's style and
  * every node's look and place; `layout`, each mind map's layout and every
  * node's place; `merge`, a node and the nodes under it (the models after the
- * first) moved into another mind map (the first), taking its style, laid out
- * with it; `add`, a new element (a group holding them all at a Lock of
- * several, a new mind map for a node dragged off its map). */
+ * first) moved into another mind map (the first), taking its style, both
+ * maps laid out again; `add`, a new element (a group holding them all at a
+ * Lock of several, a new mind map for a node dragged off its map). */
 export type BoardWrite =
   | 'add'
   | 'height'

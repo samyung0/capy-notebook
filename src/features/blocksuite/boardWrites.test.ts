@@ -11,6 +11,7 @@ import {
 import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { StoreExtensionManager } from '@blocksuite/affine/ext-loader';
 import { BrushStoreExtension } from '@blocksuite/affine/gfx/brush/store';
+import { ConnectorElementView } from '@blocksuite/affine/gfx/connector';
 import { ConnectorStoreExtension } from '@blocksuite/affine/gfx/connector/store';
 import {
   createGroupFromSelectedCommand,
@@ -26,6 +27,7 @@ import { MindmapStoreExtension } from '@blocksuite/affine/gfx/mindmap/store';
 import { ShapeStoreExtension } from '@blocksuite/affine/gfx/shape/store';
 import { TextStoreExtension } from '@blocksuite/affine/gfx/text/store';
 import {
+  type ConnectorElementModel,
   LayoutType,
   type MindmapElementModel,
   MindmapStyle,
@@ -36,6 +38,9 @@ import { EditPropsStore } from '@blocksuite/affine/shared/services';
 import { boardWrites } from '@blocksuite/affine/shared/utils';
 import { BlockStdScope, type PointerEventState } from '@blocksuite/affine/std';
 import {
+  type DragEndContext,
+  type DragMoveContext,
+  type DragStartContext,
   GfxControllerIdentifier,
   type GfxModel,
   InteractivityIdentifier,
@@ -56,6 +61,7 @@ import {
 } from '../../../vendor/blocksuite/affine/blocks/root/src/edgeless/configs/toolbar/misc';
 import { moreActions } from '../../../vendor/blocksuite/affine/blocks/root/src/edgeless/configs/toolbar/more';
 import { Slider } from '../../../vendor/blocksuite/affine/components/src/slider/slider';
+import { collectedSize } from '../collaboration/collectedSize';
 import { boardFirstState } from './boardFirstState';
 import { gateBoardWrites } from './boardGates';
 import { openRoomStore } from './roomStore';
@@ -266,8 +272,9 @@ it("counts a group's elements, a mind map's nodes, each value written and the la
   // The group (nothing of its own), its two shapes, and the label of the
   // connector hanging on one of them.
   expect(b.written([b.at(g)], 'move')).toEqual({ elements: 4, values: 3 });
-  // A node moves its whole map: the map's tree and both nodes.
-  expect(b.written([b.at(node)], 'move')).toEqual({ elements: 3, values: 3 });
+  // A node dragged alone may restyle its whole map: the map's tree and both
+  // nodes at the Style count (9 a node).
+  expect(b.written([b.at(node)], 'move')).toEqual({ elements: 3, values: 19 });
   // A connector moved with its ends: its free ends and label, at most.
   expect(b.written([b.at(hanging), b.at(a1), b.at(x)], 'move')).toEqual({
     elements: 3,
@@ -290,11 +297,12 @@ it("counts a group's elements, a mind map's nodes, each value written and the la
 // every node and its Layout moves each one; a note showing a size it
 // measured stores it before a gesture's own write (local change 75); a
 // labelled connector's mode, changed through the toolbar, places its label
-// again. Fails if a node counts one value, a note one, or a mode change
-// leaves out the label.
-it("counts a mind map's Style and Layout per node, a note's shown size, and a connector's label at a mode change", async () => {
+// again. Third review: a node dragged alone may restyle its map. Fails if a
+// node counts one value, a note one, a mode change leaves out the label, or
+// a node's drag counts its map's boxes alone.
+it("counts a mind map's Style and Layout per node, a node's drag as its map's Style, a note's shown size, and a connector's label at a mode change", async () => {
   const b = board();
-  const { map } = mindmap(b, 0, 3);
+  const { ids, map } = mindmap(b, 0, 3);
   const root = b.store.root;
   if (!root) throw new Error('no root');
   const note = b.store.getModelById(
@@ -308,9 +316,19 @@ it("counts a mind map's Style and Layout per node, a note's shown size, and a co
     type: 'connector',
   });
   await settled();
-  // The map's value and 14 a node (measured below).
-  expect(b.written([map], 'style')).toEqual({ elements: 5, values: 57 });
+  // The map's value and 9 a node (measured below).
+  expect(b.written([map], 'style')).toEqual({ elements: 5, values: 37 });
   expect(b.written([map], 'layout')).toEqual({ elements: 5, values: 9 });
+  // A node dragged alone: its whole map at its Style count; its root moves
+  // the map.
+  expect(b.written([b.at(ids[1])], 'move')).toEqual({
+    elements: 5,
+    values: 37,
+  });
+  expect(b.written([b.at(ids[0])], 'move')).toEqual({
+    elements: 5,
+    values: 5,
+  });
   expect(b.written([note, b.at(b.shape(500))], 'move')).toEqual({
     elements: 2,
     values: 3,
@@ -320,13 +338,51 @@ it("counts a mind map's Style and Layout per node, a note's shown size, and a co
   expect(valuesUpdated(b.at(labelled), { stroke: 'red' })).toBe(1);
 });
 
-// Second review of the guard, finding 4: what the gate counts for a mind
-// map's Style and Layout, measured on BlockSuite's own layout (the view's)
-// over every change of style and layout of a 21-node map. Fails if one
-// writes more bytes than its count's stubs allow.
-it("writes no more at a mind map's Style or Layout than the gate counts", async () => {
+// Second and third reviews of the guard: what the gate counts for each
+// gesture bounds what it adds to the room's collected state
+// (`collectedSize`, what the room measures), on a board whose clocks passed
+// 10^5: each overwritten value's stub carries its clock twice, 3 bytes each
+// there (a fresh board's are 1 or 2), and a value written for the first time
+// adds its key. Each gesture writes as BlockSuite's does: the board's
+// `updateElement` and `updateBlock` in one change, a connector's drag through
+// its view, a mind map's Style and Layout on its own layout (the view's) over
+// every change of style and layout of a 21-node map. Fails if one grows the
+// board past its count's `BOARD_WRITE_BYTES` a value.
+it('grows a board whose clocks passed 10^5 by no more than the gate counts for each gesture', async () => {
   const b = board();
-  const { ids, map } = mindmap(b, 0, 20);
+  const aged = b.doc.getText('aged');
+  aged.insert(0, 'x'.repeat(200_000));
+  aged.delete(0, 200_000);
+  const n = 20;
+  const each = (make: (i: number) => string) =>
+    Array.from({ length: n }, (_, i) => make(i));
+  const shapes = each((i) => b.shape(20 * i));
+  const texts = each((i) =>
+    b.surface.addElement({
+      text: new Y.Text('t'),
+      type: 'text',
+      xywh: `[${20 * i},100,20,10]`,
+    })
+  );
+  const strokes = each((i) =>
+    b.surface.addElement({
+      lineWidth: 4,
+      points: [
+        [i, 300],
+        [i + 10, 310],
+      ],
+      type: 'brush',
+    })
+  );
+  const connectors = each((i) =>
+    connector(b, [20 * i, 200], [20 * i + 10, 250])
+  );
+  const root = b.store.root;
+  if (!root) throw new Error('no root');
+  const notes = each((i) =>
+    b.store.addBlock('affine:note', { xywh: `[${300 * i},500,200,80]` }, root)
+  ).map((id) => b.store.getModelById(id) as NoteBlockModel);
+  const { map } = mindmap(b, 0, 20);
   (
     MindMapView.prototype as unknown as { _setLayoutMethod: () => void }
   )._setLayoutMethod.call({ model: map });
@@ -342,14 +398,112 @@ it("writes no more at a mind map's Style or Layout than the gate counts", async 
   vi.stubGlobal('document', { body: measured(), createElement: measured });
   map.layout();
   await settled();
-  const node = b.at(ids[5]) as unknown as { strokeColor: unknown };
-  const colour = node.strokeColor;
-  const grows = async (change: () => void) => {
-    const before = Y.encodeStateAsUpdate(b.doc).length;
-    change();
+  const fits = async (
+    counted: { values: number },
+    change: () => void,
+    label: string
+  ) => {
+    const before = collectedSize(b.doc);
+    b.store.transact(change);
     await settled();
-    return Y.encodeStateAsUpdate(b.doc).length - before;
+    const grew = collectedSize(b.doc) - before;
+    expect(grew, label).toBeLessThanOrEqual(BOARD_WRITE_BYTES * counted.values);
   };
+  const models = (ids: string[]) => ids.map(b.at);
+  const crud = b.std.get(EdgelessCRUDIdentifier);
+  await fits(
+    b.written(models(shapes), 'move'),
+    () => {
+      for (const [i, id] of shapes.entries())
+        crud.updateElement(id, { xywh: `[${20 * i},5,10,10]` });
+    },
+    'a move'
+  );
+  await fits(
+    b.written(models(shapes), 'rotate'),
+    () => {
+      for (const [i, id] of shapes.entries())
+        crud.updateElement(id, { rotate: 30, xywh: `[${20 * i},8,10,10]` });
+    },
+    'a rotation'
+  );
+  await fits(
+    b.written(models(texts), 'resize'),
+    () => {
+      for (const [i, id] of texts.entries())
+        crud.updateElement(id, { fontSize: 30, xywh: `[${20 * i},100,40,20]` });
+    },
+    "a text label's resize"
+  );
+  await fits(
+    {
+      values: models(strokes).reduce(
+        (sum, model) => sum + valuesUpdated(model, { lineWidth: 8 }),
+        0
+      ),
+    },
+    () => {
+      for (const id of strokes) crud.updateElement(id, { lineWidth: 8 });
+    },
+    "a stroke's width"
+  );
+  await fits(
+    { values: models(shapes).length },
+    () => {
+      for (const id of shapes) crud.updateElement(id, { fillColor: '#ff0000' });
+    },
+    'a fill'
+  );
+  await fits(
+    b.written(models(connectors), 'move'),
+    () => {
+      for (const model of models(connectors)) {
+        const view = new ConnectorElementView(
+          model as ConnectorElementModel,
+          b.gfx
+        );
+        view.onDragStart({} as DragStartContext);
+        view.onDragMove({
+          currentBound: model.elementBound,
+          dx: 0,
+          dy: 40,
+        } as DragMoveContext);
+        view.onDragEnd({} as DragEndContext);
+      }
+    },
+    "a connector's drag"
+  );
+  // A note placed and scaled for the first time adds its collapse, its
+  // collapsed height and its scale.
+  await fits(
+    b.written(notes, 'place'),
+    () => {
+      for (const [i, note] of notes.entries()) {
+        b.store.updateBlock(note, () => {
+          note.props.edgeless.collapse = true;
+          note.props.edgeless.collapsedHeight = 90;
+        });
+        crud.updateElement(note.id, { xywh: `[${300 * i},600,200,90]` });
+      }
+    },
+    "a note's place"
+  );
+  await fits(
+    b.written(notes, 'scale'),
+    () => {
+      for (const [i, note] of notes.entries())
+        b.store.updateBlock(note, () => {
+          note.xywh = `[${300 * i},600,400,180]`;
+          note.props.edgeless.scale = 2;
+        });
+    },
+    "a note's Scale"
+  );
+  const node = b.at(map.tree.children[0].id) as unknown as {
+    strokeColor: unknown;
+  };
+  const colour = node.strokeColor;
+  let restyled = false;
   for (const style of [
     MindmapStyle.TWO,
     MindmapStyle.THREE,
@@ -360,29 +514,30 @@ it("writes no more at a mind map's Style or Layout than the gate counts", async 
     MindmapStyle.FOUR,
     MindmapStyle.ONE,
   ]) {
-    const grew = await grows(() => {
-      map.style = style;
-    });
-    expect(grew).toBeLessThanOrEqual(
-      BOARD_WRITE_BYTES * b.written([map], 'style').values
+    await fits(
+      b.written([map], 'style'),
+      () => {
+        map.style = style;
+      },
+      `Style ${style}`
     );
-    if (style === MindmapStyle.TWO)
-      expect(node.strokeColor).not.toEqual(colour);
+    restyled ||= node.strokeColor !== colour;
   }
+  expect(restyled).toBe(true);
   for (const layout of [
     LayoutType.LEFT,
     LayoutType.BALANCE,
     LayoutType.RIGHT,
     LayoutType.BALANCE,
-  ]) {
-    const grew = await grows(() => {
-      map.layoutType = layout;
-      map.layout();
-    });
-    expect(grew).toBeLessThanOrEqual(
-      BOARD_WRITE_BYTES * b.written([map], 'layout').values
+  ])
+    await fits(
+      b.written([map], 'layout'),
+      () => {
+        map.layoutType = layout;
+        map.layout();
+      },
+      `Layout ${layout}`
     );
-  }
 });
 
 // Review of 8d813a7cc, tests: the gate sits on the board's one
@@ -657,15 +812,18 @@ it("refuses a note's Scale and height of several notes past a full board before 
       .generate(ctx)
       .run(ctx);
   };
-  // Two notes, each three values.
-  b.roomFor(5);
+  // Two notes: a Scale four values each (its scale a new key), a height
+  // three.
+  b.roomFor(7);
   b.sent.length = 0;
   scale(200);
+  b.roomFor(5);
   height();
   expect(b.sent).toEqual([]);
   expect(userToast).toHaveBeenCalledTimes(2);
-  b.roomFor(6);
+  b.roomFor(8);
   scale(200);
+  b.roomFor(6);
   height();
   expect(notes.map((note) => note.props.edgeless.scale)).toEqual([2, 2]);
   expect(notes.map((note) => note.props.edgeless.collapse)).toEqual([
@@ -764,15 +922,15 @@ it("refuses a mind map's Style and Layout past a full board before any node chan
       ),
       '@click'
     )[item]();
-  // The map's value, and 14 or 2 for each of its three nodes.
-  b.roomFor(42);
+  // The map's value, and 9 or 2 for each of its three nodes.
+  b.roomFor(27);
   b.sent.length = 0;
   pick('a.style', 3);
   b.roomFor(6);
   pick('b.layout', 0);
   expect(b.sent).toEqual([]);
   expect(userToast).toHaveBeenCalledTimes(2);
-  b.roomFor(43);
+  b.roomFor(28);
   pick('a.style', 3);
   expect(map.style).toBe(MindmapStyle.TWO);
   b.roomFor(7);
@@ -811,8 +969,9 @@ it('refuses an Unlock of several past a full board before any element unlocks', 
 
 // Second review of the guard, finding 6 (local change 82): a node dragged into
 // another mind map takes that map's style and lays it out again, a map the
-// drag's own count leaves out. Fails if a refused merge writes anything, or
-// one with room does not merge.
+// drag's own count leaves out. Third review: both maps are counted together,
+// once. Fails if a refused merge writes anything, or one with room does not
+// merge.
 it('refuses a node merged into another mind map past a full board, and writes nothing', () => {
   const b = board();
   const from = mindmap(b, 0, 1);
@@ -850,15 +1009,16 @@ it('refuses a node merged into another mind map past a full board, and writes no
     onDragMove({ dragLastPos: at });
     onDragEnd({ dragLastPos: at, dragStartPos: at });
   };
-  // The second map laid out (its value, 2 for each of its two nodes) and the
-  // node restyled (14).
-  b.roomFor(18);
+  // Checked once, at the drop, for both maps: the first at its Style count
+  // (its value, 9 for each of its two nodes), the second laid out (its value,
+  // 2 for each of its two nodes).
+  b.roomFor(23);
   b.sent.length = 0;
   drop();
   expect(b.sent).toEqual([]);
   expect(userToast).toHaveBeenCalledOnce();
   expect(from.map.getNode(moved)).not.toBeNull();
-  b.roomFor(19);
+  b.roomFor(24);
   drop();
   expect(into.map.getNode(moved)).not.toBeNull();
 });
@@ -924,16 +1084,16 @@ it("gates the board's arrow keys, toolbar updates, commands and toolbar writes a
   vi.mocked(userToast).mockClear();
   b.sent.length = 0;
   b.std.command.exec(createGroupFromSelectedCommand);
-  b.roomFor(7);
+  b.roomFor(11);
   b.std.command.exec(autoArrangeElementsCommand);
   expect(b.sent).toEqual([]);
   expect(userToast).toHaveBeenCalledTimes(2);
-  b.roomFor(8);
+  b.roomFor(12);
   b.std.command.exec(autoArrangeElementsCommand);
   expect(b.sent).not.toEqual([]);
   // A mind map's Style, through the board's count.
-  b.roomFor(42);
+  b.roomFor(27);
   expect(boardWrites.refuses(b.store, [map], 'style')).toBe(true);
-  b.roomFor(43);
+  b.roomFor(28);
   expect(boardWrites.refuses(b.store, [map], 'style')).toBe(false);
 });
