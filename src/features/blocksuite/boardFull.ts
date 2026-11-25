@@ -1,5 +1,6 @@
 import {
   ConnectorElementModel,
+  GroupElementModel,
   MindmapElementModel,
 } from '@blocksuite/affine/model';
 import { boardWrites } from '@blocksuite/affine/shared/utils';
@@ -76,8 +77,18 @@ export type Writes = { elements: number; values: number };
 
 /** How a gesture writes each element: a drag or an arrow key moves it, the
  * alignment menu, an arrange and a resize to one size place it
- * (`updateXYWH`), the selection frame resizes or rotates it. */
-export type Gesture = 'move' | 'place' | 'resize' | 'rotate';
+ * (`updateXYWH`), the selection frame resizes or rotates it, a note's Scale
+ * scales it and its Auto or Customized height sets its height, a mind map's
+ * Style restyles it and its Layout lays it out again. */
+export type Gesture =
+  | 'height'
+  | 'layout'
+  | 'move'
+  | 'place'
+  | 'resize'
+  | 'rotate'
+  | 'scale'
+  | 'style';
 
 /** The elements a write on `models` reaches: what their groups hold, and
  * every node of a mind map one of them is in or holds (a node dragged moves
@@ -105,21 +116,43 @@ const RESIZED: Record<string, number> = {
   text: 2,
 };
 
+/** What a mind map's Style writes on each node: up to ten of its values (its
+ * colours, font, padding, radius and shadow) and its box once, measured at
+ * 216 B a node at most over every change of style (Yjs keeps each colour and
+ * the shadow as a new object): 14 values' worth (`BOARD_WRITE_BYTES`). Its
+ * Layout writes each node's box and a first-level node's place in the tree,
+ * measured at 18 B a node at most: 2. */
+const NODE_STYLED = 14;
+const NODE_LAID_OUT = 2;
+
 /** The values `gesture` writes on `model`, at most: a group's box is its
  * elements' and writes nothing; a mind map's tree takes a dragged node's new
- * place; a connector writes its free ends and its label (`moveTo`, its
- * resize and rotation); a rotation an angle and a place; a note placed its
- * collapse and collapsed height too (`updateXYWH`). */
+ * place, its style or its layout; a mind map's node its style
+ * (`NODE_STYLED`) or its place when its map is restyled or laid out again
+ * (`NODE_LAID_OUT`); a connector writes its free ends and its label
+ * (`moveTo`, its resize and rotation); a rotation an angle and a place; a
+ * note placed its collapse and collapsed height too (`updateXYWH`), scaled
+ * its scale, its height set its collapse. A note showing a size it measured
+ * stores it first (vendor/blocksuite local change 75): one more. */
 export function valuesWritten(model: GfxModel, gesture: Gesture) {
-  if (model instanceof MindmapElementModel) return gesture === 'move' ? 1 : 0;
+  if (model instanceof MindmapElementModel)
+    return gesture === 'move' || gesture === 'style' || gesture === 'layout'
+      ? 1
+      : 0;
   if (isGfxGroupCompatibleModel(model)) return 0;
+  if (model.group instanceof MindmapElementModel) {
+    if (gesture === 'style') return NODE_STYLED;
+    if (gesture === 'layout') return NODE_LAID_OUT;
+  }
   if (model instanceof ConnectorElementModel) return 3;
-  if (gesture === 'rotate') return 2;
   const kind =
     model instanceof GfxPrimitiveElementModel ? model.type : model.flavour;
-  if (gesture === 'resize') return RESIZED[kind] ?? 1;
-  if (gesture === 'place' && kind === 'affine:note') return 3;
-  return 1;
+  const shown = kind === 'affine:note' ? 1 : 0;
+  if (gesture === 'rotate') return 2 + shown;
+  if (gesture === 'resize') return (RESIZED[kind] ?? 1) + shown;
+  if (gesture === 'place' && kind === 'affine:note') return 3 + shown;
+  if (gesture === 'scale' || gesture === 'height') return 2 + shown;
+  return 1 + shown;
 }
 
 /** What `gesture` on `models` writes (`elementsWritten`, `valuesWritten`),
@@ -224,26 +257,45 @@ export function gateNudges(
   return () => target.removeEventListener('keydown', refuse, true);
 }
 
-/** The element toolbar's changes (a colour, a stroke, a font, an alignment
- * or a spread) write every selected element through the board's
- * `updateElement`, one call each in one task: on a full board the first call
- * on what the selection writes (`written`: the elements, 0 for another
- * element) decides for the task, so the change goes whole or not at all
- * (`refusesWrites`). Each element takes every value the call names, and a
- * stroke's width its points and box too (its derive). */
+/** The values a change `props` through the board's `updateElement` writes
+ * on `model`: each it names, a stroke's width its points and box too (its
+ * derive), and a labelled connector's mode or end its label, placed again
+ * on the new path (vendor/blocksuite local change 63). */
+export function valuesUpdated(model: GfxModel, props: Record<string, unknown>) {
+  let values = Object.keys(props).length;
+  if ('lineWidth' in props) values += 2;
+  if (
+    model instanceof ConnectorElementModel &&
+    model.hasLabel() &&
+    ('mode' in props || 'source' in props || 'target' in props)
+  )
+    values += 1;
+  return values;
+}
+
+/** The element toolbar's changes (a colour, a stroke, a font, an alignment,
+ * a connector's mode or a spread) write every selected element through the
+ * board's `updateElement`, one call each in one task: on a full board the
+ * first call on what the selection writes (`written`: its elements, null for
+ * another element) decides for the task, each element taking what the call
+ * names (`valuesUpdated`), so the change goes whole or not at all
+ * (`refusesWrites`). */
 export function gateElementUpdates(
   store: Store,
   crud: { updateElement: (id: string, props: Record<string, unknown>) => void },
-  written: (id: string) => number
+  written: (id: string) => readonly GfxModel[] | null
 ) {
   const { updateElement } = crud;
   let refused: boolean | null = null;
   crud.updateElement = (id, props) => {
     if (refused === null && full.has(store)) {
-      const elements = written(id);
-      if (elements > 1) {
-        const each = Object.keys(props).length + ('lineWidth' in props ? 2 : 0);
-        refused = refusesWrites(store, { elements, values: elements * each });
+      const models = written(id);
+      if (models && models.length > 1) {
+        const values = models.reduce(
+          (sum, model) => sum + valuesUpdated(model, props),
+          0
+        );
+        refused = refusesWrites(store, { elements: models.length, values });
         queueMicrotask(() => {
           refused = null;
         });
@@ -289,23 +341,41 @@ export function gateCommands(
 
 /** What the board's toolbar and gestures write straight to models
  * (`boardWrites`, vendor/blocksuite local change 82) asks the board before
- * any write: an add (a Lock of several groups them, a mind map's node dragged
- * off its map makes a new map) is refused as one (`refusesAdds`); a reorder
- * writes each element's index, a note's Scale its box and scale, the
- * alignment menu what `placed` counts. Returns the stop. */
+ * any write: an add (a Lock of several groups them, a mind map's node
+ * dragged off its map makes a new map) is refused as one (`refusesAdds`); a
+ * reorder writes each element's index, an Unlock each element's lock or a
+ * group's elements' (it ungroups); a node merged into another mind map takes
+ * its style (`NODE_STYLED` a node) and lays that map out again; the rest
+ * write what `written` counts for their gesture (the alignment menu's
+ * `place`, a note's Scale or height, a mind map's Style or Layout). Returns
+ * the stop. */
 export function gateToolbarWrites(
   store: Store,
-  placed: (models: GfxModel[]) => Writes
+  written: (models: GfxModel[], gesture: Gesture) => Writes
 ) {
   boardWrites.gate(store, (models, write) => {
     if (write === 'add') return refusesAdds(store);
-    const { length } = models;
-    return refusesWrites(
-      store,
-      write === 'place'
-        ? placed(models)
-        : { elements: length, values: write === 'scale' ? 2 * length : length }
-    );
+    if (write === 'order')
+      return refusesWrites(store, {
+        elements: models.length,
+        values: models.length,
+      });
+    if (write === 'unlock') {
+      const each = models.map((model) =>
+        model instanceof GroupElementModel ? model.childElements.length : 1
+      );
+      const length = each.reduce((sum, n) => sum + n, 0);
+      return refusesWrites(store, { elements: length, values: length });
+    }
+    if (write === 'merge') {
+      const [into, ...moved] = models;
+      const laidOut = written([into], 'layout');
+      return refusesWrites(store, {
+        elements: laidOut.elements + moved.length,
+        values: laidOut.values + moved.length * NODE_STYLED,
+      });
+    }
+    return refusesWrites(store, written(models, write));
   });
   return () => boardWrites.gate(store, null);
 }

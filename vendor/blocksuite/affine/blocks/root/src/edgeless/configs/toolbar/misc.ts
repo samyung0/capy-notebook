@@ -357,6 +357,9 @@ export const builtinLockedToolbarConfig = {
               : model
           )
         );
+        // Capy (local change 82): the board may refuse to unlock them all,
+        // before any is.
+        if (boardWrites.refuses(ctx.store, [...elements], 'unlock')) return;
 
         ctx.store.captureSync();
 

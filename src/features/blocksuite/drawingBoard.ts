@@ -19,12 +19,9 @@ import { NoteStoreExtension } from '@blocksuite/affine/blocks/note/store';
 import { NoteViewExtension } from '@blocksuite/affine/blocks/note/view';
 import { ParagraphStoreExtension } from '@blocksuite/affine/blocks/paragraph/store';
 import { ParagraphViewExtension } from '@blocksuite/affine/blocks/paragraph/view';
-import { createElementsFromClipboardDataCommand } from '@blocksuite/affine/blocks/root';
 import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
 import { RootViewExtension } from '@blocksuite/affine/blocks/root/view';
 import {
-  autoArrangeElementsCommand,
-  autoResizeElementsCommand,
   CanvasRenderer,
   DefaultTool,
   EdgelessClipboardConfig,
@@ -33,7 +30,6 @@ import {
   ExportManager,
   Overlay,
   type SurfaceBlockComponent,
-  type SurfaceBlockModel,
 } from '@blocksuite/affine/blocks/surface';
 import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { SurfaceViewExtension } from '@blocksuite/affine/blocks/surface/view';
@@ -50,11 +46,6 @@ import { BrushStoreExtension } from '@blocksuite/affine/gfx/brush/store';
 import { BrushViewExtension } from '@blocksuite/affine/gfx/brush/view';
 import { ConnectorStoreExtension } from '@blocksuite/affine/gfx/connector/store';
 import { ConnectorViewExtension } from '@blocksuite/affine/gfx/connector/view';
-import {
-  createGroupCommand,
-  createGroupFromSelectedCommand,
-  ungroupCommand,
-} from '@blocksuite/affine/gfx/group';
 import { GroupStoreExtension } from '@blocksuite/affine/gfx/group/store';
 import { GroupViewExtension } from '@blocksuite/affine/gfx/group/view';
 import {
@@ -113,7 +104,6 @@ import {
   type GfxController,
   GfxControllerIdentifier,
   type GfxModel,
-  InteractivityIdentifier,
   ZOOM_MAX,
   ZOOM_MIN,
   ZOOM_STEP,
@@ -167,20 +157,13 @@ import { forgetFormulas } from './boardFormulaDraw';
 import {
   type BoardSizer,
   checkBoardSize,
-  elementsWritten,
-  type Gesture,
-  gateCommands,
-  gateElementUpdates,
-  gateNudges,
   gatePresses,
-  gateSelectionWrites,
-  gateToolbarWrites,
   refusesAdds,
   setBoardFull,
   setBoardSizer,
   TYPING,
-  writesOf,
 } from './boardFull';
+import { gateBoardWrites } from './boardGates';
 import { IMAGE_SIDE_MAX, type Vec } from './boardGeometry';
 import type { BoardImages } from './boardImages';
 import { watchNoteLinks } from './boardNoteLinks';
@@ -863,9 +846,9 @@ export function mountDrawingBoard(
   // group, a mind map's Tab or Enter child, a shape's auto-complete +, a
   // double click's note or label, a piece, a picture, a link or quiz card, an
   // image and a formula are refused with the cap's line (boardFull.ts), and so
-  // is a write of several elements whose stubs would pass the cap (below). Typing in
-  // what is there and Undo are not stopped; a refusal by the room still goes
-  // to the copy-only recovery.
+  // is a write of several elements whose stubs would pass the cap (below).
+  // Typing in what is there and Undo are not stopped; a refusal by the room
+  // still goes to the copy-only recovery.
   let full = false;
   const ADDS_NOTHING = new Set([
     DefaultTool.toolName,
@@ -926,60 +909,9 @@ export function mountDrawingBoard(
   };
   for (const type of ['paste', 'drop', 'keydown', 'pointerdown'])
     board.addEventListener(type, refuseAdd, true);
-  // A gesture writing several elements on a full board goes only when a stub
-  // for each value it writes fits under the cap (`refusesWrites`, Epo
-  // 2026-11-25): a drag, a resize or a rotation of a selection, an arrow
-  // key's nudge, the element toolbar's changes, its alignment menu, a reorder,
-  // a note's Scale or a lock of several (`boardWrites`, vendor/blocksuite local
-  // change 82), an arrange or an ungroup; a mind map's node dragged off its
-  // map adds a map, refused as an add. A selection writes what is selected, what its
-  // groups hold, the whole of a mind map it touches and the labels of the
-  // connectors hanging on it (`writesOf`).
-  const connectorsOf = (id: string) =>
-    (gfx.surface as SurfaceBlockModel | null)?.getConnectors(id) ?? [];
-  const written = (models: GfxModel[], gesture: Gesture) =>
-    writesOf(models, gesture, connectorsOf);
-  gateSelectionWrites(store, std.get(InteractivityIdentifier), written);
-  const ungateNudges = gateNudges(board, store, () => {
-    const { editing, selectedElements } = gfx.selection;
-    // A key on a mind map's node moves the selection, and nothing moves
-    // with a locked element selected (`edgeless-keyboard.ts`'s `_move`).
-    if (
-      editing ||
-      selectedElements.some(
-        (element) =>
-          element.group instanceof MindmapElementModel || element.isLocked()
-      )
-    )
-      return null;
-    return written(selectedElements, 'move');
-  });
-  gateElementUpdates(store, std.get(EdgelessCRUDIdentifier), (id) => {
-    const elements = elementsWritten(gfx.selection.selectedElements);
-    return [...elements].some((element) => element.id === id)
-      ? elements.size
-      : 0;
-  });
-  const ungateToolbar = gateToolbarWrites(store, (models) =>
-    written(models, 'place')
-  );
-  // Duplicate (the element toolbar's, ⌘D's) and a paste of copied elements
-  // make their copies through one command, a group (a lock of several makes
-  // one) through another.
-  gateCommands(
-    store,
-    std.command,
-    {
-      adds: [
-        createElementsFromClipboardDataCommand,
-        createGroupCommand,
-        createGroupFromSelectedCommand,
-      ],
-      places: [autoArrangeElementsCommand, autoResizeElementsCommand],
-      ungroup: ungroupCommand,
-    },
-    () => written(gfx.selection.selectedElements, 'place')
-  );
+  // A gesture writing several elements on a full board goes only when the
+  // stubs it leaves fit under the cap (boardGates.ts).
+  const ungateWrites = gateBoardWrites(board, std);
   // The stylesheet shows the eraser's ring while it's the tool.
   const unwatchTool = gfx.tool.currentToolName$.subscribe((name) => {
     board.dataset.tool = name;
@@ -1579,8 +1511,7 @@ export function mountDrawingBoard(
       document.removeEventListener('keydown', slotKeys);
       for (const type of ['paste', 'drop', 'keydown', 'pointerdown'])
         board.removeEventListener(type, refuseAdd, true);
-      ungateNudges();
-      ungateToolbar();
+      ungateWrites();
       window.removeEventListener('keydown', cardKeys, true);
       unwatchEditor?.();
       unfollow?.();

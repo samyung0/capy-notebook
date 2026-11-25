@@ -1,4 +1,5 @@
 export * from './auto-scroll';
+// Capy (vendor/blocksuite/README.md, local change 82).
 export * from './board-writes';
 export * from './button-popper';
 export * from './collapsed';

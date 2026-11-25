@@ -45,6 +45,12 @@ type DragMindMapCtx = {
   originalMindMapBound: Bound;
 };
 
+/** The elements of `node` and the nodes under it (local change 82). */
+const subtreeElements = (node: MindmapNode): GfxModel[] => [
+  node.element,
+  ...node.children.flatMap(subtreeElements),
+];
+
 export class MindMapDragExtension extends InteractivityExtension {
   static override key = 'mind-map-drag';
   /**
@@ -171,7 +177,23 @@ export class MindMapDragExtension extends InteractivityExtension {
         }
       },
       onDragEnd: (dragEndContext: ExtensionDragEndContext) => {
-        if (hoveredCtx?.merge) {
+        // Capy (local change 82): a node merged into another map takes that
+        // map's style and lays the map out again, writes the board may
+        // refuse; refused, it stays in its map and nothing is written.
+        const into = hoveredCtx?.mindmap;
+        if (
+          hoveredCtx?.merge &&
+          into &&
+          into !== dragMindMapCtx.mindmap &&
+          boardWrites.refuses(
+            this.gfx.doc,
+            [into, ...subtreeElements(dragMindMapCtx.node)],
+            'merge'
+          )
+        ) {
+          hoveredCtx.abort?.();
+          if (dragMindMapCtx.isRoot) dragMindMapCtx.mindmap.layout();
+        } else if (hoveredCtx?.merge) {
           hoveredCtx.merge();
         } else {
           hoveredCtx?.abort?.();

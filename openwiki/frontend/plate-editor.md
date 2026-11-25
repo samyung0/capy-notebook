@@ -6925,9 +6925,13 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       moving tab places, local change 63) and every value it writes on each
       (`valuesWritten`, at most: a connector 3, its free ends and label; a
       rotation 2; a resize 2 on a text label, a note or a stroke and 3 on a
-      plane; the alignment menu's place 3 on a note; a group nothing of its
-      own). A toolbar change counts each value it names on each element, and a
-      stroke's width its points and box too. The size as it stands is never
+      plane; the alignment menu's place 3 on a note; a note one more, the size
+      it shows stored first, local change 75; a mind map's Style 14 a node, its
+      Layout 2, measured at 216 B and 18 B a node at most on BlockSuite's own
+      layout; a group nothing of its own). A toolbar change counts each value
+      it names on each element (`valuesUpdated`), a stroke's width its points
+      and box too, and a labelled connector's mode its label placed again. The
+      size as it stands is never
       below the board's, so a write it fits goes unmeasured (a held arrow key
       measures nothing); one that doesn't is measured first. Refused, it writes
       nothing and shows the removals-only line; one element's gesture always
@@ -6941,21 +6945,29 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       into a field on the board, `TYPING`, is the field's), the element
       toolbar's changes (its `updateElement` calls on what the selection
       writes, decided whole for the task; the width slider picks a value once a
-      drag, as it changes, local change 84, so each width it picks is one
-      change), its alignment menu, a reorder, a note's Scale and a lock of
-      several, which write models straight and ask before any (`boardWrites`,
-      local change 82), and an arrange, a resize to one size and an ungroup
-      (their commands, `gateCommands`; an ungroup, and an Unlock of a group,
-      writes the index of each element the group holds directly, and counts
-      those). A group (a lock of several makes one) and a mind map's node
-      dragged off its map (which makes a new map; refused, the node stays in its
-      map) are adds, refused as one. A gesture's values stay this tab's until it
-      ends (BlockSuite's stash), a dragged connector's ends and label (local
-      change 80), a resized stroke's points (local change 81) and the label of a
-      connector hanging on an element mid-gesture (local change 83: written
-      inside the change that ends the gesture, so Undo takes them back
-      together; a 60-frame drag of a shape with two labelled connectors on it
-      grew the board 2,607 B before, 46 B after) included. Left out: one
+      drag, its press included, local change 84, so each width it picks is
+      one change), its alignment menu, a reorder, a note's Scale and Auto or
+      Customized height, a mind map's Style and Layout, and a Lock or an Unlock
+      of several, which write models straight and ask before any
+      (`boardWrites`, local change 82), and an arrange, a resize to one size
+      and an ungroup (their commands, `gateCommands`; an ungroup, and an Unlock
+      of a group, writes the index of each element the group holds directly,
+      and counts those). A group (a lock of several makes one) and a mind map's
+      node dragged off its map (which makes a new map; refused, the node stays
+      in its map) are adds, refused as one; a node dropped into another map
+      counts that map laid out again and itself restyled (refused, it stays in
+      its map). The board wires all of it in one place (`boardGates.ts`
+      `gateBoardWrites`). A gesture's values stay this tab's until it ends
+      (BlockSuite's stash), a dragged connector's free ends and label (local
+      change 80; a bound end stays stored, so a peer's re-attach mid-drag
+      stands), a resized stroke's points (local change 81), the label of a
+      connector hanging on an element in this tab's gesture (local change 83:
+      the interactivity manager's `activeInteraction$` names the elements, a
+      mind map's root its whole map; written inside the change that ends the
+      gesture, so Undo takes them back together, or released after it, writing
+      nothing; a 60-frame drag of a shape with two labelled connectors on it
+      grew the board 2,607 B before, 46 B after) and an end dragged by its
+      handle with its label (local change 85) included. Left out: one
       element's gesture of several values always goes, leaving a stub a value
       each time. With
       deletions since the last measure it encodes once and the exact size reaches

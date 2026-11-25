@@ -195,6 +195,9 @@ const builtinSurfaceToolbarConfig = {
         return {
           ...options,
           run(ctx) {
+            // Capy (local change 82): the board may refuse to resize them
+            // all, before any is.
+            if (boardWrites.refuses(ctx.store, models, 'height')) return;
             ctx.store.captureSync();
 
             for (const model of models) {

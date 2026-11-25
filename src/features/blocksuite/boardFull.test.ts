@@ -1,5 +1,5 @@
 import type { PointerEventState } from '@blocksuite/affine/std';
-import type { BaseTool } from '@blocksuite/affine/std/gfx';
+import type { BaseTool, GfxModel } from '@blocksuite/affine/std/gfx';
 import type { Store } from '@blocksuite/affine/store';
 import { parseHTML } from 'linkedom';
 import { beforeEach, expect, it, vi } from 'vitest';
@@ -268,7 +268,9 @@ it("refuses a toolbar change of several elements past a full board's cap whole, 
   const crud = { updateElement };
   const selected = new Set(['a', 'b', 'c']);
   gateElementUpdates(near.store, crud, (id) =>
-    selected.has(id) ? selected.size : 0
+    selected.has(id)
+      ? [...selected].map((each) => ({ id: each }) as GfxModel)
+      : null
   );
   const change = (props: Record<string, unknown>) => {
     for (const id of selected) crud.updateElement(id, props);

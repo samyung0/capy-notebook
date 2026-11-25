@@ -1148,22 +1148,29 @@ Outside this directory, for BlockSuite:
 
 82. The element toolbar's actions and gestures that write several elements straight
     to their models, or add one, ask the board first (`affine/shared`
-    `utils/board-writes.ts`, called from `affine/blocks/root`
-    `edgeless/configs/toolbar/alignment.ts`, `misc.ts` and `more.ts`, `affine/blocks/note`
-    `configs/toolbar.ts` and `affine/gfx/mindmap` `interactivity/mind-map-drag.ts`,
-    marked `Capy (local change 82)`; Epo 2026-11-25, the full board's write gate).
-    The alignment menu's pick moves a connector (`moveTo`) or a note (`updateBlock`)
-    before the board's `updateElement` sees the first element, a Lock of several
-    moves them between groups before its group's command, a reorder writes each
-    `index` and a note's Scale each note's box and scale through neither, and a
-    mind map's node dragged off its map makes a new map (`createFromTree`), an add
-    nothing refused: refused there, part of the change was already written.
-    `boardWrites.refuses(store, models, write)` now runs before any write (`place`,
-    `order`, `scale` or `add`), and what it refuses writes nothing (the dragged
-    node stays in its map). The app sets the answer per store
-    (`src/features/blocksuite/boardFull.ts` `gateToolbarWrites`); with none set,
-    nothing is refused. Pinned by the alignment menu's Align left, a Lock of several,
-    Bring to Front, a note's Scale and a node dragged off its map in
+    `utils/board-writes.ts`, exported from `utils/index.ts`, called from
+    `affine/blocks/root` `edgeless/configs/toolbar/alignment.ts`, `misc.ts` and
+    `more.ts`, `affine/blocks/note` `configs/toolbar.ts`, `affine/gfx/mindmap`
+    `toolbar/config.ts` and `interactivity/mind-map-drag.ts`, marked `Capy (local
+    change 82)`; Epo 2026-11-25, the full board's write gate). The alignment
+    menu's pick moves a connector (`moveTo`) or a note (`updateBlock`) before the
+    board's `updateElement` sees the first element, a Lock of several moves them
+    between groups before its group's command, a reorder writes each `index`, a
+    note's Scale each note's box and scale and its Auto or Customized height each
+    note's box and collapse, an Unlock of several each element's lock (ungrouping
+    a group), and a mind map's Style and Layout every node's look and place
+    (about 10 KB for a 200-node map), all through neither; a mind map's node
+    dragged off its map makes a new map (`createFromTree`), an add, and one
+    dropped into another map takes that map's style and lays it out again,
+    neither refused: refused there, part of the change was already written.
+    `boardWrites.refuses(store, models, write)` now runs before any write
+    (`place`, `order`, `scale`, `height`, `unlock`, `style`, `layout`, `merge` or
+    `add`), and what it refuses writes nothing (a dragged node stays in its map).
+    The app sets the answer per store (`src/features/blocksuite/boardFull.ts`
+    `gateToolbarWrites`); with none set, nothing is refused. Pinned by the
+    alignment menu's Align left, a Lock and an Unlock of several, Bring to Front,
+    a note's Scale and height, a mind map's Style and Layout, a node dragged off
+    its map and one dropped into another in
     `src/features/blocksuite/boardWrites.test.ts`, the menus' handlers taken from
     their templates.
 

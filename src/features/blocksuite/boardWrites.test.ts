@@ -2,6 +2,7 @@ import { NoteStoreExtension } from '@blocksuite/affine/blocks/note/store';
 import { ParagraphStoreExtension } from '@blocksuite/affine/blocks/paragraph/store';
 import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
 import {
+  autoArrangeElementsCommand,
   DefaultTool,
   EdgelessCRUDExtension,
   EdgelessCRUDIdentifier,
@@ -11,18 +12,28 @@ import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { StoreExtensionManager } from '@blocksuite/affine/ext-loader';
 import { BrushStoreExtension } from '@blocksuite/affine/gfx/brush/store';
 import { ConnectorStoreExtension } from '@blocksuite/affine/gfx/connector/store';
-import { ungroupCommand } from '@blocksuite/affine/gfx/group';
+import {
+  createGroupFromSelectedCommand,
+  ungroupCommand,
+} from '@blocksuite/affine/gfx/group';
 import { GroupStoreExtension } from '@blocksuite/affine/gfx/group/store';
-import { MindMapDragExtension } from '@blocksuite/affine/gfx/mindmap';
+import {
+  MindMapDragExtension,
+  MindMapView,
+  mindmapToolbarConfig,
+} from '@blocksuite/affine/gfx/mindmap';
 import { MindmapStoreExtension } from '@blocksuite/affine/gfx/mindmap/store';
 import { ShapeStoreExtension } from '@blocksuite/affine/gfx/shape/store';
 import { TextStoreExtension } from '@blocksuite/affine/gfx/text/store';
-import type {
-  MindmapElementModel,
-  NoteBlockModel,
+import {
+  LayoutType,
+  type MindmapElementModel,
+  MindmapStyle,
+  type NoteBlockModel,
 } from '@blocksuite/affine/model';
 import type { ToolbarContext } from '@blocksuite/affine/shared/services';
 import { EditPropsStore } from '@blocksuite/affine/shared/services';
+import { boardWrites } from '@blocksuite/affine/shared/utils';
 import { BlockStdScope, type PointerEventState } from '@blocksuite/affine/std';
 import {
   GfxControllerIdentifier,
@@ -39,10 +50,14 @@ import * as Y from 'yjs';
 // BlockSuite's slider and element toolbar actions, which their entries don't
 // export.
 import { createBuiltinToolbarConfigExtension } from '../../../vendor/blocksuite/affine/blocks/note/src/configs/toolbar';
-import { builtinMiscToolbarConfig } from '../../../vendor/blocksuite/affine/blocks/root/src/edgeless/configs/toolbar/misc';
+import {
+  builtinLockedToolbarConfig,
+  builtinMiscToolbarConfig,
+} from '../../../vendor/blocksuite/affine/blocks/root/src/edgeless/configs/toolbar/misc';
 import { moreActions } from '../../../vendor/blocksuite/affine/blocks/root/src/edgeless/configs/toolbar/more';
 import { Slider } from '../../../vendor/blocksuite/affine/components/src/slider/slider';
 import { boardFirstState } from './boardFirstState';
+import { gateBoardWrites } from './boardGates';
 import { openRoomStore } from './roomStore';
 
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
@@ -55,6 +70,7 @@ const {
   gateToolbarWrites,
   setBoardFull,
   setBoardSizer,
+  valuesUpdated,
   writesOf,
 } = await import('./boardFull');
 
@@ -195,6 +211,24 @@ const connector = (
     type: 'connector',
   });
 
+/** A mind map of shapes: a root at `x` and `children` nodes under it, a
+ * level at a time, four to a node. */
+function mindmap(b: Board, x: number, children: number) {
+  const ids = [b.shape(x)];
+  const tree: Record<string, { index: string; parent?: string }> = {
+    [ids[0]]: { index: 'a0' },
+  };
+  for (let n = 1; n <= children; n++) {
+    const id = b.shape(x + 30 * n);
+    tree[id] = { index: `a${n}`, parent: ids[Math.floor((n - 1) / 4)] };
+    ids.push(id);
+  }
+  const map = b.at(
+    b.surface.addElement({ children: tree, type: 'mindmap' })
+  ) as MindmapElementModel;
+  return { ids, map };
+}
+
 /** The connector watcher works a microtask after a change. */
 const settled = () => new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -250,6 +284,105 @@ it("counts a group's elements, a mind map's nodes, each value written and the la
     elements: 2,
     values: 4,
   });
+});
+
+// Second review of the guard, findings 4 and 6: a mind map's Style restyles
+// every node and its Layout moves each one; a note showing a size it
+// measured stores it before a gesture's own write (local change 75); a
+// labelled connector's mode, changed through the toolbar, places its label
+// again. Fails if a node counts one value, a note one, or a mode change
+// leaves out the label.
+it("counts a mind map's Style and Layout per node, a note's shown size, and a connector's label at a mode change", async () => {
+  const b = board();
+  const { map } = mindmap(b, 0, 3);
+  const root = b.store.root;
+  if (!root) throw new Error('no root');
+  const note = b.store.getModelById(
+    b.store.addBlock('affine:note', { xywh: '[0,300,200,80]' }, root)
+  ) as NoteBlockModel;
+  const labelled = connector(b, [0, 100], [50, 150]);
+  const bare = b.surface.addElement({
+    mode: 0,
+    source: { position: [0, 200] },
+    target: { position: [50, 250] },
+    type: 'connector',
+  });
+  await settled();
+  // The map's value and 14 a node (measured below).
+  expect(b.written([map], 'style')).toEqual({ elements: 5, values: 57 });
+  expect(b.written([map], 'layout')).toEqual({ elements: 5, values: 9 });
+  expect(b.written([note, b.at(b.shape(500))], 'move')).toEqual({
+    elements: 2,
+    values: 3,
+  });
+  expect(valuesUpdated(b.at(labelled), { mode: 1 })).toBe(2);
+  expect(valuesUpdated(b.at(bare), { mode: 1 })).toBe(1);
+  expect(valuesUpdated(b.at(labelled), { stroke: 'red' })).toBe(1);
+});
+
+// Second review of the guard, finding 4: what the gate counts for a mind
+// map's Style and Layout, measured on BlockSuite's own layout (the view's)
+// over every change of style and layout of a 21-node map. Fails if one
+// writes more bytes than its count's stubs allow.
+it("writes no more at a mind map's Style or Layout than the gate counts", async () => {
+  const b = board();
+  const { ids, map } = mindmap(b, 0, 20);
+  (
+    MindMapView.prototype as unknown as { _setLayoutMethod: () => void }
+  )._setLayoutMethod.call({ model: map });
+  // Its nodes fit their text, measured through the DOM (here every line 20
+  // px high).
+  const measured = () => ({
+    append: () => {},
+    getBoundingClientRect: () => ({ height: 20 }),
+    innerText: '',
+    remove: () => {},
+    style: {},
+  });
+  vi.stubGlobal('document', { body: measured(), createElement: measured });
+  map.layout();
+  await settled();
+  const node = b.at(ids[5]) as unknown as { strokeColor: unknown };
+  const colour = node.strokeColor;
+  const grows = async (change: () => void) => {
+    const before = Y.encodeStateAsUpdate(b.doc).length;
+    change();
+    await settled();
+    return Y.encodeStateAsUpdate(b.doc).length - before;
+  };
+  for (const style of [
+    MindmapStyle.TWO,
+    MindmapStyle.THREE,
+    MindmapStyle.FOUR,
+    MindmapStyle.ONE,
+    MindmapStyle.THREE,
+    MindmapStyle.TWO,
+    MindmapStyle.FOUR,
+    MindmapStyle.ONE,
+  ]) {
+    const grew = await grows(() => {
+      map.style = style;
+    });
+    expect(grew).toBeLessThanOrEqual(
+      BOARD_WRITE_BYTES * b.written([map], 'style').values
+    );
+    if (style === MindmapStyle.TWO)
+      expect(node.strokeColor).not.toEqual(colour);
+  }
+  for (const layout of [
+    LayoutType.LEFT,
+    LayoutType.BALANCE,
+    LayoutType.RIGHT,
+    LayoutType.BALANCE,
+  ]) {
+    const grew = await grows(() => {
+      map.layoutType = layout;
+      map.layout();
+    });
+    expect(grew).toBeLessThanOrEqual(
+      BOARD_WRITE_BYTES * b.written([map], 'layout').values
+    );
+  }
 });
 
 // Review of 8d813a7cc, tests: the gate sits on the board's one
@@ -312,7 +445,7 @@ it("refuses a toolbar change through the std's CRUD whole, counting every value 
   b.gfx.selection.set({ editing: false, elements: ids });
   const crud = b.std.get(EdgelessCRUDIdentifier);
   gateElementUpdates(b.store, crud, (id) =>
-    ids.includes(id) ? ids.length : 0
+    ids.includes(id) ? ids.map(b.at) : null
   );
   b.sent.length = 0;
   b.roomFor(5);
@@ -368,6 +501,7 @@ const toolbar = (b: Board, models: GfxModel[]) =>
       model: unknown,
       type: abstract new (...args: never[]) => unknown
     ) => model instanceof type,
+    settings: { recordLastProps: vi.fn() },
     std: b.std,
     store: b.store,
     track: vi.fn(),
@@ -398,9 +532,7 @@ it('refuses a lock of several and a reorder past a full board before either writ
   const b = board();
   const [a1, a2, x] = [b.shape(0), b.shape(20), b.shape(40)];
   group(b, [a1, a2]);
-  const stop = gateToolbarWrites(b.store, (models) =>
-    b.written(models, 'place')
-  );
+  const stop = gateToolbarWrites(b.store, b.written);
   onTestFinished(stop);
   b.roomFor(10);
   b.sent.length = 0;
@@ -455,7 +587,7 @@ it("refuses the alignment menu's pick past a full board before any element moves
   const b = board();
   const loose = connector(b, [0, 100], [50, 150]);
   const models = [b.at(loose), b.at(b.shape(20)), b.at(b.shape(40))];
-  const stop = gateToolbarWrites(b.store, (each) => b.written(each, 'place'));
+  const stop = gateToolbarWrites(b.store, b.written);
   onTestFinished(stop);
   const align = () => {
     const menu = (
@@ -478,9 +610,10 @@ it("refuses the alignment menu's pick past a full board before any element moves
 });
 
 // Leftovers of 0366a0a15, item 2 (local change 82): a note's Scale writes
-// each note's box and scale straight to the block. Fails if a refused Scale
-// writes any note.
-it("refuses a note's Scale of several notes past a full board before any is scaled", () => {
+// each note's box and scale straight to the block; second review: its Auto or
+// Customized height its box and collapse. Each note stores a size it shows
+// first (local change 75). Fails if a refused Scale or height writes any note.
+it("refuses a note's Scale and height of several notes past a full board before any note changes", () => {
   const b = board();
   const root = b.store.root;
   if (!root) throw new Error('no root');
@@ -490,7 +623,11 @@ it("refuses a note's Scale of several notes past a full board before any is scal
         b.store.addBlock('affine:note', { xywh: `[${x},0,200,80]` }, root)
       ) as NoteBlockModel
   );
-  const stop = gateToolbarWrites(b.store, (each) => b.written(each, 'place'));
+  for (const note of notes)
+    b.store.updateBlock(note, () => {
+      note.props.edgeless.collapse = true;
+    });
+  const stop = gateToolbarWrites(b.store, b.written);
   onTestFinished(stop);
   let module: { config: { actions: unknown[] } } | undefined;
   for (const extension of createBuiltinToolbarConfigExtension('affine:note'))
@@ -499,22 +636,42 @@ it("refuses a note's Scale of several notes past a full board before any is scal
         module = impl;
       },
     } as never);
+  const actions = module?.config.actions ?? [];
   const scale = (percent: number) => {
-    const menu = (
-      action(module?.config.actions ?? [], 'g.scale') as unknown as Content
-    ).content(toolbar(b, notes));
+    const menu = (action(actions, 'g.scale') as unknown as Content).content(
+      toolbar(b, notes)
+    );
     handlers(menu, '@select')[0](
       new CustomEvent('select', { detail: percent })
     );
   };
-  b.roomFor(3);
+  const height = () => {
+    const ctx = toolbar(b, notes);
+    (
+      action(actions, 'f.auto-height') as unknown as {
+        generate: (ctx: ToolbarContext) => {
+          run: (ctx: ToolbarContext) => void;
+        };
+      }
+    )
+      .generate(ctx)
+      .run(ctx);
+  };
+  // Two notes, each three values.
+  b.roomFor(5);
   b.sent.length = 0;
   scale(200);
+  height();
   expect(b.sent).toEqual([]);
-  expect(userToast).toHaveBeenCalledOnce();
-  b.roomFor(4);
+  expect(userToast).toHaveBeenCalledTimes(2);
+  b.roomFor(6);
   scale(200);
+  height();
   expect(notes.map((note) => note.props.edgeless.scale)).toEqual([2, 2]);
+  expect(notes.map((note) => note.props.edgeless.collapse)).toEqual([
+    false,
+    false,
+  ]);
 });
 
 // Leftovers of 0366a0a15, item 2 (local change 84): the width slider picked
@@ -560,7 +717,7 @@ it("refuses a mind map's node dragged off its map on a full board, an add, and w
     },
     type: 'mindmap',
   });
-  const stop = gateToolbarWrites(b.store, (each) => b.written(each, 'place'));
+  const stop = gateToolbarWrites(b.store, b.written);
   onTestFinished(stop);
   const mindmap = b.at(map) as MindmapElementModel;
   const dragOff = () => {
@@ -588,4 +745,195 @@ it("refuses a mind map's node dragged off its map on a full board, an add, and w
   setBoardFull(b.store, false);
   dragOff();
   expect(b.surface.getElementsByType('mindmap')).toHaveLength(2);
+});
+
+// Second review of the guard, finding 4 (local change 82): a mind map's Style
+// and Layout menus wrote every node straight to its model. Fails if a refused
+// one writes anything, or one with room does not.
+it("refuses a mind map's Style and Layout past a full board before any node changes", () => {
+  const b = board();
+  const { map } = mindmap(b, 0, 2);
+  const stop = gateToolbarWrites(b.store, b.written);
+  onTestFinished(stop);
+  // The menus' items, in order: Style's one, four, three, two; Layout's
+  // left, radial, right.
+  const pick = (id: string, item: number) =>
+    handlers(
+      (action(mindmapToolbarConfig.actions, id) as unknown as Content).content(
+        toolbar(b, [map])
+      ),
+      '@click'
+    )[item]();
+  // The map's value, and 14 or 2 for each of its three nodes.
+  b.roomFor(42);
+  b.sent.length = 0;
+  pick('a.style', 3);
+  b.roomFor(6);
+  pick('b.layout', 0);
+  expect(b.sent).toEqual([]);
+  expect(userToast).toHaveBeenCalledTimes(2);
+  b.roomFor(43);
+  pick('a.style', 3);
+  expect(map.style).toBe(MindmapStyle.TWO);
+  b.roomFor(7);
+  pick('b.layout', 0);
+  expect(map.layoutType).toBe(LayoutType.LEFT);
+});
+
+// Second review of the guard, finding 6 (local change 82): an Unlock of
+// several writes each element's lock, and ungroups a locked group, writing
+// each of its elements. Fails if a refused Unlock writes anything.
+it('refuses an Unlock of several past a full board before any element unlocks', () => {
+  const b = board();
+  const g = group(b, [b.shape(0), b.shape(20), b.shape(40)]);
+  const models = [b.at(g), b.at(b.shape(60)), b.at(b.shape(80))];
+  for (const model of models) model.lock();
+  const stop = gateToolbarWrites(b.store, b.written);
+  onTestFinished(stop);
+  const unlock = () =>
+    action(builtinLockedToolbarConfig.actions, 'b.unlock').run(
+      toolbar(b, models)
+    );
+  // The group's three elements and two locks.
+  b.roomFor(4);
+  b.sent.length = 0;
+  unlock();
+  expect(b.sent).toEqual([]);
+  expect(userToast).toHaveBeenCalledOnce();
+  b.roomFor(5);
+  unlock();
+  expect(models.slice(1).map((model) => model.isLocked())).toEqual([
+    false,
+    false,
+  ]);
+  expect(b.surface.hasElementById(g)).toBe(false);
+});
+
+// Second review of the guard, finding 6 (local change 82): a node dragged into
+// another mind map takes that map's style and lays it out again, a map the
+// drag's own count leaves out. Fails if a refused merge writes anything, or
+// one with room does not merge.
+it('refuses a node merged into another mind map past a full board, and writes nothing', () => {
+  const b = board();
+  const from = mindmap(b, 0, 1);
+  const into = mindmap(b, 0, 1);
+  // The second map sits below the first.
+  for (const id of into.ids)
+    b.surface.updateElement(id, {
+      xywh: b.at(id).elementBound.moveDelta(0, 500).serialize(),
+    });
+  const stop = gateToolbarWrites(b.store, b.written);
+  onTestFinished(stop);
+  const [, moved] = from.ids;
+  const target = b.at(into.ids[0]).elementBound.center;
+  const drop = () => {
+    const drag = new MindMapDragExtension(b.gfx) as unknown as {
+      _calcDragResponseArea: (map: MindmapElementModel) => void;
+      _createManipulationHandlers: (ctx: unknown) => {
+        onDragEnd: (context: unknown) => void;
+        onDragMove: (context: unknown) => void;
+      };
+      _getHoveredMindMap: () => MindmapElementModel;
+    };
+    // The pointer is over the second map's root.
+    drag._getHoveredMindMap = () => {
+      drag._calcDragResponseArea(into.map);
+      return into.map;
+    };
+    const { onDragEnd, onDragMove } = drag._createManipulationHandlers({
+      isRoot: false,
+      mindmap: from.map,
+      node: from.map.getNode(moved),
+      originalMindMapBound: from.map.elementBound,
+    });
+    const at = { x: target[0], y: target[1] };
+    onDragMove({ dragLastPos: at });
+    onDragEnd({ dragLastPos: at, dragStartPos: at });
+  };
+  // The second map laid out (its value, 2 for each of its two nodes) and the
+  // node restyled (14).
+  b.roomFor(18);
+  b.sent.length = 0;
+  drop();
+  expect(b.sent).toEqual([]);
+  expect(userToast).toHaveBeenCalledOnce();
+  expect(from.map.getNode(moved)).not.toBeNull();
+  b.roomFor(19);
+  drop();
+  expect(into.map.getNode(moved)).not.toBeNull();
+});
+
+// Second review of the guard, tests: the board's own wiring
+// (`gateBoardWrites`, as `drawingBoard.ts` mounts it) hands each gate what
+// the selection writes. Fails if an arrow key, the toolbar's update of a
+// group's element or a labelled connector's mode, a group, an arrange of
+// notes or a mind map's Style reaches the board past its cap.
+it("gates the board's arrow keys, toolbar updates, commands and toolbar writes as the board wires them", async () => {
+  const b = board();
+  const page = new EventTarget();
+  onTestFinished(gateBoardWrites(page, b.std));
+  const [a1, a2] = [b.shape(0), b.shape(20)];
+  const g = group(b, [a1, a2]);
+  const labelled = [
+    connector(b, [0, 100], [50, 150]),
+    connector(b, [0, 200], [50, 250]),
+  ];
+  const { map } = mindmap(b, 600, 2);
+  await settled();
+  const nudge = () => {
+    const key = Object.assign(new Event('keydown', { cancelable: true }), {
+      key: 'ArrowLeft',
+    });
+    page.dispatchEvent(key);
+    return key.defaultPrevented;
+  };
+  // An arrow key on the group: its two shapes.
+  b.gfx.selection.set({ editing: false, elements: [g] });
+  b.roomFor(1);
+  expect(nudge()).toBe(true);
+  b.roomFor(2);
+  expect(nudge()).toBe(false);
+  // The toolbar's fill on the group's elements: the group and its shapes.
+  const crud = b.std.get(EdgelessCRUDIdentifier);
+  b.sent.length = 0;
+  for (const id of [a1, a2]) crud.updateElement(id, { fillColor: 'red' });
+  expect(b.sent).toEqual([]);
+  await Promise.resolve();
+  b.roomFor(3);
+  for (const id of [a1, a2]) crud.updateElement(id, { fillColor: 'red' });
+  expect(b.sent).not.toEqual([]);
+  await Promise.resolve();
+  // A mode change on two labelled connectors: each its mode and label.
+  b.gfx.selection.set({ editing: false, elements: labelled });
+  b.sent.length = 0;
+  for (const id of labelled) crud.updateElement(id, { mode: 1 });
+  expect(b.sent).toEqual([]);
+  await Promise.resolve();
+  b.roomFor(4);
+  for (const id of labelled) crud.updateElement(id, { mode: 1 });
+  expect(b.sent).not.toEqual([]);
+  await Promise.resolve();
+  // A group of the selection, an add; an arrange of two notes, a place of
+  // each (`updateBlock`, past the CRUD's gate).
+  const root = b.store.root;
+  if (!root) throw new Error('no root');
+  const notes = [0, 900].map((x) =>
+    b.store.addBlock('affine:note', { xywh: `[${x},900,200,80]` }, root)
+  );
+  b.gfx.selection.set({ editing: false, elements: notes });
+  vi.mocked(userToast).mockClear();
+  b.sent.length = 0;
+  b.std.command.exec(createGroupFromSelectedCommand);
+  b.roomFor(7);
+  b.std.command.exec(autoArrangeElementsCommand);
+  expect(b.sent).toEqual([]);
+  expect(userToast).toHaveBeenCalledTimes(2);
+  b.roomFor(8);
+  b.std.command.exec(autoArrangeElementsCommand);
+  expect(b.sent).not.toEqual([]);
+  // A mind map's Style, through the board's count.
+  b.roomFor(42);
+  expect(boardWrites.refuses(b.store, [map], 'style')).toBe(true);
+  b.roomFor(43);
+  expect(boardWrites.refuses(b.store, [map], 'style')).toBe(false);
 });
