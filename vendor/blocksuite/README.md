@@ -1121,6 +1121,28 @@ Outside this directory, for BlockSuite:
     `strokePoints.ts`: Vite pre-bundles the vendored models with their copy of it,
     and a stale bundle and the app's rules would read the format apart.
 
+80. A dragged connector keeps its ends and label this tab's until the drag ends
+    (`affine/gfx/connector` `view/view.ts` `ConnectorElementView`, marked `Capy
+    (local change 80)`; found 2026-11-25 reviewing the full board's write gate).
+    Upstream's `onDragStart` stashed only `labelXYWH` and its `onDragEnd` stashed it
+    again instead of popping it, so the label stayed local after the drag, and
+    `moveTo`, which the drag calls on every frame, stored a free end's `source` or
+    `target` each time. Interleaved with the other connectors', those writes never
+    merge: a select-all drag of a board with free-ended connectors grew it by about
+    20 B a connector a frame. The drag now stashes `labelXYWH`, `source` and
+    `target` and pops all three, each written once if it changed. Pinned by "drags a
+    connector with its free ends and label this tab's" in
+    `src/features/blocksuite/connectorLabel.test.ts`.
+
+81. A resized pen or highlighter stroke keeps its points this tab's until the
+    resize ends (`affine/gfx/brush` `interaction.ts`, registered in `view.ts`, marked
+    `Capy (local change 81)`; found 2026-11-25 with local change 80). BlockSuite's
+    default resize stashes only `xywh`, and a stroke's `xywh` derive rewrites its
+    `points` (local change 79), so a resize stored the points on every frame. The
+    stroke's resize handlers stash and pop `xywh` and `points`; the default
+    `onResizeMove` still sets the box. Pinned by "resizes a stroke with its points
+    this tab's" in `src/features/blocksuite/strokePoints.test.ts`.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

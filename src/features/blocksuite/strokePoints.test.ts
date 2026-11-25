@@ -2,6 +2,7 @@ import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
 import type { SurfaceBlockModel } from '@blocksuite/affine/blocks/surface';
 import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { StoreExtensionManager } from '@blocksuite/affine/ext-loader';
+import { BrushInteraction } from '@blocksuite/affine/gfx/brush';
 import { BrushStoreExtension } from '@blocksuite/affine/gfx/brush/store';
 import type { IVec } from '@blocksuite/affine/global/gfx';
 import type { BrushElementModel } from '@blocksuite/affine/model';
@@ -181,6 +182,41 @@ it("scales a stroke's points with its box", () => {
   surface.updateElement(id, { xywh: '[8,8,104,34]' });
   expect(stroke.xywh).toBe('[8,8,104,34]');
   expect(stroke.serialize().points).toEqual([
+    [2, 2, 0.5],
+    [42, 32, 0.75],
+    [102, 22, 0.25],
+  ]);
+});
+
+it("resizes a stroke with its points this tab's until the resize ends, then writes each once", () => {
+  const { doc, stroke } = drawn();
+  // The stroke's resize handlers, as the board registers them (local change 81).
+  let config: {
+    handleResize: (context: unknown) => Record<string, () => void>;
+  };
+  BrushInteraction.setup({
+    addImpl: (_: unknown, impl: () => typeof config) => {
+      config = impl();
+    },
+  } as never);
+  const { onResizeEnd, onResizeStart } = config!.handleResize({
+    model: stroke,
+  });
+  const writes: Uint8Array[] = [];
+  doc.on('update', (update: Uint8Array) => writes.push(update));
+
+  onResizeStart();
+  // BlockSuite's resize sets the box on every frame; the box's derive scales
+  // the points.
+  for (const w of [64, 84, 104]) stroke.xywh = `[8,8,${w},34]`;
+  expect(writes).toEqual([]);
+  expect((stroke.serialize().points as number[][])[2]).toEqual([102, 22, 0.25]);
+  onResizeEnd();
+  expect(writes).toHaveLength(2);
+  expect(elementIn(doc, stroke.id).get('xywh')).toBe('[8,8,104,34]');
+  expect(
+    decodeStrokePoints(elementIn(doc, stroke.id).get('points') as Uint8Array)
+  ).toEqual([
     [2, 2, 0.5],
     [42, 32, 0.75],
     [102, 22, 0.25],

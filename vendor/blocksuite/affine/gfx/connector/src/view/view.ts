@@ -18,14 +18,22 @@ import { mountConnectorLabelEditor } from '../text/edgeless-connector-label-edit
 export class ConnectorElementView extends GfxElementModelView<ConnectorElementModel> {
   static override type = 'connector';
 
+  // Capy (local change 80): a drag's ends and label stay this tab's until it
+  // ends, then each is written once. Upstream stashed only the label and
+  // stashed it again at the end, so a free end's place (`moveTo`) and the
+  // label after the drag were stored on every frame.
   override onDragStart = (context: DragStartContext) => {
     super.onDragStart(context);
     this.model.stash('labelXYWH');
+    this.model.stash('source');
+    this.model.stash('target');
   };
 
   override onDragEnd = (context: DragEndContext) => {
     super.onDragEnd(context);
-    this.model.stash('labelXYWH');
+    this.model.pop('labelXYWH');
+    this.model.pop('source');
+    this.model.pop('target');
   };
 
   override onDragMove = (context: DragMoveContext) => {

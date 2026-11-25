@@ -2,9 +2,17 @@ import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
 import type { SurfaceBlockModel } from '@blocksuite/affine/blocks/surface';
 import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { StoreExtensionManager } from '@blocksuite/affine/ext-loader';
+import { ConnectorElementView } from '@blocksuite/affine/gfx/connector';
 import { ConnectorStoreExtension } from '@blocksuite/affine/gfx/connector/store';
 import { ShapeStoreExtension } from '@blocksuite/affine/gfx/shape/store';
+import { Bound } from '@blocksuite/affine/global/gfx';
 import type { ConnectorElementModel } from '@blocksuite/affine/model';
+import type {
+  DragEndContext,
+  DragMoveContext,
+  DragStartContext,
+  GfxController,
+} from '@blocksuite/affine/std/gfx';
 import { MemoryBlobSource } from '@blocksuite/affine/sync';
 import { expect, it } from 'vitest';
 import { Awareness } from 'y-protocols/awareness';
@@ -130,6 +138,42 @@ it("places the label with its maker's move, and the other tabs write nothing", a
   expect(editor.store.canRedo).toBe(true);
   editor.store.redo();
   expect(editor.surface.hasElementById(own)).toBe(true);
+});
+
+it("drags a connector with its free ends and label this tab's, writing each once at the end", async () => {
+  const maker = tab(boardFirstState());
+  const id = maker.surface.addElement({
+    labelDisplay: true,
+    labelOffset: { distance: 0.5 },
+    labelXYWH: [70, -12, 60, 24],
+    mode: 0,
+    source: { position: [0, 0] },
+    target: { position: [200, 0] },
+    text: new Y.Text('feeds'),
+    type: 'connector',
+  });
+  await settled();
+  const connector = maker.surface.getElementById(id) as ConnectorElementModel;
+  // BlockSuite's drag hands the element's view the bound it started from and
+  // the pointer's distance on every frame (local change 80).
+  const view = new ConnectorElementView(connector, {} as GfxController);
+  const start = Bound.deserialize(connector.xywh);
+  maker.sent.length = 0;
+  view.onDragStart({} as DragStartContext);
+  for (const dy of [10, 20, 30]) {
+    view.onDragMove({ currentBound: start, dx: 0, dy } as DragMoveContext);
+    await settled();
+  }
+  expect(maker.sent).toEqual([]);
+  expect(connector.source.position).toEqual([0, 30]);
+
+  view.onDragEnd({} as DragEndContext);
+  await settled();
+  expect(maker.sent).toHaveLength(3);
+  const stored = maker.surface.getElementById(id) as ConnectorElementModel;
+  expect(stored.yMap.get('source')).toEqual({ position: [0, 30] });
+  expect(stored.yMap.get('target')).toEqual({ position: [200, 30] });
+  expect(stored.yMap.get('labelXYWH')).toEqual([70, 18, 60, 24]);
 });
 
 it('takes a move back with its label, and can do it again', async () => {
