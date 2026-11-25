@@ -9,6 +9,7 @@ import {
   MindmapElementModel,
   type MindmapNode,
 } from '@blocksuite/affine-model';
+import { boardWrites } from '@blocksuite/affine-shared/utils';
 import type { Bound, IVec } from '@blocksuite/global/gfx';
 import {
   type DragExtensionInitializeContext,
@@ -175,7 +176,20 @@ export class MindMapDragExtension extends InteractivityExtension {
         } else {
           hoveredCtx?.abort?.();
 
-          if (hoveredCtx?.detach) {
+          // Capy (local change 82): a node dragged off its map makes a new
+          // map, an add the board may refuse; refused, the node stays in its
+          // map and nothing is written.
+          if (
+            hoveredCtx?.detach &&
+            !(
+              dragMindMapCtx.node !== dragMindMapCtx.mindmap.tree &&
+              boardWrites.refuses(
+                this.gfx.doc,
+                [dragMindMapCtx.node.element],
+                'add'
+              )
+            )
+          ) {
             const { x: startX, y: startY } = dragEndContext.dragStartPos;
             const { x: endX, y: endY } = dragEndContext.dragLastPos;
 

@@ -6940,21 +6940,22 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       std), an arrow key's nudge (stopped as the board captures it; a key typed
       into a field on the board, `TYPING`, is the field's), the element
       toolbar's changes (its `updateElement` calls on what the selection
-      writes, decided whole for the task), its alignment menu, a reorder and a
-      lock of several, which write models straight and ask before any
-      (`boardWrites`, local change 82), and an arrange, a resize to one size
-      and an ungroup (their commands, `gateCommands`; an ungroup, and an Unlock
-      of a group, writes the index of each element the group holds directly,
-      and counts those). A group (a lock of several makes one) is an add,
-      refused as one. A gesture's values stay this tab's until it ends
-      (BlockSuite's stash), a dragged connector's ends and label (local change
-      80) and a resized stroke's points (local change 81) included. Left out: a
-      labelled connector hanging on an element dragged, resized or turned
-      writes its label at every frame, as the watcher places it for this tab's
-      own (stashed) move (two such labels over three frames write six
-      updates), counted once; the toolbar's stroke-width slider and a note
-      toolbar's scale write several elements outside these paths; a mind map's
-      node dragged off its map makes a new map, an add nothing refuses; and one
+      writes, decided whole for the task; the width slider picks a value once a
+      drag, as it changes, local change 84, so each width it picks is one
+      change), its alignment menu, a reorder, a note's Scale and a lock of
+      several, which write models straight and ask before any (`boardWrites`,
+      local change 82), and an arrange, a resize to one size and an ungroup
+      (their commands, `gateCommands`; an ungroup, and an Unlock of a group,
+      writes the index of each element the group holds directly, and counts
+      those). A group (a lock of several makes one) and a mind map's node
+      dragged off its map (which makes a new map; refused, the node stays in its
+      map) are adds, refused as one. A gesture's values stay this tab's until it
+      ends (BlockSuite's stash), a dragged connector's ends and label (local
+      change 80), a resized stroke's points (local change 81) and the label of a
+      connector hanging on an element mid-gesture (local change 83: written
+      inside the change that ends the gesture, so Undo takes them back
+      together; a 60-frame drag of a shape with two labelled connectors on it
+      grew the board 2,607 B before, 46 B after) included. Left out: one
       element's gesture of several values always goes, leaving a stub a value
       each time. With
       deletions since the last measure it encodes once and the exact size reaches

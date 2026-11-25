@@ -929,9 +929,10 @@ export function mountDrawingBoard(
   // A gesture writing several elements on a full board goes only when a stub
   // for each value it writes fits under the cap (`refusesWrites`, Epo
   // 2026-11-25): a drag, a resize or a rotation of a selection, an arrow
-  // key's nudge, the element toolbar's changes, its alignment menu, a reorder
-  // or a lock of several (`boardWrites`, vendor/blocksuite local change 82),
-  // an arrange or an ungroup. A selection writes what is selected, what its
+  // key's nudge, the element toolbar's changes, its alignment menu, a reorder,
+  // a note's Scale or a lock of several (`boardWrites`, vendor/blocksuite local
+  // change 82), an arrange or an ungroup; a mind map's node dragged off its
+  // map adds a map, refused as an add. A selection writes what is selected, what its
   // groups hold, the whole of a mind map it touches and the labels of the
   // connectors hanging on it (`writesOf`).
   const connectorsOf = (id: string) =>

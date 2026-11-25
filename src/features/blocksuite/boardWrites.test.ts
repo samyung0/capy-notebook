@@ -1,3 +1,5 @@
+import { NoteStoreExtension } from '@blocksuite/affine/blocks/note/store';
+import { ParagraphStoreExtension } from '@blocksuite/affine/blocks/paragraph/store';
 import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
 import {
   DefaultTool,
@@ -11,9 +13,14 @@ import { BrushStoreExtension } from '@blocksuite/affine/gfx/brush/store';
 import { ConnectorStoreExtension } from '@blocksuite/affine/gfx/connector/store';
 import { ungroupCommand } from '@blocksuite/affine/gfx/group';
 import { GroupStoreExtension } from '@blocksuite/affine/gfx/group/store';
+import { MindMapDragExtension } from '@blocksuite/affine/gfx/mindmap';
 import { MindmapStoreExtension } from '@blocksuite/affine/gfx/mindmap/store';
 import { ShapeStoreExtension } from '@blocksuite/affine/gfx/shape/store';
 import { TextStoreExtension } from '@blocksuite/affine/gfx/text/store';
+import type {
+  MindmapElementModel,
+  NoteBlockModel,
+} from '@blocksuite/affine/model';
 import type { ToolbarContext } from '@blocksuite/affine/shared/services';
 import { EditPropsStore } from '@blocksuite/affine/shared/services';
 import { BlockStdScope, type PointerEventState } from '@blocksuite/affine/std';
@@ -29,9 +36,12 @@ import { parseHTML } from 'linkedom';
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
-// BlockSuite's element toolbar actions, which its root entry doesn't export.
+// BlockSuite's slider and element toolbar actions, which their entries don't
+// export.
+import { createBuiltinToolbarConfigExtension } from '../../../vendor/blocksuite/affine/blocks/note/src/configs/toolbar';
 import { builtinMiscToolbarConfig } from '../../../vendor/blocksuite/affine/blocks/root/src/edgeless/configs/toolbar/misc';
 import { moreActions } from '../../../vendor/blocksuite/affine/blocks/root/src/edgeless/configs/toolbar/more';
+import { Slider } from '../../../vendor/blocksuite/affine/components/src/slider/slider';
 import { boardFirstState } from './boardFirstState';
 import { openRoomStore } from './roomStore';
 
@@ -56,6 +66,8 @@ const {
 const stores = new StoreExtensionManager([
   RootStoreExtension,
   SurfaceStoreExtension,
+  NoteStoreExtension,
+  ParagraphStoreExtension,
   ShapeStoreExtension,
   ConnectorStoreExtension,
   GroupStoreExtension,
@@ -348,6 +360,9 @@ const toolbar = (b: Board, models: GfxModel[]) =>
   ({
     command: b.std.command,
     getSurfaceModels: () => models,
+    getSurfaceModelsByType: (
+      type: abstract new (...args: never[]) => unknown
+    ) => models.filter((model) => model instanceof type),
     gfx: b.gfx,
     matchModel: (
       model: unknown,
@@ -400,4 +415,174 @@ it('refuses a lock of several and a reorder past a full board before either writ
   b.roomFor(2);
   action(moreActions, 'a.bring-to-front').run(toolbar(b, models));
   expect(b.sent).not.toEqual([]);
+});
+
+/** The handlers a lit template sets for `event` (`@click`, `@select`), in
+ * order, through what its repeats render for each item: what a press there
+ * runs, with no view rendered. */
+function handlers(template: unknown, event: string): ((e?: Event) => void)[] {
+  const { strings, values } = (template ?? {}) as {
+    strings?: readonly string[];
+    values?: unknown[];
+  };
+  if (!values) return [];
+  if (!strings) {
+    // lit's `repeat(items, key, render)`.
+    const [items, , render] = values as [
+      unknown[],
+      unknown,
+      (item: unknown) => unknown,
+    ];
+    return typeof render === 'function'
+      ? items.flatMap((item) => handlers(render(item), event))
+      : [];
+  }
+  return values.flatMap((value, at) =>
+    strings[at].trimEnd().endsWith(`${event}=`)
+      ? [value as (e?: Event) => void]
+      : (Array.isArray(value) ? value : [value]).flatMap((each) =>
+          handlers(each, event)
+        )
+  );
+}
+
+type Content = { content: (ctx: ToolbarContext) => unknown };
+
+// Review of 8d813a7cc, finding 7 (local change 82): the alignment menu's pick
+// moves a connector (`moveTo`) before the board's `updateElement` sees the
+// first element. Fails if a refused Align left writes anything.
+it("refuses the alignment menu's pick past a full board before any element moves, a connector first", () => {
+  const b = board();
+  const loose = connector(b, [0, 100], [50, 150]);
+  const models = [b.at(loose), b.at(b.shape(20)), b.at(b.shape(40))];
+  const stop = gateToolbarWrites(b.store, (each) => b.written(each, 'place'));
+  onTestFinished(stop);
+  const align = () => {
+    const menu = (
+      action(
+        builtinMiscToolbarConfig.actions,
+        'd.alignment'
+      ) as unknown as Content
+    ).content(toolbar(b, models));
+    // Its first item is Align left.
+    handlers(menu, '@click')[0]();
+  };
+  b.roomFor(4);
+  b.sent.length = 0;
+  align();
+  expect(b.sent).toEqual([]);
+  expect(userToast).toHaveBeenCalledOnce();
+  b.roomFor(5);
+  align();
+  expect(b.sent).not.toEqual([]);
+});
+
+// Leftovers of 0366a0a15, item 2 (local change 82): a note's Scale writes
+// each note's box and scale straight to the block. Fails if a refused Scale
+// writes any note.
+it("refuses a note's Scale of several notes past a full board before any is scaled", () => {
+  const b = board();
+  const root = b.store.root;
+  if (!root) throw new Error('no root');
+  const notes = [0, 300].map(
+    (x) =>
+      b.store.getModelById(
+        b.store.addBlock('affine:note', { xywh: `[${x},0,200,80]` }, root)
+      ) as NoteBlockModel
+  );
+  const stop = gateToolbarWrites(b.store, (each) => b.written(each, 'place'));
+  onTestFinished(stop);
+  let module: { config: { actions: unknown[] } } | undefined;
+  for (const extension of createBuiltinToolbarConfigExtension('affine:note'))
+    extension.setup({
+      addImpl: (_: unknown, impl: typeof module) => {
+        module = impl;
+      },
+    } as never);
+  const scale = (percent: number) => {
+    const menu = (
+      action(module?.config.actions ?? [], 'g.scale') as unknown as Content
+    ).content(toolbar(b, notes));
+    handlers(menu, '@select')[0](
+      new CustomEvent('select', { detail: percent })
+    );
+  };
+  b.roomFor(3);
+  b.sent.length = 0;
+  scale(200);
+  expect(b.sent).toEqual([]);
+  expect(userToast).toHaveBeenCalledOnce();
+  b.roomFor(4);
+  scale(200);
+  expect(notes.map((note) => note.props.edgeless.scale)).toEqual([2, 2]);
+});
+
+// Leftovers of 0366a0a15, item 2 (local change 84): the width slider picked
+// again at every pointer move, the value unchanged too, and each pick
+// rewrites every selected element's width. Fails if a move that keeps the
+// value picks.
+it('picks a width once a drag, as it changes, not at every move', () => {
+  const picked: number[] = [];
+  // The slider as it stands, unrendered: 100 px wide, four widths.
+  const slider = Object.create(Slider.prototype, {
+    _onSelect: { value: (value: number) => picked.push(value) },
+    getBoundingClientRect: { value: () => ({ width: 100 }) },
+    range: { value: { points: [2, 4, 6, 8] } },
+    sliderStyle: { value: undefined },
+    value: { value: 4 },
+  }) as {
+    _picked: number | null;
+    _updateLineWidthPanelByDragHandlePosition: (x: number) => void;
+    value: number;
+  };
+  const move = (x: number) =>
+    slider._updateLineWidthPanelByDragHandlePosition(x);
+  // A press starts from the shown width.
+  slider._picked = slider.value;
+  for (const x of [40, 41, 42, 90, 91, 92, 40]) move(x);
+  expect(picked).toEqual([8, 4]);
+});
+
+// Leftovers of 0366a0a15, item 3 (local change 82): a mind map's node
+// dragged off its map makes a new map. Fails if a full board makes it, or
+// writes anything, and if a board with room does not.
+it("refuses a mind map's node dragged off its map on a full board, an add, and writes nothing", () => {
+  const b = board();
+  const root = b.shape(0);
+  const node = b.shape(30);
+  const map = b.surface.addElement({
+    children: {
+      [node]: { index: 'a0', parent: root },
+      [root]: { index: 'a0' },
+    },
+    type: 'mindmap',
+  });
+  const stop = gateToolbarWrites(b.store, (each) => b.written(each, 'place'));
+  onTestFinished(stop);
+  const mindmap = b.at(map) as MindmapElementModel;
+  const dragOff = () => {
+    const drag = new MindMapDragExtension(b.gfx) as unknown as {
+      _createManipulationHandlers: (ctx: unknown) => {
+        onDragEnd: (context: unknown) => void;
+        onDragMove: (context: unknown) => void;
+      };
+    };
+    const { onDragEnd, onDragMove } = drag._createManipulationHandlers({
+      isRoot: false,
+      mindmap,
+      node: mindmap.getNode(node),
+      originalMindMapBound: mindmap.elementBound,
+    });
+    const far = { x: 5000, y: 5000 };
+    onDragMove({ dragLastPos: far });
+    onDragEnd({ dragLastPos: far, dragStartPos: { x: 35, y: 5 } });
+  };
+  b.sent.length = 0;
+  dragOff();
+  expect(b.sent).toEqual([]);
+  expect(userToast).toHaveBeenCalledOnce();
+  expect(b.surface.getElementsByType('mindmap')).toEqual([mindmap]);
+  setBoardFull(b.store, false);
+  dragOff();
+  expect(b.surface.getElementsByType('mindmap')).toHaveLength(2);
 });

@@ -1143,21 +1143,26 @@ Outside this directory, for BlockSuite:
     `onResizeMove` still sets the box. Pinned by "resizes a stroke with its points
     this tab's" in `src/features/blocksuite/strokePoints.test.ts`.
 
-82. The element toolbar's actions that write several elements straight to their
-    models ask the board first (`affine/shared` `utils/board-writes.ts`, called from
-    `affine/blocks/root` `edgeless/configs/toolbar/alignment.ts`, `misc.ts` and
-    `more.ts`, marked `Capy (local change 82)`; Epo 2026-11-25, the full board's
-    write gate). The alignment menu's pick moves a connector (`moveTo`) or a note
-    (`updateBlock`) before the board's `updateElement` sees the first element, a
-    Lock of several moves them between groups before its group's command, and a
-    reorder writes each `index` through neither: refused there, part of the
-    change was already written. `boardWrites.refuses(store, models, write)` now
-    runs before any write (`place`, `group` or `order`), and an action it refuses
-    writes nothing. The app sets the answer per store
+82. The element toolbar's actions and gestures that write several elements straight
+    to their models, or add one, ask the board first (`affine/shared`
+    `utils/board-writes.ts`, called from `affine/blocks/root`
+    `edgeless/configs/toolbar/alignment.ts`, `misc.ts` and `more.ts`, `affine/blocks/note`
+    `configs/toolbar.ts` and `affine/gfx/mindmap` `interactivity/mind-map-drag.ts`,
+    marked `Capy (local change 82)`; Epo 2026-11-25, the full board's write gate).
+    The alignment menu's pick moves a connector (`moveTo`) or a note (`updateBlock`)
+    before the board's `updateElement` sees the first element, a Lock of several
+    moves them between groups before its group's command, a reorder writes each
+    `index` and a note's Scale each note's box and scale through neither, and a
+    mind map's node dragged off its map makes a new map (`createFromTree`), an add
+    nothing refused: refused there, part of the change was already written.
+    `boardWrites.refuses(store, models, write)` now runs before any write (`place`,
+    `order`, `scale` or `add`), and what it refuses writes nothing (the dragged
+    node stays in its map). The app sets the answer per store
     (`src/features/blocksuite/boardFull.ts` `gateToolbarWrites`); with none set,
-    nothing is refused. Pinned by "refuses a lock of several and a reorder past a
-    full board before either writes" in `src/features/blocksuite/boardWrites.test.ts`;
-    the alignment menu's pick, inside its rendered template, is not driven there.
+    nothing is refused. Pinned by the alignment menu's Align left, a Lock of several,
+    Bring to Front, a note's Scale and a node dragged off its map in
+    `src/features/blocksuite/boardWrites.test.ts`, the menus' handlers taken from
+    their templates.
 
 83. The label of a connector hanging on an element in the middle of this tab's
     gesture stays this tab's until the gesture ends (`affine/gfx/connector`
@@ -1174,6 +1179,16 @@ Outside this directory, for BlockSuite:
     connector's own drag keeps its label as local change 80 does. Pinned by "holds
     the labels hanging on a shape mid-drag this tab's" in
     `src/features/blocksuite/connectorLabel.test.ts`.
+
+84. The width slider picks a value once a drag, as it changes
+    (`affine/components` `slider/slider.ts`, marked `Capy (local change 84)`; found
+    2026-11-25 with local change 82). It picked again at every pointer move, the
+    value unchanged too, and each pick rewrites every selected element's width
+    (a stroke's, a shape's or a connector's through the board's `updateElement`, a
+    card note's border through its style panel): a drag over a selection stored
+    each element's width at every pointer move. A press starts from the shown
+    value, and a move picks only a value this drag has not just picked. Pinned by
+    "picks a width once a drag" in `src/features/blocksuite/boardWrites.test.ts`.
 
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and

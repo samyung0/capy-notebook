@@ -287,24 +287,26 @@ export function gateCommands(
       : exec(run, ...rest)) as typeof command.exec;
 }
 
-/** The element toolbar's writes straight to models (`boardWrites`,
- * vendor/blocksuite local change 82) ask the board before any: a lock of
- * several makes a group (`refusesAdds`), a reorder writes each element's
- * index, the alignment menu places them (`placed`). Returns the stop. */
+/** What the board's toolbar and gestures write straight to models
+ * (`boardWrites`, vendor/blocksuite local change 82) asks the board before
+ * any write: an add (a Lock of several groups them, a mind map's node dragged
+ * off its map makes a new map) is refused as one (`refusesAdds`); a reorder
+ * writes each element's index, a note's Scale its box and scale, the
+ * alignment menu what `placed` counts. Returns the stop. */
 export function gateToolbarWrites(
   store: Store,
   placed: (models: GfxModel[]) => Writes
 ) {
-  boardWrites.gate(store, (models, write) =>
-    write === 'group'
-      ? refusesAdds(store)
-      : refusesWrites(
-          store,
-          write === 'order'
-            ? { elements: models.length, values: models.length }
-            : placed(models)
-        )
-  );
+  boardWrites.gate(store, (models, write) => {
+    if (write === 'add') return refusesAdds(store);
+    const { length } = models;
+    return refusesWrites(
+      store,
+      write === 'place'
+        ? placed(models)
+        : { elements: length, values: write === 'scale' ? 2 * length : length }
+    );
+  });
   return () => boardWrites.gate(store, null);
 }
 

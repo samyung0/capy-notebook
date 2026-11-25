@@ -8,6 +8,7 @@ import {
   type ToolbarModuleConfig,
   ToolbarModuleExtension,
 } from '@blocksuite/affine-shared/services';
+import { boardWrites } from '@blocksuite/affine-shared/utils';
 import { Bound } from '@blocksuite/global/gfx';
 import {
   AutoHeightIcon,
@@ -236,6 +237,9 @@ const builtinSurfaceToolbarConfig = {
           e.stopPropagation();
 
           const scale = e.detail / 100;
+          // Capy (local change 82): the board may refuse to scale them all,
+          // before any is scaled.
+          if (boardWrites.refuses(ctx.store, models, 'scale')) return;
 
           models.forEach(model => {
             const bounds = Bound.deserialize(model.xywh);

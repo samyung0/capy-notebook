@@ -258,7 +258,7 @@ export const builtinMiscToolbarConfig = {
         // board may refuse; it asks before moving any between groups.
         if (
           otherElements.length &&
-          boardWrites.refuses(ctx.store, elements, 'group')
+          boardWrites.refuses(ctx.store, elements, 'add')
         )
           return;
 
