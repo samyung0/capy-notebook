@@ -227,7 +227,7 @@ func (a *api) storeAgentFile(w http.ResponseWriter, ctx context.Context, f agent
 	}
 	// A deck's pictures keep the upload checks (Q348): its figures are
 	// captures under the pixel limit.
-	if err := checkSourceImages(f.name, kind, limits.ImageBytes, bytes.NewReader(f.content), int64(len(f.content))); err != nil {
+	if err := checkSourceBytes(f.name, kind, limits.ImageBytes, bytes.NewReader(f.content), int64(len(f.content))); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": err.Error()})
 		return store.AgentOperation{}, false
 	}

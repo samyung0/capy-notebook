@@ -76,6 +76,7 @@ const CsvView = lazy(() => import('./CsvView'));
 const DocxView = lazy(() => import('./DocxView'));
 const TextView = lazy(() => import('./TextView'));
 const PptxView = lazy(() => import('./PptxView'));
+const FilmView = lazy(() => import('@/features/films/FilmView'));
 
 const AUDIO_EXTS = new Set([
   'mp3',
@@ -566,6 +567,15 @@ function ResolvedFileView({
       />
     );
   }
+
+  if (file.kind === 'film')
+    return lazyView(
+      <FilmView
+        file={file}
+        key={`${file.url}:${previewAttempt}`}
+        onRetry={retryPreview}
+      />
+    );
 
   if (file.kind === 'audio' || AUDIO_EXTS.has(ext)) {
     return (

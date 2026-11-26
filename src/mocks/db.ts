@@ -60,6 +60,8 @@ import {
   applyItemAwards,
 } from '@/features/quizzes/grade';
 import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
+import drawnFilmUrl from '../../server/internal/cmvfile/testdata/drawn.cmv?url';
+import videoFilmUrl from '../../server/internal/cmvfile/testdata/video.cmv?url';
 import { gradeQuestions, learnerView } from './answerKeys';
 import { biologyQuizQuestions } from './biologyQuiz';
 import {
@@ -1028,6 +1030,20 @@ const standaloneSeeds: {
     kind: 'audio',
     name: 'Lecture recording.wav',
     url: fileLinks.f_8.url,
+  },
+  {
+    hoursAgo: 52,
+    id: 'f_standalone_film',
+    kind: 'film',
+    name: 'Circle.cmv',
+    url: drawnFilmUrl,
+  },
+  {
+    hoursAgo: 53,
+    id: 'f_standalone_film_video',
+    kind: 'film',
+    name: 'Circle video.cmv',
+    url: videoFilmUrl,
   },
 ];
 standaloneSeeds.forEach((seed, index) => {

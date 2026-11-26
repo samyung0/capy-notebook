@@ -14,3 +14,8 @@
 # cached for a year like /assets/*, so a changed icon can stay stale.
 /icons/*
   Cache-Control: public, max-age=31536000, immutable
+
+# ManimGX's vendored player (src/features/films/engine.ts): a version's
+# files never change, a new version gets a new folder.
+/vendor/manimgx/*
+  Cache-Control: public, max-age=31536000, immutable

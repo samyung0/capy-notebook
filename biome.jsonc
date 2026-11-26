@@ -24,6 +24,8 @@
       "!!ops/src/api-gen",
       "!!workers/site/worker-configuration.d.ts",
       "!!**/public/mockServiceWorker.js",
+      // ManimGX's web engine, as its wheel builds it (THIRD-PARTY-NOTICES.md).
+      "!!public/vendor",
       "!!**/src/styles/tailwind.css",
       "!!**/litellm_catalog.json",
       "!!bench",

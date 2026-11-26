@@ -3,6 +3,7 @@ import type { FileKind } from '@/api/types';
 export const FILE_KIND_MAPPING: Record<FileKind, string> = {
   audio: 'Audio',
   doc: 'Word',
+  film: 'Film',
   image: 'Image',
   json: 'Json',
   md: 'Markdown',
