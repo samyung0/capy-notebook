@@ -716,6 +716,10 @@ struct Note {
     /// projection changed, so it projects again, at a version projected
     /// already too.
     recheck: bool,
+    /// The idle projection or an on-demand one came while another ran, or an
+    /// on-demand one waits for Go to hold the stored version: the next
+    /// projection catches Go up.
+    catch_up_asked: bool,
     project_waiters: Vec<oneshot::Sender<Result<i64, String>>>,
     log_bytes: i64,
     log_rows: i64,
@@ -1373,6 +1377,7 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 project_soon: false,
                 board_assets: None,
                 recheck: false,
+                catch_up_asked: false,
                 project_waiters: Vec::new(),
                 log_bytes,
                 log_rows,
@@ -6990,7 +6995,9 @@ impl Room {
             return;
         };
         let lags = note.stored_version > note.projected_version;
-        let catch_up = lags && note.projected_at.elapsed() >= cadence;
+        // Go holds the stored version: nothing is left to catch up.
+        note.catch_up_asked &= lags;
+        let catch_up = lags && (note.catch_up_asked || note.projected_at.elapsed() >= cadence);
         let due = note.recheck || catch_up || (lags && note.project_soon);
         if note.projecting || !due {
             return;
@@ -7001,6 +7008,7 @@ impl Room {
         note.projecting = true;
         note.project_soon = false;
         note.recheck = false;
+        note.catch_up_asked = false;
         let (app, material_id) = (self.app.clone(), note.material_id.clone());
         tokio::spawn(async move {
             let checked = projection::project_durable(&app, &material_id, catch_up).await;
@@ -7026,7 +7034,10 @@ impl Room {
         let Kindly::Note(note) = &mut self.kind else {
             return;
         };
+        // The running projection may send nothing (a board's whose images
+        // stand): the one after it catches Go up ([Room::projected]).
         if note.projecting {
+            note.catch_up_asked = true;
             return;
         }
         // A quiz's other document may have stored since this room last did:
@@ -7087,8 +7098,11 @@ impl Room {
     /// holds after it (a board's that found Go's images unchanged sent
     /// nothing, so the idle projection and the cadence still catch Go up),
     /// and a board keeps the assets it read. Only a sent one restarts the
-    /// cadence and tells the tabs. A board asked meanwhile to project again
-    /// (its fold committed, an update named an asset) does.
+    /// cadence and tells the tabs. On-demand callers are answered once Go
+    /// holds the stored version the projection read; until then, and when
+    /// the idle projection came meanwhile, the next one catches Go up. A
+    /// board asked meanwhile to project again (its fold committed, an update
+    /// named an asset) does too.
     fn projected(&mut self, result: Result<projection::Checked, String>) {
         let Kindly::Note(note) = &mut self.kind else {
             return;
@@ -7104,8 +7118,12 @@ impl Room {
                 if let Some(assets) = checked.assets {
                     note.board_assets = Some(assets);
                 }
-                for waiter in note.project_waiters.drain(..) {
-                    let _ = waiter.send(Ok(version));
+                if checked.current {
+                    for waiter in note.project_waiters.drain(..) {
+                        let _ = waiter.send(Ok(version));
+                    }
+                } else if !note.project_waiters.is_empty() {
+                    note.catch_up_asked = true;
                 }
                 if checked.sent {
                     let payload = json!({ "materialId": note.material_id, "type": "projection-updated", "yjsVersion": version });

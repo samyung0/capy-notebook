@@ -20137,12 +20137,18 @@ async fn a_tab_behind_a_boards_base_rejoins_under_the_board_work() {
 /// what Go writes (`ProjectMaterialContent`): its block as the content and
 /// the version projected, unless Go projected a newer one, answering once
 /// written. A board's room compares its images with that block, so it sends
-/// nothing again until they change. The server's pending scan posts other
-/// tests' materials here too (they share the database); they are kept but
-/// not written.
+/// nothing again until they change. A test may hold one body's answer
+/// ([Projections::hold]). The server's pending scan posts other tests'
+/// materials here too (they share the database); they are kept but not
+/// written.
 #[derive(Clone)]
 struct Projections {
     bodies: std::sync::Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>>,
+    /// Each body's material as it arrived, before it is written.
+    arrived: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// The material whose body of this number (from 1) waits this long
+    /// before it is written and answered.
+    held: std::sync::Arc<std::sync::Mutex<Option<(String, usize, Duration)>>>,
     owned: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
     db: std::sync::Arc<tokio_postgres::Client>,
 }
@@ -20179,6 +20185,31 @@ impl Projections {
         panic!("{count} projections of {material}: {:?}", self.of(material));
     }
 
+    /// Holds `material`'s `nth` body (from 1) for `wait` before it is
+    /// written and answered.
+    fn hold(&self, material: &str, nth: usize, wait: Duration) {
+        *self.held.lock().expect("held") = Some((material.to_owned(), nth, wait));
+    }
+
+    /// Waits up to 10 s for `count` of `material`'s bodies to arrive,
+    /// written or not.
+    async fn arrivals(&self, material: &str, count: usize) {
+        for _ in 0..100 {
+            let arrived = self
+                .arrived
+                .lock()
+                .expect("arrived")
+                .iter()
+                .filter(|id| *id == material)
+                .count();
+            if arrived >= count {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("{count} projections of {material} never arrived");
+    }
+
     /// Writes `material`'s projections as Go does.
     fn own(&self, material: &str) {
         self.owned
@@ -20193,6 +20224,15 @@ async fn projection_posted(
     axum::extract::Path(material): axum::extract::Path<String>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> axum::http::StatusCode {
+    let nth = {
+        let mut arrived = kept.arrived.lock().expect("arrived");
+        arrived.push(material.clone());
+        arrived.iter().filter(|id| **id == material).count()
+    };
+    let held = kept.held.lock().expect("held").clone();
+    if let Some((_, _, wait)) = held.filter(|(id, at, _)| *id == material && *at == nth) {
+        tokio::time::sleep(wait).await;
+    }
     let owned = kept.owned.lock().expect("owned").contains(&material);
     if owned {
         // A canvas's projection at the version projected already replaces
@@ -20221,6 +20261,8 @@ async fn projections(env: &Env) -> (String, Projections) {
     let url = format!("http://{}", listener.local_addr().expect("address"));
     let kept = Projections {
         bodies: Default::default(),
+        arrived: Default::default(),
+        held: Default::default(),
         owned: Default::default(),
         db: std::sync::Arc::new(db(env).await),
     };
@@ -20674,11 +20716,12 @@ async fn each_change_of_a_boards_images_reaches_go_once() {
 
 /// The order of a board's projections (Epo 2026-11-26): an image erased in
 /// the store that adds another is still named between folds, so the
-/// projection after that store sends both; the unload's fold builds the
-/// exact list at the same version, and its projection, read once the fold
-/// committed and sent after the one the room sent, replaces it there (Go
-/// takes a canvas's projection at the version projected already when it
-/// differs). Fails if the exact list is not sent, or not last.
+/// projection after that store sends both. Its answer is held 2 s, and the
+/// room unloads meanwhile: the unload's fold builds the exact list at the
+/// same version, and its projection waits for the material's slot, so it
+/// reads once the held one is written and is sent after it, replacing it
+/// there (Go takes a canvas's projection at the version projected already
+/// when it differs). Fails if the exact list is written first, or not sent.
 #[tokio::test]
 async fn an_unloads_exact_list_replaces_the_superset_sent_at_its_version() {
     let Some(env) = env() else { return };
@@ -20699,16 +20742,17 @@ async fn an_unloads_exact_list_replaces_the_superset_sent_at_its_version() {
                 .remove(&mut doc.transact_mut(), "i1");
             draw_block(doc, "i2", "affine:image", &[("prop:sourceId", b)]);
         });
+        kept.hold(&material, 2, Duration::from_secs(2));
         writer.stored(&swapped, "r2").await;
-        let sent = kept.first(&material, 2).await;
-        assert_eq!(projected_images(&sent[1]), images_of(&[a, b]));
-        let version = stored_version(&env, &material).await;
-        assert_eq!(sent[1]["yjsVersion"], version);
-        version
+        // The superset is on its way and held: the room unloads now.
+        kept.arrivals(&material, 2).await;
+        stored_version(&env, &material).await
     };
     unloaded(server.port).await;
     let sent = kept.first(&material, 3).await;
     assert_eq!(sent.len(), 3, "{sent:?}");
+    assert_eq!(sent[1]["yjsVersion"], version);
+    assert_eq!(projected_images(&sent[1]), images_of(&[a, b]));
     assert_eq!(sent[2]["yjsVersion"], version);
     assert_eq!(projected_images(&sent[2]), images_of(&[b]));
     let content: serde_json::Value = db(&env)
@@ -20718,6 +20762,57 @@ async fn an_unloads_exact_list_replaces_the_superset_sent_at_its_version() {
         .expect("material")
         .get(0);
     assert_eq!(content["value"][0]["images"], images_of(&[b]));
+}
+
+/// An on-demand projection (`/internal/materials/{id}/project`) answers once
+/// Go holds the stored version (review of the fold projection, finding 2):
+/// asked of a board with unsaved strokes before the room read its assets,
+/// it stores them, and that store's projection (asked for by the strokes'
+/// id-shaped strings) finds the images unchanged and sends nothing; the
+/// on-demand one, which came while it ran, catches Go up after it. Fails if
+/// the caller is answered at Go's older version.
+#[tokio::test]
+async fn an_on_demand_projection_of_a_board_answers_once_go_holds_the_stored_version() {
+    let Some(env) = env() else { return };
+    let (api, kept) = projections(&env).await;
+    let server = start_configured(
+        &env,
+        Some(&api),
+        &[
+            ("COLLABORATION_DEBOUNCE_MS", "5000"),
+            ("COLLABORATION_MAX_DEBOUNCE_MS", "10000"),
+        ],
+    )
+    .await;
+    let (user, material, room, _) = canvas_with_assets(&env, &["a"]).await;
+    kept.own(&material);
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    let stroke = writer.edited(|doc| stroke_and_type(doc, "s1", "hello"));
+    writer.send(5, &sync(2, &stroke)).await;
+    writer.until(6).await.expect("ack");
+    let (status, body) = internal(
+        server.port,
+        &format!("/internal/materials/{material}/project"),
+        &serde_json::json!({}),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let version = stored_version(&env, &material).await;
+    assert!(version > 1, "the strokes were stored");
+    assert_eq!(
+        body,
+        serde_json::json!({ "projected": true, "yjsVersion": version })
+    );
+    let projected: i64 = db(&env)
+        .await
+        .query_one(
+            "SELECT projected_version FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("document")
+        .get(0);
+    assert_eq!(projected, version);
 }
 
 /// A board whose base's projection is not its base's is replayed (review

@@ -113,12 +113,13 @@ impl Drop for Slot<'_> {
 
 /// What a projection did: the version Go's projection reaches after it (the
 /// stored version it sent, or for a board it did not send, the one Go held
-/// already), whether it reached Go, and for a canvas its editor assets as
-/// read (`note_store::Held`), which the room's [crate::model::names_asset]
-/// checks updates against.
+/// already), whether it reached Go, whether Go holds the stored version it
+/// read, and for a canvas its editor assets as read (`note_store::Held`),
+/// which the room's [crate::model::names_asset] checks updates against.
 pub struct Checked {
     pub version: i64,
     pub sent: bool,
+    pub current: bool,
     pub assets: Option<HashSet<String>>,
 }
 
@@ -128,6 +129,7 @@ impl Checked {
         Self {
             version,
             sent: true,
+            current: true,
             assets: None,
         }
     }
@@ -375,6 +377,7 @@ async fn project_board(
             held.projected_version
         },
         sent,
+        current: sent || held.projected_version >= version,
         assets: Some(assets),
     })
 }
