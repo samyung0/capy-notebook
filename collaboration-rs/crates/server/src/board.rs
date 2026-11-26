@@ -2655,8 +2655,9 @@ mod tests {
     /// it folded, with the asset ids of the rows since) names every image a
     /// full replay of the stored board names; right after a fold that left
     /// no rows the two are equal. Folds that rows outlast (stored while the
-    /// fold ran) and a reload of the room come between. Fails if an image the
-    /// board holds is left out for Go to prune.
+    /// fold ran) and a reload of the room come between, and some stores still
+    /// name an image erased since the fold. Fails if an image the board holds
+    /// is left out for Go to prune.
     #[test]
     fn between_folds_the_projection_names_every_image_the_board_holds() {
         let updates = session_of(4, 600, 23, image_edit);
@@ -2666,7 +2667,7 @@ mod tests {
             let mut room = Room::new();
             let mut version = 1;
             let mut base = serde_json::Value::Array(projection(&room.stored(), version).unwrap());
-            let (mut extras, mut named) = (0, 0);
+            let (mut erased, mut named) = (0, 0);
             let mut check = |room: &Room, base: &serde_json::Value, version: i64| {
                 let since = crate::model::board_projection_since(base.clone(), &room.rows, version)
                     .unwrap();
@@ -2678,7 +2679,12 @@ mod tests {
                     "{order}: {since:?} lacks some of {replayed:?}"
                 );
                 assert!(!since.contains("not an id"), "{order}");
-                extras += usize::from(since != replayed);
+                // An image erased or given another asset since the fold.
+                erased += usize::from(
+                    since
+                        .difference(&replayed)
+                        .any(|id| id.starts_with("asset_")),
+                );
                 named += replayed.len();
                 since == replayed
             };
@@ -2722,7 +2728,7 @@ mod tests {
                 check(&room, &base, version),
                 "{order}: unequal right after a fold"
             );
-            assert!(extras > 0 && named > 0, "{order}: {extras} {named}");
+            assert!(erased > 0 && named > 0, "{order}: {erased} {named}");
         }
     }
 
