@@ -503,7 +503,7 @@ func TestACanvasProjectionWritesItsBlockAndPrunesItsImages(t *testing.T) {
 // A canvas projection at the version Go already projected replaces the
 // stored block when it names other images (the exact list after a fold
 // replacing the superset sent before it) and prunes by it; the same block
-// again changes nothing.
+// again changes nothing, nor does one at an older version.
 func TestACanvasProjectionAtTheSameVersionReplacesADifferentBlock(t *testing.T) {
 	f := newCanvasFixture(t, "canvas-same-version")
 	ctx := context.Background()
@@ -544,6 +544,14 @@ func TestACanvasProjectionAtTheSameVersionReplacesADifferentBlock(t *testing.T) 
 	}
 	if again.Revision != exact.Revision {
 		t.Fatalf("the same block again moved the revision to %d from %d", again.Revision, exact.Revision)
+	}
+
+	older, err := f.s.ProjectMaterialContent(ctx, canvas.ID, boardProjection(t, 3, kept, dropped), 3, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if older.Revision != exact.Revision {
+		t.Fatalf("an older version's block moved the revision to %d from %d", older.Revision, exact.Revision)
 	}
 }
 
