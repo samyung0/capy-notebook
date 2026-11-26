@@ -66,6 +66,10 @@ function MarkRow({ mark, onOpen }: { mark: Mark; onOpen: () => void }) {
         />
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="text-fg-muted text-xs">
+            {/* A shared mark's maker first (mock B6H1Z7o4byVFBVyCRSUK3B). */}
+            {mark.author?.name && (
+              <b className="font-semibold text-fg">{`${mark.author.name} · `}</b>
+            )}
             {m.pdf_mark_place({
               kind: KIND_LABEL[mark.kind](),
               page: mark.page,
@@ -242,6 +246,11 @@ export function CommentMargin({
             onClick={() => onOpen(mark)}
             type="button"
           >
+            {mark.author?.name && (
+              <span className="truncate font-semibold text-[11.5px]">
+                {mark.author.name}
+              </span>
+            )}
             {quoteOf(mark) ? (
               <span
                 className="line-clamp-2 border-l-[3px] pl-1.5 text-[11.5px] text-fg-muted"

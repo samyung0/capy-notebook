@@ -421,8 +421,6 @@ components:
           type: string
         draft:
           type: boolean
-        drawingParts:
-          type: boolean
         dueAt:
           format: date-time
           type: string
@@ -491,7 +489,6 @@ components:
         - attempts
         - questions
         - marks
-        - drawingParts
         - allowUploads
         - uploadOnly
         - paperFile
@@ -657,9 +654,12 @@ components:
         waitingMarks:
           format: double
           type: number
+        workspaceId:
+          type: string
       required:
         - id
         - assignmentId
+        - workspaceId
         - userId
         - userName
         - title
@@ -1104,6 +1104,8 @@ components:
           type: number
         missing:
           type: boolean
+        paperHandedIn:
+          type: boolean
         runningAttemptId:
           type: string
         total:
@@ -1118,6 +1120,7 @@ components:
       required:
         - done
         - attemptsUsed
+        - paperHandedIn
         - waitingMarks
         - waitingAnswers
         - late
@@ -4313,13 +4316,19 @@ components:
           format: uri
           readOnly: true
           type: string
+        owner:
+          $ref: "#/components/schemas/MaterialAuthor"
         role:
           $ref: "#/components/schemas/WorkspaceRole"
         workspaceKind:
           $ref: "#/components/schemas/WorkspaceKind"
+        workspaceName:
+          type: string
       required:
         - role
         - workspaceKind
+        - workspaceName
+        - owner
       type: object
     Invoice:
       additionalProperties: false
@@ -4788,9 +4797,6 @@ components:
     MarkedDrawing:
       additionalProperties: false
       properties:
-        assignment:
-          description: An assignment's answer; otherwise practice
-          type: boolean
         attemptId:
           type: string
         bytes:
@@ -4818,7 +4824,6 @@ components:
       required:
         - id
         - attemptId
-        - assignment
         - quizName
         - workspaceName
         - question
@@ -5761,6 +5766,9 @@ components:
     PDFAnnotation:
       additionalProperties: false
       properties:
+        author:
+          $ref: "#/components/schemas/PDFAnnotationAuthor"
+          readOnly: true
         color:
           pattern: ^#[0-9a-fA-F]{6}$
           type: string
@@ -5824,6 +5832,20 @@ components:
         - text
         - comment
       type: object
+    PDFAnnotationAuthor:
+      additionalProperties: false
+      properties:
+        avatarUrl:
+          type: string
+        id:
+          type: string
+        name:
+          type: string
+      required:
+        - id
+        - name
+        - avatarUrl
+      type: object
     PDFAnnotationChanges:
       additionalProperties: false
       properties:
@@ -5863,11 +5885,17 @@ components:
           items:
             $ref: "#/components/schemas/PDFAnnotation"
           type: array
+        readOnly:
+          type: boolean
+        shared:
+          type: boolean
         sourceIdentity:
           type: string
       required:
         - sourceIdentity
         - marks
+        - shared
+        - readOnly
       type: object
     PDFPoint:
       additionalProperties: false
@@ -5979,8 +6007,13 @@ components:
           type: string
         kind:
           type: string
+        marked:
+          type: boolean
         name:
           type: string
+        revision:
+          format: int64
+          type: integer
         sizeBytes:
           format: int64
           type: integer
@@ -5992,6 +6025,8 @@ components:
         - kind
         - sizeBytes
         - status
+        - revision
+        - marked
       type: object
     PaperFileReq:
       additionalProperties: false
@@ -7478,22 +7513,6 @@ components:
         - editor
         - viewer
       type: string
-    SharingNotice:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SharingNotice.json
-          format: uri
-          readOnly: true
-          type: string
-        due:
-          type: boolean
-        owner:
-          $ref: "#/components/schemas/MaterialAuthor"
-      required:
-        - due
-      type: object
     Slot:
       enum:
         - chat
@@ -8557,8 +8576,6 @@ components:
       properties:
         assignmentId:
           type: string
-        attemptId:
-          type: string
         bytes:
           format: int64
           type: integer
@@ -8583,6 +8600,7 @@ components:
         - kind
         - assignmentId
         - quizName
+        - workspaceId
         - workspaceName
         - bytes
         - createdAt
@@ -12878,6 +12896,36 @@ paths:
       summary: Get presigned file reads
       tags:
         - Content
+  /api/files/{id}/marked-copy:
+    post:
+      operationId: storeMarkedCopy
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/pdf:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Store the PDF copy staff mark a Word submission on, drawn by the first staff browser to open it; stored once
+      tags:
+        - assignments
   /api/files/{id}/open:
     post:
       operationId: openFile
@@ -14699,19 +14747,15 @@ paths:
             maxLength: 64
             type: string
       responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DrawingsDeletedOutputBody"
-          description: OK
+        "204":
+          description: No Content
         default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Delete one of the caller's deletable paper files; its marks stay
+      summary: Delete one of the caller's hand-in files never handed in before its assignment closed; handed-in files stay
       tags:
         - assignments
   /api/public/flashcards/{token}:
@@ -17116,51 +17160,6 @@ paths:
       summary: Update workspace sharing
       tags:
         - Workspaces
-  /api/workspaces/{id}/sharing-notice:
-    get:
-      operationId: getSharingNotice
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SharingNotice"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Whether a class member is yet to be told what they share
-      tags:
-        - Assignments
-    put:
-      operationId: markSharingNoticeSeen
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Record that a class member was told what they share
-      tags:
-        - Assignments
   /api/workspaces/{id}/sources/import:
     post:
       operationId: importSources

@@ -37,7 +37,8 @@ import { waitsForConnection } from '@/lib/online';
 /**
  * Files › Canvas (Epo 2026-11-06, mocks S2 list and S3 grid): the drawn answers
  * the caller pays for whose parts are marked, newest first, so they can delete
- * them; marks stay. Each is named by its quiz, with no score, and drawn from its
+ * them; marks stay. Only practice drawings: an assignment's is free and kept as
+ * handed in, on its results (Epo 2026-11-25). Each is named by its quiz, with no score, and drawn from its
  * board, as material previews draw from their data.
  */
 export function CanvasTab({
@@ -256,8 +257,7 @@ const CanvasCard = memo(function CanvasCard({
   );
 });
 
-/** S2: a list row, its second line naming the question, practice or
- * assignment, and the workspace. */
+/** S2: a list row, its second line naming the question and the workspace. */
 const CanvasRow = memo(function CanvasRow({
   item,
   onDelete,
@@ -291,11 +291,7 @@ const CanvasRow = memo(function CanvasRow({
           {item.quizName}
         </Link>
         <span className="t-meta truncate text-fg-muted">
-          {[
-            questionLabel(item),
-            item.assignment ? m.canvas_assignment() : m.canvas_practice(),
-            item.workspaceName,
-          ]
+          {[questionLabel(item), item.workspaceName]
             .filter(Boolean)
             .join(' · ')}
         </span>

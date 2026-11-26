@@ -10,20 +10,12 @@ import { m } from '@/i18n';
 import { fileIconName } from '@/lib/fileIcons';
 import { formatFileSize } from './fileUtils';
 
-/** A paper opens its results; a hand-in, its assignment's page. */
-const resultLink = (item: SubmittedPaper): LinkProps =>
-  item.attemptId
-    ? {
-        params: { attemptId: item.attemptId },
-        to: '/quizzes/attempts/$attemptId',
-      }
-    : assignmentsLink(item.workspaceId ?? '', {
-        assignment: item.assignmentId,
-      });
+const assignmentLink = (item: SubmittedPaper): LinkProps =>
+  assignmentsLink(item.workspaceId, { assignment: item.assignmentId });
 
-/** A file the caller handed in (Epo 2026-11-08, mock F1), listed once marked
- * and its assignment closed with grades out so it can be deleted; its marks
- * stay. It opens its results. */
+/** A hand-in file the caller added but never handed in before its assignment
+ * closed (Epo 2026-11-25): free, so listed for them to delete. Handed-in work
+ * is on its assignment's page instead. It opens the assignment. */
 export const SubmissionItem = memo(function SubmissionItem({
   item,
   onDelete,
@@ -47,8 +39,8 @@ export const SubmissionItem = memo(function SubmissionItem({
           items={[
             {
               icon: 'navigationForward',
-              label: m.canvas_open_result(),
-              onClick: () => void navigate(resultLink(item)),
+              label: m.assignment_open(),
+              onClick: () => void navigate(assignmentLink(item)),
             },
             {
               danger: true,
@@ -62,7 +54,7 @@ export const SubmissionItem = memo(function SubmissionItem({
       }
       details={`${item.quizName} · ${formatFileSize(item.bytes)}`}
       icon={fileIconName(item as Pick<SourceFile, 'kind' | 'name'>)}
-      link={resultLink(item)}
+      link={assignmentLink(item)}
       meta={relativeTime(item.createdAt)}
       pickKey={pickKey}
       selected={selected}

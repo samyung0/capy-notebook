@@ -1,6 +1,7 @@
 import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/api/client';
+import { useMe } from '@/api/hooks';
 import type { PDFAnnotationChanges, PDFAnnotationList } from '@/api/types';
 import { isStorageRefusal } from '@/lib/errors';
 import {
@@ -44,7 +45,9 @@ function* batches(queue: MarkChange, sourceIdentity: string) {
       bytes = 0;
     }
     if (mark) {
-      body.save.push(mark);
+      // Who made a shared mark is the server's to say: a save never sends it.
+      const { author: _author, ...saved } = mark;
+      body.save.push(saved);
       bytes += size;
     } else body.remove.push(id);
   }
@@ -54,9 +57,13 @@ function* batches(queue: MarkChange, sourceIdentity: string) {
 /** The viewer's marks, drawn and changed at once (D1): edits queue and save
  * together in the background, so drawing never waits on a request (Zotero's
  * reader). History holds each edit's marks before and after. A failed save
- * drops the queue and history, and the marks go back to the saved ones. */
+ * drops the queue and history, and the marks go back to the saved ones. On a
+ * submission's file the marks are staff's shared ones (`shared`): a new mark
+ * names the viewer as its maker until the server's list does; its member
+ * reads them only (`readOnly`, Epo 2026-11-25). */
 export function usePdfMarks(fileId: string, sourceIdentity: string) {
   const cache = useQueryClient();
+  const { data: me } = useMe();
   const { queryKey } = pdfAnnotationsQuery(fileId);
   const {
     data,
@@ -149,7 +156,16 @@ export function usePdfMarks(fileId: string, sourceIdentity: string) {
   function commit(edit: MarkChange) {
     if (!ready || !edit.size) return;
     const change: MarkChange = new Map();
-    for (const [id, mark] of edit) change.set(id, mark && normalizeMark(mark));
+    const author =
+      data?.shared && me
+        ? { avatarUrl: me.avatarUrl ?? '', id: me.id, name: me.name }
+        : undefined;
+    for (const [id, mark] of edit)
+      change.set(
+        id,
+        mark &&
+          normalizeMark(author && !mark.author ? { ...mark, author } : mark)
+      );
     const before: MarkChange = new Map();
     for (const id of change.keys())
       before.set(id, latest.current.find((mark) => mark.id === id) ?? null);
@@ -172,6 +188,7 @@ export function usePdfMarks(fileId: string, sourceIdentity: string) {
     canUndo: history.current.undo.length > 0,
     commit,
     marks,
+    readOnly: !!data?.readOnly,
     ready,
     redo: () => travel('redo'),
     saving,

@@ -151,7 +151,6 @@ import type {
   ReviewStart,
   SearchResult,
   SetModelPrefsReq,
-  SharingNotice,
   SourceFile,
   SourceUploadPolicy,
   SpendingLimitReq,
@@ -2965,8 +2964,6 @@ export function useAcceptWorkspaceInvite() {
       });
       qc.invalidateQueries({ queryKey: qk.notifications });
       qc.invalidateQueries({ queryKey: qk.notificationUnread });
-      // Agreed to on the invite page: a copy cached before then is stale.
-      qc.invalidateQueries({ queryKey: qk.sharingNotice(member.workspaceId) });
     },
   });
 }
@@ -3405,23 +3402,6 @@ export const useAssignments = (
     queryKey: [...qk.assignments(workspaceId), params],
   });
 
-/** Whether this class member is yet to be told what they share (board V1). */
-export const useSharingNotice = (workspaceId: string, enabled: boolean) =>
-  useQuery({
-    enabled,
-    meta: queryMeta({ errorBoundary: false }),
-    queryFn: () =>
-      api.get<SharingNotice>(`/workspaces/${workspaceId}/sharing-notice`),
-    queryKey: qk.sharingNotice(workspaceId),
-  });
-
-export function useMarkSharingNoticeSeen(workspaceId: string) {
-  return useMutation({
-    mutationFn: () =>
-      api.put<void>(`/workspaces/${workspaceId}/sharing-notice`),
-  });
-}
-
 export const useAssignment = (id: string, options?: QueryUiOptions) =>
   useQuery({
     enabled: !!id,
@@ -3857,17 +3837,31 @@ export const paperFileLinksQuery = (of: SubmissionOf, fileId: string) =>
 export const usePaperFileLinks = (of: SubmissionOf, fileId: string) =>
   useQuery(paperFileLinksQuery(of, fileId));
 
-function invalidateAfterPaperDelete(qc: QueryClient) {
-  qc.invalidateQueries({ queryKey: qk.itemsRoot });
-  qc.invalidateQueries({ queryKey: qk.billing });
+/** Store the PDF copy staff mark a Word submission on (mock
+ * B6H1Z7o4byVFBVyCRSUK3B C1); its links then sign it as their preview. A
+ * browser that lost the race (marked_copy_taken) reads the stored one the
+ * same way. Its one caller reports a failure itself: no global toast. */
+export function useStoreMarkedCopy(of: SubmissionOf, fileId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (pdf: Blob) =>
+      api.postBlob<void>(`/files/${fileId}/marked-copy`, pdf),
+    onSettled: () =>
+      qc.invalidateQueries({
+        queryKey: paperFileLinksQuery(of, fileId).queryKey,
+      }),
+  });
 }
 
-/** Delete one handed-in paper file; its marks stay. */
+/** Delete one hand-in file left unhanded when its assignment closed; handed-in
+ * files stay (Epo 2026-11-25). Submissions are charged to no one, so storage
+ * reads the same after. */
 export function useDeletePaper() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del<{ deleted: number }>(`/papers/${id}`),
-    onSuccess: () => invalidateAfterPaperDelete(qc),
+    mutationFn: (id: string) => api.del<void>(`/papers/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.itemsRoot }),
   });
 }
 

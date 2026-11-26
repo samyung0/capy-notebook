@@ -8,6 +8,7 @@ import {
   dayTimeLabel,
   dueText,
   latePolicy,
+  startsLeft,
   timeLabel,
 } from './assignmentText';
 
@@ -96,4 +97,23 @@ it("tints an average by its band, none before it's marked", () => {
   expect(averageTone(0.65)).toBe('warning');
   expect(averageTone(0.59)).toBe('error');
   expect(averageTone(undefined)).toBeUndefined();
+});
+
+// Epo 2026-11-25: the first start picks the way; an upload is handed in once.
+it('keeps a member to the way they first answered', () => {
+  const mine = (attemptsUsed: number, paperHandedIn: boolean) =>
+    ({ attemptsUsed, paperHandedIn }) as Assignment['mine'];
+  const both = { allowUploads: true, attempts: 3, uploadOnly: false };
+  expect(startsLeft({ ...both, mine: mine(0, false) })).toEqual({
+    online: true,
+    upload: true,
+  });
+  expect(startsLeft({ ...both, mine: mine(1, false) })).toEqual({
+    online: true,
+    upload: false,
+  });
+  expect(startsLeft({ ...both, mine: mine(0, true) })).toEqual({
+    online: false,
+    upload: false,
+  });
 });

@@ -122,6 +122,32 @@ func TestAIMarksWaitForApproval(t *testing.T) {
 	}
 }
 
+// TestMarksRingTheMember (Epo 2026-11-25): with grades shown automatically,
+// approving the last waiting mark tells the member their grade is ready, and
+// changing a decided mark by hand tells them it changed.
+func TestMarksRingTheMember(t *testing.T) {
+	f := newAssignmentFixture(t, "marks-ring")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	id, attempt := submitOpenAnswer(t, f, true, now)
+	if _, err := f.s.SaveAIMarks(ctx, attempt, []AIMark{{QuestionID: "q3", PartID: "p3", Items: []float64{2, 0}}}, now); err != nil {
+		t.Fatal(err)
+	}
+	code := func(n Notification) string {
+		var data struct{ Code string }
+		_ = json.Unmarshal(n.Data, &data)
+		return data.Code
+	}
+	_, sent, err := f.s.ApproveAIMarks(ctx, f.user, id, "q3", now)
+	if err != nil || len(sent) != 1 || sent[0].UserID != f.viewer || code(sent[0]) != "grade_ready" || sent[0].Href != "/attempts/"+attempt {
+		t.Fatalf("approved: notifications %+v, err %v", sent, err)
+	}
+	_, note, err := f.s.MarkAssignmentAnswer(ctx, f.user, attempt, AssignmentMark{QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{1, 0}}}}, now)
+	if err != nil || note == nil || note.UserID != f.viewer || code(*note) != "mark_changed" {
+		t.Fatalf("changed by hand: notification %+v, err %v", note, err)
+	}
+}
+
 // TestRegradeQuestion: staff grade an approved question again. Its open part
 // waits for the AI, then for approval, and the approved mark rings the member.
 func TestRegradeQuestion(t *testing.T) {

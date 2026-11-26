@@ -428,7 +428,6 @@ export type {
   ReviewSuggestion,
   Row as BankListRow,
   SessionScore,
-  SharingNotice,
   StudyTopics,
   SummaryTopic,
   TopicProgress as BankTopicProgress,
@@ -835,8 +834,10 @@ export type PDFAnnotation = Omit<
   rects: import('./gen/model').PDFRect[];
   strokes: import('./gen/model').PDFPoint[][];
 };
-export type PDFAnnotationList = {
-  sourceIdentity: string;
+export type PDFAnnotationList = Omit<
+  import('./gen/model').PDFAnnotationList,
+  '$schema' | 'marks'
+> & {
   marks: PDFAnnotation[];
 };
 export type PDFAnnotationChanges = {

@@ -18,6 +18,7 @@ import type {
   FlashcardSet,
   GenerateOptions,
   HiddenBody,
+  InvitePreview,
   Item,
   Material,
   MaterialDiscussion,
@@ -77,9 +78,9 @@ import {
   addPaperFile,
   assignmentActivity,
   assignmentHandlers,
-  markSharingNoticeSeen,
   numberedTitle,
   recentFor,
+  submissionMarkScope,
   submittedPapers,
   workspaceMaterialRefs,
 } from './assignments';
@@ -272,6 +273,16 @@ interface MockInviteCandidate {
 
 const mockDiscussions = db.discussions;
 const mockWorkspaceInvites: MockWorkspaceInvite[] = [];
+/** An invite's page: the mock's workspaces are all the signed-in user's. */
+const invitePreview = (
+  ws: Workspace,
+  role: InvitePreview['role']
+): InvitePreview => ({
+  owner: { avatarUrl: db.user.avatarUrl, name: db.user.name },
+  role,
+  workspaceKind: ws.kind,
+  workspaceName: ws.name,
+});
 const mockInviteCandidates: MockInviteCandidate[] = [
   {
     email: 'morgan@example.com',
@@ -545,7 +556,38 @@ function trashedEntry(id: unknown) {
   return { ...entry, trash: { canRestore, episodeId, purgeAfter } };
 }
 
-const pdfAnnotations: Record<string, PDFAnnotation[]> = {};
+const KATE = { avatarUrl: '', id: 'u_mock_kate', name: 'Kate Malone' };
+const pdfAnnotations: Record<string, PDFAnnotation[]> = {
+  // Staff's feedback on the member's graded quiz upload (Epo 2026-11-25, S1).
+  f_mine_q3: [
+    {
+      author: KATE,
+      color: '#d94848',
+      comment: 'Show the working for the surface area here.',
+      id: 'ann_mockq3rect01',
+      kind: 'rectangle',
+      page: 1,
+      rects: [{ height: 120, width: 520, x: 90, y: 160 }],
+      size: 0,
+      strokes: [],
+      text: '',
+      width: 3,
+    },
+    {
+      author: KATE,
+      color: '#7c5cc4',
+      comment: 'Good: units on every line.',
+      id: 'ann_mockq3note01',
+      kind: 'note',
+      page: 1,
+      rects: [{ height: 24, width: 24, x: 680, y: 420 }],
+      size: 0,
+      strokes: [],
+      text: '',
+      width: 0,
+    },
+  ],
+};
 /** The bytes a file's marks are saved on, as the server names them. */
 const mockMarkIdentity = (fileId: string) =>
   `revision:${(db.files.find((row) => row.id === fileId) ?? trashedEntry(fileId)?.file)?.revision ?? 1}`;
@@ -1051,8 +1093,11 @@ export const handlers = [
     if (params.id === 'mock-preview-annotations')
       return new HttpResponse(null, { status: 503 });
     const fileId = String(params.id);
+    const submission = submissionMarkScope(fileId);
     return HttpResponse.json<PDFAnnotationList>({
       marks: pdfAnnotations[fileId] ?? [],
+      readOnly: !!submission?.readOnly,
+      shared: !!submission,
       sourceIdentity: mockMarkIdentity(fileId),
     });
   }),
@@ -1067,11 +1112,26 @@ export const handlers = [
         },
         { status: 409 }
       );
-    const saved = new Map(body.save.map((mark) => [mark.id, mark]));
+    // A submission's marks are shared: a new one names its maker, as the
+    // server's list does (Epo 2026-11-25).
+    const maker = submissionMarkScope(fileId)
+      ? { avatarUrl: '', id: db.user.id, name: db.user.name }
+      : undefined;
+    const saved = new Map(
+      body.save.map((mark) => [
+        mark.id,
+        {
+          ...mark,
+          author:
+            (pdfAnnotations[fileId] ?? []).find((row) => row.id === mark.id)
+              ?.author ?? maker,
+        },
+      ])
+    );
     const kept = (pdfAnnotations[fileId] ?? [])
       .filter((mark) => !body.remove.includes(mark.id))
       .map((mark) => saved.get(mark.id) ?? mark);
-    const added = body.save.filter(
+    const added = [...saved.values()].filter(
       (mark) => !kept.some((row) => row.id === mark.id)
     );
     pdfAnnotations[fileId] = [...kept, ...added];
@@ -1762,6 +1822,20 @@ export const handlers = [
         ...collaborators,
       ]);
     }
+    // A class the viewer joined (ws_phys): its people, then the viewer.
+    if (ws?.role === 'viewer' || ws?.role === 'editor') {
+      return HttpResponse.json([
+        ...collaborators,
+        {
+          createdAt: ws.createdAt,
+          email: db.user.email,
+          name: db.user.name,
+          role: ws.role,
+          userId: db.user.id,
+          workspaceId,
+        },
+      ]);
+    }
     return HttpResponse.json(collaborators);
   }),
   http.get('/api/workspaces/:id/collaborators', async ({ params }) => {
@@ -1969,7 +2043,12 @@ export const handlers = [
     // Scenario and spec links (mock-…) open as any invite would; what
     // Accept answers is the scenario's.
     if (String(params.token).startsWith('mock-'))
-      return HttpResponse.json({ role: 'editor', workspaceKind: 'personal' });
+      return HttpResponse.json(
+        invitePreview(
+          db.workspaces.find((w) => w.kind === 'personal') ?? db.workspaces[0],
+          'editor'
+        )
+      );
     const invite = mockWorkspaceInvites.find(
       (item) =>
         (item.id === params.token || item.token === params.token) &&
@@ -1978,7 +2057,7 @@ export const handlers = [
     );
     const ws = db.workspaces.find((w) => w.id === invite?.workspaceId);
     if (!invite || !ws) return new HttpResponse(null, { status: 404 });
-    return HttpResponse.json({ role: invite.role, workspaceKind: ws.kind });
+    return HttpResponse.json(invitePreview(ws, invite.role));
   }),
   http.post('/api/workspace-invites/:token/accept', async ({ params }) => {
     const invite = mockWorkspaceInvites.find(
@@ -2015,10 +2094,6 @@ export const handlers = [
       (notification) => notification.href === `/workspace-invites/${invite.id}`
     );
     if (notificationIndex >= 0) db.notifications.splice(notificationIndex, 1);
-    // A class's member agreed to what they share on the invite page.
-    const ws = db.workspaces.find((w) => w.id === invite.workspaceId);
-    if (ws?.kind === 'class' && invite.role === 'viewer')
-      markSharingNoticeSeen();
     return HttpResponse.json(member);
   }),
   http.delete('/api/workspaces/:id', async ({ params }) => {
@@ -2535,7 +2610,13 @@ export const handlers = [
       activity: rows,
       members: roster.length,
       ownerName:
-        ws.role === 'owner' ? db.user.name : (roster[1]?.name ?? db.user.name),
+        ws.role === 'owner'
+          ? db.user.name
+          : (mockWorkspaceMembers.find(
+              (mb) => mb.workspaceId === ws.id && mb.role === 'owner'
+            )?.name ??
+            roster[1]?.name ??
+            db.user.name),
     } satisfies WorkspaceDashboard);
   }),
   http.get('/api/workspaces/:id/recent', async ({ params }) =>

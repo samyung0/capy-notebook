@@ -1284,7 +1284,9 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 	}
 	defer tx.Rollback(ctx)
 	var wsID, payerID string
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), user_id FROM files WHERE id=$1 AND trashed_at IS NULL`, id).
+	// A submission keeps its name as handed in (Epo 2026-11-25).
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), user_id FROM files
+		WHERE id=$1 AND trashed_at IS NULL AND submission_position IS NULL`, id).
 		Scan(&wsID, &payerID); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound

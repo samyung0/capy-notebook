@@ -150,6 +150,22 @@ export const advancedStartsOpen = (
     // Attempts is in Advanced (Epo 2026-11-21).
     (existing.kind === 'marked' && existing.attempts > 1));
 
+/** What a member can still start (Epo 2026-11-25): the first start picks the
+ * way for good; attempts count answers in the app only, and a paper is handed
+ * in once whatever they say. */
+export const startsLeft = ({
+  allowUploads,
+  attempts,
+  mine,
+  uploadOnly,
+}: Pick<Assignment, 'allowUploads' | 'attempts' | 'mine' | 'uploadOnly'>) => ({
+  online:
+    !uploadOnly &&
+    !mine?.paperHandedIn &&
+    attempts - (mine?.attemptsUsed ?? 0) > 0,
+  upload: allowUploads && !mine?.paperHandedIn && !mine?.attemptsUsed,
+});
+
 const pastDue = (dueAt: string | undefined, now: number) =>
   !!dueAt && Date.parse(dueAt) <= now;
 

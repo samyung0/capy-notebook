@@ -119,7 +119,8 @@ export function deleteCopy(targets: Item[]): { title: string; body: string } {
 }
 
 /** What a selection may delete: a file its rights let it trash, a block it
- * owns or lost access to, and every embed and submission (its own). */
+ * owns or lost access to, and every embed and listed submission (its own; a
+ * submission here is one left unhanded at its assignment's close). */
 function canDelete(item: Item): boolean {
   switch (item.type) {
     case 'file':

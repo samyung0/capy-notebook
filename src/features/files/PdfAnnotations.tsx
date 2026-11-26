@@ -118,7 +118,7 @@ export function PdfAnnotations({
   fileId,
   revision,
   renderVersion,
-  readOnly,
+  readOnly: viewOnly,
 }: {
   containerRef: RefObject<HTMLDivElement | null>;
   /** The toolbar's scrolling tools, and its pinned end. */
@@ -138,6 +138,8 @@ export function PdfAnnotations({
 }) {
   const store = usePdfMarks(fileId, `revision:${revision}`);
   const { commit, ready, saving, wrote, writeError } = store;
+  // A member's feedback on their own submission reads only.
+  const readOnly = viewOnly || store.readOnly;
   const editable = !readOnly;
   const [tool, setToolState] = useState<PdfTool>('select');
   const [shape, setShape] = useState<ShapeTool>('rectangle');
@@ -1040,7 +1042,10 @@ export function PdfAnnotations({
 
   return (
     <>
+      {/* A member reading their feedback gets no tools, only the Marks list
+          and the comments (mock B6H1Z7o4byVFBVyCRSUK3B). */}
       {toolbar &&
+        !store.readOnly &&
         createPortal(
           <PdfAnnotationToolbar
             canRedo={store.canRedo}

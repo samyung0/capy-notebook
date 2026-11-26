@@ -207,31 +207,6 @@ func TestAssignmentRoutesAuthorize(t *testing.T) {
 	if rec := doReq(t, h, http.MethodGet, quizPath, "u_viewer", nil); rec.Code != http.StatusNotFound {
 		t.Fatalf("after closing the member reads the quiz: status = %d", rec.Code)
 	}
-
-	// The notice, told once.
-	notice := func(user string) bool {
-		t.Helper()
-		rec := doReq(t, h, http.MethodGet, ws+"/sharing-notice", user, nil)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("notice for %s: status = %d", user, rec.Code)
-		}
-		var got struct {
-			Due bool `json:"due"`
-		}
-		if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-			t.Fatal(err)
-		}
-		return got.Due
-	}
-	if notice("u_owner") || notice("u_other") {
-		t.Fatal("the notice is due someone who shares nothing")
-	}
-	if rec := doReq(t, h, http.MethodPut, ws+"/sharing-notice", "u_viewer", nil); rec.Code != http.StatusNoContent {
-		t.Fatalf("mark the notice: status = %d", rec.Code)
-	}
-	if notice("u_viewer") {
-		t.Fatal("the notice shows twice")
-	}
 }
 
 // TestClosingTellsWhoIsTakingIt (Epo 2026-11-05): closing tells a member with an

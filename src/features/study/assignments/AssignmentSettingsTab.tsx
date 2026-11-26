@@ -10,7 +10,7 @@ import {
   useUpdateAssignment,
   useWorkspaceMembers,
 } from '@/api/hooks';
-import type { Assignment, AssignmentFormReq } from '@/api/types';
+import type { Assignment } from '@/api/types';
 import {
   DangerZone,
   SectionTitle,
@@ -25,7 +25,9 @@ import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import {
   AnswersSelect,
+  type AssignmentFormValues,
   AssignToField,
+  AttemptsNote,
   AttemptsSelect,
   assignmentBody,
   assignmentDefaults,
@@ -257,7 +259,7 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
     reset,
     setError,
     watch,
-  } = useForm<AssignmentFormReq>({
+  } = useForm<AssignmentFormValues>({
     defaultValues: assignmentDefaults(assignment),
     mode: 'onSubmit',
     resolver: assignmentResolver,
@@ -268,16 +270,17 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
   }, [assignment, isDirty, reset]);
   const dueAt = watch('dueAt');
   const noLate = watch('noLate');
-  const attempts = watch('attempts');
   // An Assignment taking uploads may be graded on points (Epo 2026-11-14;
   // only with uploads, 2026-11-21).
   const takesPoints = !marked && watch('allowUploads');
-  const gradedAssignment = takesPoints && watch('points') !== undefined;
+  const gradedAssignment = takesPoints && watch('graded');
   const changes = Object.keys(dirtyFields).length;
   // A new total waits for a yes while anyone is graded, past members too:
   // their marks stay as given (Epo 2026-11-20).
-  const [confirming, setConfirming] = useState<AssignmentFormReq | null>(null);
-  const send = (values: AssignmentFormReq) =>
+  const [confirming, setConfirming] = useState<AssignmentFormValues | null>(
+    null
+  );
+  const send = (values: AssignmentFormValues) =>
     update(
       // Publish alone ends a draft.
       { ...assignmentBody(values, members), draft: assignment.draft },
@@ -362,11 +365,7 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
               </Field>
               <Field label={m.assignment_field_attempts()}>
                 <AttemptsSelect control={control} />
-                {attempts > 1 && (
-                  <span className="t-meta text-fg-muted">
-                    {m.assignment_highest_counts()}
-                  </span>
-                )}
+                <AttemptsNote control={control} />
               </Field>
             </>
           )}
@@ -435,8 +434,16 @@ function DetailsForm({ assignment }: { assignment: Assignment }) {
               name="allowUploads"
             />
           )}
-          {/* Under the switch, as in New assignment (Epo 2026-11-21). */}
+          {/* Under the switch, as in New assignment (Epo 2026-11-21): Graded,
+              then its Points (Epo 2026-11-25). */}
           {takesPoints && (
+            <SwitchRow
+              control={control}
+              label={m.assignment_switch_graded()}
+              name="graded"
+            />
+          )}
+          {gradedAssignment && (
             <PointsField
               control={control}
               error={errors.points?.message}

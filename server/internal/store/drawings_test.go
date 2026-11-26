@@ -62,12 +62,13 @@ func storageUsed(t *testing.T, f assignmentFixture, user string) int64 {
 	return usage.UsedBytes
 }
 
-// TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment: Done
-// stores the board and image for a drawing part of the running attempt, charged
-// to the member (Epo 2026-11-06); a part that takes no drawing is refused; the
-// submitted answer names the drawing and waits for the AI; deleting the
-// assignment ends the charge. The recount agrees at every step.
-func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testing.T) {
+// TestAssignmentDrawingIsFreeAndGoesWithTheAssignment: Done stores the board
+// and image for a drawing part of the running attempt, charged to no one (Epo
+// 2026-11-25; the member paid before), its pictures too; a part that takes no
+// drawing is refused; the submitted answer names the drawing and waits for the
+// AI; deleting the assignment deletes it. A practice drawing is still charged
+// to the member. The recount agrees at every step.
+func TestAssignmentDrawingIsFreeAndGoesWithTheAssignment(t *testing.T) {
 	f := newAssignmentFixture(t, "assignment-drawing")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -92,22 +93,22 @@ func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := used(f.viewer); got != before+1500 {
-		t.Fatalf("the member's meter = %d, want %d", got, before+1500)
+	if got := used(f.viewer); got != before {
+		t.Fatalf("an assignment drawing charged the member: meter %d, want %d", got, before)
 	}
 	if used(f.user) != owner {
 		t.Fatal("the owner was charged for a member's drawing")
 	}
-	// Done again replaces it: the meter follows the new board alone.
+	// Done again replaces it, still charging nothing.
 	board.Key, board.Bytes = "drawings/"+run.ID+"/board_2.ydoc", 800
 	again, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil, nil, now)
 	if err != nil || again.ID != saved.ID {
 		t.Fatalf("the second Done = %+v, err %v", again, err)
 	}
-	if got := used(f.viewer); got != before+800 {
-		t.Fatalf("after replacing, the meter = %d, want %d", got, before+800)
+	if got := used(f.viewer); got != before {
+		t.Fatalf("after replacing, the meter = %d, want %d", got, before)
 	}
-	// The board's pictures are stored and charged with it, and each Done
+	// The board's pictures are stored with it, free too, and each Done
 	// replaces them with the ones it sends.
 	picture := func(id string, size int64) DrawingPicture {
 		return DrawingPicture{SourceID: id, Object: DrawingObject{Key: "drawings/" + run.ID + "/img_" + id + ".webp", Bytes: size, Type: "image/webp"}}
@@ -116,8 +117,8 @@ func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testin
 		[]DrawingPicture{picture("a", 300), picture("b", 200)}, now); err != nil {
 		t.Fatal(err)
 	}
-	if got := used(f.viewer); got != before+1300 {
-		t.Fatalf("with two pictures, the meter = %d, want %d", got, before+1300)
+	if got := used(f.viewer); got != before {
+		t.Fatalf("with two pictures, the meter = %d, want %d", got, before)
 	}
 	if _, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil,
 		[]DrawingPicture{picture("b", 200)}, now); err != nil {
@@ -127,8 +128,8 @@ func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testin
 	if err != nil || len(pictures) != 1 || pictures[0].SourceID != "b" || pictures[0].Object.Bytes != 200 {
 		t.Fatalf("the drawing's pictures = %+v, err %v", pictures, err)
 	}
-	if got := used(f.viewer); got != before+1000 {
-		t.Fatalf("with one picture left, the meter = %d, want %d", got, before+1000)
+	if got := used(f.viewer); got != before {
+		t.Fatalf("with one picture left, the meter = %d, want %d", got, before)
 	}
 	done, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{
 		"p4": map[string]any{"drawing": "dr_forged"},
@@ -139,11 +140,22 @@ func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testin
 	if got, _ := done.Answers["p4"].(map[string]any); got["drawing"] != saved.ID {
 		t.Fatalf("the submitted answer = %v", done.Answers["p4"])
 	}
+	graded, given := gradeAttempt(frozenFixture(t), map[string]any{})
+	if _, err := f.s.CheckQuizQuestion(ctx, f.viewer, f.quiz.ID, QuizCheck{
+		Answers: given, Question: graded[0], Order: []string{"q1", "q2", "q3"}, Marks: map[string]float64{"q1": 1, "q2": 2, "q3": 3},
+		Drawings: map[string]QuizDrawing{"p1": {Board: DrawingObject{Key: "drawings/" + f.viewer + "/practice.ydoc.gz", Bytes: 100, Type: "application/gzip"}}},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := used(f.viewer); got != before+100 {
+		t.Fatalf("a practice drawing: meter %d, want %d", got, before+100)
+	}
 	if err := f.s.DeleteAssignment(ctx, f.user, created.ID); err != nil {
 		t.Fatal(err)
 	}
+	// The assignment takes its quiz, and the practice drawing goes with it.
 	if got := used(f.viewer); got != before {
-		t.Fatalf("deleting the assignment left %d of the member's charge", got-before)
+		t.Fatalf("after deleting the assignment the meter = %d, want %d", got, before)
 	}
 	var left int
 	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM drawings WHERE attempt_id=$1`, run.ID).Scan(&left); err != nil || left != 0 {
@@ -151,10 +163,11 @@ func TestAssignmentDrawingIsChargedToTheMemberAndGoesWithTheAssignment(t *testin
 	}
 }
 
-// TestMarkedDrawingsListAndDeleteForTheirPayer: Files › Canvas lists a member's
-// assignment drawing only once its part is marked and the assignment has
-// closed, named by the quiz with its question and part; the member deletes it
-// and the charge ends, while the marks stay.
+// TestMarkedDrawingsListAndDeleteForTheirPayer: Files › Canvas lists a payer's
+// marked practice drawings, named by the quiz with its question, and its payer
+// deletes them while the marks stay. An assignment's drawing is never listed
+// or deleted, even closed with its grades out: it stays as handed in, on the
+// assignment's page (Epo 2026-11-25).
 func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 	f := newAssignmentFixture(t, "marked-drawings")
 	ctx := context.Background()
@@ -170,8 +183,7 @@ func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 		t.Fatal(err)
 	}
 	board := DrawingObject{Key: "drawings/" + run.ID + "/board_1.ydoc", Bytes: 1000, Type: "application/octet-stream"}
-	saved, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil, nil, now)
-	if err != nil {
+	if _, err := f.s.SaveAssignmentDrawing(ctx, f.viewer, run.ID, "p4", board, nil, nil, now); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{}, now.Add(time.Minute)); err != nil {
@@ -183,31 +195,36 @@ func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 	}, now.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	// Marked but still open: staff may revise it, so it isn't listed yet.
-	if page, err := f.s.ListMarkedDrawings(ctx, f.viewer, "", 50); err != nil || page.Count != 0 {
-		t.Fatalf("open assignment listed %+v, err %v", page, err)
-	}
 	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(3*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	if page, err := f.s.ListMarkedDrawings(ctx, f.viewer, "", 50); err != nil || page.Count != 0 || len(page.Items) != 0 {
+		t.Fatalf("an assignment drawing listed: %+v, err %v", page, err)
+	}
+	graded, given := gradeAttempt(frozenFixture(t), map[string]any{})
+	practice, err := f.s.CheckQuizQuestion(ctx, f.viewer, f.quiz.ID, QuizCheck{
+		Answers: given, Question: graded[0], Order: []string{"q1", "q2", "q3"}, Marks: map[string]float64{"q1": 1, "q2": 2, "q3": 3},
+		Drawings: map[string]QuizDrawing{"p1": {Board: DrawingObject{Key: "drawings/" + f.viewer + "/practice.ydoc.gz", Bytes: 100, Type: "application/gzip"}}},
+	}, now)
+	if err != nil {
 		t.Fatal(err)
 	}
 	page, err := f.s.ListMarkedDrawings(ctx, f.viewer, "", 50)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if page.Count != 1 || page.TotalBytes != 1000 || len(page.Items) != 1 {
+	if page.Count != 1 || page.TotalBytes != 100 || len(page.Items) != 1 {
 		t.Fatalf("page = %+v", page)
 	}
-	got := page.Items[0]
-	if got.ID != saved.ID || !got.Assignment || got.Question != 4 || got.Part != 0 || got.QuizName == "" {
+	if got := page.Items[0]; got.AttemptID != practice.ID || got.Question != 1 || got.QuizName == "" {
 		t.Fatalf("listed = %+v", got)
 	}
-	n, err := f.s.DeleteMarkedDrawings(ctx, f.viewer, []string{saved.ID})
-	if err != nil || n != 1 {
+	if n, err := f.s.DeleteMarkedDrawings(ctx, f.viewer, nil); err != nil || n != 1 {
 		t.Fatalf("deleted %d, err %v", n, err)
 	}
 	var left int
-	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM drawings WHERE user_id=$1`, f.viewer).Scan(&left); err != nil || left != 0 {
-		t.Fatalf("drawings left = %d, err %v", left, err)
+	if err := f.s.pool.QueryRow(ctx, `SELECT count(*) FROM drawings WHERE user_id=$1 AND assignment`, f.viewer).Scan(&left); err != nil || left != 1 {
+		t.Fatalf("assignment drawings left = %d, err %v", left, err)
 	}
 }
 
@@ -251,8 +268,8 @@ const sharedDrawingQuestion = `{"id":"q5","stem":[{"type":"text","text":"A Punne
 
 // TestASharedCanvasIsOneDrawingForItsParts (Epo 2026-11-23): parts answering in
 // one canvas share one drawing, stored under the first of them alone; each
-// waits and goes to the AI on it, the drawing keeps its marking image until
-// both are marked, and Files › Canvas lists it only then.
+// waits and goes to the AI on it, and the drawing keeps its marking image
+// until both are marked.
 func TestASharedCanvasIsOneDrawingForItsParts(t *testing.T) {
 	f := newAssignmentFixture(t, "shared-drawing")
 	ctx := context.Background()
@@ -314,24 +331,15 @@ func TestASharedCanvasIsOneDrawingForItsParts(t *testing.T) {
 	if held().ImageKey == "" {
 		t.Fatal("the drawing lost its image while s2 waits on it")
 	}
-	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(3*time.Minute)); err != nil {
-		t.Fatal(err)
-	}
-	if page, err := f.s.ListMarkedDrawings(ctx, f.viewer, "", 50); err != nil || page.Count != 0 {
-		t.Fatalf("listed while s2 waits: %+v, err %v", page, err)
-	}
 	mark("s2", 1)
 	if held().ImageKey != "" {
 		t.Fatal("the drawing kept its image once both parts were marked")
-	}
-	if page, err := f.s.ListMarkedDrawings(ctx, f.viewer, "", 50); err != nil || page.Count != 1 || page.TotalBytes != 1000 {
-		t.Fatalf("listed once marked: %+v, err %v", page, err)
 	}
 }
 
 // TestRepublishMovesADrawingWithItsCanvas (Epo 2026-11-24): a republish that
 // makes another part the first answering in a canvas moves the stored drawing
-// to it, charged once still; a part's own canvas no part answers in any more,
+// to it, still free; a part's own canvas no part answers in any more,
 // and then the stem's, drop theirs, the first before another moves onto its
 // part.
 func TestRepublishMovesADrawingWithItsCanvas(t *testing.T) {
@@ -413,8 +421,8 @@ func TestRepublishMovesADrawingWithItsCanvas(t *testing.T) {
 	// s1 switched to New: the stem's drawing moves to s2, its first part now.
 	republish(own("s1"))
 	held(map[string]string{"s2": stem.ID})
-	if got := storageUsed(t, f, f.viewer); got != before+1500 {
-		t.Fatalf("after the move, the meter = %d, want %d", got, before+1500)
+	if got := storageUsed(t, f, f.viewer); got != before {
+		t.Fatalf("after the move, the meter = %d, want %d", got, before)
 	}
 	mine := draw("s1", "own")
 	// Two drawings may swap parts in one move.
@@ -436,8 +444,8 @@ func TestRepublishMovesADrawingWithItsCanvas(t *testing.T) {
 	// drawing goes, and the stem's moves back onto s1.
 	republish(append(frozenFixture(t), shared()))
 	held(map[string]string{"s1": stem.ID})
-	if got := storageUsed(t, f, f.viewer); got != before+1500 {
-		t.Fatalf("after dropping s1's own, the meter = %d, want %d", got, before+1500)
+	if got := storageUsed(t, f, f.viewer); got != before {
+		t.Fatalf("after dropping s1's own, the meter = %d, want %d", got, before)
 	}
 	// Neither answers in the stem's canvas: its drawing goes.
 	republish(own("s1", "s2"))

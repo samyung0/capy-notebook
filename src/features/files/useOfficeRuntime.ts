@@ -94,9 +94,12 @@ const POSITION_WAIT_MS = 1000;
 interface OfficeRuntimeOptions {
   canEdit: boolean;
   citation?: OfficeCitation;
-  file: SourceFile;
+  file: Pick<SourceFile, 'id' | 'name'>;
   format: OfficeFormat;
   initialMode?: OfficeMode;
+  /** A file outside the workspace's sources (a submission's .docx): its
+   * bytes from its own link, in view only, with no source session. */
+  load?: (signal: AbortSignal) => Promise<ArrayBuffer>;
   revision: number;
   swap?: OfficeSwap;
 }
@@ -174,9 +177,12 @@ export function useOfficeRuntime({
   file,
   format,
   initialMode = 'view',
+  load,
   revision,
   swap,
 }: OfficeRuntimeOptions) {
+  const loadRef = useRef(load);
+  loadRef.current = load;
   const swapRef = useRef(swap);
   swapRef.current = swap;
   const citationRef = useRef(citation);
@@ -493,6 +499,19 @@ export function useOfficeRuntime({
   useEffect(() => {
     if (mode !== 'view' || viewBytes || config.error) return;
     const controller = new AbortController();
+    const own = loadRef.current;
+    if (own) {
+      void own(controller.signal)
+        .then((bytes) => {
+          if (!controller.signal.aborted) setViewBytes({ bytes });
+        })
+        .catch((value: unknown) => {
+          if (controller.signal.aborted) return;
+          setError(errorCopy(value, m.error_file_body()));
+          setErrorId(unexpectedErrorId(value));
+        });
+      return () => controller.abort();
+    }
     void takeSourceOpen(file.id, 'view', controller.signal)
       .then(async ({ base, session }) => {
         if (!controller.signal.aborted)

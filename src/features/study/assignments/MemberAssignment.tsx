@@ -1,170 +1,197 @@
-import { useNavigate } from '@tanstack/react-router';
-import { useEffect, useRef } from 'react';
-import { useSetAssignmentDone } from '@/api/hooks';
-import type { Assignment } from '@/api/types';
+import { Link, useNavigate } from '@tanstack/react-router';
+import { useEffect, useState } from 'react';
+import { useAssignmentAttempt, useSetAssignmentDone } from '@/api/hooks';
+import type { Assignment, AssignmentAttempt } from '@/api/types';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { PracticeFrame } from '../practice/studyPage';
-import { BackToAssignments } from './AssignmentAttemptPage';
+import { attemptLink } from '../studyRoutes';
+import { AssignmentFacts } from './AssignmentFacts';
 import { AssignmentFiles } from './AssignmentFiles';
-import { dayLabel, kindLabel, markText } from './assignmentText';
+import {
+  AssignmentHead,
+  memberChips,
+  type Stat,
+  StatRow,
+} from './AssignmentHead';
+import {
+  ClockChip,
+  earliest,
+  HOUR,
+  TimeLeft,
+  useTimeLeft,
+} from './assignmentClock';
+import { dayLabel, markText, startsLeft } from './assignmentText';
 import { YourWork } from './HandIns';
 import { useAddSubmissionFiles } from './useAddSubmissionFiles';
 import { useAssignmentStart } from './useAssignmentStart';
 
-/** An assignment's page for a member (W4). An unmarked one shows its files and
- * Mark as done, or, taking files, Your work and Hand in (S3). A marked one goes on: to its running attempt or results, else
- * to Before you start (A0), straight in without a time limit. */
+/** An assignment's page for a member (W4), in its staff's report's head with
+ * no tabs (Epo 2026-11-25): only their own work is on it. An unmarked one
+ * shows its files and Mark as done, or, taking files, Your work and Hand in
+ * (S3). A marked one shows its facts and files with Start (Epo 2026-11-25: it
+ * waits for the member instead of starting by itself); a running attempt
+ * shows its clock and Continue, and results open. */
 export function MemberAssignment({ assignment }: { assignment: Assignment }) {
   if (assignment.kind === 'marked')
     return <StartMarked assignment={assignment} />;
   return <Unmarked assignment={assignment} />;
 }
 
+/** Started from this page, kept outside it: the start's own callback is lost
+ * when the page remounts as the assignment rereads (React's StrictMode). */
+const startedHere = new Set<string>();
+
 function StartMarked({ assignment }: { assignment: Assignment }) {
   const navigate = useNavigate();
-  const backToList = () =>
-    void navigate({ replace: true, search: {}, to: '.' });
   const { dialog, start, starting } = useAssignmentStart(
-    assignment.workspaceId,
-    backToList
+    assignment.workspaceId
   );
   const { mine } = assignment;
   const closed = !!assignment.closedAt;
-  const attempt = mine?.runningAttemptId ?? mine?.countedAttemptId;
-  const once = useRef(false);
+  const running = mine?.runningAttemptId;
+  const counted = mine?.countedAttemptId;
+  const left = startsLeft(assignment);
   useEffect(() => {
-    // Also once the start below lands and the assignment reads its attempt: the
-    // start's own callback is lost when this remounts (React's StrictMode).
-    if (attempt) {
-      void navigate({
-        replace: true,
-        search: { assignment: assignment.id, attempt },
-        to: '.',
-      });
-      return;
-    }
-    if (once.current) return;
-    once.current = true;
-    if (!closed) start(assignment);
-  }, [assignment, attempt, closed, navigate, start]);
+    // A running attempt waits for Continue (Epo 2026-11-25), unless it was
+    // just started here; results open on their own page.
+    if (running && startedHere.delete(assignment.id))
+      void navigate(attemptLink(running));
+    else if (!running && counted)
+      void navigate({ ...attemptLink(counted), replace: true });
+  }, [assignment.id, counted, navigate, running]);
+  const overdue =
+    !!assignment.dueAt && Date.parse(assignment.dueAt) <= Date.now() && !closed;
   return (
     <PracticeFrame>
-      <BackToAssignments />
-      <h1 className="t-page-title mt-3">{assignment.title}</h1>
-      {closed && !mine?.countedAttemptId && (
+      <AssignmentHead
+        actions={
+          running ? (
+            <>
+              <RunningClock attemptId={running} />
+              <Button asChild variant="accent">
+                <Link {...attemptLink(running)}>{m.assignment_continue()}</Link>
+              </Button>
+            </>
+          ) : (
+            !(closed || counted) && (
+              <Button
+                disabled={starting || !(left.online || left.upload)}
+                onClick={() => {
+                  startedHere.add(assignment.id);
+                  start(assignment);
+                }}
+                variant="accent"
+              >
+                {m.assignment_start()}
+              </Button>
+            )
+          )
+        }
+        assignment={assignment}
+        // The facts below give the due date with what is left.
+        chips={memberChips(assignment, true)}
+        rule
+      />
+      {closed && !counted && (
         <p className="mt-2 text-fg-secondary">{m.assignment_closed_missed()}</p>
       )}
-      {/* It starts by itself above; a start that failed is pressed again here. */}
-      {!(closed || attempt) && (
-        <Button
-          className="mt-4"
-          disabled={starting}
-          onClick={() => start(assignment)}
-        >
-          {m.assignment_start()}
-        </Button>
-      )}
+      <div className="tab-body-mt">
+        <AssignmentFacts a={assignment} dueLeft={!closed} overdue={overdue} />
+      </div>
+      <AssignmentFiles assignment={assignment} />
       {dialog}
     </PracticeFrame>
   );
 }
 
-function Unmarked({ assignment }: { assignment: Assignment }) {
-  return (
-    <PracticeFrame>
-      <BackToAssignments />
-      <UnmarkedView assignment={assignment} className="mt-3" />
-    </PracticeFrame>
-  );
+/** The running attempt's clock beside Continue, as the take page shows it:
+ * its time limit, or the last hour before a No late close; with neither, In
+ * progress. */
+function RunningClock({ attemptId }: { attemptId: string }) {
+  const { data } = useAssignmentAttempt(attemptId, { errorBoundary: false });
+  if (!data) return null;
+  return <Clock attempt={data} />;
 }
 
-/** An unmarked assignment as its members see it: its title, Mark as done or
- * Hand in, its files and Your work. */
-export function UnmarkedView({
-  assignment,
-  className,
-}: {
-  assignment: Assignment;
-  className?: string;
-}) {
+function Clock({ attempt }: { attempt: AssignmentAttempt }) {
+  const left = useTimeLeft(
+    earliest(attempt.deadlineAt, attempt.closesAt),
+    attempt.now,
+    attempt.deadlineAt ? undefined : HOUR
+  );
+  if (left !== null && (!!attempt.deadlineAt || left <= HOUR))
+    return <TimeLeft ms={left} />;
+  return <ClockChip>{m.assignment_in_progress()}</ClockChip>;
+}
+
+/** An unmarked assignment as its members see it: the head with Mark as done
+ * or Hand in, their own numbers, its files and Your work. Hand in is final
+ * (Epo 2026-11-25): it asks first, as Submit does, and leaves no Undo. */
+function Unmarked({ assignment }: { assignment: Assignment }) {
   const { mutate, isPending } = useSetAssignmentDone(assignment.workspaceId);
-  const done = !!assignment.mine?.done;
+  const mine = assignment.mine;
+  const done = !!mine?.done;
   const handIn = assignment.allowUploads;
   const closed = !!assignment.closedAt;
-  const handedIn = handIn && done && assignment.mine?.doneAt;
+  const count = mine?.handIn?.length ?? 0;
+  const [confirming, setConfirming] = useState(false);
   // Your work's uploads, held here: Hand in waits for them, as Submit does.
   const uploads = useAddSubmissionFiles({ handInId: assignment.id });
   const uploading = uploads.uploading.length > 0;
-  const meta = [
-    kindLabel(assignment),
-    assignment.postedBy
-      ? m.assignment_posted_by({
-          date: dayLabel(assignment.postedAt),
-          name: assignment.postedBy,
-        })
-      : m.assignment_posted({ date: dayLabel(assignment.postedAt) }),
-    assignment.dueAt
-      ? m.assignment_due({ date: dayLabel(assignment.dueAt) })
-      : null,
-    handedIn ? m.assignment_handed_in_on({ date: dayLabel(handedIn) }) : null,
-    // Graded on points (Epo 2026-11-14): the grade once shown, else what of.
-    assignment.points === undefined
-      ? null
-      : assignment.mine?.mark === undefined
-        ? m.assignment_out_of({ points: assignment.points })
-        : m.assignment_grade_line({
-            grade: markText(
-              assignment.mine.mark,
-              assignment.mine.total ?? assignment.points
-            ),
-          }),
-  ]
-    .filter(Boolean)
-    .join(' · ');
+  // Their own numbers where staff see everyone's (Epo 2026-11-25): when it was
+  // handed in or done, and a graded one's grade once given and shown.
+  const stats: Stat[] = [
+    {
+      label: handIn ? m.assignment_col_handed_in() : m.assignment_done(),
+      value: mine?.doneAt ? dayLabel(mine.doneAt) : '–',
+    },
+  ];
+  if (assignment.points !== undefined)
+    stats.push({
+      label: m.assignment_col_grade(),
+      value:
+        mine?.mark === undefined
+          ? '–'
+          : markText(mine.mark, mine.total ?? assignment.points),
+    });
   return (
-    <>
-      <div
-        className={cn(
-          'flex flex-wrap items-start justify-between gap-x-4 gap-y-3',
-          className
-        )}
-      >
-        <div className="min-w-0">
-          <h1 className="t-page-title">{assignment.title}</h1>
-          <p className="t-meta mt-0.5 text-fg-muted">{meta}</p>
-        </div>
-        {handIn ? (
-          <span
-            title={
-              uploading && !done
-                ? m.assignment_hand_in_wait_upload()
-                : undefined
-            }
-          >
+    <PracticeFrame>
+      <AssignmentHead
+        actions={
+          handIn ? (
+            !done && (
+              <span
+                title={
+                  uploading ? m.assignment_hand_in_wait_upload() : undefined
+                }
+              >
+                <Button
+                  disabled={isPending || closed || uploading || !count}
+                  onClick={() => setConfirming(true)}
+                >
+                  {m.assignment_hand_in()}
+                </Button>
+              </span>
+            )
+          ) : (
             <Button
-              disabled={
-                isPending ||
-                closed ||
-                (!done && (uploading || !assignment.mine?.handIn?.length))
-              }
+              disabled={isPending || closed}
               onClick={() => mutate({ done: !done, id: assignment.id })}
               variant={done ? 'outline' : undefined}
             >
-              {done ? m.assignment_undo_hand_in() : m.assignment_hand_in()}
+              {done
+                ? m.assignment_mark_not_done()
+                : m.assignment_mark_as_done()}
             </Button>
-          </span>
-        ) : (
-          <Button
-            disabled={isPending || closed}
-            onClick={() => mutate({ done: !done, id: assignment.id })}
-            variant={done ? 'outline' : undefined}
-          >
-            {done ? m.assignment_mark_not_done() : m.assignment_mark_as_done()}
-          </Button>
-        )}
-      </div>
+          )
+        }
+        assignment={assignment}
+        chips={memberChips(assignment)}
+        rule
+      />
+      <StatRow stats={stats} />
       <AssignmentFiles assignment={assignment} />
       {handIn && (
         <YourWork
@@ -173,6 +200,21 @@ export function UnmarkedView({
           uploads={uploads}
         />
       )}
-    </>
+      {confirming && (
+        <ConfirmDialog
+          body={
+            count === 1
+              ? m.assignment_hand_in_confirm_one()
+              : m.assignment_hand_in_confirm({ count })
+          }
+          confirmLabel={m.assignment_hand_in()}
+          danger={false}
+          onClose={() => setConfirming(false)}
+          onConfirm={() => mutate({ done: true, id: assignment.id })}
+          open
+          title={m.assignment_hand_in_title()}
+        />
+      )}
+    </PracticeFrame>
   );
 }

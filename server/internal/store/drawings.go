@@ -233,8 +233,8 @@ func (s *Store) AssertStorageRoom(ctx context.Context, userID string, requested 
 
 // putDrawingTx upserts the part's drawing after the payer's gate passes for
 // what it adds over what the part held, and replaces the board's pictures with
-// the ones sent. pastLimit (an assignment's) checks the account alone and lets
-// it go over its storage limit.
+// the ones sent. pastLimit (an assignment's, charged to no one) checks the
+// account alone, not the storage limit.
 func (s *Store) putDrawingTx(ctx context.Context, tx pgx.Tx, userID, attemptID, partID string, board DrawingObject, image *DrawingObject, pictures []DrawingPicture, pastLimit bool) (Drawing, error) {
 	var held int64
 	err := tx.QueryRow(ctx, `SELECT board_bytes + image_bytes + picture_bytes FROM drawings
@@ -262,9 +262,12 @@ func (s *Store) putDrawingTx(ctx context.Context, tx pgx.Tx, userID, attemptID, 
 			return Drawing{}, err
 		}
 	}
+	// An assignment's drawing is charged to no one (Epo 2026-11-25,
+	// account_drawing_storage).
 	saved, err := scanDrawing(tx.QueryRow(ctx, `INSERT INTO drawings
-		(id, user_id, attempt_id, part_id, board_key, board_bytes, image_key, image_type, image_bytes, picture_bytes)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+		(id, user_id, attempt_id, part_id, board_key, board_bytes, image_key, image_type, image_bytes, picture_bytes, assignment)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,
+			(SELECT assignment_id IS NOT NULL FROM attempts WHERE id=$3))
 		ON CONFLICT (attempt_id, part_id) DO UPDATE SET
 			board_key=EXCLUDED.board_key, board_bytes=EXCLUDED.board_bytes,
 			image_key=EXCLUDED.image_key, image_type=EXCLUDED.image_type,
@@ -555,27 +558,22 @@ func dropLeaverMarkedDrawingsTx(ctx context.Context, tx pgx.Tx, wsID, userID str
 	return err
 }
 
-// markedDrawingSQL finds, for a drawing d of attempt t, the question and part
-// it answers, only once that part is marked (graded, not waiting on anyone),
-// every part a shared drawing answers too, and, for an assignment, once it
-// has closed with its grades out, so staff can still revise marks while it
-// runs (Epo 2026-11-08).
+// markedDrawingSQL finds, for a practice drawing d of attempt t, the question
+// and part it answers, only once that part is marked (graded, not waiting on
+// anyone) and every part a shared drawing answers too.
 var markedDrawingSQL = `SELECT q.n AS question, p.n AS part, jsonb_array_length(q.v->'parts') AS parts
 	FROM jsonb_array_elements(COALESCE(t.questions, '[]'::jsonb)) WITH ORDINALITY q(v, n),
 		jsonb_array_elements(q.v->'parts') WITH ORDINALITY p(v, n)
 	WHERE p.v->>'id' = d.part_id AND p.v ? 'awarded'
 		AND COALESCE((p.v->>'pending')::boolean, false) = false
 		AND NOT ` + sharedUnmarkedSQL("q.v", "p.v") + `
-		AND (t.assignment_id IS NULL OR EXISTS (SELECT 1 FROM assignments a WHERE a.id = t.assignment_id
-			AND (a.closed_at IS NOT NULL OR (a.no_late AND a.due_at <= now()))
-			AND (a.grades_shown = 'automatic' OR a.grades_released_at IS NOT NULL)))
 	LIMIT 1`
 
-// MarkedDrawing is one of a payer's marked drawings, for Files › Canvas.
+// MarkedDrawing is one of a payer's marked practice drawings, for Files ›
+// Canvas.
 type MarkedDrawing struct {
 	ID            string    `json:"id"`
 	AttemptID     string    `json:"attemptId"`
-	Assignment    bool      `json:"assignment" doc:"An assignment's answer; otherwise practice"`
 	QuizName      string    `json:"quizName"`
 	WorkspaceID   string    `json:"workspaceId,omitempty"`
 	WorkspaceName string    `json:"workspaceName"`
@@ -594,14 +592,15 @@ type MarkedDrawings struct {
 	NextCursor string          `json:"nextCursor,omitempty"`
 }
 
-// ListMarkedDrawings lists the drawings userID pays for whose parts are marked
-// (Epo 2026-11-06), an assignment's only once it has closed with its grades out
-// (2026-11-08): only those may be deleted, so only those show.
+// ListMarkedDrawings lists the practice drawings userID pays for whose parts
+// are marked (Epo 2026-11-06), so they can delete them. An assignment's drawing
+// is free and kept as handed in, shown on the assignment's page (Epo
+// 2026-11-25), so it is never listed here.
 func (s *Store) ListMarkedDrawings(ctx context.Context, userID, cursor string, limit int) (MarkedDrawings, error) {
 	out := MarkedDrawings{Items: []MarkedDrawing{}}
 	if err := s.pool.QueryRow(ctx, `SELECT count(*), COALESCE(sum(d.board_bytes + d.image_bytes + d.picture_bytes), 0)
 		FROM drawings d JOIN attempts t ON t.id = d.attempt_id
-		WHERE d.user_id = $1 AND EXISTS (`+markedDrawingSQL+`)`, userID).
+		WHERE d.user_id = $1 AND NOT d.assignment AND EXISTS (`+markedDrawingSQL+`)`, userID).
 		Scan(&out.Count, &out.TotalBytes); err != nil {
 		return out, err
 	}
@@ -609,12 +608,12 @@ func (s *Store) ListMarkedDrawings(ctx context.Context, userID, cursor string, l
 	if err != nil {
 		return out, err
 	}
-	rows, err := s.pool.Query(ctx, `SELECT d.id, d.attempt_id, t.assignment_id IS NOT NULL,
+	rows, err := s.pool.Query(ctx, `SELECT d.id, d.attempt_id,
 			COALESCE(t.quiz_name, ''), COALESCE(t.workspace_id, ''), COALESCE(t.workspace_name, ''), m.question, CASE WHEN m.parts > 1 THEN m.part ELSE 0 END,
 			d.board_bytes + d.image_bytes + d.picture_bytes, d.created_at
 		FROM drawings d JOIN attempts t ON t.id = d.attempt_id
 		CROSS JOIN LATERAL (`+markedDrawingSQL+`) m
-		WHERE d.user_id = $1 AND ($2::timestamptz IS NULL OR (d.created_at, d.id) < ($2, $3))
+		WHERE d.user_id = $1 AND NOT d.assignment AND ($2::timestamptz IS NULL OR (d.created_at, d.id) < ($2, $3))
 		ORDER BY d.created_at DESC, d.id DESC
 		LIMIT $4`, userID, after, afterID, limit+1)
 	if err != nil {
@@ -623,7 +622,7 @@ func (s *Store) ListMarkedDrawings(ctx context.Context, userID, cursor string, l
 	defer rows.Close()
 	for rows.Next() {
 		var d MarkedDrawing
-		if err := rows.Scan(&d.ID, &d.AttemptID, &d.Assignment, &d.QuizName, &d.WorkspaceID, &d.WorkspaceName,
+		if err := rows.Scan(&d.ID, &d.AttemptID, &d.QuizName, &d.WorkspaceID, &d.WorkspaceName,
 			&d.Question, &d.Part, &d.Bytes, &d.CreatedAt); err != nil {
 			return out, err
 		}
@@ -640,12 +639,13 @@ func (s *Store) ListMarkedDrawings(ctx context.Context, userID, cursor string, l
 	return out, nil
 }
 
-// DeleteMarkedDrawings deletes the payer's marked drawings: the ids given, or
-// every one when ids is nil. Their marks stay; results then say the drawing
-// was deleted. It returns how many went.
+// DeleteMarkedDrawings deletes the payer's marked practice drawings: the ids
+// given, or every one when ids is nil; an assignment's is never deleted (Epo
+// 2026-11-25). Their marks stay; results then say the drawing was deleted. It
+// returns how many went.
 func (s *Store) DeleteMarkedDrawings(ctx context.Context, userID string, ids []string) (int, error) {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM drawings d USING attempts t
-		WHERE t.id = d.attempt_id AND d.user_id = $1
+		WHERE t.id = d.attempt_id AND d.user_id = $1 AND NOT d.assignment
 			AND ($2::text[] IS NULL OR d.id = ANY($2))
 			AND EXISTS (`+markedDrawingSQL+`)`, userID, ids)
 	return int(tag.RowsAffected()), err

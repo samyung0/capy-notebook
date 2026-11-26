@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
-import { openAssignmentAsMember } from '../helpers/assignments';
+import { openAssignmentAsMember, pressStart } from '../helpers/assignments';
 import { m } from '../i18n';
 
 const PAGE = 'e2e/fixtures/files/images/flat.png';
@@ -37,6 +37,7 @@ test("a paper of two pages reaches Approve and the member's Files", async ({
     sessionStorage.setItem('capy.scenario.last', 'workspace-member')
   );
   await openAssignmentAsMember(page, 'as_upload');
+  await pressStart(page);
   const before = page.getByRole('dialog');
   await before
     .getByRole('radio', { name: m.assignment_mode_upload() })

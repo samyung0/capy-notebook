@@ -1,7 +1,8 @@
 import { parseHTML } from 'linkedom';
 import { act } from 'react';
 import { expect, it, vi } from 'vitest';
-import { ApiError } from '@/api/client';
+import { SUBMISSION_FILES_MAX } from '@/api/limits.generated';
+import type { PaperFile } from '@/api/types';
 import { getLocale, m } from '@/i18n';
 
 getLocale();
@@ -78,7 +79,7 @@ it('compresses a photo before it joins the paper', async () => {
   await act(async () => root.render(<Probe />));
   const photo = new File(['a big photo'], 'photo.jpg', { type: 'image/jpeg' });
   const pdf = new File(['%PDF'], 'paper.pdf', { type: 'application/pdf' });
-  await act(() => add([photo, pdf]));
+  await act(() => add([photo, pdf], []));
   expect(compress).toHaveBeenCalledTimes(1);
   expect(compress.mock.calls[0][0]).toMatchObject({
     compression: 'image',
@@ -95,15 +96,11 @@ it('compresses a photo before it joins the paper', async () => {
   act(() => root.unmount());
 });
 
-// Q728 A: once the member's storage is full a hand-in file is refused, and the
-// refusal says so with the Marked Upload file refusal's message.
-it("says a full account's hand-in file was refused", async () => {
-  upload.mockRejectedValue(
-    new ApiError(403, 'Forbidden', undefined, {
-      code: 'storage_quota_exceeded',
-      ownerUserId: 'u_me',
-    })
-  );
+// The bounds are the same on every plan (Epo 2026-11-25): an eleventh file is
+// refused before anything uploads.
+it('refuses a pick past the submission file count', async () => {
+  upload.mockReset();
+  toast.mockReset();
   let add: ReturnType<typeof useAddSubmissionFiles>['add'] = async () => {};
   function Probe() {
     add = useAddSubmissionFiles({ handInId: 'as1' }).add;
@@ -111,12 +108,22 @@ it("says a full account's hand-in file was refused", async () => {
   }
   const root = createRoot(document.getElementById('root')!);
   await act(async () => root.render(<Probe />));
-  await act(() =>
-    add([new File(['%PDF'], 'work.pdf', { type: 'application/pdf' })])
-  );
+  const held = Array.from({ length: SUBMISSION_FILES_MAX - 1 }, (_, i) => ({
+    id: `f${i}`,
+    kind: 'pdf',
+    name: `page ${i}.pdf`,
+    sizeBytes: 1024,
+    status: 'ready',
+  })) as PaperFile[];
+  const pdf = (name: string) =>
+    new File(['%PDF'], name, { type: 'application/pdf' });
+  await act(() => add([pdf('a.pdf'), pdf('b.pdf')], held));
   expect(toast).toHaveBeenCalledWith(
-    expect.objectContaining({ title: m.error_quota_body() })
+    expect.objectContaining({
+      title: m.assignment_files_too_many({ max: SUBMISSION_FILES_MAX }),
+    })
   );
+  expect(upload).not.toHaveBeenCalled();
   act(() => root.unmount());
 });
 
@@ -138,7 +145,7 @@ it('refuses a password-protected and a damaged PDF, uploading the rest', async (
   const pdf = (name: string) =>
     new File(['%PDF'], name, { type: 'application/pdf' });
   const good = pdf('answers.pdf');
-  await act(() => add([pdf('locked.pdf'), good, pdf('broken.pdf')]));
+  await act(() => add([pdf('locked.pdf'), good, pdf('broken.pdf')], []));
   expect(toast.mock.calls.map(([body]) => body.title)).toEqual([
     m.assignment_paper_password(),
     m.assignment_paper_damaged(),

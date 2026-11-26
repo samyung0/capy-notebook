@@ -10,5 +10,7 @@ export interface PDFAnnotationList {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   marks: PDFAnnotation[];
+  readOnly: boolean;
+  shared: boolean;
   sourceIdentity: string;
 }

@@ -7,7 +7,8 @@ import (
 )
 
 // The invite page reads an invite before Accept (Epo 2026-11-19) for its own
-// invitee alone, answering not found wherever Accept would.
+// invitee alone, with the workspace's name and owner (Epo 2026-11-25),
+// answering not found wherever Accept would.
 func TestInvitePreviewIsTheInviteesAlone(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -16,6 +17,9 @@ func TestInvitePreviewIsTheInviteesAlone(t *testing.T) {
 	stranger := newBlobTestUser(t, s, "u_preview_stranger")
 	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Preview class", Tags: []TagRef{}})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET name='Ms Wong', avatar_url='https://example.com/wong.png' WHERE id=$1`, owner); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET kind='class' WHERE id=$1`, ws.ID); err != nil {
@@ -33,8 +37,12 @@ func TestInvitePreviewIsTheInviteesAlone(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Role != RoleViewer || got.WorkspaceKind != "class" {
-		t.Fatalf("preview = %+v, want a class viewer", got)
+	want := InvitePreview{
+		Role: RoleViewer, WorkspaceKind: "class", WorkspaceName: "Preview class",
+		Owner: MaterialAuthor{Name: "Ms Wong", AvatarURL: "https://example.com/wong.png"},
+	}
+	if got != want {
+		t.Fatalf("preview = %+v, want %+v", got, want)
 	}
 	if _, err := s.PreviewWorkspaceInvite(ctx, inviteID, stranger); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("stranger's preview err = %v, want not found", err)

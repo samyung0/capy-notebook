@@ -5,10 +5,10 @@ type ReportKind = Pick<Assignment, 'allowUploads' | 'draft' | 'kind'>;
 
 /** A report's tabs (Epo 2026-11-15): a graded quiz's Questions | Responses |
  * Grading | Settings (Epo 2026-11-19), a draft's Questions | Settings; an
- * Assignment's Content | Responses | Settings (Epo 2026-11-21), with Grading
- * before Settings when it takes files (Epo 2026-11-19; its points go with
- * them, 2026-11-21), a draft's Settings alone (no Preview: there is nothing to
- * preview). The first is the tab with no `tab`. */
+ * Assignment's Content | Responses | Settings (Epo 2026-11-21), and one taking
+ * files Content | Grading | Settings, Grading reading Responses when it is
+ * not graded (Epo 2026-11-25); a draft's Settings alone (no Preview: there is
+ * nothing to preview). The first is the tab with no `tab`. */
 export function reportTabs({
   allowUploads,
   draft,
@@ -20,7 +20,7 @@ export function reportTabs({
       : ['questions', 'responses', 'grading', 'settings'];
   if (draft) return ['settings'];
   return allowUploads
-    ? ['content', 'responses', 'grading', 'settings']
+    ? ['content', 'grading', 'settings']
     : ['content', 'responses', 'settings'];
 }
 
@@ -30,7 +30,9 @@ export function reportView(
   { by, tab }: Pick<AssignmentsSearch, 'by' | 'tab'>
 ) {
   const tabs = reportTabs(assignment);
-  const shown: ReportTab = tab && tabs.includes(tab) ? tab : tabs[0];
+  // An Assignment taking files lists its members on Grading.
+  const asked = tab === 'responses' && !tabs.includes(tab) ? 'grading' : tab;
+  const shown: ReportTab = asked && tabs.includes(asked) ? asked : tabs[0];
   return {
     byQuestion: shown === 'responses' && by === 'question',
     tab: shown,

@@ -1,4 +1,5 @@
 import { delay, HttpResponse, http, type RequestHandler } from 'msw';
+import type { InvitePreview } from '@/api/types';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import { learnerView } from './answerKeys';
 import {
@@ -320,7 +321,12 @@ export function getMockScenarioHandlers(
     case 'invite-class-success':
       return [
         http.get('/api/workspace-invites/:token', () =>
-          HttpResponse.json({ role: 'viewer', workspaceKind: 'class' })
+          HttpResponse.json({
+            owner: { avatarUrl: user.avatarUrl, name: user.name },
+            role: 'viewer',
+            workspaceKind: 'class',
+            workspaceName: 'Biology 101',
+          } satisfies InvitePreview)
         ),
         http.post('/api/workspace-invites/:token/accept', () =>
           HttpResponse.json({

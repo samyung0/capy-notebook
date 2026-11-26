@@ -8,7 +8,9 @@
 export interface PaperFile {
   id: string;
   kind: string;
+  marked: boolean;
   name: string;
+  revision: number;
   sizeBytes: number;
   status: string;
 }

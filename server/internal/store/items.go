@@ -8,7 +8,8 @@ import (
 )
 
 // The Files page's one list (Epo 2026-11-09): to the user a file is any of
-// them, so uploaded files, handed-in submissions, blocks (notes, quizzes,
+// them, so uploaded files, hand-in files left unhanded at the close (handed-in
+// work is on its assignment's page, Epo 2026-11-25), blocks (notes, quizzes,
 // flashcard sets) and embedded images and audio (an item bank question's too,
 // Epo 2026-11-14) page, sort and filter together. A narrow UNION ALL picks the page by a shared sort key; each row
 // is then read whole by its own listing (by IDs), as Recent reads its opens.
@@ -110,11 +111,9 @@ func itemUnionSQL(all bool) string {
 	return files + `
 	UNION ALL
 	SELECT 'submission', f.id, 'submission:' || f.id, f.added_at, lower(f.name),
-			f.size_bytes, f.kind::text, lower(COALESCE(t.workspace_name, w.name, '')),
-			NULLIF(COALESCE(t.workspace_id, h.workspace_id, ''), '')
-		FROM files f LEFT JOIN attempts t ON t.id = f.attempt_id
-			LEFT JOIN assignments h ON h.id = f.hand_in_assignment_id LEFT JOIN workspaces w ON w.id = h.workspace_id
-		WHERE f.user_id=$1 AND f.submission_position IS NOT NULL AND ` + submittedDeletableSQL + `
+			f.size_bytes, f.kind::text, lower(w.name), h.workspace_id
+		FROM files f JOIN assignments h ON h.id = f.hand_in_assignment_id JOIN workspaces w ON w.id = h.workspace_id
+		WHERE f.user_id=$1 AND ` + leftHandInSQL + `
 	UNION ALL
 	` + materials + `
 	UNION ALL

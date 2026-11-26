@@ -161,8 +161,9 @@ export function ItemCard({
   workspaceLost?: boolean;
   /** Question or card count, file size. */
   details?: string;
-  /** Updated, added or expiry line: the grid card's bottom line. */
-  meta: string;
+  /** Updated, added or expiry line: the grid card's bottom line; a node
+   * where it is no date (a submitted file's Feedback given). */
+  meta: ReactNode;
   /** Grid view only. */
   thumbnail?: Thumbnail;
   /** Grid view only: the dashboard's cards, with a shorter thumbnail. */
@@ -191,6 +192,7 @@ export function ItemCard({
   );
   // A pickable item opens from its overlay, so its title is no link.
   const titleLink = pickable ? undefined : link;
+  const titleOpen = pickable ? undefined : onOpen;
   if (view === 'list') {
     return (
       <div
@@ -263,6 +265,7 @@ export function ItemCard({
         <Title
           className="line-clamp-2 min-w-0 flex-1 break-words font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-button sm:line-clamp-none sm:truncate"
           link={titleLink}
+          onOpen={titleOpen}
         >
           {title}
         </Title>
@@ -309,29 +312,40 @@ export function ItemCard({
   );
 }
 
-/** The link stretches over the whole card through its ::after. */
+// Above the thumbnail (positioned, later in the card), under the ⋯.
+const STRETCHED =
+  'after:absolute after:inset-0 after:z-1 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action';
+
+/** The link, or `onOpen`'s button (a file opened in place), stretches over
+ * the whole card through its ::after. */
 function Title({
   link,
+  onOpen,
   className,
   children,
 }: {
   link?: LinkProps;
+  onOpen?: () => void;
   className: string;
   children: string;
 }) {
-  if (!link) return <p className={className}>{children}</p>;
-  return (
-    <Link
-      {...link}
-      className={cn(
-        className,
-        // Above the thumbnail (positioned, later in the card), under the ⋯.
-        'after:absolute after:inset-0 after:z-1 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action'
-      )}
-    >
-      {children}
-    </Link>
-  );
+  if (link)
+    return (
+      <Link {...link} className={cn(className, STRETCHED)}>
+        {children}
+      </Link>
+    );
+  if (onOpen)
+    return (
+      <button
+        className={cn(className, 'text-left', STRETCHED)}
+        onClick={onOpen}
+        type="button"
+      >
+        {children}
+      </button>
+    );
+  return <p className={className}>{children}</p>;
 }
 
 /** A list column's label, or a label that sorts the list by `sort`. */

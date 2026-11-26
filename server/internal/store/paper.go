@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
@@ -16,23 +17,32 @@ import (
 // Papers: an assignment attempt answered on paper (Epo 2026-11-08,
 // todo-file-submissions.md 5a). Its files are the member's own standalone
 // uploads through the normal upload, linked to the attempt by files.attempt_id.
-
-// PaperMaxFiles bounds a paper's files; the pipeline bounds its pages.
-const PaperMaxFiles = 15
+// Submitted, its files are read only for good (Epo 2026-11-25): staff may mark
+// at any time, so nothing of them changes, and they are charged to no one.
 
 // ErrPaperClosed: the attempt no longer takes files (submitted, timed out, or
 // not answered on paper).
 var ErrPaperClosed = errors.New("this attempt no longer takes files")
 
-// ErrPaperFull: one more file would pass a paper's or hand-in's file count or the
-// member's source file cap across its files (O1, Epo 2026-11-08).
-var ErrPaperFull = errors.New("you can hand in at most 15 files, within your file size limit")
+// ErrPaperFull: one more file would pass a paper's or hand-in's bounds
+// (fieldlimits.SubmissionFiles, SubmissionFileBytes and SubmissionBytes).
+var ErrPaperFull = errors.New("you can hand in at most 10 files, 10 MB each and 30 MB in all")
+
+// submissionRoom admits one more file of size bytes beside files files of
+// bytes bytes in a paper or hand-in.
+func submissionRoom(files int, bytes, size int64) error {
+	if files+1 > fieldlimits.SubmissionFiles || size > fieldlimits.SubmissionFileBytes ||
+		bytes+size > fieldlimits.SubmissionBytes {
+		return ErrPaperFull
+	}
+	return nil
+}
 
 // checkPaperUploadTx admits size more bytes into userID's running paper
-// attempt: their own, answered on paper, before its time runs out, within
-// PaperMaxFiles and maxBytes across its files and pending uploads. It locks
-// the attempt row so two uploads cannot both pass.
-func (s *Store) checkPaperUploadTx(ctx context.Context, tx pgx.Tx, attemptID, userID string, size, maxBytes int64, now time.Time) error {
+// attempt: their own, answered on paper, before its time runs out, within the
+// submission bounds across its files and pending uploads. It locks the
+// attempt row so two uploads cannot both pass.
+func (s *Store) checkPaperUploadTx(ctx context.Context, tx pgx.Tx, attemptID, userID string, size int64, now time.Time) error {
 	r, err := scanAttemptRow(tx.QueryRow(ctx, `SELECT `+attemptRowCols+`
 		FROM attempts t JOIN assignments a ON a.id=t.assignment_id
 		WHERE t.id=$1 AND t.user_id=$2 FOR UPDATE OF t`, attemptID, userID))
@@ -51,47 +61,28 @@ func (s *Store) checkPaperUploadTx(ctx context.Context, tx pgx.Tx, attemptID, us
 		) held`, attemptID).Scan(&files, &bytes); err != nil {
 		return err
 	}
-	if files+1 > PaperMaxFiles || bytes+size > maxBytes {
-		return ErrPaperFull
-	}
-	return nil
+	return submissionRoom(files, bytes, size)
 }
 
 // AssertPaperUpload is an upload ticket's check of checkPaperUploadTx, with the
-// account's lifecycle and no storage quota: a paper saves past the limit, its
-// attempt having started while storage was not full (S6).
-func (s *Store) AssertPaperUpload(ctx context.Context, attemptID, userID string, size, maxBytes int64, now time.Time) error {
+// account's lifecycle and no storage quota: a submission is charged to no one.
+func (s *Store) AssertPaperUpload(ctx context.Context, attemptID, userID string, size int64, now time.Time) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		if err := s.admitAccountTx(ctx, tx, userID); err != nil {
 			return err
 		}
-		return s.checkPaperUploadTx(ctx, tx, attemptID, userID, size, maxBytes, now)
+		return s.checkPaperUploadTx(ctx, tx, attemptID, userID, size, now)
 	})
 }
 
-// reservePaperStorageTx reserves a paper upload's bytes past the storage
-// limit, as an assignment drawing saves (admitAccountTx).
-func (s *Store) reservePaperStorageTx(ctx context.Context, tx pgx.Tx, userID string, requested int64) error {
-	if err := s.admitAccountTx(ctx, tx, userID); err != nil {
-		return err
-	}
-	if err := s.ensureStorageRowTx(ctx, tx, userID); err != nil {
-		return err
-	}
-	_, err := tx.Exec(ctx, `UPDATE user_storage
-		SET reserved_bytes=reserved_bytes+$2, updated_at=now()
-		WHERE user_id=$1`, userID, requested)
-	return err
-}
-
-// RemovePaperFile deletes a file from the member's running paper. Its bytes
-// and blob go as any deleted file's do (the files triggers).
+// RemovePaperFile deletes a file from the member's running paper, before it is
+// submitted. Its blob goes as any deleted file's does (the files triggers).
 func (s *Store) RemovePaperFile(ctx context.Context, userID, attemptID, fileID string, now time.Time) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		if err := lockAttemptWorkspaceTx(ctx, tx, attemptID); err != nil {
 			return err
 		}
-		if err := s.checkPaperUploadTx(ctx, tx, attemptID, userID, 0, 1<<62, now); err != nil && !errors.Is(err, ErrPaperFull) {
+		if err := s.checkPaperUploadTx(ctx, tx, attemptID, userID, 0, now); err != nil && !errors.Is(err, ErrPaperFull) {
 			return err
 		}
 		tag, err := tx.Exec(ctx, `DELETE FROM files WHERE id=$1 AND attempt_id=$2 AND user_id=$3`, fileID, attemptID, userID)
@@ -539,71 +530,73 @@ func (s *Store) PapersToRead(ctx context.Context, assignmentID, attemptID string
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
-// PaperFileBlob is a paper file's stored object for its member, or for staff
-// of its assignment's class once submitted; anyone else gets ErrNotFound. kind
-// tells a PDF, shown page by page, from other files.
-func (s *Store) PaperFileBlob(ctx context.Context, userID, attemptID, fileID string) (blobPath, kind string, err error) {
+// SubmissionBlob is a submission file's stored object and kind, with a
+// .docx's marked copy once staff stored one (marked_copies.go).
+type SubmissionBlob struct {
+	Path, Kind, Copy string
+}
+
+// PaperFileBlob is a paper file's stored object, and a .docx's marked copy
+// (to its member once its marks show), for its member, or for staff of the class once submitted; anyone else gets
+// ErrNotFound.
+func (s *Store) PaperFileBlob(ctx context.Context, userID, attemptID, fileID string) (SubmissionBlob, error) {
 	var owner, wsID string
 	var submitted bool
-	err = s.pool.QueryRow(ctx, `SELECT t.user_id, a.workspace_id, t.submitted_at IS NOT NULL, COALESCE(f.blob_path, ''), f.kind
+	var blob SubmissionBlob
+	var shown bool
+	err := s.pool.QueryRow(ctx, `SELECT t.user_id, a.workspace_id, t.submitted_at IS NOT NULL, COALESCE(f.blob_path, ''), f.kind,
+			COALESCE(f.marked_copy_path, ''), `+submissionMarksShownSQL+`
 		FROM files f JOIN attempts t ON t.id=f.attempt_id JOIN assignments a ON a.id=t.assignment_id
-		WHERE f.id=$1 AND f.attempt_id=$2`, fileID, attemptID).Scan(&owner, &wsID, &submitted, &blobPath, &kind)
+		WHERE f.id=$1 AND f.attempt_id=$2`, fileID, attemptID).Scan(&owner, &wsID, &submitted, &blob.Path, &blob.Kind, &blob.Copy, &shown)
 	if isNoRows(err) {
-		return "", "", ErrNotFound
+		return SubmissionBlob{}, ErrNotFound
 	}
 	if err != nil {
-		return "", "", err
+		return SubmissionBlob{}, err
 	}
 	if owner == userID {
-		return blobPath, kind, nil
+		// Nothing of staff's marking shows before the grade (S1).
+		if !shown {
+			blob.Copy = ""
+		}
+		return blob, nil
 	}
 	staff, err := s.assignmentStaff(ctx, s.pool, userID, wsID)
 	if err != nil || !staff || !submitted {
-		return "", "", ErrNotFound
+		return SubmissionBlob{}, ErrNotFound
 	}
-	return blobPath, kind, nil
+	return blob, nil
 }
 
-// paperDeletableSQL holds for a paper file f of attempt t that its member may
-// delete (Files › Submissions): submitted and read, every part marked, and the
-// assignment closed with its grades out, so staff can still revise marks
-// while it runs (Epo 2026-11-08, "Yes, both tabs").
-const paperDeletableSQL = `t.submitted_at IS NOT NULL AND t.paper = 'read' AND t.waiting_answers = 0
-	AND EXISTS (SELECT 1 FROM assignments a WHERE a.id = t.assignment_id
-		AND (a.closed_at IS NOT NULL OR (a.no_late AND a.due_at <= now()))
-		AND (a.grades_shown = 'automatic' OR a.grades_released_at IS NOT NULL))`
+// leftHandInSQL holds for a hand-in file f its member added but never handed
+// in before the assignment closed, by hand or at its due date under NoLate.
+// Staff never saw it, so its member may delete it, and it is the one kind of
+// submission file the Files page lists: handed-in work stays as handed in for
+// good, on its assignment's page (Epo 2026-11-25).
+const leftHandInSQL = `EXISTS (SELECT 1 FROM assignments h WHERE h.id = f.hand_in_assignment_id
+	AND (h.closed_at IS NOT NULL OR (h.no_late AND h.due_at <= now()))
+	AND NOT EXISTS (SELECT 1 FROM assignment_done d WHERE d.assignment_id = h.id AND d.user_id = f.user_id))`
 
-// submittedDeletableSQL holds for a file f, a paper's or a hand-in's, that its
-// member may delete. A hand-in's goes once its assignment closes, by its
-// owner, or at its due date under NoLate.
-const submittedDeletableSQL = `(EXISTS (SELECT 1 FROM attempts t WHERE t.id = f.attempt_id AND ` + paperDeletableSQL + `)
-	OR EXISTS (SELECT 1 FROM assignments h WHERE h.id = f.hand_in_assignment_id
-		AND (h.closed_at IS NOT NULL OR (h.no_late AND h.due_at <= now()))))`
-
-// SubmittedPaper is one file of a paper or a hand-in its member may delete;
-// a hand-in's has no AttemptID.
+// SubmittedPaper is a hand-in file left unhanded at the close, on its member's
+// Files page, where they may delete it (leftHandInSQL).
 type SubmittedPaper struct {
 	ID            string    `json:"id"`
-	AttemptID     string    `json:"attemptId,omitempty"`
 	Name          string    `json:"name"`
 	Kind          string    `json:"kind"`
 	AssignmentID  string    `json:"assignmentId"`
 	QuizName      string    `json:"quizName"`
-	WorkspaceID   string    `json:"workspaceId,omitempty"`
+	WorkspaceID   string    `json:"workspaceId"`
 	WorkspaceName string    `json:"workspaceName"`
 	Bytes         int64     `json:"bytes"`
 	CreatedAt     time.Time `json:"createdAt"`
 }
 
-// SubmittedPapers reads the paper and hand-in files userID handed in and may
-// delete, by id, newest first: the Files page's submissions (ListItems).
+// SubmittedPapers reads userID's hand-in files left unhanded at the close, by
+// id, newest first: the Files page's submissions (ListItems).
 func (s *Store) SubmittedPapers(ctx context.Context, userID string, ids []string) ([]SubmittedPaper, error) {
-	rows, err := s.pool.Query(ctx, `SELECT f.id, COALESCE(t.id, ''), f.name, f.kind, COALESCE(t.assignment_id, h.id),
-			COALESCE(t.quiz_name, h.title, ''), COALESCE(t.workspace_id, h.workspace_id, ''),
-			COALESCE(t.workspace_name, w.name, ''), f.size_bytes, f.added_at
-		FROM files f LEFT JOIN attempts t ON t.id = f.attempt_id
-			LEFT JOIN assignments h ON h.id = f.hand_in_assignment_id LEFT JOIN workspaces w ON w.id = h.workspace_id
-		WHERE f.user_id = $1 AND f.id = ANY($2) AND f.submission_position IS NOT NULL AND `+submittedDeletableSQL+`
+	rows, err := s.pool.Query(ctx, `SELECT f.id, f.name, f.kind, h.id, h.title, h.workspace_id, w.name, f.size_bytes, f.added_at
+		FROM files f JOIN assignments h ON h.id = f.hand_in_assignment_id JOIN workspaces w ON w.id = h.workspace_id
+		WHERE f.user_id = $1 AND f.id = ANY($2) AND `+leftHandInSQL+`
 		ORDER BY f.added_at DESC, f.id DESC`, userID, ids)
 	if err != nil {
 		return nil, err
@@ -612,7 +605,7 @@ func (s *Store) SubmittedPapers(ctx context.Context, userID string, ids []string
 	out := []SubmittedPaper{}
 	for rows.Next() {
 		var p SubmittedPaper
-		if err := rows.Scan(&p.ID, &p.AttemptID, &p.Name, &p.Kind, &p.AssignmentID, &p.QuizName,
+		if err := rows.Scan(&p.ID, &p.Name, &p.Kind, &p.AssignmentID, &p.QuizName,
 			&p.WorkspaceID, &p.WorkspaceName, &p.Bytes, &p.CreatedAt); err != nil {
 			return nil, err
 		}
@@ -621,15 +614,18 @@ func (s *Store) SubmittedPapers(ctx context.Context, userID string, ids []string
 	return out, rows.Err()
 }
 
-// DeleteSubmittedPapers deletes the caller's deletable paper and hand-in
-// files: the ids given, or every one when ids is nil. A paper's marks stay;
-// staff then read that the member deleted the file (mock F2). It returns how
-// many went.
-func (s *Store) DeleteSubmittedPapers(ctx context.Context, userID string, ids []string) (int, error) {
+// DeleteLeftHandIn deletes one of the caller's hand-in files left unhanded at
+// the close (leftHandInSQL). Handed-in files take no delete.
+func (s *Store) DeleteLeftHandIn(ctx context.Context, userID, id string) error {
 	tag, err := s.pool.Exec(ctx, `DELETE FROM files f
-		WHERE f.user_id = $1 AND f.submission_position IS NOT NULL
-			AND ($2::text[] IS NULL OR f.id = ANY($2)) AND `+submittedDeletableSQL, userID, ids)
-	return int(tag.RowsAffected()), err
+		WHERE f.id = $2 AND f.user_id = $1 AND f.submission_position IS NOT NULL AND `+leftHandInSQL, userID, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // dropLeaverSubmissionsTx deletes, as a member leaves or is removed, the files

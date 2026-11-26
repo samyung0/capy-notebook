@@ -10,12 +10,16 @@ import (
 // Hand-ins: an unmarked assignment's work handed in as files (Epo 2026-11-08,
 // mocks S3 and T2). When the owner allows uploads, a member adds files, as
 // their own standalone uploads linked by files.hand_in_assignment_id, and Hand
-// in ticks the assignment (assignment_done). Nothing reads or marks them; staff
-// open them from the Members tab.
+// in ticks the assignment (assignment_done). Nothing reads them; staff open
+// them from the Members tab. Hand in is final and the files stay as handed in
+// for good (Epo 2026-11-25), charged to no one.
 
 // ErrHandInClosed: the member's hand-in takes no more changes (handed in, or
 // the assignment closed or taking no files).
 var ErrHandInClosed = errors.New("this assignment no longer takes your files")
+
+// ErrHandInFinal: work handed in is not taken back (Epo 2026-11-25).
+var ErrHandInFinal = errors.New("work you handed in can't be taken back")
 
 // lockHandInTx takes the assignment's workspace first, as submitting does, and
 // returns it with whether the assignment takes files.
@@ -70,13 +74,9 @@ func (s *Store) openHandInTx(ctx context.Context, tx pgx.Tx, assignmentID, userI
 }
 
 // checkHandInUploadTx admits size more bytes into userID's open hand-in, within
-// PaperMaxFiles and maxBytes across its files and pending uploads, while their
-// storage is not full yet, as a Marked paper's start (Q728 A).
-func (s *Store) checkHandInUploadTx(ctx context.Context, tx pgx.Tx, assignmentID, userID string, size, maxBytes int64) error {
+// the submission bounds across its files and pending uploads.
+func (s *Store) checkHandInUploadTx(ctx context.Context, tx pgx.Tx, assignmentID, userID string, size int64) error {
 	if err := s.openHandInTx(ctx, tx, assignmentID, userID); err != nil {
-		return err
-	}
-	if err := s.storageFullErr(ctx, tx, userID); err != nil {
 		return err
 	}
 	var files int
@@ -89,17 +89,12 @@ func (s *Store) checkHandInUploadTx(ctx context.Context, tx pgx.Tx, assignmentID
 		) held`, assignmentID, userID).Scan(&files, &bytes); err != nil {
 		return err
 	}
-	if files+1 > PaperMaxFiles || bytes+size > maxBytes {
-		return ErrPaperFull
-	}
-	return nil
+	return submissionRoom(files, bytes, size)
 }
 
 // AssertHandInUpload is an upload ticket's check of checkHandInUploadTx, with
-// the account's lifecycle. An account already full adds no file, as a Marked
-// paper starts no upload then; a file added while there was room saves past
-// the limit (reservePaperStorageTx), and Hand in and Undo still work when full.
-func (s *Store) AssertHandInUpload(ctx context.Context, assignmentID, userID string, size, maxBytes int64) error {
+// the account's lifecycle and no storage quota.
+func (s *Store) AssertHandInUpload(ctx context.Context, assignmentID, userID string, size int64) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		if _, _, err := lockHandInTx(ctx, tx, assignmentID); err != nil {
 			return err
@@ -107,12 +102,12 @@ func (s *Store) AssertHandInUpload(ctx context.Context, assignmentID, userID str
 		if err := s.admitAccountTx(ctx, tx, userID); err != nil {
 			return err
 		}
-		return s.checkHandInUploadTx(ctx, tx, assignmentID, userID, size, maxBytes)
+		return s.checkHandInUploadTx(ctx, tx, assignmentID, userID, size)
 	})
 }
 
-// RemoveHandInFile deletes a file from the member's open hand-in. Its bytes
-// and blob go as any deleted file's do (the files triggers).
+// RemoveHandInFile deletes a file from the member's open hand-in, before Hand
+// in. Its blob goes as any deleted file's does (the files triggers).
 func (s *Store) RemoveHandInFile(ctx context.Context, userID, assignmentID, fileID string) error {
 	return s.inTx(ctx, func(tx pgx.Tx) error {
 		if _, _, err := lockHandInTx(ctx, tx, assignmentID); err != nil {
@@ -133,15 +128,11 @@ func (s *Store) RemoveHandInFile(ctx context.Context, userID, assignmentID, file
 	})
 }
 
-// setHandedInTx is Hand in and Undo hand in on an assignment that takes
-// files: only while it is open, and Hand in only with a file.
+// setHandedInTx is Hand in on an assignment that takes files: only while it
+// is open and with a file. There is no Undo.
 func (s *Store) setHandedInTx(ctx context.Context, tx pgx.Tx, assignmentID, userID string, done bool) error {
 	if !done {
-		// Undo reopens the hand-in: it must be handed in and open otherwise.
-		if _, err := tx.Exec(ctx, `DELETE FROM assignment_done WHERE assignment_id=$1 AND user_id=$2`, assignmentID, userID); err != nil {
-			return err
-		}
-		return s.openHandInTx(ctx, tx, assignmentID, userID)
+		return ErrHandInFinal
 	}
 	if err := s.openHandInTx(ctx, tx, assignmentID, userID); err != nil {
 		return err
@@ -160,9 +151,9 @@ func (s *Store) setHandedInTx(ctx context.Context, tx pgx.Tx, assignmentID, user
 // handInFiles are the hand-in files of userIDs on an assignment, in order, by
 // member.
 func handInFiles(ctx context.Context, q rowsQueryer, assignmentIDs, userIDs []string) (map[[2]string][]PaperFile, error) {
-	rows, err := q.Query(ctx, `SELECT hand_in_assignment_id, user_id, id, name, kind, size_bytes, status FROM files
-		WHERE hand_in_assignment_id = ANY($1) AND user_id = ANY($2)
-		ORDER BY submission_position, id`, assignmentIDs, userIDs)
+	rows, err := q.Query(ctx, `SELECT f.hand_in_assignment_id, f.user_id, f.id, f.name, f.kind, f.size_bytes, f.status, f.revision, `+paperFileMarkedSQL+` FROM files f
+		WHERE f.hand_in_assignment_id = ANY($1) AND f.user_id = ANY($2)
+		ORDER BY f.submission_position, f.id`, assignmentIDs, userIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +162,7 @@ func handInFiles(ctx context.Context, q rowsQueryer, assignmentIDs, userIDs []st
 	for rows.Next() {
 		var assignment, user string
 		var f PaperFile
-		if err := rows.Scan(&assignment, &user, &f.ID, &f.Name, &f.Kind, &f.SizeBytes, &f.Status); err != nil {
+		if err := rows.Scan(&assignment, &user, &f.ID, &f.Name, &f.Kind, &f.SizeBytes, &f.Status, &f.Revision, &f.Marked); err != nil {
 			return nil, err
 		}
 		key := [2]string{assignment, user}
@@ -180,27 +171,38 @@ func handInFiles(ctx context.Context, q rowsQueryer, assignmentIDs, userIDs []st
 	return out, rows.Err()
 }
 
-// HandInFileBlob is a hand-in file's stored object for its member, or for
-// staff of the class once it is handed in; anyone else gets ErrNotFound.
-func (s *Store) HandInFileBlob(ctx context.Context, userID, assignmentID, fileID string) (blobPath, kind string, err error) {
+// HandInFileBlob is a hand-in file's stored object, and a .docx's marked
+// copy (to its member once its marks show), for its member, or for staff of
+// the class once it is handed in;
+// anyone else gets ErrNotFound.
+func (s *Store) HandInFileBlob(ctx context.Context, userID, assignmentID, fileID string) (SubmissionBlob, error) {
 	var owner, wsID string
 	var handedIn bool
-	err = s.pool.QueryRow(ctx, `SELECT f.user_id, a.workspace_id, COALESCE(f.blob_path, ''), f.kind,
-			EXISTS (SELECT 1 FROM assignment_done d WHERE d.assignment_id=a.id AND d.user_id=f.user_id)
-		FROM files f JOIN assignments a ON a.id=f.hand_in_assignment_id
-		WHERE f.id=$1 AND f.hand_in_assignment_id=$2`, fileID, assignmentID).Scan(&owner, &wsID, &blobPath, &kind, &handedIn)
+	var blob SubmissionBlob
+	var shown bool
+	// No attempt for a hand-in: the empty join only names t for
+	// submissionMarksShownSQL, whose hand-in branch never reads it.
+	err := s.pool.QueryRow(ctx, `SELECT f.user_id, a.workspace_id, COALESCE(f.blob_path, ''), f.kind, COALESCE(f.marked_copy_path, ''),
+			EXISTS (SELECT 1 FROM assignment_done d WHERE d.assignment_id=a.id AND d.user_id=f.user_id),
+			`+submissionMarksShownSQL+`
+		FROM files f JOIN assignments a ON a.id=f.hand_in_assignment_id LEFT JOIN attempts t ON false
+		WHERE f.id=$1 AND f.hand_in_assignment_id=$2`, fileID, assignmentID).Scan(&owner, &wsID, &blob.Path, &blob.Kind, &blob.Copy, &handedIn, &shown)
 	if isNoRows(err) {
-		return "", "", ErrNotFound
+		return SubmissionBlob{}, ErrNotFound
 	}
 	if err != nil {
-		return "", "", err
+		return SubmissionBlob{}, err
 	}
 	if owner == userID {
-		return blobPath, kind, nil
+		// Nothing of staff's marking shows before the grade (S1).
+		if !shown {
+			blob.Copy = ""
+		}
+		return blob, nil
 	}
 	staff, err := s.assignmentStaff(ctx, s.pool, userID, wsID)
 	if err != nil || !staff || !handedIn {
-		return "", "", ErrNotFound
+		return SubmissionBlob{}, ErrNotFound
 	}
-	return blobPath, kind, nil
+	return blob, nil
 }

@@ -16,7 +16,7 @@ async function pickNew(page: Page, item: string) {
   await page.getByRole('menuitem', { exact: true, name: item }).click();
 }
 
-test('Assignment opens the form with no Quiz field, Points once uploads are allowed', async ({
+test('Assignment opens the form with no Quiz field, Points once uploads are allowed and Graded is on', async ({
   page,
 }) => {
   await pickNew(page, m.assignment_kind_assignment());
@@ -25,6 +25,10 @@ test('Assignment opens the form with no Quiz field, Points once uploads are allo
   await expect(dialog.getByLabel(m.assignment_field_points())).toHaveCount(0);
   await dialog
     .getByRole('switch', { name: m.assignment_switch_uploads() })
+    .click();
+  await expect(dialog.getByLabel(m.assignment_field_points())).toHaveCount(0);
+  await dialog
+    .getByRole('switch', { name: m.assignment_switch_graded() })
     .click();
   await expect(dialog.getByLabel(m.assignment_field_points())).toBeVisible();
 });

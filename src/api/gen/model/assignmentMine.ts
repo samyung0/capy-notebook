@@ -20,6 +20,7 @@ export interface AssignmentMine {
   latePenaltyPct: number;
   mark?: number;
   missing: boolean;
+  paperHandedIn: boolean;
   runningAttemptId?: string;
   total?: number;
   waitingAnswers: number;

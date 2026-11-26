@@ -1,39 +1,22 @@
-import { lazy, Suspense, useState } from 'react';
-import { usePaperFileLinks } from '@/api/hooks';
+import { useState } from 'react';
 import type { Assignment, AssignmentMemberRow, PaperFile } from '@/api/types';
 import { Accordion } from '@/components/ui/Accordion';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import { FileError } from '@/features/files/FileStates';
-import { UnsupportedPreview } from '@/features/files/FileViewer';
-import { FileHeaderTarget } from '@/features/files/fileModeContext';
-import {
-  clampImageZoom,
-  formatFileSize,
-  IMAGE_MAX_ZOOM,
-  IMAGE_MIN_ZOOM,
-  IMAGE_ZOOM_STEP,
-} from '@/features/files/fileUtils';
-import { ImageViewer } from '@/features/files/ImageViewer';
+import { formatFileSize } from '@/features/files/fileUtils';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import type { AssignmentsSearch } from '../studyRoutes';
 import { BackToAssignments } from './AssignmentAttemptPage';
-import { dayLabel } from './assignmentText';
+import { dayLabel, isGraded } from './assignmentText';
 import { GradeField } from './GradeField';
-import {
-  GradeText,
-  iconOf,
-  MemberCell,
-  useOpenSubmissionFile,
-  workSummary,
-} from './HandIns';
+import { GradeText, iconOf, MemberCell, workSummary } from './HandIns';
 import { LateBadge } from './LateBadge';
-
-const PdfView = lazy(() => import('@/features/files/PdfView'));
+import { SplitColumns } from './SplitColumns';
+import { SubmissionFilePane } from './SubmissionFilePane';
 
 /** An Assignment's Grading tab (Epo 2026-11-19, mock A, after Google
  * Classroom's grading tool): the members on the left in the app's accordion,
@@ -105,12 +88,13 @@ export function GradingTab({
   // The right side: the chosen file, or that there is none.
   const pane = (row: AssignmentMemberRow, className: string) =>
     file ? (
-      <FilePane
-        assignmentId={assignment.id}
+      <SubmissionFilePane
         className={className}
         end={exit}
         file={file}
         key={file.id}
+        marking={isGraded(assignment)}
+        of={{ handInId: assignment.id }}
       />
     ) : (
       <div className={cn('flex flex-col', className)}>
@@ -143,7 +127,7 @@ export function GradingTab({
         <BackToAssignments
           label={
             assignment.points === undefined
-              ? m.assignment_tab_hand_ins()
+              ? m.assignment_tab_responses()
               : m.assignment_tab_grading()
           }
           link={{
@@ -174,50 +158,47 @@ export function GradingTab({
       </div>
     );
 
-  return (
-    <div
-      className={cn(
-        'grid',
-        // Straight under the tabs' own line, or over everything.
-        fullscreen
-          ? 'fixed inset-0 z-40 bg-surface'
-          : 'page-bleed min-h-0 flex-1',
-        // A tablet keeps the file its room.
-        files
-          ? 'grid-cols-[300px_minmax(0,1fr)] lg:grid-cols-[360px_minmax(0,1fr)]'
-          : 'grid-cols-1'
-      )}
-    >
-      <div
-        className={cn(
-          // Down only: the accordion's panel reaches 4px past each side for
-          // its focus rings. It scrolls with no scrollbar.
-          'min-h-0 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
-          files ? 'border-divider border-r' : 'max-w-183'
-        )}
-      >
-        <Count assignment={assignment} end={!files && exit} members={members} />
-        <ul>
-          {members.map((row) => (
-            <li className="border-divider border-b" key={row.userId}>
-              <Accordion
-                className="mx-0 min-h-14 w-full gap-2.5 rounded-none px-4 py-2 font-normal"
-                label={<RowLabel assignment={assignment} row={row} />}
-                onToggle={() => toggle(row)}
-                open={row === shown && folded !== row.userId}
-              >
-                {/* Only the shown member's: a class's worth of grade forms
+  // Straight under the tabs' own line, or over everything.
+  const frame = fullscreen
+    ? 'fixed inset-0 z-40 bg-surface'
+    : 'page-bleed min-h-0 flex-1';
+  const list = (
+    <>
+      <Count assignment={assignment} end={!files && exit} members={members} />
+      <ul>
+        {members.map((row) => (
+          <li className="border-divider border-b" key={row.userId}>
+            <Accordion
+              className="mx-0 min-h-14 w-full gap-2.5 rounded-none px-4 py-2 font-normal"
+              label={<RowLabel assignment={assignment} row={row} />}
+              onToggle={() => toggle(row)}
+              open={row === shown && folded !== row.userId}
+            >
+              {/* Only the shown member's: a class's worth of grade forms
                   would weigh. */}
-                {row === shown && (
-                  <div className="px-4 pb-3 pl-10.5">{details(row)}</div>
-                )}
-              </Accordion>
-            </li>
-          ))}
-        </ul>
+              {row === shown && (
+                <div className="px-4 pb-3 pl-10.5">{details(row)}</div>
+              )}
+            </Accordion>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+  // With no files, the list alone. It scrolls with no scrollbar; the
+  // accordion's panel reaches 4px past each side for its focus rings.
+  if (!files)
+    return (
+      <div className={cn('grid', frame)}>
+        <div className="min-h-0 max-w-183 overflow-y-auto overflow-x-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {list}
+        </div>
       </div>
-      {files && shown && pane(shown, 'min-h-0')}
-    </div>
+    );
+  return (
+    <SplitColumns className={frame} mainClassName="flex flex-col" side={list}>
+      {shown && pane(shown, 'min-h-0 flex-1')}
+    </SplitColumns>
   );
 }
 
@@ -363,114 +344,5 @@ function Details({
         </>
       )}
     </dl>
-  );
-}
-
-/** The chosen file as the workspace shows it: a header with its name, the
- * viewer's page count and zoom, and open in a new tab, then the PDF, the
- * photo, or what can't be shown with its download. */
-function FilePane({
-  assignmentId,
-  className,
-  end,
-  file,
-}: {
-  assignmentId: string;
-  className?: string;
-  /** After open in new tab: full screen's exit. */
-  end?: React.ReactNode;
-  file: PaperFile;
-}) {
-  const [header, setHeader] = useState<HTMLElement | null>(null);
-  const [imageZoom, setImageZoom] = useState(IMAGE_MIN_ZOOM);
-  const {
-    data: links,
-    isError,
-    refetch,
-  } = usePaperFileLinks({ handInId: assignmentId }, file.id);
-  const openFile = useOpenSubmissionFile({ handInId: assignmentId });
-  const image = file.kind === 'image';
-  return (
-    <div className={cn('flex flex-col', className)}>
-      {/* The workspace file header's row. */}
-      <div className="flex h-12 shrink-0 items-center gap-1.5 border-divider border-b pr-2 pl-4 sm:gap-2">
-        <FileIcon
-          className="size-4.5 shrink-0 -translate-y-px md:size-5"
-          name={iconOf(file)}
-        />
-        <h2 className="t-subtitle min-w-0 flex-1 truncate">{file.name}</h2>
-        {/* One run of buttons, no gaps, as the workspace header's right side;
-            the viewer's page count and zoom portal into the first part. */}
-        <div className="flex items-center gap-0">
-          <div className="contents" ref={setHeader}>
-            {image && (
-              <>
-                <ToolbarButton
-                  disabled={imageZoom <= IMAGE_MIN_ZOOM}
-                  label={m.material_zoom_out()}
-                  onClick={() =>
-                    setImageZoom(clampImageZoom(imageZoom - IMAGE_ZOOM_STEP))
-                  }
-                >
-                  <Icon name="zoomOut" />
-                </ToolbarButton>
-                <ToolbarButton
-                  disabled={imageZoom >= IMAGE_MAX_ZOOM}
-                  label={m.material_zoom_in()}
-                  onClick={() =>
-                    setImageZoom(clampImageZoom(imageZoom + IMAGE_ZOOM_STEP))
-                  }
-                >
-                  <Icon name="zoomIn" />
-                </ToolbarButton>
-              </>
-            )}
-          </div>
-          {/* The signed link, fetched fresh: the browser shows a PDF or photo
-              and downloads the rest (Epo 2026-11-19). */}
-          <ToolbarButton
-            label={m.media_open_new_tab()}
-            onClick={() => void openFile(file)}
-          >
-            <Icon name="externalLink" />
-          </ToolbarButton>
-          {end}
-        </div>
-      </div>
-      {/* The workspace's own box for its viewers (CenterContent). */}
-      <div className="relative min-h-0 flex-1 overflow-auto">
-        {isError ? (
-          <FileError onRetry={() => void refetch()} />
-        ) : links?.url ? (
-          file.kind === 'pdf' ? (
-            <FileHeaderTarget.Provider value={header}>
-              <Suspense
-                fallback={
-                  <SkeletonList className="p-4" count={3} rowHeight={40} />
-                }
-              >
-                <PdfView onRetry={() => void refetch()} url={links.url} />
-              </Suspense>
-            </FileHeaderTarget.Provider>
-          ) : image ? (
-            <ImageViewer
-              alt={file.name}
-              onRetry={() => void refetch()}
-              onZoomChange={setImageZoom}
-              url={links.url}
-              zoom={imageZoom}
-            />
-          ) : (
-            <UnsupportedPreview
-              // Its link is signed to download.
-              download={() => void openFile(file)}
-              file={{ id: file.id, name: file.name, workspaceId: '' }}
-            />
-          )
-        ) : (
-          <SkeletonList className="p-4" count={3} rowHeight={40} />
-        )}
-      </div>
-    </div>
   );
 }

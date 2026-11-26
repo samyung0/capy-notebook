@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
@@ -31,16 +30,33 @@ const stateLabel = (state: NumberState) =>
       ? m.assignment_legend_part_answered()
       : m.assignment_legend_not_answered();
 
+/** A bookmark's mark (Epo 2026-11-25, option A): a small dark ribbon, the
+ * number's hanging off its top edge, the legend's inline. */
+function Ribbon({ className }: { className?: string }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'h-3 w-2 bg-fg [clip-path:polygon(0_0,100%_0,100%_100%,50%_72%,0_100%)]',
+        className
+      )}
+    />
+  );
+}
+
 /** One question's number: filled when answered, dashed when partly, ringed
- * when open, with a bookmark in its corner. */
+ * when open, with a bookmark's ribbon off its top edge. */
 function NumberSquare({
   className,
+  compact = false,
   current,
   item,
   number,
   onOpen,
 }: {
   className?: string;
+  /** The phone strip's smaller square takes a smaller ribbon. */
+  compact?: boolean;
   current: boolean;
   item: NumberItem;
   number: number;
@@ -71,11 +87,13 @@ function NumberSquare({
       type="button"
     >
       {number}
+      {/* Over the border, even the open one's 2px. */}
       {item.marked && (
-        <Icon
-          className="absolute top-0 right-0.5 text-solid-accent-1"
-          name="bookmark"
-          size={11}
+        <Ribbon
+          className={cn(
+            'absolute -top-0.5',
+            compact ? 'right-[5px] h-2.5 w-[7px]' : 'right-[7px]'
+          )}
         />
       )}
     </button>
@@ -140,7 +158,7 @@ export function QuestionNumbers({
         )}
         {bookmarks && (
           <span className="inline-flex items-center gap-1.5">
-            <Icon className="text-solid-accent-1" name="bookmark" size={12} />
+            <Ribbon className="inline-block" />
             {m.assignment_legend_bookmarked()}
           </span>
         )}
@@ -171,6 +189,7 @@ export function NumberStrip({
             <li className="shrink-0" key={item.id}>
               <NumberSquare
                 className="size-9"
+                compact
                 current={item.id === current}
                 item={item}
                 number={i + 1}

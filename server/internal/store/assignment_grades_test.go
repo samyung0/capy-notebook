@@ -39,7 +39,8 @@ func TestGradedAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	grade := func(actor, member string, points float64) error {
-		return f.s.SetAssignmentGrade(ctx, actor, created.ID, member, &points, now)
+		_, err := f.s.SetAssignmentGrade(ctx, actor, created.ID, member, &points, now)
+		return err
 	}
 	if err := grade(f.viewer, f.viewer, 20); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("a member's grade = %v", err)
@@ -94,7 +95,7 @@ func TestGradedAssignment(t *testing.T) {
 	}
 
 	// Cleared, it reads as not graded again.
-	if err := f.s.SetAssignmentGrade(ctx, f.user, created.ID, f.viewer, nil, now); err != nil {
+	if _, err := f.s.SetAssignmentGrade(ctx, f.user, created.ID, f.viewer, nil, now); err != nil {
 		t.Fatal(err)
 	}
 	if mine, err = f.s.GetAssignment(ctx, f.viewer, created.ID, at); err != nil || mine.Mine.Mark != nil {
@@ -115,7 +116,7 @@ func TestGradedAssignmentWaitsForRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	points := 7.5
-	if err := f.s.SetAssignmentGrade(ctx, f.user, created.ID, f.viewer, &points, now); err != nil {
+	if _, err := f.s.SetAssignmentGrade(ctx, f.user, created.ID, f.viewer, &points, now); err != nil {
 		t.Fatal(err)
 	}
 	held, err := f.s.GetAssignment(ctx, f.viewer, created.ID, now)

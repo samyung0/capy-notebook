@@ -4,7 +4,6 @@ import type { TodoWorkspace, Workspace } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
-import { SelectionAction, SelectionBar } from '@/features/files/SelectionBar';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
@@ -13,9 +12,7 @@ import { type TodoTableSection, todoRows, todoSections } from './todoRows';
 
 /** One class's To do, as the To do page's table (Epo 2026-11-12): a box on
  * each row, the row opening its details. It is the Dashboard's To do section
- * (boards H1, H2, H2b; Epo 2026-11-03) and, as `page`, a class member's To do
- * page (Epo 2026-11-20: "the two todo should align"), which selects rows with
- * the To do page's selection bar. A member's holds what is assigned to them;
+ * (boards H1, H2, H2b; Epo 2026-11-03). A member's holds what is assigned to them;
  * staff's holds answers to approve. Nothing is added here (Epo 2026-11-21:
  * no tasks for oneself; staff give work out from the Assignments page). In the
  * section, with rows selected, Mark as done (or Mark as not done for done
@@ -25,12 +22,9 @@ import { type TodoTableSection, todoRows, todoSections } from './todoRows';
  * and a failed read says so with Retry. */
 export function TodoSection({
   manages,
-  page = false,
   workspace,
 }: {
   manages: boolean;
-  /** The workspace's own To do page rather than the Dashboard's section. */
-  page?: boolean;
   workspace: Pick<Workspace, 'iconId' | 'id' | 'name'>;
 }) {
   // To do's own list (the nav's): what this class holds for the viewer, as
@@ -63,7 +57,7 @@ export function TodoSection({
     },
   ];
   const ticks = useTodoTicks(sections, false, { keepTicked: showDone });
-  const showDoneButton = (done.length > 0 || page) && (
+  const showDoneButton = done.length > 0 && (
     <Button
       className="px-2.5"
       iconLeft="view"
@@ -77,41 +71,7 @@ export function TodoSection({
       {showDone ? m.assignment_hide_done() : m.assignment_show_done()}
     </Button>
   );
-  const header = page ? (
-    <>
-      <h1 className="t-page-title">{m.nav_todo()}</h1>
-      {/* Show done, or the To do page's selection bar while rows are
-          picked. */}
-      <div className="mt-4 mb-1.25 flex min-h-10 items-center gap-2 sm:min-h-11.5 md:mb-2">
-        {ticks.count > 0 ? (
-          <SelectionBar
-            allSelected={ticks.allSelected}
-            busy={false}
-            count={ticks.count}
-            onClear={ticks.clear}
-            onSelectAll={ticks.selectAll}
-          >
-            {ticks.toDone.length > 0 && (
-              <SelectionAction
-                icon="check"
-                label={m.assignment_mark_as_done()}
-                onClick={() => ticks.markDone(ticks.toDone)}
-              />
-            )}
-            {ticks.toUndo.length > 0 && (
-              <SelectionAction
-                icon="undo"
-                label={m.assignment_mark_not_done()}
-                onClick={() => ticks.markNotDone(ticks.toUndo)}
-              />
-            )}
-          </SelectionBar>
-        ) : (
-          showDoneButton
-        )}
-      </div>
-    </>
-  ) : (
+  const header = (
     <div className="mb-1.5 flex min-h-7 items-center justify-between gap-2">
       <h2 className="t-subtitle">{m.dashboard_todo()}</h2>
       <div className="flex items-center gap-2">
@@ -145,13 +105,12 @@ export function TodoSection({
       </div>
     </div>
   );
-  const Wrapper = page ? 'div' : 'section';
   return (
-    <Wrapper className="flex flex-col">
+    <section className="flex flex-col">
       {header}
       {/* The table once the list has loaded, so Nothing to do never flashes;
-          the To do page's rows load meanwhile (Epo 2026-11-12). */}
-      {isPending && <SkeletonList count={page ? 4 : 3} rowHeight={40} />}
+          its rows load meanwhile (Epo 2026-11-12). */}
+      {isPending && <SkeletonList count={3} rowHeight={40} />}
       {!data && error && (
         <InlineErrorState
           className="py-6"
@@ -180,6 +139,6 @@ export function TodoSection({
           />
         </div>
       )}
-    </Wrapper>
+    </section>
   );
 }

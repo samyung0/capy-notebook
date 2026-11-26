@@ -97,8 +97,17 @@ function systemCopy(notification: AppNotification) {
         }),
         title: m.notification_system_grades_released_title(),
       };
-    // Staff had the AI grade a question again and its mark changed after
-    // grades showed (Epo 2026-11-23).
+    // An attempt's last waiting mark decided where grades show, or a graded
+    // Assignment's first grade (Epo 2026-11-25).
+    case 'grade_ready':
+      return {
+        body: m.notification_system_grade_ready_body({
+          title: dataString(data, 'title'),
+        }),
+        title: m.notification_system_grade_ready_title(),
+      };
+    // A decided mark changed after grades showed: graded again by the AI (Epo
+    // 2026-11-23), or by hand (Epo 2026-11-25).
     case 'mark_changed':
       return {
         body: m.notification_system_mark_changed_body({

@@ -203,7 +203,6 @@ import type {
   SetChatPrefsReq,
   SetModelPrefsReq,
   ShareRedemption,
-  SharingNotice,
   SourceCandidateReadOutputBody,
   SourceCandidateResponse,
   SourceCheckpoint,
@@ -6071,6 +6070,71 @@ export const getFileLinks = async (id: string, options?: RequestInit): Promise<g
 
 
 
+export type storeMarkedCopyResponse204 = {
+  data: void
+  status: 204
+}
+
+export type storeMarkedCopyResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type storeMarkedCopyResponseSuccess = (storeMarkedCopyResponse204) & {
+  headers: Headers;
+};
+export type storeMarkedCopyResponseError = (storeMarkedCopyResponseDefault) & {
+  headers: Headers;
+};
+
+export type storeMarkedCopyResponse = (storeMarkedCopyResponseSuccess | storeMarkedCopyResponseError)
+
+export const getStoreMarkedCopyUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/marked-copy`
+}
+
+/**
+ * @summary Store the PDF copy staff mark a Word submission on, drawn by the first staff browser to open it; stored once
+ */
+export const storeMarkedCopy = async (id: string,
+    storeMarkedCopyBody: Blob, options?: RequestInit): Promise<storeMarkedCopyResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getStoreMarkedCopyUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/pdf', ...getHeaders(options?.headers) },
+    body: storeMarkedCopyBody
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: storeMarkedCopyResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as storeMarkedCopyResponse
+}
+
+
+
 export type openFileResponse204 = {
   data: void
   status: 204
@@ -9627,17 +9691,17 @@ export const readNotification = async (id: string, options?: RequestInit): Promi
 
 
 
-export type deletePaperResponse200 = {
-  data: DrawingsDeletedOutputBody
-  status: 200
+export type deletePaperResponse204 = {
+  data: void
+  status: 204
 }
 
 export type deletePaperResponseDefault = {
   data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
+  status: Exclude<HTTPStatusCodes, 204>
 }
 
-export type deletePaperResponseSuccess = (deletePaperResponse200) & {
+export type deletePaperResponseSuccess = (deletePaperResponse204) & {
   headers: Headers;
 };
 export type deletePaperResponseError = (deletePaperResponseDefault) & {
@@ -9655,7 +9719,7 @@ export const getDeletePaperUrl = (id: string,) => {
 }
 
 /**
- * @summary Delete one of the caller's deletable paper files; its marks stay
+ * @summary Delete one of the caller's hand-in files never handed in before its assignment closed; handed-in files stay
  */
 export const deletePaper = async (id: string, options?: RequestInit): Promise<deletePaperResponse> => {
 
@@ -9671,7 +9735,7 @@ export const deletePaper = async (id: string, options?: RequestInit): Promise<de
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: deletePaperResponse['data'] = body ? JSON.parse(body) : {}
+  const data: deletePaperResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as deletePaperResponse
 }
 
@@ -14198,106 +14262,6 @@ const res = await fetch(getUpdateWorkspaceSharingUrl(id),
 
   const data: updateWorkspaceSharingResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateWorkspaceSharingResponse
-}
-
-
-
-export type getSharingNoticeResponse200 = {
-  data: SharingNotice
-  status: 200
-}
-
-export type getSharingNoticeResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type getSharingNoticeResponseSuccess = (getSharingNoticeResponse200) & {
-  headers: Headers;
-};
-export type getSharingNoticeResponseError = (getSharingNoticeResponseDefault) & {
-  headers: Headers;
-};
-
-export type getSharingNoticeResponse = (getSharingNoticeResponseSuccess | getSharingNoticeResponseError)
-
-export const getGetSharingNoticeUrl = (id: string,) => {
-
-
-
-
-  return `/api/workspaces/${id}/sharing-notice`
-}
-
-/**
- * @summary Whether a class member is yet to be told what they share
- */
-export const getSharingNotice = async (id: string, options?: RequestInit): Promise<getSharingNoticeResponse> => {
-
-  const res = await fetch(getGetSharingNoticeUrl(id),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: getSharingNoticeResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getSharingNoticeResponse
-}
-
-
-
-export type markSharingNoticeSeenResponse204 = {
-  data: void
-  status: 204
-}
-
-export type markSharingNoticeSeenResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
-}
-
-export type markSharingNoticeSeenResponseSuccess = (markSharingNoticeSeenResponse204) & {
-  headers: Headers;
-};
-export type markSharingNoticeSeenResponseError = (markSharingNoticeSeenResponseDefault) & {
-  headers: Headers;
-};
-
-export type markSharingNoticeSeenResponse = (markSharingNoticeSeenResponseSuccess | markSharingNoticeSeenResponseError)
-
-export const getMarkSharingNoticeSeenUrl = (id: string,) => {
-
-
-
-
-  return `/api/workspaces/${id}/sharing-notice`
-}
-
-/**
- * @summary Record that a class member was told what they share
- */
-export const markSharingNoticeSeen = async (id: string, options?: RequestInit): Promise<markSharingNoticeSeenResponse> => {
-
-  const res = await fetch(getMarkSharingNoticeSeenUrl(id),
-  {
-    ...options,
-    method: 'PUT'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: markSharingNoticeSeenResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as markSharingNoticeSeenResponse
 }
 
 

@@ -17,7 +17,6 @@ export interface Assignment {
   closed: boolean;
   closedAt?: string;
   draft: boolean;
-  drawingParts: boolean;
   dueAt?: string;
   files: AssignmentFile[];
   gradesHidden: boolean;

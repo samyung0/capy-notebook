@@ -53,8 +53,14 @@ import { useMediaQuery } from '@/lib/useMediaQuery';
 import { ListRow, PracticeFrame, Td, Th } from '../practice/studyPage';
 import type { AssignmentsSearch, ReportTab } from '../studyRoutes';
 import { ApproveTab } from './ApproveTab';
-import { BackToAssignments } from './AssignmentAttemptPage';
 import { AssignmentFiles } from './AssignmentFiles';
+import {
+  AssignmentHead,
+  CHIP,
+  factChips,
+  minutesShort,
+  StatRow,
+} from './AssignmentHead';
 import {
   AssignmentPreview,
   PreviewDialog,
@@ -73,7 +79,7 @@ import {
 } from './assignmentText';
 import { GradedQuizQuestions } from './GradedQuizQuestions';
 import { GradingTab } from './GradingTab';
-import { HandInMembers } from './HandIns';
+import { DoneMembers } from './HandIns';
 import { LateBadge } from './LateBadge';
 import { QuestionPaperView } from './LazyPaper';
 import { MarkingNow } from './MarkingNow';
@@ -83,9 +89,6 @@ import {
   NumberStrip,
   QuestionNumbers,
 } from './QuestionNumbers';
-
-const CHIP =
-  'inline-flex h-5.5 shrink-0 items-center rounded-md bg-page-hover px-1.75 font-semibold text-fg-secondary text-xs';
 
 const TAB_LABELS: Record<ReportTab, () => string> = {
   content: m.assignment_tab_content,
@@ -148,17 +151,7 @@ export function AssignmentReport({
   // 2026-11-13).
   const chips = [
     assignment.draft ? m.assignment_draft() : null,
-    assignment.dueAt
-      ? m.assignment_due({ date: dayLabel(assignment.dueAt) })
-      : null,
-    assignment.noLate
-      ? m.assignment_switch_no_late()
-      : assignment.latePenaltyPct > 0
-        ? m.assignment_late_penalty({ percent: assignment.latePenaltyPct })
-        : null,
-    assignment.closedAt
-      ? m.assignment_closed_on({ date: dayLabel(assignment.closedAt) })
-      : null,
+    ...factChips(assignment),
     !graded || assignment.draft || manage?.showGrades !== 'manual'
       ? null
       : manage.gradesReleasedAt
@@ -199,58 +192,12 @@ export function AssignmentReport({
           'md:flex md:flex-col md:overflow-hidden md:pb-0 lg:pb-0'
       )}
     >
-      {/* Stepped aside past a phone's first Approve screen (tailwind.css). */}
       {/* As a member's attempt reads (Epo 2026-11-19): the title, its chips
           under it, the actions at the chips' right. */}
-      <div className="flex" data-report-head>
-        <BackToAssignments />
-      </div>
-      <div className="mt-3" data-report-head>
-        <h1 className="t-page-title truncate" title={assignment.title}>
-          {assignment.title}
-        </h1>
-        {/* One row, never wrapping (Epo 2026-11-20): the actions stay at the
-            chips' right, and chips past the room scroll, as Grading's do. */}
-        <div className="mt-1 flex items-center gap-2 sm:gap-4">
-          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {/* Published and not closed yet: Open, in green, first (Epo 2026-11-16). */}
-            {!assignment.draft && !assignment.closedAt && (
-              <span
-                className={cn(CHIP, 'bg-tint-success text-tint-success-fg')}
-              >
-                {m.assignment_state_open()}
-              </span>
-            )}
-            {/* The time limit alone, with no kind before it. */}
-            {assignment.timeLimitMin ? (
-              <span className={cn(CHIP, 'gap-1')}>
-                <Icon className="shrink-0" name="clock" size={14} />
-                {minutesShort(assignment.timeLimitMin)}
-              </span>
-            ) : null}
-            {chips.map((chip) => (
-              <span className={CHIP} key={chip}>
-                {chip}
-              </span>
-            ))}
-            {/* Waiting answers: AI-marked to approve, and not graded (T3). */}
-            {toApprove > 0 && (
-              <span
-                className={cn(CHIP, 'bg-tint-accent-1 text-tint-accent-1-fg')}
-              >
-                {m.assignment_to_approve({ count: toApprove })}
-              </span>
-            )}
-            {notGraded > 0 && (
-              <span
-                className={cn(CHIP, 'bg-tint-warning text-tint-warning-fg')}
-              >
-                {m.assignment_not_graded({ count: notGraded })}
-              </span>
-            )}
-          </div>
-          {(marked || releasable) && (
-            <div className="flex shrink-0 items-center gap-2">
+      <AssignmentHead
+        actions={
+          (marked || releasable) && (
+            <>
               {editing && quizId && !editorFullscreen && (
                 <>
                   {/* Its words from a tablet up: a phone's row keeps
@@ -271,10 +218,27 @@ export function AssignmentReport({
               )}
               {marked && draft && <PublishButton assignment={assignment} />}
               {releasable && <ReleaseGrades assignment={assignment} />}
-            </div>
-          )}
-        </div>
-      </div>
+            </>
+          )
+        }
+        assignment={assignment}
+        chips={[
+          ...chips,
+          // Waiting answers: AI-marked to approve, and not graded (T3).
+          toApprove > 0 && (
+            <span
+              className={cn(CHIP, 'bg-tint-accent-1 text-tint-accent-1-fg')}
+            >
+              {m.assignment_to_approve({ count: toApprove })}
+            </span>
+          ),
+          notGraded > 0 && (
+            <span className={cn(CHIP, 'bg-tint-warning text-tint-warning-fg')}>
+              {m.assignment_not_graded({ count: notGraded })}
+            </span>
+          ),
+        ].filter(Boolean)}
+      />
       {/* Grading's full screen at the row's end (Epo 2026-11-19), as the
           workspace's: the members and the file, nothing else. */}
       <div className="relative" data-report-head>
@@ -282,10 +246,10 @@ export function AssignmentReport({
           className="page-bleed page-tabs-px mt-3.5 w-auto"
           onChange={pickTab}
           tabs={tabs.map((value) => ({
-            // A task's Grading reads hand-ins when there are no points to give.
+            // An ungraded Assignment's Grading reads Responses (Epo 2026-11-25).
             label:
               value === 'grading' && !marked && assignment.points === undefined
-                ? m.assignment_tab_hand_ins()
+                ? m.assignment_tab_responses()
                 : value === 'questions' && paper !== undefined
                   ? m.assignment_question_paper()
                   : TAB_LABELS[value](),
@@ -418,18 +382,15 @@ export function AssignmentReport({
           search={search}
         />
       ) : tab === 'content' ? (
-        <AssignmentContent assignment={assignment} />
+        <AssignmentContent
+          assignment={assignment}
+          members={data?.members ?? []}
+        />
       ) : (
         <AssignmentResponses
           assignment={assignment}
           loading={isPending}
           members={data?.members ?? []}
-          // Only Grading has more of a member to show.
-          onOpen={
-            tabs.includes('grading')
-              ? (member) => void go({ member: member.userId, tab: 'grading' })
-              : undefined
-          }
         />
       )}
       {previewing && (
@@ -531,40 +492,53 @@ function ResponsesTab({
   );
 }
 
-/** An Assignment's Content (Epo 2026-11-21): the files it gives out. */
-function AssignmentContent({ assignment }: { assignment: Assignment }) {
-  return assignment.files.length > 0 ? (
-    <AssignmentFiles assignment={assignment} />
-  ) : (
-    <p className="t-meta tab-body-mt text-fg-muted">
-      {m.assignment_content_empty()}
-    </p>
+/** An Assignment's Content (Epo 2026-11-21): the files it gives out, under
+ * its numbers when it takes files (Epo 2026-11-25), whose members tab has none. */
+function AssignmentContent({
+  assignment,
+  members,
+}: {
+  assignment: Assignment;
+  members: AssignmentMemberRow[];
+}) {
+  return (
+    <>
+      {assignment.allowUploads && (
+        <AssignmentStats assignment={assignment} members={members} />
+      )}
+      {assignment.files.length > 0 ? (
+        <AssignmentFiles assignment={assignment} />
+      ) : (
+        <p
+          className={cn(
+            't-meta text-fg-muted',
+            !assignment.allowUploads && 'tab-body-mt'
+          )}
+        >
+          {m.assignment_content_empty()}
+        </p>
+      )}
+    </>
   );
 }
 
-/** An Assignment's Responses (Epo 2026-11-21): its numbers, then the members
- * in the hand-ins table's design, a row opening Grading at them. */
+/** An Assignment taking no files' Responses (Epo 2026-11-21): its numbers,
+ * then who is done. */
 function AssignmentResponses({
   assignment,
   loading,
   members,
-  onOpen,
 }: {
   assignment: Assignment;
   loading: boolean;
   members: AssignmentMemberRow[];
-  onOpen?: (member: AssignmentMemberRow) => void;
 }) {
   if (loading)
     return <SkeletonList className="tab-body-mt" count={5} rowHeight={40} />;
   return (
     <>
       <AssignmentStats assignment={assignment} members={members} />
-      <HandInMembers
-        assignment={assignment}
-        members={members}
-        onOpen={onOpen}
-      />
+      <DoneMembers members={members} />
     </>
   );
 }
@@ -708,8 +682,6 @@ function MembersTab({
   );
 }
 
-const minutesShort = (count: number) => m.assignment_minutes_short({ count });
-
 /** An assignment's numbers over its Questions, or an unmarked one's Members
  * (Epo 2026-11-13): submissions, then a marked one's average mark and time and
  * the attempts and uploads a member is allowed. */
@@ -780,19 +752,7 @@ function AssignmentStats({
         }
       : null,
   ].filter((stat) => !!stat);
-  return (
-    <div className="tab-body-mt mb-2 flex shrink-0 flex-wrap items-center gap-x-10 gap-y-3">
-      <dl className="flex flex-wrap gap-x-10 gap-y-3">
-        {stats.map((stat) => (
-          <div key={stat.label}>
-            <dt className="t-meta text-fg-muted">{stat.label}</dt>
-            <dd className="mt-0.5 font-bold text-xl">{stat.value}</dd>
-          </div>
-        ))}
-      </dl>
-      {end && <div className="ml-auto">{end}</div>}
-    </div>
-  );
+  return <StatRow end={end} stats={stats} />;
 }
 
 /** Questions (G3) laid out as a member answers them (Epo 2026-11-22): the

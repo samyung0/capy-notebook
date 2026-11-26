@@ -137,39 +137,45 @@ it('lets the owner of a personal workspace practise, add and edit', () => {
   expect(html).not.toContain(m.practice_col_average());
 });
 
-// Epo 2026-11-11: Study's pages each have their own place on the rail.
+// Epo 2026-11-11: Study's pages each have their own place on the rail; its
+// order since Epo 2026-11-24.
 it('gives each of the four people their rail', () => {
   const rail = (kind: 'class' | 'personal', role: 'owner' | 'viewer') =>
     workspaceSections({ kind, role }).map((section) => section.label);
-  const before = [
-    m.workspace_section_dashboard(),
+  const dashboard = m.workspace_section_dashboard();
+  const canvas = m.workspace_section_canvas();
+  const after = [
+    m.workspace_tab_study(),
     m.workspace_tab_files(),
     m.workspace_section_agent(),
   ];
+  const members = m.study_panel_members();
   // A class's staff give out assignments and manage the members; their Study
   // is every member's marks, Practice a tab of Study for everyone (Epo
   // 2026-11-13).
   expect(rail('class', 'owner')).toEqual([
-    ...before,
+    dashboard,
+    canvas,
     m.study_panel_assignments(),
-    m.study_panel_members(),
-    m.workspace_tab_study(),
-    m.workspace_section_canvas(),
+    ...after,
+    members,
   ]);
-  // A class's members have their own To do and Study, and see who the members
-  // are without marks; a personal workspace has no To do (Epo 2026-11-21).
-  const rest = [
-    m.study_panel_members(),
-    m.workspace_tab_study(),
-    m.workspace_section_canvas(),
-  ];
-  expect(rail('class', 'viewer')).toEqual([...before, m.nav_todo(), ...rest]);
+  // A class's members have their own Assignments (Epo 2026-11-25) and Study,
+  // and see who the members are without marks; a personal workspace has no
+  // Assignments (Epo 2026-11-21).
+  expect(rail('class', 'viewer')).toEqual([
+    dashboard,
+    canvas,
+    m.study_panel_assignments(),
+    ...after,
+    members,
+  ]);
   for (const own of [rail('personal', 'owner'), rail('personal', 'viewer')])
-    expect(own).toEqual([...before, ...rest]);
+    expect(own).toEqual([dashboard, canvas, ...after, members]);
   // A link or public visitor is no member: no Members, and no canvas.
   expect(
     workspaceSections({ kind: 'personal', role: '' as never }).map(
       (section) => section.label
     )
-  ).toEqual([...before, m.workspace_tab_study()]);
+  ).toEqual([dashboard, ...after]);
 });

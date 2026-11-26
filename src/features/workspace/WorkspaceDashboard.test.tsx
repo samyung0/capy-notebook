@@ -157,7 +157,6 @@ it("lists a class's To do: answers to approve for its owner, Nothing to do when 
       attempts: 1,
       closed: false,
       draft: false,
-      drawingParts: false,
       files: [],
       gradesHidden: false,
       id: 'as_1',

@@ -4,11 +4,13 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { PDFAnnotationAuthor } from './pDFAnnotationAuthor.ts';
 import type { PDFAnnotationKind } from './pDFAnnotationKind.ts';
 import type { PDFPoint } from './pDFPoint.ts';
 import type { PDFRect } from './pDFRect.ts';
 
 export interface PDFAnnotation {
+  readonly author?: PDFAnnotationAuthor;
   /** @pattern ^#[0-9a-fA-F]{6}$ */
   color: string;
   /** @maxLength 3000 */

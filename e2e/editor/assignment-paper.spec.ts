@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { openAssignmentAsMember } from '../helpers/assignments';
+import { openAssignmentAsMember, pressStart } from '../helpers/assignments';
 import { m } from '../i18n';
 
 const PAGE = 'e2e/fixtures/files/images/flat.png';
 
 // Epo 2026-11-08 (S4, S5; S2 and the list 2026-11-19): an assignment that takes
-// uploads asks how in Before you start; Upload shows every question read only
+// uploads asks how when Start is pressed; Upload shows every question read only
 // beside Your answers, whose files can be removed.
 test('a member hands in a paper: two files, one removed, submitted', async ({
   page,
@@ -14,6 +14,7 @@ test('a member hands in a paper: two files, one removed, submitted', async ({
     sessionStorage.setItem('capy.scenario.last', 'workspace-member')
   );
   await openAssignmentAsMember(page, 'as_upload');
+  await pressStart(page);
   const before = page.getByRole('dialog');
   await before
     .getByRole('radio', { name: m.assignment_mode_upload() })

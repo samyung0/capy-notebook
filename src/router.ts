@@ -464,6 +464,15 @@ const appRoutes = [
     bankChild('$topicId/summary'),
     bankChild('$topicId/$questionId'),
   ]),
+  // A member's try at an assignment, alone (Epo 2026-11-25): no sidebar and
+  // no workspace shell, and no prefetch, since taking it starts only from the
+  // page's own read.
+  page(
+    '/attempts/$attemptId',
+    () => import('@/routes/AssignmentAttempt'),
+    undefined,
+    true
+  ),
   page(
     '/quizzes/$quizId/attempt',
     () => import('@/routes/QuizAttempt'),
