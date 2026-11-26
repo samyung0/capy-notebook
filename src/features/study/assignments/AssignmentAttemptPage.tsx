@@ -1,6 +1,6 @@
-import { Link, useParams } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { useCallback, useRef, useState } from 'react';
-import { useAssignment, useAssignmentAttempt, useWorkspace } from '@/api/hooks';
+import { useAssignment, useAssignmentAttempt } from '@/api/hooks';
 import { ErrorState } from '@/components/app/ErrorState';
 import { SkeletonList } from '@/components/ui/feedback';
 import { IconButton } from '@/components/ui/IconButton';
@@ -8,35 +8,29 @@ import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { PracticeFrame } from '../practice/studyPage';
-import { studyView } from '../practice/studyView';
-import type { AssignmentsSearch, studyLink } from '../studyRoutes';
+import {
+  type AssignmentsSearch,
+  assignmentsLink,
+  type studyLink,
+} from '../studyRoutes';
 import { AssignmentSubmitted } from './AssignmentSubmitted';
 import { AssignmentTake } from './AssignmentTake';
 import { AttemptResults } from './AttemptResults';
 import { questionPaperOf } from './assignmentText';
 
-/** The list's name, as the rail has it: Assignments to the class staff who
- * give them out, To do to everyone else (Epo 2026-11-11). */
-export function useTodoPageName() {
-  const { workspaceId } = useParams({ strict: false }) as {
-    workspaceId?: string;
-  };
-  const { data: ws } = useWorkspace(workspaceId ?? '', {
-    errorBoundary: false,
-  });
-  return studyView(ws).manages ? m.study_panel_assignments() : m.nav_todo();
-}
-
-/** "← To do" or "← Assignments" over an assignment's pages; `link` leads
- * elsewhere: a report's tab on this page, or a member's profile on Study. */
+/** "← Assignments" over an assignment's pages, staff's and members' alike
+ * (Epo 2026-11-25); `link` leads elsewhere: a report's tab on this page, or a
+ * member's profile on Study. */
 export function BackToAssignments({
   label,
   link = { search: {}, to: '.' },
 }: {
   label?: string;
-  link?: ReturnType<typeof studyLink> | { search: AssignmentsSearch; to: '.' };
+  link?:
+    | ReturnType<typeof studyLink>
+    | ReturnType<typeof assignmentsLink>
+    | { search: AssignmentsSearch; to: '.' };
 }) {
-  const list = useTodoPageName();
   return (
     <UnderlineLink
       asChild
@@ -44,7 +38,7 @@ export function BackToAssignments({
       iconLeft="navigationBack"
       noArrow
     >
-      <Link {...link}>{label ?? list}</Link>
+      <Link {...link}>{label ?? m.study_panel_assignments()}</Link>
     </UnderlineLink>
   );
 }
@@ -53,17 +47,17 @@ export function BackToAssignments({
 export type ProfileOrigin = { member: string; show?: 'topics' };
 
 /** One try, by its id: a running one to answer (A2), then Submitted (A4), or
- * its results (A5), a member's for the class's staff. Staff closing it while it
+ * its results (A5), a member's for the class's staff. A member's own opens at
+ * `/attempts/$attemptId`, staff's in the workspace; its links name their
+ * pages, so it reads the same at either. Staff closing it while it
  * runs here goes straight to its results (Epo 2026-11-05). */
 export function AssignmentAttemptPage({
   attemptId,
   fromProfile,
-  workspaceId,
 }: {
   attemptId: string;
   /** Opened from a member's profile: back returns there, not to Responses. */
   fromProfile?: ProfileOrigin;
-  workspaceId: string;
 }) {
   const { data, error, isError, isFetchedAfterMount, isPending, refetch } =
     useAssignmentAttempt(attemptId, { errorBoundary: false });
@@ -130,12 +124,18 @@ export function AssignmentAttemptPage({
             size="sm"
             variant="ghost-hover"
           >
-            <Link search={{}} to="." />
+            <Link
+              {...assignmentsLink(data.workspaceId, {
+                assignment: data.assignmentId,
+                // Staff taking their own come back to their own view too.
+                own: true,
+              })}
+            />
           </IconButton>
         }
         onClosed={closedHere}
         questionPaper={questionPaperOf(assignment)}
-        workspaceId={workspaceId}
+        workspaceId={data.workspaceId}
       />
     );
   if (ranHere.current && !seenResults && assignment)

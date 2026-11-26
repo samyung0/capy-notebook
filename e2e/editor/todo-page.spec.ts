@@ -46,7 +46,7 @@ test('a quiz marked done by hand asks first', async ({ page }) => {
   await page.getByRole('tab', { name: m.todo_tab_done() }).click();
   await expect(
     page.getByRole('row', { name: /Photosynthesis quiz/ })
-  ).toContainText(m.todo_not_handed_in(), { timeout: 30_000 });
+  ).toContainText(m.todo_not_submitted(), { timeout: 30_000 });
 });
 
 test("a Dashboard's Recent files opens the item", async ({ page }) => {

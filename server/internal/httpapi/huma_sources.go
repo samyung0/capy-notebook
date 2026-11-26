@@ -204,11 +204,11 @@ func (a *api) takeSourceTicket(w http.ResponseWriter, r *http.Request, batch *st
 		return uploadTurn{}, err
 	}
 	if body.AttemptID != "" {
-		if err := a.s.AssertPaperUpload(ctx, body.AttemptID, uid(r), body.SizeBytes, limits.SourceFileBytes, time.Now()); err != nil {
+		if err := a.s.AssertPaperUpload(ctx, body.AttemptID, uid(r), body.SizeBytes, time.Now()); err != nil {
 			return uploadTurn{}, err
 		}
 	} else if body.HandInID != "" {
-		if err := a.s.AssertHandInUpload(ctx, body.HandInID, uid(r), body.SizeBytes, limits.SourceFileBytes); err != nil {
+		if err := a.s.AssertHandInUpload(ctx, body.HandInID, uid(r), body.SizeBytes); err != nil {
 			return uploadTurn{}, err
 		}
 	} else if err := a.s.AssertSourceUploadRoom(ctx, wsID, uid(r), topicName, body.SizeBytes); err != nil {
@@ -380,7 +380,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 		ContentType: body.ContentType, DeclaredSize: body.SizeBytes,
 		ParseMode: body.ParseMode,
 		ExpiresAt: time.Now().UTC().Add(uploadSessionTTL), BatchID: body.BatchID,
-		AttemptID: body.AttemptID, HandInID: body.HandInID, PaperMaxBytes: limits.SourceFileBytes,
+		AttemptID: body.AttemptID, HandInID: body.HandInID,
 	}); err != nil {
 		return store.File{}, err
 	}
@@ -456,7 +456,12 @@ func (a *api) checkSourceUpload(
 	if body.ParseMode == "" {
 		body.ParseMode = sourceupload.DefaultParseMode(name, body.Kind)
 	}
-	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, limits.FileBytes(name)); err != nil {
+	// A submission's file has one cap on every plan (Epo 2026-11-25).
+	maxBytes := limits.FileBytes(name)
+	if submission {
+		maxBytes = min(maxBytes, fieldlimits.SubmissionFileBytes)
+	}
+	if err := sourceupload.Validate(name, body.Kind, body.ParseMode, body.SizeBytes, maxBytes); err != nil {
 		return "", "", huma.Error400BadRequest(err.Error())
 	}
 	if err := a.checkParsePages(body.ParseMode, body.PageCount); err != nil {

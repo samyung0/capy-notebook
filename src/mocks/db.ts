@@ -346,6 +346,34 @@ export const workspaces: Workspace[] = [
     tags: ct('tag_8', 'tag_9'),
     topicCount: 0,
   },
+  // A class the viewer joined as a student (Epo 2026-11-25): someone else's,
+  // so its assignments start as a member's without the Member scenario.
+  {
+    autoProcess: true,
+    canClone: false,
+    capabilities: {
+      canEdit: false,
+      canEditContent: false,
+      canManageMembers: false,
+      canView: true,
+    },
+    cover: { color: '#2a78d6', pattern: 'hexagons', style: 'geo' },
+    createdAt: days(30),
+    description: 'Mechanics and waves for Year 11.',
+    fileCount: 0,
+    filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
+    iconId: 'waves-02',
+    id: 'ws_phys',
+    isOwner: false,
+    kind: 'class',
+    name: 'Physics 11',
+    privacy: 'private',
+    role: 'viewer',
+    sharePath: '/w/ws_phys.-XadX8O1bAWPyfY1',
+    shareRole: 'viewer',
+    tags: [],
+    topicCount: 0,
+  },
 ];
 
 export const topics: Topic[] = [

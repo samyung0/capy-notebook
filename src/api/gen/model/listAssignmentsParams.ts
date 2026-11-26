@@ -10,6 +10,10 @@ import type { ListAssignmentsSort } from './listAssignmentsSort.ts';
 
 export type ListAssignmentsParams = {
 /**
+ * Staff: only what waits on them, open or closed: answers to mark, submissions to grade, grades to release
+ */
+pending?: boolean;
+/**
  * Keep the closed ones
  */
 closed?: boolean;

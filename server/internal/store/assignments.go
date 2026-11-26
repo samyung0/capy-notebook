@@ -46,6 +46,12 @@ var (
 	ErrAssignmentClosed = errors.New("this assignment is closed")
 	// ErrAssignmentNoAttempts refuses a start with every attempt used.
 	ErrAssignmentNoAttempts = errors.New("no attempts are left on this assignment")
+	// ErrPaperHandedIn: a member hands in one paper, and then answers no more
+	// (Epo 2026-11-25).
+	ErrPaperHandedIn = errors.New("you have submitted your paper already")
+	// ErrAnsweredOnline: a member who answered online uploads no paper; the
+	// first start picks the way for good (Epo 2026-11-25).
+	ErrAnsweredOnline = errors.New("you answer this assignment online")
 	// ErrAttemptFinished refuses a save or submit of a submitted attempt.
 	ErrAttemptFinished = errors.New("this attempt has been submitted")
 	// ErrAssignmentQuizGone refuses publishing a draft whose quiz was deleted.
@@ -94,9 +100,6 @@ type Assignment struct {
 	// each member's grade entered by staff (SetAssignmentGrade); absent, not
 	// graded.
 	Points *int `json:"points,omitempty"`
-	// DrawingParts: the frozen copy asks for a drawing, which Before you start
-	// warns about when the member's storage is full (S6).
-	DrawingParts bool `json:"drawingParts"`
 	// AllowUploads: a member may hand in a paper instead of answering in the app
 	// ("Allow submission with uploads", Epo 2026-11-08).
 	AllowUploads bool `json:"allowUploads"`
@@ -173,6 +176,13 @@ type AssignmentManage struct {
 	// 2026-11-08, mock T3).
 	ToApprove int `json:"toApprove"`
 	NotGraded int `json:"notGraded"`
+	// ToGrade counts a graded Assignment's submissions (done, by tick or upload)
+	// with no grade yet (Epo 2026-11-26).
+	ToGrade int `json:"toGrade"`
+	// ToRelease: its grades wait for staff to release them, every submission
+	// graded, and it has closed or everyone it went to has submitted (Epo
+	// 2026-11-26).
+	ToRelease bool `json:"toRelease"`
 	// Graded counts submissions with every mark decided, past members' too: a
 	// graded quiz from a file asks before its total changes while any is
 	// (Epo 2026-11-20), as setPaperMarksTx checks them all.
@@ -189,7 +199,10 @@ type AssignmentMine struct {
 	DoneAt *time.Time `json:"doneAt,omitempty"`
 	// RunningAttemptID is the attempt in progress.
 	RunningAttemptID *string `json:"runningAttemptId,omitempty"`
-	AttemptsUsed     int     `json:"attemptsUsed"`
+	// AttemptsUsed counts answers in the app; PaperHandedIn the one upload,
+	// after which nothing starts (Epo 2026-11-25).
+	AttemptsUsed  int  `json:"attemptsUsed"`
+	PaperHandedIn bool `json:"paperHandedIn"`
 	// CountedAttemptID is the submission that counts (countedAttemptOrder), which
 	// the rest of this reads.
 	CountedAttemptID *string `json:"countedAttemptId,omitempty"`
@@ -233,6 +246,9 @@ type AssignmentList struct {
 // AssignmentSort), open ones still before closed ones; empty is the page's
 // own order.
 type AssignmentListParams struct {
+	// Pending (staff): only what waits on staff, open or closed: answers to
+	// mark, submissions to grade or grades to release (Epo 2026-11-26).
+	Pending   bool
 	Closed    bool
 	Done      bool
 	TopicIDs  []string
@@ -256,6 +272,23 @@ var AssignmentSorts = map[string]string{
 }
 
 // assignmentClosedSQL is assignmentClosedAt's "closed" for assignments a at $now.
+// pendingSQL keeps assignment a when something may wait on its staff (Pending
+// decides from the counts): answers waiting for a mark, a graded Assignment's
+// submission with no grade, or grades held back with something submitted.
+const pendingSQL = `(EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=a.id AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0)
+	OR (a.points IS NOT NULL AND EXISTS (SELECT 1 FROM assignment_done d WHERE d.assignment_id=a.id
+		AND NOT EXISTS (SELECT 1 FROM assignment_grades g WHERE g.assignment_id=a.id AND g.user_id=d.user_id)))
+	OR (a.grades_shown = 'manual' AND a.grades_released_at IS NULL AND (a.kind = 'marked' OR a.points IS NOT NULL)
+		AND (EXISTS (SELECT 1 FROM assignment_done d WHERE d.assignment_id=a.id)
+			OR EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=a.id AND t.submitted_at IS NOT NULL))))`
+
+// Pending: something waits on staff (Manage's counts): answers to mark,
+// submissions to grade or grades to release.
+func (a Assignment) Pending() bool {
+	m := a.Manage
+	return m != nil && (m.ToApprove > 0 || m.ToGrade > 0 || m.ToRelease)
+}
+
 func assignmentClosedSQL(now string) string {
 	return `(a.closed_at IS NOT NULL OR (a.no_late AND a.due_at <= ` + now + `))`
 }
@@ -339,8 +372,6 @@ var assignmentCols = `a.id, a.workspace_id, a.kind, a.title, a.posted_at, COALES
 	a.due_at, a.closed_at, a.no_late, a.late_penalty_pct, a.draft, a.time_limit_min, a.attempts_allowed, a.question_count, a.total_marks::float8,
 	a.source_quiz_id, COALESCE(m.title,''), m.topic_id,
 	a.assign_all, a.marking, a.answers_shown, a.grades_shown, a.grades_released_at, a.shuffle, a.allow_uploads, a.upload_only,
-	EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(a.questions, '[]')) q, jsonb_array_elements(q->'parts') p
-		WHERE p->'answer'->>'type' = 'canvas'),
 	COALESCE(NOT a.draft AND m.updated_at > a.posted_at, false), m.updated_at, a.points, a.paper_file,
 	` + questionTopicsSQL
 
@@ -378,7 +409,7 @@ func (s *Store) readAssignments(ctx context.Context, userID string, staff bool, 
 		if err := rows.Scan(&a.ID, &a.WorkspaceID, &a.Kind, &a.Title, &a.PostedAt, &a.PostedBy,
 			&a.DueAt, &a.ClosedAt, &a.NoLate, &a.LatePenaltyPct, &a.Draft, &a.TimeLimitMin, &a.Attempts, &a.Questions, &a.Marks,
 			&manage.QuizID, &manage.QuizTitle, &topicID,
-			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &a.AllowUploads, &a.UploadOnly, &a.DrawingParts, &manage.QuizChanged, &manage.QuizUpdatedAt, &a.Points, &a.PaperFile, &questionTopics); err != nil {
+			&manage.AssignAll, &manage.Marking, &manage.ShowAnswers, &manage.ShowGrades, &manage.GradesReleasedAt, &manage.Shuffle, &a.AllowUploads, &a.UploadOnly, &manage.QuizChanged, &manage.QuizUpdatedAt, &a.Points, &a.PaperFile, &questionTopics); err != nil {
 			return nil, err
 		}
 		a.ClosedAt = assignmentClosedAt(a.NoLate, a.DueAt, a.ClosedAt, now)
@@ -597,31 +628,47 @@ func (s *Store) fillAssignmentManage(ctx context.Context, userID string, ids []s
 			GROUP BY 1),
 		gr AS (SELECT t.assignment_id, count(*)::int AS n FROM attempts t
 			WHERE t.assignment_id = ANY($1) AND t.submitted_at IS NOT NULL AND t.waiting_answers = 0 GROUP BY 1),
+		ug AS (SELECT d.assignment_id, count(*)::int AS n FROM assignment_done d
+			JOIN e ON e.assignment_id=d.assignment_id AND e.user_id=d.user_id
+			JOIN assignments a ON a.id=d.assignment_id AND a.points IS NOT NULL
+			WHERE NOT EXISTS (SELECT 1 FROM assignment_grades g WHERE g.assignment_id=d.assignment_id AND g.user_id=d.user_id)
+			GROUP BY 1),
+		-- Ticked off until another submission waits: answers to mark, or one
+		-- to grade.
 		k AS (SELECT x.assignment_id FROM assignment_todo_checks x
 			WHERE x.assignment_id = ANY($1) AND x.user_id=$2 AND x.approvals
-				AND x.checked_at >= COALESCE((SELECT max(t.submitted_at) FROM attempts t
-					WHERE t.assignment_id=x.assignment_id AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0), '-infinity'))
+				AND x.checked_at >= GREATEST(
+					COALESCE((SELECT max(t.submitted_at) FROM attempts t
+						WHERE t.assignment_id=x.assignment_id AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0), '-infinity'),
+					COALESCE((SELECT max(d.done_at) FROM assignment_done d
+						WHERE d.assignment_id=x.assignment_id AND NOT EXISTS (SELECT 1 FROM assignment_grades g
+							WHERE g.assignment_id=d.assignment_id AND g.user_id=d.user_id)), '-infinity')))
 		SELECT c.assignment_id, c.n, COALESCE(d.n, 0), COALESCE(r.n, 0), v.mean, COALESCE(w.n, 0), COALESCE(u.n, 0),
-			k.assignment_id IS NOT NULL, COALESCE(gr.n, 0)
+			k.assignment_id IS NOT NULL, COALESCE(gr.n, 0), COALESCE(ug.n, 0)
 		FROM c LEFT JOIN d ON d.assignment_id=c.assignment_id LEFT JOIN r ON r.assignment_id=c.assignment_id
 		LEFT JOIN v ON v.assignment_id=c.assignment_id
 		LEFT JOIN w ON w.assignment_id=c.assignment_id LEFT JOIN u ON u.assignment_id=c.assignment_id
-		LEFT JOIN k ON k.assignment_id=c.assignment_id LEFT JOIN gr ON gr.assignment_id=c.assignment_id`, ids, userID)
+		LEFT JOIN k ON k.assignment_id=c.assignment_id LEFT JOIN gr ON gr.assignment_id=c.assignment_id
+		LEFT JOIN ug ON ug.assignment_id=c.assignment_id`, ids, userID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id string
-		var assigned, ticked, submitted, waiting, ungraded, graded int
+		var assigned, ticked, submitted, waiting, ungraded, graded, toGrade int
 		var mean *float64
 		var checkedOff bool
-		if err := rows.Scan(&id, &assigned, &ticked, &submitted, &mean, &waiting, &ungraded, &checkedOff, &graded); err != nil {
+		if err := rows.Scan(&id, &assigned, &ticked, &submitted, &mean, &waiting, &ungraded, &checkedOff, &graded, &toGrade); err != nil {
 			return err
 		}
-		m := list[at[id]].Manage
+		a := &list[at[id]]
+		m := a.Manage
 		m.Assigned, m.Done, m.ToApprove, m.NotGraded, m.Graded = assigned, ticked+submitted, waiting, ungraded, graded
+		m.ToGrade = toGrade
 		m.ApprovalsCheckedOff = checkedOff
+		m.ToRelease = a.GradesHidden && (a.Kind == "marked" || a.Points != nil) && m.Done > 0 &&
+			waiting == 0 && toGrade == 0 && (a.Closed || m.Done >= assigned)
 		// From the first submission: staff see every member's mark anyway (Epo
 		// 2026-11-13 dropped the five-result minimum here).
 		m.Average = mean
@@ -658,7 +705,8 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 			(SELECT done_at FROM assignment_done d WHERE d.assignment_id=e.assignment_id AND d.user_id=$2),
 			(SELECT x.checked_at FROM assignment_todo_checks x WHERE x.assignment_id=e.assignment_id AND x.user_id=$2 AND NOT x.approvals),
 			(SELECT t.id FROM attempts t WHERE t.assignment_id=e.assignment_id AND t.user_id=$2 AND t.submitted_at IS NULL),
-			(SELECT count(*) FROM attempts t WHERE t.assignment_id=e.assignment_id AND t.user_id=$2 AND t.submitted_at IS NOT NULL),
+			(SELECT count(*) FROM attempts t WHERE t.assignment_id=e.assignment_id AND t.user_id=$2 AND t.submitted_at IS NOT NULL AND t.paper IS NULL),
+			EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=e.assignment_id AND t.user_id=$2 AND t.submitted_at IS NOT NULL AND t.paper IS NOT NULL),
 			l.id, l.correct::float8, l.total::float8, COALESCE(l.waiting_marks, 0)::float8, COALESCE(l.waiting_answers, 0), l.submitted_at,
 			(SELECT g.points::float8 FROM assignment_grades g WHERE g.assignment_id=e.assignment_id AND g.user_id=$2)
 		FROM e
@@ -676,7 +724,7 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 		var mine AssignmentMine
 		var submittedAt *time.Time
 		var grade *float64
-		if err := rows.Scan(&id, &mine.DoneAt, &mine.CheckedAt, &mine.RunningAttemptID, &mine.AttemptsUsed,
+		if err := rows.Scan(&id, &mine.DoneAt, &mine.CheckedAt, &mine.RunningAttemptID, &mine.AttemptsUsed, &mine.PaperHandedIn,
 			&mine.CountedAttemptID, &mine.Correct, &mine.Total, &mine.WaitingMarks, &mine.WaitingAnswers, &submittedAt, &grade); err != nil {
 			return err
 		}
@@ -706,6 +754,9 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 		if a.GradesHidden {
 			mine.Correct, mine.Mark, mine.Total, mine.WaitingMarks, mine.WaitingAnswers = nil, nil, nil, 0, 0
 			mine.LatePenaltyPct = 0
+		} else if mine.WaitingAnswers > 0 {
+			// No mark so far (Epo 2026-11-25): the counts say it is being graded.
+			mine.Correct, mine.Mark, mine.Total = nil, nil, nil
 		}
 		mine.Done = mine.DoneAt != nil
 		mine.CheckedOff = mine.CheckedAt != nil
@@ -729,7 +780,12 @@ func (s *Store) fillAssignmentMine(ctx context.Context, userID string, ids []str
 		return err
 	}
 	for _, id := range handIns {
-		list[at[id]].Mine.HandIn = files[[2]string{id, userID}]
+		mine := list[at[id]].Mine
+		mine.HandIn = files[[2]string{id, userID}]
+		// Feedback given once their grade shows (S1): given and released.
+		if mine.Mark == nil {
+			withoutMarked(mine.HandIn)
+		}
 	}
 	return nil
 }
@@ -785,8 +841,9 @@ func (s *Store) ListAssignments(ctx context.Context, userID, wsID string, now ti
 			AND ($6::text[] IS NULL OR m.topic_id = ANY($6) OR EXISTS (SELECT 1 FROM topics t
 				WHERE t.workspace_id=a.workspace_id AND t.id = ANY($6) AND t.id IN (`+questionTopicIDsSQL+`)))
 			AND ($9 = '' OR a.kind = $9)
+			AND (NOT $10 OR `+pendingSQL+`)
 		ORDER BY `+closed+`, `+order+`, a.posted_at DESC, a.id
-		LIMIT $7 OFFSET $8`, wsID, userID, now, p.Closed, p.Done, topics, p.Limit+1, p.Offset, p.Kind)
+		LIMIT $7 OFFSET $8`, wsID, userID, now, p.Closed || p.Pending, p.Done || p.Pending, topics, p.Limit+1, p.Offset, p.Kind, p.Pending && staff)
 	if err != nil {
 		return out, err
 	}
@@ -808,7 +865,7 @@ func (s *Store) ListAssignments(ctx context.Context, userID, wsID string, now ti
 			read[a.ID] = a
 		}
 		for _, id := range ids {
-			if a, ok := read[id]; ok {
+			if a, ok := read[id]; ok && (!p.Pending || a.Pending()) {
 				out.Items = append(out.Items, a)
 			}
 		}
@@ -868,6 +925,10 @@ func checkAssignmentForm(ctx context.Context, tx pgx.Tx, wsID, actorID string, f
 	}
 	if form.Attempts < 1 || form.Attempts > 10 {
 		return assignmentInput("attempts are 1 to 10")
+	}
+	// An upload is handed in once (Epo 2026-11-25).
+	if form.UploadOnly && form.Attempts != 1 {
+		return assignmentInput("an assignment taking uploads only has one attempt")
 	}
 	if err := checkLatePolicy(form); err != nil {
 		return err
@@ -2055,6 +2116,15 @@ func (s *Store) SetAssignmentDone(ctx context.Context, userID, id string, done b
 				return err
 			}
 		} else if !done {
+			// Work handed in stays handed in after uploads are turned off.
+			var files bool
+			if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM files WHERE hand_in_assignment_id=$1 AND user_id=$2)`,
+				id, userID).Scan(&files); err != nil {
+				return err
+			}
+			if files {
+				return ErrHandInFinal
+			}
 			_, err = tx.Exec(ctx, `DELETE FROM assignment_done WHERE assignment_id=$1 AND user_id=$2`, id, userID)
 			return err
 		}
@@ -2070,8 +2140,11 @@ func (s *Store) SetAssignmentDone(ctx context.Context, userID, id string, done b
 // what they saved, with the server's clock; submitted, its graded copy. A
 // member's own results lose the keys when the owner turned Show answers off.
 type AssignmentAttempt struct {
-	ID            string     `json:"id"`
-	AssignmentID  string     `json:"assignmentId"`
+	ID           string `json:"id"`
+	AssignmentID string `json:"assignmentId"`
+	// WorkspaceID: the attempt's page stands outside its workspace
+	// (/attempts/{id}, Epo 2026-11-25) and still saves within it.
+	WorkspaceID   string     `json:"workspaceId"`
 	UserID        string     `json:"userId"`
 	UserName      string     `json:"userName"`
 	UserAvatarURL string     `json:"userAvatarUrl,omitempty"`
@@ -2100,8 +2173,9 @@ type AssignmentAttempt struct {
 	WaitingAnswers int     `json:"waitingAnswers"`
 	// ShowAnswers: this view carries the keys.
 	ShowAnswers bool `json:"showAnswers"`
-	// GradesHidden: the grades wait for release, so the view holds the answers
-	// given and the questions without marks, comments or keys.
+	// GradesHidden: the grades wait for release, or (to a member) an answer
+	// still waits for the AI or staff (Epo 2026-11-25), so the view holds the
+	// answers given and the questions without marks, comments or keys.
 	GradesHidden bool `json:"gradesHidden"`
 	// DrawingImages: Done sends a drawing's marking image, which manual grading
 	// never reads, so the browser makes none then (Q693).
@@ -2131,12 +2205,28 @@ type PaperFile struct {
 	SizeBytes int64  `json:"sizeBytes"`
 	// Status is its ingest's: marking waits for it to settle.
 	Status string `json:"status"`
+	// Revision names its bytes for its marks (PDFAnnotationList.SourceIdentity).
+	Revision int64 `json:"revision"`
+	// Marked: staff marked it (pdf_annotations), Feedback given on it (Epo
+	// 2026-11-25, S1). Its member reads it only once they see the grade.
+	Marked bool `json:"marked"`
+}
+
+// paperFileMarkedSQL is whether staff marked the file f.
+const paperFileMarkedSQL = `EXISTS (SELECT 1 FROM pdf_annotations p WHERE p.file_id=f.id)`
+
+// withoutMarked hides that staff marked a member's files until they see the
+// grade, as the marks themselves are (submissionMarkAccess).
+func withoutMarked(files []PaperFile) {
+	for i := range files {
+		files[i].Marked = false
+	}
 }
 
 // paperFiles are an attempt's paper files in order.
 func paperFiles(ctx context.Context, q rowsQueryer, attemptID string) ([]PaperFile, error) {
-	rows, err := q.Query(ctx, `SELECT id, name, kind, size_bytes, status FROM files
-		WHERE attempt_id=$1 ORDER BY submission_position, id`, attemptID)
+	rows, err := q.Query(ctx, `SELECT f.id, f.name, f.kind, f.size_bytes, f.status, f.revision, `+paperFileMarkedSQL+` FROM files f
+		WHERE f.attempt_id=$1 ORDER BY f.submission_position, f.id`, attemptID)
 	if err != nil {
 		return nil, err
 	}
@@ -2144,7 +2234,7 @@ func paperFiles(ctx context.Context, q rowsQueryer, attemptID string) ([]PaperFi
 	out := []PaperFile{}
 	for rows.Next() {
 		var f PaperFile
-		if err := rows.Scan(&f.ID, &f.Name, &f.Kind, &f.SizeBytes, &f.Status); err != nil {
+		if err := rows.Scan(&f.ID, &f.Name, &f.Kind, &f.SizeBytes, &f.Status, &f.Revision, &f.Marked); err != nil {
 			return nil, err
 		}
 		out = append(out, f)
@@ -2210,9 +2300,8 @@ func (r attemptRow) timedOut(now time.Time) bool {
 
 // StartAssignment starts the member's attempt, or returns the one running. A
 // time limit starts the clock here, on the server. upload starts one answered
-// on paper (Upload file in Before you start): the assignment must allow it,
-// and the member's storage must not be full (S6), since the paper's files then
-// save past the limit.
+// on paper (Upload file in Before you start), which the assignment must allow;
+// storage never refuses it, as submissions are charged to no one.
 func (s *Store) StartAssignment(ctx context.Context, userID, id string, upload bool, now time.Time) (AssignmentAttempt, error) {
 	var attemptID, handedIn string
 	var view AssignmentAttempt
@@ -2281,24 +2370,31 @@ func (s *Store) StartAssignment(ctx context.Context, userID, id string, upload b
 		if assignmentClosedAt(noLate, due, closedAt, now) != nil {
 			return ErrAssignmentClosed
 		}
-		var used int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM attempts WHERE assignment_id=$1 AND user_id=$2 AND submitted_at IS NOT NULL`, id, userID).Scan(&used); err != nil {
-			return err
-		}
-		if used >= allowed {
-			return ErrAssignmentNoAttempts
-		}
 		var paper *string
 		if uploadOnly && !upload {
 			return assignmentInput("this assignment takes uploads only")
 		}
+		if upload && !allowUploads {
+			return assignmentInput("this assignment takes answers in the app only")
+		}
+		// The first start picks the way for good (Epo 2026-11-25): attempts are
+		// for answers in the app, and a paper is handed in once whatever they
+		// say, charged to no one, so a full account still hands one in.
+		var online int
+		var papers bool
+		if err := tx.QueryRow(ctx, `SELECT count(*) FILTER (WHERE paper IS NULL), COALESCE(bool_or(paper IS NOT NULL), false)
+				FROM attempts WHERE assignment_id=$1 AND user_id=$2 AND submitted_at IS NOT NULL`, id, userID).Scan(&online, &papers); err != nil {
+			return err
+		}
+		switch {
+		case papers:
+			return ErrPaperHandedIn
+		case upload && online > 0:
+			return ErrAnsweredOnline
+		case !upload && online >= allowed:
+			return ErrAssignmentNoAttempts
+		}
 		if upload {
-			if !allowUploads {
-				return assignmentInput("this assignment takes answers in the app only")
-			}
-			if err := s.storageFullErr(ctx, tx, userID); err != nil {
-				return err
-			}
 			paper = new(string)
 			*paper = PaperUpload
 		}
@@ -2765,7 +2861,7 @@ func (s *Store) finishAttemptIfRunning(ctx context.Context, attemptID string, no
 // attemptView renders an attempt for its caller.
 func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now time.Time) (AssignmentAttempt, error) {
 	v := AssignmentAttempt{
-		ID: r.id, AssignmentID: r.assignmentID, UserID: r.userID, StartedAt: r.startedAt, DeadlineAt: r.deadline, Now: now,
+		ID: r.id, AssignmentID: r.assignmentID, WorkspaceID: r.wsID, UserID: r.userID, StartedAt: r.startedAt, DeadlineAt: r.deadline, Now: now,
 		ClosesAt:    noLateDue(r.noLate, r.dueAt),
 		SubmittedAt: r.submitted, AutoSubmitted: r.auto, Correct: r.correct, Total: r.total,
 		WaitingMarks: r.waitingMarks, WaitingAnswers: r.waitingAnswers,
@@ -2824,7 +2920,13 @@ func (s *Store) attemptView(ctx context.Context, r attemptRow, staff bool, now t
 	if err != nil {
 		return v, err
 	}
-	if !staff && gradesHidden(r.showGrades, r.gradesReleased) {
+	// Staff's marks in its files show with the grade (S1).
+	if !staff && (gradesHidden(r.showGrades, r.gradesReleased) || r.waitingAnswers > 0) {
+		withoutMarked(v.PaperFiles)
+	}
+	// A member sees no mark so far (Epo 2026-11-25): while any answer waits
+	// for the AI or staff the attempt reads as if unreleased.
+	if !staff && (gradesHidden(r.showGrades, r.gradesReleased) || r.waitingAnswers > 0) {
 		v.GradesHidden = true
 		v.Correct, v.Mark, v.Total, v.WaitingMarks, v.WaitingAnswers, v.LatePenaltyPct = 0, 0, 0, 0, 0, 0
 		v.Questions = questions.LearnerViewsSeeded(graded, r.id)
@@ -3044,23 +3146,40 @@ func (s *Store) MarkAssignmentAnswer(ctx context.Context, actorID, attemptID str
 }
 
 // storeQuestionMarksTx stores a question's changed marks: the attempt's totals,
-// its answer log and, once nothing waits, its reviews. A regraded question
-// (`regraded`, the mark it had) whose new mark is decided and differs rings
-// the member where they see grades (Epo 2026-11-23); that notification is
-// returned for the caller to send.
+// its answer log and, once nothing waits, its reviews. Where the member sees
+// grades it rings them (Epo 2026-11-25): a regraded question (`regraded`, the
+// mark it had) whose new mark is decided and differs (Epo 2026-11-23), the
+// attempt's last waiting mark decided (its grade is ready), or a decided mark
+// changed by hand once nothing waits. That notification is returned for the
+// caller to send.
 func (s *Store) storeQuestionMarksTx(ctx context.Context, tx pgx.Tx, r attemptRow, graded []map[string]any, question map[string]any, given map[string]any, changed map[string]bool, waited bool, now time.Time) (*Notification, error) {
-	var note *Notification
-	if before, regraded := question["regraded"].(float64); regraded && !questionWaiting(question) {
+	shown := !gradesHidden(r.showGrades, r.gradesReleased)
+	code := ""
+	before, regraded := question["regraded"].(float64)
+	correct, total, waitingMarks, waitingAnswers := attemptTotals(graded)
+	if regraded && !questionWaiting(question) {
 		delete(question, "regraded")
-		if awarded, _ := questionMarks(question); awarded != before && !gradesHidden(r.showGrades, r.gradesReleased) {
-			n, err := s.markChangedNotificationTx(ctx, tx, r, now)
-			if err != nil {
-				return nil, err
-			}
-			note = &n
+		if awarded, _ := questionMarks(question); awarded != before && waitingAnswers == 0 {
+			code = "mark_changed"
 		}
 	}
-	correct, total, waitingMarks, waitingAnswers := attemptTotals(graded)
+	// This question the last to wait: callers marking several questions share
+	// one read row, so its count would be stale.
+	if !regraded && waitingAnswers == 0 {
+		if waited {
+			code = "grade_ready"
+		} else if len(changed) > 0 {
+			code = "mark_changed"
+		}
+	}
+	var note *Notification
+	if code != "" && shown {
+		n, err := s.attemptNotificationTx(ctx, tx, r, code, now)
+		if err != nil {
+			return nil, err
+		}
+		note = &n
+	}
 	pct := 0
 	if total > 0 {
 		pct = int(correct / total * 100)
@@ -3090,20 +3209,20 @@ func (s *Store) storeQuestionMarksTx(ctx context.Context, tx pgx.Tx, r attemptRo
 	return note, s.rateAttemptTx(ctx, tx, r.userID, r.sourceID, []map[string]any{question}, given, now)
 }
 
-// markChangedNotificationTx tells the member a regraded mark of theirs changed,
-// linking to the assignment as a release does.
-func (s *Store) markChangedNotificationTx(ctx context.Context, tx pgx.Tx, r attemptRow, now time.Time) (Notification, error) {
+// attemptNotificationTx tells the member about their attempt's marks (code
+// grade_ready or mark_changed), linking to the attempt's own page.
+func (s *Store) attemptNotificationTx(ctx context.Context, tx pgx.Tx, r attemptRow, code string, now time.Time) (Notification, error) {
 	var title string
 	if err := tx.QueryRow(ctx, `SELECT title FROM assignments WHERE id=$1`, r.assignmentID).Scan(&title); err != nil {
 		return Notification{}, err
 	}
-	data, err := json.Marshal(map[string]string{"code": "mark_changed", "assignmentId": r.assignmentID, "title": title})
+	data, err := json.Marshal(map[string]string{"code": code, "assignmentId": r.assignmentID, "title": title})
 	if err != nil {
 		return Notification{}, err
 	}
 	return CreateNotificationTx(ctx, tx, NotificationParams{
 		UserID: r.userID, Kind: NotifSystem, Data: data, WorkspaceID: r.wsID, At: now,
-		Href: "/workspaces/" + r.wsID + "/assignments?assignment=" + r.assignmentID,
+		Href: "/attempts/" + r.id,
 	})
 }
 
@@ -3836,39 +3955,4 @@ func (s *Store) releaseAssignment(ctx context.Context, id string, now time.Time)
 		}
 		return nil
 	})
-}
-
-/* ---------------------------------------------------------- sharing notice */
-
-// SharingNotice is what a class's viewer member is yet to be told (board V1).
-type SharingNotice struct {
-	Due bool `json:"due"`
-	// Owner is who they share with (Epo 2026-11-04), read only while it is due.
-	Owner *MaterialAuthor `json:"owner,omitempty"`
-}
-
-// SharingNoticeFor reads the notice a member is due; anyone else is due nothing.
-func (s *Store) SharingNoticeFor(ctx context.Context, userID, wsID string) (SharingNotice, error) {
-	var owner MaterialAuthor
-	err := s.pool.QueryRow(ctx, `SELECT COALESCE(NULLIF(owner.name,''), owner.id),
-			COALESCE('/icons/' || NULLIF(owner.avatar_icon_id,'') || '.svg', owner.avatar_url, '')
-		FROM workspace_members wm
-		JOIN workspaces w ON w.id=wm.workspace_id AND w.kind='class'
-		JOIN users owner ON owner.id=w.user_id
-		WHERE wm.workspace_id=$1 AND wm.user_id=$2 AND wm.role='viewer' AND wm.sharing_notice_seen_at IS NULL`, wsID, userID).
-		Scan(&owner.Name, &owner.AvatarURL)
-	if isNoRows(err) {
-		return SharingNotice{}, nil
-	}
-	if err != nil {
-		return SharingNotice{}, err
-	}
-	return SharingNotice{Due: true, Owner: &owner}, nil
-}
-
-// MarkSharingNoticeSeen records that the member was told, so it never shows twice.
-func (s *Store) MarkSharingNoticeSeen(ctx context.Context, userID, wsID string, now time.Time) error {
-	_, err := s.pool.Exec(ctx, `UPDATE workspace_members SET sharing_notice_seen_at=$3
-		WHERE workspace_id=$1 AND user_id=$2 AND sharing_notice_seen_at IS NULL`, wsID, userID, now)
-	return err
 }

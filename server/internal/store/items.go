@@ -8,7 +8,8 @@ import (
 )
 
 // The Files page's one list (Epo 2026-11-09): to the user a file is any of
-// them, so uploaded files, handed-in submissions, blocks (notes, quizzes,
+// them, so uploaded files, hand-in files left unhanded at the close (handed-in
+// work is on its assignment's page, Epo 2026-11-25), blocks (notes, quizzes,
 // flashcard sets) and embedded images and audio (an item bank question's too,
 // Epo 2026-11-14) page, sort and filter together. A narrow UNION ALL picks the page by a shared sort key; each row
 // is then read whole by its own listing (by IDs), as Recent reads its opens.
@@ -77,6 +78,45 @@ var itemLocations = map[string]string{
 	"standalone": `u.workspace_id IS NULL`,
 }
 
+// ListFilter is the Files page's Kind, Location and Workspace filters for its
+// Trash and Canvas tabs; empty slices mean no filter.
+type ListFilter struct {
+	Kinds        []string
+	WorkspaceIDs []string
+	// Locations holds "workspace" and "standalone".
+	Locations []string
+}
+
+// where appends f's arguments to args and returns its " AND ..." clause over
+// the kind and workspace id columns given (a standalone row's id is NULL).
+// kind is "" where the list has no kinds.
+func (f ListFilter) where(args *[]any, kind, workspaceID string) (string, error) {
+	clause := ""
+	if len(f.Kinds) > 0 && kind != "" {
+		*args = append(*args, f.Kinds)
+		clause += fmt.Sprintf(` AND %s = ANY($%d::text[])`, kind, len(*args))
+	}
+	if len(f.WorkspaceIDs) > 0 {
+		*args = append(*args, f.WorkspaceIDs)
+		clause += fmt.Sprintf(` AND %s = ANY($%d::text[])`, workspaceID, len(*args))
+	}
+	if len(f.Locations) > 0 {
+		preds := make([]string, 0, len(f.Locations))
+		for _, location := range f.Locations {
+			switch location {
+			case "workspace":
+				preds = append(preds, workspaceID+` IS NOT NULL`)
+			case "standalone":
+				preds = append(preds, workspaceID+` IS NULL`)
+			default:
+				return "", fmt.Errorf("unknown list location %q", location)
+			}
+		}
+		clause += ` AND (` + strings.Join(preds, " OR ") + `)`
+	}
+	return clause, nil
+}
+
 // itemUnionSQL is the four tables as one, for the caller $1. All files reads
 // the caller's own rows and its workspaces' others' rows as separate branches,
 // each on its own index (TestItemsCost, 2026-11-09).
@@ -110,11 +150,9 @@ func itemUnionSQL(all bool) string {
 	return files + `
 	UNION ALL
 	SELECT 'submission', f.id, 'submission:' || f.id, f.added_at, lower(f.name),
-			f.size_bytes, f.kind::text, lower(COALESCE(t.workspace_name, w.name, '')),
-			NULLIF(COALESCE(t.workspace_id, h.workspace_id, ''), '')
-		FROM files f LEFT JOIN attempts t ON t.id = f.attempt_id
-			LEFT JOIN assignments h ON h.id = f.hand_in_assignment_id LEFT JOIN workspaces w ON w.id = h.workspace_id
-		WHERE f.user_id=$1 AND f.submission_position IS NOT NULL AND ` + submittedDeletableSQL + `
+			f.size_bytes, f.kind::text, lower(w.name), h.workspace_id
+		FROM files f JOIN assignments h ON h.id = f.hand_in_assignment_id JOIN workspaces w ON w.id = h.workspace_id
+		WHERE f.user_id=$1 AND ` + leftHandInSQL + `
 	UNION ALL
 	` + materials + `
 	UNION ALL

@@ -226,8 +226,10 @@ function DialogTitle({
           // less the card's own 22px padding.
           'sm:group-has-[>[data-slot=dialog-close]]/dialog:pr-11.5',
           className,
-          // At most two lines, so a long title never squeezes the action.
-          'max-sm:line-clamp-2 max-sm:min-w-0 max-sm:flex-1 max-sm:py-2 max-sm:text-lg max-sm:leading-tight',
+          // At most two lines, so a long title never squeezes the action. Its
+          // spacing is margin, never padding (a caller's pb-2 included): the
+          // clamp clips at the padding box, so padding showed a third line.
+          'max-sm:my-2 max-sm:line-clamp-2 max-sm:min-w-0 max-sm:flex-1 max-sm:py-0 max-sm:text-lg max-sm:leading-tight',
           status && 'max-sm:flex-initial'
         )}
         data-slot="dialog-title"

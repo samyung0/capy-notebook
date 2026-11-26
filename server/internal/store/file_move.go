@@ -148,8 +148,9 @@ func (s *Store) MoveFiles(ctx context.Context, actorID string, fileIDs []string,
 // readMovingFilesTx reads the untrashed files of ids (sorted), with lock
 // FOR UPDATE; any id missing or trashed is not found.
 func readMovingFilesTx(ctx context.Context, tx pgx.Tx, ids []string, lock bool) ([]movingFile, error) {
+	// A submission never moves into a workspace (Epo 2026-11-25).
 	query := `SELECT id, COALESCE(workspace_id, ''), user_id FROM files
-		WHERE id = ANY($1) AND trashed_at IS NULL ORDER BY id`
+		WHERE id = ANY($1) AND trashed_at IS NULL AND submission_position IS NULL ORDER BY id`
 	if lock {
 		query += ` FOR UPDATE`
 	}

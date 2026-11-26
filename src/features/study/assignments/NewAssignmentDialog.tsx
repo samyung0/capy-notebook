@@ -6,7 +6,7 @@ import {
   useUpdateAssignment,
   useWorkspaceMembers,
 } from '@/api/hooks';
-import type { Assignment, AssignmentFormReq } from '@/api/types';
+import type { Assignment } from '@/api/types';
 import { Accordion } from '@/components/ui/Accordion';
 import { Button } from '@/components/ui/Button';
 import {
@@ -26,7 +26,9 @@ import { materialIconName } from '@/lib/fileIcons';
 import { questionsLabel } from '../practice/practiceText';
 import {
   AnswersSelect,
+  type AssignmentFormValues,
   AssignToField,
+  AttemptsNote,
   AttemptsSelect,
   assignmentBody,
   assignmentDefaults,
@@ -129,7 +131,7 @@ export function useAssignmentForm({
     setError,
     setValue,
     watch,
-  } = useForm<AssignmentFormReq>({
+  } = useForm<AssignmentFormValues>({
     defaultValues: assignmentDefaults(
       existing,
       existing
@@ -148,7 +150,7 @@ export function useAssignmentForm({
   const [source, setSource] = useState<GradedSource>();
   const file = !!source?.file;
   const quizId = source?.quizId;
-  const beforeFile = useRef<Partial<AssignmentFormReq>>({});
+  const beforeFile = useRef<Partial<AssignmentFormValues>>({});
   // Draft only before a pick whose questions are read first held it on.
   const beforeDraft = useRef(false);
   const prefilled = useRef('');
@@ -156,13 +158,12 @@ export function useAssignmentForm({
   const kind = watch('kind');
   const dueAt = watch('dueAt');
   const noLate = watch('noLate');
-  const attempts = watch('attempts');
   const draft = watch('draft');
   // An Assignment taking uploads may be graded on points (Epo 2026-11-14;
   // only with uploads, 2026-11-21: with nothing handed in there is nothing to
   // grade), which brings Show grades and the late penalty.
   const takesPoints = kind === 'unmarked' && watch('allowUploads');
-  const gradedAssignment = takesPoints && watch('points') !== undefined;
+  const gradedAssignment = takesPoints && watch('graded');
   const [advancedOpen, setAdvancedOpen] = useState(
     () =>
       advancedStartsOpen(existing) ||
@@ -190,14 +191,15 @@ export function useAssignmentForm({
     }
     if (!!next.file !== file) {
       if (next.file) {
-        const { allowUploads, marking, uploadOnly } = getValues();
-        beforeFile.current = { allowUploads, marking, uploadOnly };
+        const { allowUploads, attempts, marking, uploadOnly } = getValues();
+        beforeFile.current = { allowUploads, attempts, marking, uploadOnly };
         setValue('marking', 'manual');
         setValue('allowUploads', true);
         setValue('uploadOnly', true);
+        setValue('attempts', 1);
       } else {
         for (const [key, value] of Object.entries(beforeFile.current))
-          setValue(key as keyof AssignmentFormReq, value);
+          setValue(key as keyof AssignmentFormValues, value);
         setValue('totalMarks', undefined);
       }
     }
@@ -348,7 +350,7 @@ export function useAssignmentForm({
         )}
       </div>
       {/* C2 (Epo 2026-11-08): Files below Due and Assign to, then the switch:
-          members hand in files with Hand in, graded out of the Points under
+          members submit files with Submit, graded out of the Points under
           it, as a graded quiz's sit with its Submission (Epo 2026-11-21). */}
       {kind === 'unmarked' && (
         <>
@@ -370,7 +372,15 @@ export function useAssignmentForm({
             label={m.assignment_switch_uploads()}
             name="allowUploads"
           />
+          {/* Graded, then its Points (Epo 2026-11-25). */}
           {takesPoints && (
+            <SwitchRow
+              control={control}
+              label={m.assignment_switch_graded()}
+              name="graded"
+            />
+          )}
+          {gradedAssignment && (
             <div className="grid gap-4 sm:grid-cols-2">
               <PointsField
                 control={control}
@@ -426,11 +436,7 @@ export function useAssignmentForm({
                   <InputTitle>{m.assignment_field_attempts()}</InputTitle>
                   <AttemptsSelect control={control} layout="row" />
                 </div>
-                {attempts > 1 && (
-                  <span className="t-meta text-fg-muted">
-                    {m.assignment_highest_counts()}
-                  </span>
-                )}
+                <AttemptsNote control={control} />
               </div>
               <div className="flex min-h-8 items-center justify-between gap-4">
                 <InputTitle>{m.assignment_field_grades()}</InputTitle>

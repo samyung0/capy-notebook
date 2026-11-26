@@ -127,13 +127,13 @@ const ITEMS: Item[] = [
   {
     submission: {
       assignmentId: 'as_1',
-      attemptId: 'at_1',
       bytes: 4096,
       createdAt: at,
       id: 'f_2',
       kind: 'pdf',
       name: 'My answers.pdf',
       quizName: 'Past paper',
+      workspaceId: 'ws_1',
       workspaceName: 'Biology',
     },
     type: 'submission',

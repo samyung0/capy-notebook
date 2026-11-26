@@ -4,11 +4,13 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { MaterialAuthor } from './materialAuthor.ts';
+import type { PDFAnnotation } from './pDFAnnotation.ts';
 
-export interface SharingNotice {
+export interface PDFAnnotationList {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  due: boolean;
-  owner?: MaterialAuthor;
+  marks: PDFAnnotation[];
+  readOnly: boolean;
+  shared: boolean;
+  sourceIdentity: string;
 }

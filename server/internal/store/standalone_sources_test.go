@@ -279,11 +279,10 @@ func TestStandalonePDFAnnotationsAreItsOwners(t *testing.T) {
 	owner := newBlobTestUser(t, s, "u_loose_pdf_owner")
 	other := newBlobTestUser(t, s, "u_loose_pdf_other")
 	file := standaloneSourceFile(t, s, owner, "lesson.pdf", "pdf")
-	body := PDFAnnotationBody{SourceIdentity: "revision:1", Page: 1, Kind: "highlight", Rects: []PDFRect{{X: 10, Y: 20, Width: 100, Height: 30}}, Color: "#ffcc00"}
-	if _, err := s.SavePDFAnnotation(ctx, owner, file.ID, "", body); err != nil {
+	if err := saveMarks(ctx, s, owner, file.ID, testMark("highlight")); err != nil {
 		t.Fatalf("owner's mark = %v", err)
 	}
-	if _, err := s.SavePDFAnnotation(ctx, other, file.ID, "", body); !errors.Is(err, ErrNotFound) {
+	if err := saveMarks(ctx, s, other, file.ID, testMark("highlight")); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("other user's mark = %v, want not found", err)
 	}
 }

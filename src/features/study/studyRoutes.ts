@@ -202,6 +202,14 @@ export const assignmentsLink = (
   to: '/workspaces/$workspaceId/assignments' as const,
 });
 
+/** A member's own try at an assignment, taken and read on a page of its own
+ * outside the workspace (Epo 2026-11-25): it loads the attempt alone, not the
+ * workspace's lists. Staff read a member's in the workspace (`attempt`). */
+export const attemptLink = (attemptId: string) => ({
+  params: { attemptId },
+  to: '/attempts/$attemptId' as const,
+});
+
 export const membersLink = (workspaceId: string) => ({
   params: { workspaceId },
   to: '/workspaces/$workspaceId/members' as const,

@@ -33,13 +33,41 @@ vi.mock('@tanstack/react-query', async (load) => ({
   useQueryClient: () => ({ invalidateQueries: invalidate }),
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: toast }));
-// No portals: the confirm dialog renders in place.
-const pass = ({ children }: { children?: ReactNode }) => children;
+// No portals: the confirm dialog renders in place, its confirm a plain button.
 vi.mock('@/components/ui/Dialog', () => ({
-  Dialog: pass,
-  DialogContent: pass,
-  DialogFooter: pass,
-  DialogTitle: pass,
+  ConfirmDialog: ({
+    body,
+    children,
+    confirmLabel,
+    disabled,
+    isSubmitting,
+    onConfirm,
+    open,
+    title,
+  }: {
+    body: string;
+    children?: ReactNode;
+    confirmLabel: string;
+    disabled?: boolean;
+    isSubmitting?: boolean;
+    onConfirm: () => void;
+    open: boolean;
+    title: string;
+  }) =>
+    open && (
+      <div role="dialog">
+        <p>{title}</p>
+        <p>{body}</p>
+        {children}
+        <button
+          disabled={disabled || isSubmitting}
+          onClick={onConfirm}
+          type="button"
+        >
+          {confirmLabel}
+        </button>
+      </div>
+    ),
 }));
 // Your paper's uploads, as the page holds them (finding 6).
 const uploads = vi.hoisted(() => ({ uploading: [] as string[] }));

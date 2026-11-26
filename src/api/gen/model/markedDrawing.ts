@@ -6,8 +6,6 @@
  */
 
 export interface MarkedDrawing {
-  /** An assignment's answer; otherwise practice */
-  assignment: boolean;
   attemptId: string;
   bytes: number;
   createdAt: string;

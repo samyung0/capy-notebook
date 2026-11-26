@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"strconv"
 	"time"
 
@@ -18,18 +19,23 @@ import (
 // SetAssignmentGrade sets a member's grade on a graded Assignment, or clears it
 // (nil). Only its class's staff change it, as quiz marks: from 0 to its points
 // with at most one decimal place, for someone it went to, open or closed alike.
-func (s *Store) SetAssignmentGrade(ctx context.Context, actorID, id, memberID string, points *float64, now time.Time) error {
+// Where the member sees grades, a first grade or a changed one rings them (Epo
+// 2026-11-25); that notification is returned for the caller to send.
+func (s *Store) SetAssignmentGrade(ctx context.Context, actorID, id, memberID string, points *float64, now time.Time) (*Notification, error) {
 	wsID, err := assignmentWorkspace(ctx, s.pool, id)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	return s.inTx(ctx, func(tx pgx.Tx) error {
+	var note *Notification
+	err = s.inTx(ctx, func(tx pgx.Tx) error {
 		if err := s.lockAssignmentStaffTx(ctx, tx, wsID, actorID); err != nil {
 			return err
 		}
 		var outOf *int
 		var draft bool
-		if err := tx.QueryRow(ctx, `SELECT points, draft FROM assignments WHERE id=$1 FOR SHARE`, id).Scan(&outOf, &draft); err != nil {
+		var title, shown string
+		var released *time.Time
+		if err := tx.QueryRow(ctx, `SELECT points, draft, title, grades_shown, grades_released_at FROM assignments WHERE id=$1 FOR SHARE`, id).Scan(&outOf, &draft, &title, &shown, &released); err != nil {
 			if isNoRows(err) {
 				return ErrNotFound
 			}
@@ -52,12 +58,38 @@ func (s *Store) SetAssignmentGrade(ctx context.Context, actorID, id, memberID st
 		if !validMark(*points, float64(*outOf)) {
 			return assignmentInput("a grade is 0 to " + strconv.Itoa(*outOf) + " with at most one decimal place")
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO assignment_grades (assignment_id, user_id, points, graded_by, graded_at)
+		var before *float64
+		if err := tx.QueryRow(ctx, `SELECT points::float8 FROM assignment_grades WHERE assignment_id=$1 AND user_id=$2`, id, memberID).Scan(&before); err != nil && !isNoRows(err) {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `INSERT INTO assignment_grades (assignment_id, user_id, points, graded_by, graded_at)
 			VALUES ($1,$2,$3,$4,$5)
 			ON CONFLICT (assignment_id, user_id) DO UPDATE SET points=EXCLUDED.points, graded_by=EXCLUDED.graded_by, graded_at=EXCLUDED.graded_at`,
-			id, memberID, *points, actorID, now)
-		return err
+			id, memberID, *points, actorID, now); err != nil {
+			return err
+		}
+		code := "grade_ready"
+		if before != nil {
+			code = "mark_changed"
+		}
+		if gradesHidden(shown, released) || (before != nil && *before == *points) {
+			return nil
+		}
+		data, err := json.Marshal(map[string]string{"code": code, "assignmentId": id, "title": title})
+		if err != nil {
+			return err
+		}
+		n, err := CreateNotificationTx(ctx, tx, NotificationParams{
+			UserID: memberID, Kind: NotifSystem, Data: data, WorkspaceID: wsID, At: now,
+			Href: "/workspaces/" + wsID + "/assignments?assignment=" + id,
+		})
+		if err != nil {
+			return err
+		}
+		note = &n
+		return nil
 	})
+	return note, err
 }
 
 // assignmentGrades reads an assignment's grades as given, by member.

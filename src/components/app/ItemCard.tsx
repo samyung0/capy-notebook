@@ -11,7 +11,6 @@ import { CardActions } from '@/components/ui/CardActions';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
-import type { MenuProps } from '@/components/ui/Menu';
 import type { PickContext } from '@/features/files/useFileSelection';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -36,11 +35,6 @@ import { WorkspaceCell } from './WorkspaceCell';
  * selects, and while anything is selected a tap adds or removes. A context,
  * so a pick re-renders only the overlays, not every card. */
 export const ItemPick = createContext<PickContext | null>(null);
-
-/** A grid card's menu is a ⋮, as on the workspace cards; a list row's a ⋯. */
-export function itemMenuIcon(view: ListView): MenuProps['triggerIcon'] {
-  return view === 'grid' ? 'moreVertical' : 'moreHorizontal';
-}
 
 const LONG_PRESS_MS = 450;
 const PRESS_SLOP_PX = 10;
@@ -161,8 +155,9 @@ export function ItemCard({
   workspaceLost?: boolean;
   /** Question or card count, file size. */
   details?: string;
-  /** Updated, added or expiry line: the grid card's bottom line. */
-  meta: string;
+  /** Updated, added or expiry line: the grid card's bottom line; a node
+   * where it is no date (a submitted file's Feedback given). */
+  meta: ReactNode;
   /** Grid view only. */
   thumbnail?: Thumbnail;
   /** Grid view only: the dashboard's cards, with a shorter thumbnail. */
@@ -191,11 +186,23 @@ export function ItemCard({
   );
   // A pickable item opens from its overlay, so its title is no link.
   const titleLink = pickable ? undefined : link;
+  const titleOpen = pickable ? undefined : onOpen;
   if (view === 'list') {
+    // A dot between the phone line's parts; desktop columns need none.
+    const dot = (
+      <span aria-hidden className="md:hidden">
+        ·
+      </span>
+    );
+    // From md the header's five columns; below it two lines, as To do's phone
+    // rows (Epo 2026-11-26): the title, then workspace · details · time, the
+    // time left out of a row too narrow for it, and the ⋮ beside both. The
+    // phone groups are `md:contents`, so the desktop grid keeps the cells.
     return (
       <div
         className={cn(
-          'relative flex flex-col gap-1 border-divider border-b py-3 text-sm hover:bg-surface-hover-bg md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3',
+          '@container/row relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 border-divider border-b py-2.5 text-sm hover:bg-surface-hover-bg md:gap-3 md:py-2',
+          ITEM_LIST_COLUMNS,
           selected &&
             'bg-tint-accent-1/60 frosted:bg-solid-accent-1/25 frosted:hover:bg-solid-accent-1/25 hover:bg-tint-accent-1/60'
         )}
@@ -203,26 +210,36 @@ export function ItemCard({
         data-item-workspace={workspaceLabel || undefined}
       >
         {overlay}
-        <div className="flex min-w-0 items-center gap-3.5">
-          <FileIcon className="size-4 -translate-y-px" name={icon} />
-          <Title
-            className="truncate focus-visible:after:ring-inset"
-            link={titleLink}
-          >
-            {title}
-          </Title>
+        <div className="flex min-w-0 flex-col gap-1 md:contents">
+          <div className="flex min-w-0 items-center gap-3.5">
+            <FileIcon className="size-4 -translate-y-px" name={icon} />
+            <Title
+              className="truncate focus-visible:after:ring-inset"
+              link={titleLink}
+              onOpen={titleOpen}
+            >
+              {title}
+            </Title>
+          </div>
+          <div className="max-md:t-meta flex min-w-0 items-center gap-1.5 whitespace-nowrap max-md:pl-7.5 max-md:text-fg-muted md:contents">
+            <div className="min-w-0 max-md:empty:hidden">
+              {workspaceLabel && (
+                <WorkspaceCell
+                  className="max-md:gap-1.5 max-md:[&>img]:size-4 max-md:[&>span]:line-clamp-1"
+                  iconId={workspaceIconId}
+                  lost={workspaceLost}
+                  name={workspaceLabel}
+                />
+              )}
+            </div>
+            {workspaceLabel && details && dot}
+            <p className="shrink-0">{details}</p>
+            <div className="contents max-md:@max-[340px]/row:hidden">
+              {(workspaceLabel || details) && meta && dot}
+              <p className="shrink-0">{meta}</p>
+            </div>
+          </div>
         </div>
-        <div className="min-w-0">
-          {workspaceLabel && (
-            <WorkspaceCell
-              iconId={workspaceIconId}
-              lost={workspaceLost}
-              name={workspaceLabel}
-            />
-          )}
-        </div>
-        <p>{details}</p>
-        <p>{meta}</p>
         <div className="relative z-10 -my-2 flex justify-self-end">
           {actions}
         </div>
@@ -263,6 +280,7 @@ export function ItemCard({
         <Title
           className="line-clamp-2 min-w-0 flex-1 break-words font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-button sm:line-clamp-none sm:truncate"
           link={titleLink}
+          onOpen={titleOpen}
         >
           {title}
         </Title>
@@ -309,30 +327,47 @@ export function ItemCard({
   );
 }
 
-/** The link stretches over the whole card through its ::after. */
+// Above the thumbnail (positioned, later in the card), under the ⋯.
+const STRETCHED =
+  'after:absolute after:inset-0 after:z-1 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action';
+
+/** The link, or `onOpen`'s button (a file opened in place), stretches over
+ * the whole card through its ::after. */
 function Title({
   link,
+  onOpen,
   className,
   children,
 }: {
   link?: LinkProps;
+  onOpen?: () => void;
   className: string;
   children: string;
 }) {
-  if (!link) return <p className={className}>{children}</p>;
-  return (
-    <Link
-      {...link}
-      className={cn(
-        className,
-        // Above the thumbnail (positioned, later in the card), under the ⋯.
-        'after:absolute after:inset-0 after:z-1 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action'
-      )}
-    >
-      {children}
-    </Link>
-  );
+  if (link)
+    return (
+      <Link {...link} className={cn(className, STRETCHED)}>
+        {children}
+      </Link>
+    );
+  if (onOpen)
+    return (
+      <button
+        className={cn(className, 'text-left', STRETCHED)}
+        onClick={onOpen}
+        type="button"
+      >
+        {children}
+      </button>
+    );
+  return <p className={className}>{children}</p>;
 }
+
+/** The list's five columns from md, its header's and every row's: name,
+ * workspace, details, date, actions. A row is 36px there, as the Study
+ * tables' (Epo 2026-11-13, 2026-11-26). */
+export const ITEM_LIST_COLUMNS =
+  'md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px]';
 
 /** A list column's label, or a label that sorts the list by `sort`. */
 export type ItemColumn<S extends string> = string | { label: string; sort: S };
@@ -355,7 +390,14 @@ export function ItemList<S extends string = string>({
   if (view === 'grid') return <ItemGrid>{children}</ItemGrid>;
   return (
     <div>
-      <div className="t-meta hidden border-divider border-b py-2.5 font-medium text-fg-muted md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3">
+      <div
+        className={cn(
+          // The Study tables' header (`Th`): muted semibold, 6px above and
+          // below (Epo 2026-11-26).
+          't-meta hidden border-divider border-b py-1.5 font-semibold text-fg-muted md:grid md:items-center md:gap-3',
+          ITEM_LIST_COLUMNS
+        )}
+      >
         {columns.map((column) =>
           typeof column === 'string' || !sorting ? (
             <div key={typeof column === 'string' ? column : column.label}>

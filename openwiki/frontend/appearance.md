@@ -17,7 +17,11 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
   with a progress ring above Settings, which opens its list in a popover
   (`GettingStartedRow`; behaviour in
   `openwiki/authorization-permissions-lifecycles.md`).
-- The 640–1023px rail uses the same rows. The phone nav drawer's foot is a
+- The 640–1023px rail uses the same rows on a 62px card (10px padding), its
+  icons 22px against the sidebar's 19, and a line as wide as its rows parts
+  its groups where the sidebar has section labels, widening with it on hover,
+  like the line above its foot; both lines use `line`, a shade darker than
+  `divider` (Epo 2026-11-24). The phone nav drawer's foot is a
   link to Settings → Account (avatar and name) with a danger-light Log out
   button on its right (`ProfileRow`), no menu. Phones keep the avatar menu in
   the page's top row (`PhoneTopRow`), which holds only the menu button and the
@@ -64,20 +68,21 @@ entries); mocks: `artifacts/2026-10-20-painted-cards-cursors-mocks.html`.
 ## Workspace rail
 
 From md (768px, so iPads keep it, Epo 2026-11-06) every workspace page leads with a labelled icon rail
-(`WorkspaceRail.tsx`): 68px wide, as wide as its items (Epo 2026-11-13), straight on the shell with no panel of its own
+(`WorkspaceRail.tsx`): 62px wide, as wide as its items (Epo 2026-11-13; 68px
+until 2026-11-24), labels over nine characters (Assignments, Workspaces) at
+10px against 11px, straight on the shell with no panel of its own
 (Epo 2026-11-04), so it has the app sidebar's page colour and a frame shows
 through behind it, with
 ← Workspaces (to `/`), the workspace's icon as a 34px badge that only
-says where you are, then Dashboard (Hugeicons' `DashboardSquare01Icon`),
-Files (a folder), Agent (the AI icon), then the four pages that were Study's
-until Epo 2026-11-11 gave each its own place (`workspaceSections`, by `studyView`):
-To do, which a class's owner and editors see as Assignments, with the count of
-what waits there by its icon; Practice; Members (every member: a class's owner
-and editors with each member's marks, everyone else the people without marks;
-a link or public visitor has none); and Study (an open book),
-the viewer's own marks and mastery, which a class's owner and editors do not
-have. Last, for members,
-Canvas (the drawing board, `frontend/plate-editor.md`), each icon
+says where you are, then, in this order since Epo 2026-11-24
+(`workspaceSections`, by `studyView`): Dashboard (Hugeicons'
+`DashboardSquare01Icon`); Canvas for members (the drawing board,
+`frontend/plate-editor.md`); To do, which a class's owner and editors see as
+Assignments, with the count of what waits there by its icon; Study (an open
+book: the viewer's own marks and mastery, a class's staff every member's, with
+Practice a tab of it); Files (a folder); Agent (the AI icon); and Members
+(every member: a class's owner and editors with each member's marks, everyone
+else the people without marks; a link or public visitor has none). Each icon
 over its 11px label in a 48px-high item, 8px apart, that takes the sidebar's dark
 fill while current. Labels sit on the frame plainly, with no halo (Epo 2026-11-08). The app sidebar's rows are 32px high and 2px apart from `sm` (the
 phone drawer keeps 36px and 4px for touch).

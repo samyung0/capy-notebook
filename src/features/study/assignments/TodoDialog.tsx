@@ -4,39 +4,39 @@ import type { Assignment, TodoWorkspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { FileIcon } from '@/components/ui/FileIcon';
-import { Icon, type IconName } from '@/components/ui/Icon';
-import { relativeTime } from '@/features/materials/MaterialListCard';
+import { Icon } from '@/components/ui/Icon';
 import { formatPoints } from '@/features/quizzes/grade';
-import { questionsLabel } from '@/features/study/practice/practiceText';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { iconUrl } from '@/lib/icon-catalog';
 import { assignmentsLink } from '../studyRoutes';
+import { AssignmentFacts } from './AssignmentFacts';
 import { fileLink } from './assignmentPage';
+import { isGraded } from './assignmentText';
 import {
-  dateLabel,
-  dateTimeLabel,
-  isGraded,
-  minutesText,
-  questionPaperOf,
-} from './assignmentText';
-import { assignmentFileIcon, useOpenAssignment } from './todoParts';
+  assignmentFileIcon,
+  gradesOnly,
+  submissionsText,
+  useOpenAssignment,
+} from './todoParts';
 import { isPlainTask, type TodoRow } from './todoRows';
+import { useAssignmentStart } from './useAssignmentStart';
 
 /** A handed-in quiz's or hand-in's line: its mark (a graded Assignment's
  * grade) when it shows, else that it waits for marks, else that it is handed
  * in. */
 export function handedInText(a: Assignment) {
   const mine = a.mine;
-  if (!isGraded(a) || !mine || a.gradesHidden) return m.todo_handed_in();
+  if (!isGraded(a) || !mine || a.gradesHidden) return m.todo_submitted();
   if (mine.waitingMarks > 0) return m.todo_waiting_marks();
-  if (mine.mark === undefined) return m.todo_handed_in();
+  if (mine.mark === undefined) return m.todo_submitted();
   return `${formatPoints(mine.mark)}/${formatPoints(mine.total ?? a.marks)}`;
 }
 
 /** "Approve AI marks on Past paper" or the work's own title. */
 export const rowHeading = (row: TodoRow) =>
-  row.approval ? `${m.dashboard_approve_on()} ${row.a.title}` : row.a.title;
+  row.approval
+    ? `${gradesOnly(row.a) ? m.todo_grade_on() : m.dashboard_approve_on()} ${row.a.title}`
+    : row.a.title;
 
 /**
  * A To do row's details (Epo 2026-11-10, round 6 option A): the title alone in
@@ -66,8 +66,15 @@ export function TodoDialog({
   const { a } = row;
   const done = !!a.mine?.done;
   const plain = isPlainTask(a);
-  const go = (label: string, run: () => void, phoneArrow = true) => (
+  const { dialog, start, starting } = useAssignmentStart(a.workspaceId);
+  const go = (
+    label: string,
+    run: () => void,
+    phoneArrow = true,
+    disabled = false
+  ) => (
     <Button
+      disabled={disabled}
       iconRight="navigationForward"
       // Important: Icon sets display in its inline style.
       iconRightClassName={cn(!phoneArrow && 'max-sm:hidden!')}
@@ -84,7 +91,7 @@ export function TodoDialog({
   if (row.approval)
     // No arrow on phones, so it fits beside Mark as done.
     primary = go(
-      m.todo_approve_marks(),
+      gradesOnly(a) ? m.todo_grade() : m.todo_approve_marks(),
       () => {
         void navigate(
           assignmentsLink(a.workspaceId, { assignment: a.id, tab: 'grading' })
@@ -117,7 +124,11 @@ export function TodoDialog({
         : a.mine?.runningAttemptId
           ? m.todo_continue_quiz()
           : m.todo_start_quiz(),
-      page
+      // A member's quiz starts right away (Epo 2026-11-25), asking only the
+      // submission mode while both are open; staff open its page.
+      a.kind === 'marked' && !workspace.manages ? () => start(a) : page,
+      true,
+      starting
     );
   // A quiz's, hand-in's or approval's own tick, beside its action; ticking
   // one by hand still asks first.
@@ -138,107 +149,10 @@ export function TodoDialog({
 
   const overdue =
     !ticked && !!a.dueAt && Date.parse(a.dueAt) <= Date.now() && !a.closed;
-  const facts: { icon: IconName; label: string; value: ReactNode }[] = [];
-  facts.push({
-    icon: 'workspaces',
-    label: m.todo_fact_workspace(),
-    value: (
-      <span className="flex min-w-0 items-center gap-2">
-        <img
-          alt=""
-          className="size-4.5 shrink-0 rounded-[4px]"
-          height={18}
-          src={iconUrl(workspace.iconId)}
-          width={18}
-        />
-        <span className="truncate">{workspace.name}</span>
-      </span>
-    ),
-  });
-  if (row.approval)
-    facts.push({
-      icon: 'clipboard',
-      label: m.todo_fact_waiting(),
-      value: (
-        <span className="font-semibold text-tint-warning-fg">
-          {waitingText(a.manage?.toApprove ?? 0)}
-        </span>
-      ),
-    });
-  facts.push({
-    icon: 'schedule',
-    label: m.todo_fact_due(),
-    value: a.dueAt ? (
-      <>
-        <span className={cn(overdue && 'font-semibold text-tint-error-fg')}>
-          {dateTimeLabel(a.dueAt)}
-        </span>
-        {!ticked && !done && !a.closed && (
-          <span className="t-meta block text-fg-muted">
-            {relativeTime(a.dueAt)}
-          </span>
-        )}
-        {a.noLate && (
-          <span className="t-meta block text-fg-muted">
-            {m.todo_closes_at_due()}
-          </span>
-        )}
-      </>
-    ) : (
-      <span className="text-fg-muted">{m.todo_no_due()}</span>
-    ),
-  });
-  if (a.kind === 'marked') {
-    facts.push({
-      icon: 'list',
-      label: m.todo_fact_quiz(),
-      value: (
-        <>
-          {m.todo_quiz_size({
-            marks:
-              a.marks === 1
-                ? m.question_ui_one_mark()
-                : m.question_ui_marks({ count: formatPoints(a.marks) }),
-            questions: a.paperFile
-              ? (questionPaperOf(a)?.name ?? m.assignment_question_paper())
-              : questionsLabel(a.questions),
-          })}
-          {a.allowUploads && (
-            <span className="t-meta block text-fg-muted">
-              {a.uploadOnly
-                ? m.assignment_submission_upload()
-                : m.todo_uploads_allowed()}
-            </span>
-          )}
-        </>
-      ),
-    });
-    if (a.timeLimitMin && !row.approval)
-      facts.push({
-        icon: 'clock',
-        label: m.todo_fact_time(),
-        value: minutesText(a.timeLimitMin),
-      });
-    if (!row.approval)
-      facts.push({
-        icon: 'retry',
-        label: m.todo_fact_attempts(),
-        value:
-          a.attempts === 1
-            ? m.todo_attempts_one()
-            : m.todo_attempts({ count: a.attempts }),
-      });
-  }
-  facts.push({
-    icon: 'profile',
-    label: m.todo_fact_posted(),
-    value: [a.postedBy, dateLabel(a.postedAt)].filter(Boolean).join(' · '),
-  });
-
   const note = row.approval
     ? null
     : done && !plain
-      ? { ok: true, text: `${m.todo_handed_in()} · ${handedInText(a)}` }
+      ? { ok: true, text: `${m.todo_submitted()} · ${handedInText(a)}` }
       : a.mine?.checkedOff
         ? { ok: false, text: m.todo_checked_note() }
         : null;
@@ -259,7 +173,7 @@ export function TodoDialog({
       open
       title={
         <span className="flex min-w-0 items-start gap-2.25">
-          {(row.approval || a.kind === 'marked') && (
+          {a.kind === 'marked' && (
             <span className="mt-0.5 shrink-0 text-(--ctp-teal) max-sm:mt-0">
               <Icon name="quillWrite" size={22} />
             </span>
@@ -280,21 +194,20 @@ export function TodoDialog({
             {note.text}
           </p>
         )}
-        <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-x-3.5 gap-y-3">
-          {facts.map(({ icon, label, value }) => (
-            <div className="contents" key={label}>
-              <dt className="flex min-w-26 items-center gap-2.25 whitespace-nowrap pt-px text-fg-muted text-sm sm:min-w-29.5">
-                <Icon
-                  className="shrink-0 -translate-y-px"
-                  name={icon}
-                  size={18}
-                />
-                {label}
-              </dt>
-              <dd className="min-w-0">{value}</dd>
-            </div>
-          ))}
-        </dl>
+        <AssignmentFacts
+          a={a}
+          approval={row.approval}
+          dueLeft={!ticked && !done && !a.closed}
+          overdue={overdue}
+          waiting={
+            <span className="font-semibold text-tint-warning-fg">
+              {gradesOnly(a)
+                ? submissionsText(a.manage?.toGrade ?? 0)
+                : waitingText(a.manage?.toApprove ?? 0)}
+            </span>
+          }
+          workspace={workspace}
+        />
         {a.files.length > 0 && (
           <section>
             <h3 className="t-meta mb-1 font-semibold text-fg-muted">
@@ -328,6 +241,7 @@ export function TodoDialog({
           </section>
         )}
       </div>
+      {dialog}
     </SimpleDialog>
   );
 }
@@ -378,7 +292,7 @@ export function TodoCheckDialog({
               ? m.todo_check_approvals_body()
               : one.a.kind === 'marked'
                 ? m.todo_check_quiz_body()
-                : m.todo_check_hand_in_body()
+                : m.todo_check_submit_body()
             : m.todo_check_many_body()}
         </span>
       </p>

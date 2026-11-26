@@ -4,12 +4,10 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
-	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -185,17 +183,6 @@ func (a *api) acceptWorkspaceInvite(ctx context.Context, in *acceptWorkspaceInvi
 			Type:         "created",
 			Notification: n,
 		})
-	}
-	// The invite page asked them to agree to what a class shares before
-	// Accept (Epo 2026-11-19), so the class's first open does not tell it
-	// again. They have joined by now: a failure is reported, not answered,
-	// and leaves the notice due.
-	notice, err := a.s.SharingNoticeFor(ctx, userID(ctx), accepted.Member.WorkspaceID)
-	if err == nil && notice.Due {
-		err = a.s.MarkSharingNoticeSeen(ctx, userID(ctx), accepted.Member.WorkspaceID, time.Now())
-	}
-	if err != nil {
-		obs.CaptureErr(ctx, err, map[string]string{"stage": "invite_sharing_notice"})
 	}
 	return &workspaceMemberOutput{Body: accepted.Member}, nil
 }

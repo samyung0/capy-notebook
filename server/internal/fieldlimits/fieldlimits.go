@@ -161,6 +161,16 @@ const (
 	// compression, and how many a board holds (Epo 2026-11-09).
 	BoardPictureBytes = 1 << 20
 	BoardPictures     = 10
+	// A paper's or hand-in's files, the same on every plan (Epo 2026-11-25): at
+	// most SubmissionFiles, each within SubmissionFileBytes, together within
+	// SubmissionBytes. Stored past compression, charged to no one.
+	SubmissionFiles     = 10
+	SubmissionFileBytes = 10 << 20
+	SubmissionBytes     = 30 << 20
+	// A Word submission's PDF copy that staff mark (mock
+	// B6H1Z7o4byVFBVyCRSUK3B C1): the browser's JPEG pages, at most what a
+	// whole submission may hold. Charged to no one.
+	SubmissionCopyBytes = SubmissionBytes
 	// A canvas room's live Yjs state in bytes, history included (Epo
 	// 2026-11-18, "for cap 4MiB sure", after the growth bench: about 10 hours
 	// of mixed drawing, its points then number arrays). With a stroke's points
@@ -182,6 +192,10 @@ var QuestionBounds = map[string]int{
 	"DRAWING_BOARD_MAX":              DrawingBoardBytes,
 	"DRAWING_IMAGE_MAX":              DrawingImageBytes,
 	"DRAWING_IMAGE_SIDE_MAX":         DrawingImageSide,
+	"SUBMISSION_FILES_MAX":           SubmissionFiles,
+	"SUBMISSION_FILE_MAX":            SubmissionFileBytes,
+	"SUBMISSION_BYTES_MAX":           SubmissionBytes,
+	"SUBMISSION_COPY_MAX":            SubmissionCopyBytes,
 	"QUESTION_ID_MAX":                QuestionID,
 	"QUESTION_PARTS_MAX":             QuestionParts,
 	"QUESTION_BLOCKS_MAX":            QuestionBlocks,
@@ -276,6 +290,7 @@ var Columns = map[string]int{
 	"upload_sessions.name":             FileName,
 	"reconcile_runs.requested_by_name": UserName,
 	"pdf_annotations.text":             PDFAnnotationText,
+	"pdf_annotations.comment":          Comment,
 	"material_comments.text":           Comment,
 }
 

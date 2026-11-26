@@ -1039,8 +1039,6 @@ export async function runJourney(
       return 'The task form currently suppresses its save error.';
     case 'annotations-save':
       await go(`${scenarioPath}?file=mock-scenario-pdf`);
-      await editMode();
-      await ui.click(m.pdf_draw());
       await ui.click(m.pdf_pen());
       {
         const canvas = await ui.element('[data-page="1"] canvas');

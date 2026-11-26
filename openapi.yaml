@@ -421,8 +421,6 @@ components:
           type: string
         draft:
           type: boolean
-        drawingParts:
-          type: boolean
         dueAt:
           format: date-time
           type: string
@@ -491,7 +489,6 @@ components:
         - attempts
         - questions
         - marks
-        - drawingParts
         - allowUploads
         - uploadOnly
         - paperFile
@@ -657,9 +654,12 @@ components:
         waitingMarks:
           format: double
           type: number
+        workspaceId:
+          type: string
       required:
         - id
         - assignmentId
+        - workspaceId
         - userId
         - userName
         - title
@@ -962,6 +962,11 @@ components:
         toApprove:
           format: int64
           type: integer
+        toGrade:
+          format: int64
+          type: integer
+        toRelease:
+          type: boolean
       required:
         - assignAll
         - assignees
@@ -973,6 +978,8 @@ components:
         - done
         - toApprove
         - notGraded
+        - toGrade
+        - toRelease
         - graded
         - approvalsCheckedOff
       type: object
@@ -1104,6 +1111,8 @@ components:
           type: number
         missing:
           type: boolean
+        paperHandedIn:
+          type: boolean
         runningAttemptId:
           type: string
         total:
@@ -1118,6 +1127,7 @@ components:
       required:
         - done
         - attemptsUsed
+        - paperHandedIn
         - waitingMarks
         - waitingAnswers
         - late
@@ -4313,13 +4323,19 @@ components:
           format: uri
           readOnly: true
           type: string
+        owner:
+          $ref: "#/components/schemas/MaterialAuthor"
         role:
           $ref: "#/components/schemas/WorkspaceRole"
         workspaceKind:
           $ref: "#/components/schemas/WorkspaceKind"
+        workspaceName:
+          type: string
       required:
         - role
         - workspaceKind
+        - workspaceName
+        - owner
       type: object
     Invoice:
       additionalProperties: false
@@ -4788,9 +4804,6 @@ components:
     MarkedDrawing:
       additionalProperties: false
       properties:
-        assignment:
-          description: An assignment's answer; otherwise practice
-          type: boolean
         attemptId:
           type: string
         bytes:
@@ -4818,7 +4831,6 @@ components:
       required:
         - id
         - attemptId
-        - assignment
         - quizName
         - workspaceName
         - question
@@ -5761,115 +5773,136 @@ components:
     PDFAnnotation:
       additionalProperties: false
       properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/PDFAnnotation.json
-          format: uri
+        author:
+          $ref: "#/components/schemas/PDFAnnotationAuthor"
           readOnly: true
-          type: string
-        authorId:
-          type: string
         color:
           pattern: ^#[0-9a-fA-F]{6}$
           type: string
-        createdAt:
-          format: date-time
-          type: string
-        fileId:
+        comment:
+          maxLength: 3000
           type: string
         id:
+          pattern: ^ann_[0-9a-f]{10,32}$
           type: string
         kind:
           enum:
             - highlight
-            - rectangle
-            - ellipse
+            - underline
+            - marker
             - pen
             - text
+            - note
+            - rectangle
+            - ellipse
+            - arrow
           type: string
         page:
           format: int64
           minimum: 1
           type: integer
-        points:
-          items:
-            $ref: "#/components/schemas/PDFPoint"
-          maxItems: 4096
-          nullable: true
-          type: array
         rects:
           items:
             $ref: "#/components/schemas/PDFRect"
           maxItems: 1000
-          minItems: 1
           type: array
-        sourceIdentity:
-          type: string
+        size:
+          format: double
+          maximum: 80
+          minimum: 0
+          type: number
+        strokes:
+          items:
+            items:
+              $ref: "#/components/schemas/PDFPoint"
+            nullable: true
+            type: array
+          maxItems: 512
+          type: array
         text:
           maxLength: 2000
           type: string
-        updatedAt:
-          format: date-time
+        width:
+          format: double
+          maximum: 80
+          minimum: 0
+          type: number
+      required:
+        - id
+        - page
+        - kind
+        - color
+        - rects
+        - strokes
+        - width
+        - size
+        - text
+        - comment
+      type: object
+    PDFAnnotationAuthor:
+      additionalProperties: false
+      properties:
+        avatarUrl:
+          type: string
+        id:
+          type: string
+        name:
           type: string
       required:
         - id
-        - fileId
-        - authorId
-        - createdAt
-        - updatedAt
-        - sourceIdentity
-        - page
-        - kind
-        - rects
-        - color
+        - name
+        - avatarUrl
       type: object
-    PDFAnnotationBody:
+    PDFAnnotationChanges:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/PDFAnnotationBody.json
+          example: https://example.com/schemas/PDFAnnotationChanges.json
           format: uri
           readOnly: true
           type: string
-        color:
-          pattern: ^#[0-9a-fA-F]{6}$
-          type: string
-        kind:
-          enum:
-            - highlight
-            - rectangle
-            - ellipse
-            - pen
-            - text
-          type: string
-        page:
-          format: int64
-          minimum: 1
-          type: integer
-        points:
+        remove:
           items:
-            $ref: "#/components/schemas/PDFPoint"
-          maxItems: 4096
-          nullable: true
+            type: string
+          maxItems: 2000
           type: array
-        rects:
+        save:
           items:
-            $ref: "#/components/schemas/PDFRect"
-          maxItems: 1000
-          minItems: 1
+            $ref: "#/components/schemas/PDFAnnotation"
+          maxItems: 200
           type: array
         sourceIdentity:
           type: string
-        text:
-          maxLength: 2000
+      required:
+        - sourceIdentity
+        - save
+        - remove
+      type: object
+    PDFAnnotationList:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/PDFAnnotationList.json
+          format: uri
+          readOnly: true
+          type: string
+        marks:
+          items:
+            $ref: "#/components/schemas/PDFAnnotation"
+          type: array
+        readOnly:
+          type: boolean
+        shared:
+          type: boolean
+        sourceIdentity:
           type: string
       required:
         - sourceIdentity
-        - page
-        - kind
-        - rects
-        - color
+        - marks
+        - shared
+        - readOnly
       type: object
     PDFPoint:
       additionalProperties: false
@@ -5981,8 +6014,13 @@ components:
           type: string
         kind:
           type: string
+        marked:
+          type: boolean
         name:
           type: string
+        revision:
+          format: int64
+          type: integer
         sizeBytes:
           format: int64
           type: integer
@@ -5994,6 +6032,8 @@ components:
         - kind
         - sizeBytes
         - status
+        - revision
+        - marked
       type: object
     PaperFileReq:
       additionalProperties: false
@@ -7480,22 +7520,6 @@ components:
         - editor
         - viewer
       type: string
-    SharingNotice:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SharingNotice.json
-          format: uri
-          readOnly: true
-          type: string
-        due:
-          type: boolean
-        owner:
-          $ref: "#/components/schemas/MaterialAuthor"
-      required:
-        - due
-      type: object
     Slot:
       enum:
         - chat
@@ -8559,8 +8583,6 @@ components:
       properties:
         assignmentId:
           type: string
-        attemptId:
-          type: string
         bytes:
           format: int64
           type: integer
@@ -8585,6 +8607,7 @@ components:
         - kind
         - assignmentId
         - quizName
+        - workspaceId
         - workspaceName
         - bytes
         - createdAt
@@ -12061,6 +12084,20 @@ paths:
     get:
       operationId: listDrawings
       parameters:
+        - description: Comma-separated workspace ids of the drawings' quizzes
+          explode: false
+          in: query
+          name: workspaces
+          schema:
+            description: Comma-separated workspace ids of the drawings' quizzes
+            type: string
+        - description: "Comma-separated locations: workspace, standalone"
+          explode: false
+          in: query
+          name: location
+          schema:
+            description: "Comma-separated locations: workspace, standalone"
+            type: string
         - explode: false
           in: query
           name: limit
@@ -12692,9 +12729,7 @@ paths:
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/PDFAnnotation"
-                type: array
+                $ref: "#/components/schemas/PDFAnnotationList"
           description: OK
         default:
           content:
@@ -12705,8 +12740,8 @@ paths:
       summary: Read private PDF annotations
       tags:
         - Source collaboration
-    post:
-      operationId: createPDFAnnotation
+    patch:
+      operationId: changePDFAnnotations
       parameters:
         - in: path
           name: id
@@ -12717,38 +12752,8 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/PDFAnnotationBody"
+              $ref: "#/components/schemas/PDFAnnotationChanges"
         required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PDFAnnotation"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Create a private PDF annotation
-      tags:
-        - Source collaboration
-  /api/files/{id}/annotations/{annotationId}:
-    delete:
-      operationId: deletePDFAnnotation
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: annotationId
-          required: true
-          schema:
-            type: string
       responses:
         "204":
           description: No Content
@@ -12758,42 +12763,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Delete an authored PDF annotation
-      tags:
-        - Source collaboration
-    patch:
-      operationId: updatePDFAnnotation
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: annotationId
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PDFAnnotationBody"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/PDFAnnotation"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Update an authored PDF annotation
+      summary: Save and remove private PDF annotations
       tags:
         - Source collaboration
   /api/files/{id}/clone:
@@ -12947,6 +12917,36 @@ paths:
       summary: Get presigned file reads
       tags:
         - Content
+  /api/files/{id}/marked-copy:
+    post:
+      operationId: storeMarkedCopy
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            maxLength: 64
+            type: string
+      requestBody:
+        content:
+          application/pdf:
+            schema:
+              format: binary
+              type: string
+              x-contentMediaType: application/octet-stream
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Store the PDF copy staff mark a Word submission on, drawn by the first staff browser to open it; stored once
+      tags:
+        - assignments
   /api/files/{id}/open:
     post:
       operationId: openFile
@@ -14768,19 +14768,15 @@ paths:
             maxLength: 64
             type: string
       responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/DrawingsDeletedOutputBody"
-          description: OK
+        "204":
+          description: No Content
         default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Delete one of the caller's deletable paper files; its marks stay
+      summary: Delete one of the caller's hand-in files never handed in before its assignment closed; handed-in files stay
       tags:
         - assignments
   /api/public/flashcards/{token}:
@@ -15910,6 +15906,27 @@ paths:
           schema:
             description: Limit to one owned workspace; empty spans every owned workspace and standalone materials
             type: string
+        - description: "Comma-separated kinds: file kinds and block kinds (note, quiz, flashcards, mindmap, diagram, canvas)"
+          explode: false
+          in: query
+          name: kind
+          schema:
+            description: "Comma-separated kinds: file kinds and block kinds (note, quiz, flashcards, mindmap, diagram, canvas)"
+            type: string
+        - description: Comma-separated workspace ids the rows sit in (the Files page's Workspace filter)
+          explode: false
+          in: query
+          name: workspaces
+          schema:
+            description: Comma-separated workspace ids the rows sit in (the Files page's Workspace filter)
+            type: string
+        - description: "Comma-separated locations: workspace, standalone"
+          explode: false
+          in: query
+          name: location
+          schema:
+            description: "Comma-separated locations: workspace, standalone"
+            type: string
         - explode: false
           in: query
           name: limit
@@ -16336,6 +16353,13 @@ paths:
           required: true
           schema:
             type: string
+        - description: "Staff: only what waits on them, open or closed: answers to mark, submissions to grade, grades to release"
+          explode: false
+          in: query
+          name: pending
+          schema:
+            description: "Staff: only what waits on them, open or closed: answers to mark, submissions to grade, grades to release"
+            type: boolean
         - description: Keep the closed ones
           explode: false
           in: query
@@ -17185,51 +17209,6 @@ paths:
       summary: Update workspace sharing
       tags:
         - Workspaces
-  /api/workspaces/{id}/sharing-notice:
-    get:
-      operationId: getSharingNotice
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SharingNotice"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Whether a class member is yet to be told what they share
-      tags:
-        - Assignments
-    put:
-      operationId: markSharingNoticeSeen
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "204":
-          description: No Content
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Record that a class member was told what they share
-      tags:
-        - Assignments
   /api/workspaces/{id}/sources/import:
     post:
       operationId: importSources

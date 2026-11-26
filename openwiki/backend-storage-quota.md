@@ -83,7 +83,7 @@ Storage is charged once per logical row owned by a user:
 | Editor assets | `editor_assets.size_bytes` | `status = 'ready'` only       |
 | Materials     | `materials.size_bytes`     | always; set from content JSON |
 | An assignment's frozen questions | `assignments.frozen_bytes` | once published, to `frozen_by` |
-| Drawing answers | `drawings.board_bytes + image_bytes` | row exists, to the person attempting |
+| Drawing answers | `drawings.board_bytes + image_bytes + picture_bytes` | a practice drawing, to the person attempting; an assignment's (`drawings.assignment`) to no one |
 | Trashed rows  | same as above              | until the 30-day purge        |
 | Chat Undo     | none                       | never: the browser keeps its payload, the server stores only the receipt (Epo 2026-10-21) |
 
@@ -109,10 +109,11 @@ ownership transfer moves no charges (`TransferWorkspace` only swaps roles and
 still checks the recipient's file cap; the workspace cap counts members, so a
 transfer leaves it unchanged). A member who
 leaves or is removed keeps paying for what it added; the items stay in the
-workspace, and the Files page (its one list of files, submissions, blocks and
-embeds, and the trash), which lists only what the
-caller pays for and so adds up to its storage meter (Sam 2026-10-19), still
-lists them. One the payer can no longer open is marked `lostAccess`
+workspace, and the Files page (its one list of files, blocks and embeds, and
+the trash), which lists what the caller pays for (adding up to its storage
+meter, Sam 2026-10-19) and hand-in files it never handed in before the close
+(charged to no one, deletable), still lists them. Handed-in work is on its
+assignment's page only (Epo 2026-11-25). One the payer can no longer open is marked `lostAccess`
 (`lostAccessSQL`: not the owner and no reach as member, public share or
 redeemed link, or the owner's account is no longer live) and shows only its
 name, size, workspace and creation time (`lostFile`, `lostMaterialItem`; the
@@ -286,8 +287,13 @@ check the recipient plan's workspace-file cap. The workspace payload reports `fi
 
 A drawing part's answer (migration 0156) is its saved board, gzipped, and a
 marking image kept only while its part waits on the AI. The person attempting
-pays, in practice and in assignments (Epo 2026-11-06), through the
-`drawings_storage_after` deltas; the board and image are counted blob
+pays for a practice drawing (Epo 2026-11-06), through the
+`drawings_storage_after` deltas. An assignment's drawing is charged to no one
+(Epo 2026-11-25, "Yes, make them free", migration `0197_free_submissions.sql`):
+it is kept as handed in for good, like a submission's files, so its member
+could never free its bytes. `drawings.assignment`, set from the attempt's kind
+at insert, makes `account_drawing_storage` skip it through every cascade, and
+the recount and Billing's breakdown leave it out. The board and image are counted blob
 references, so a replaced board, a dropped image and every cascade queue their
 objects for the reaper.
 
@@ -297,21 +303,26 @@ objects for the reaper.
   blocks an assignment (Epo 2026-11-08, superseding Q693's refusal): both use
   `admitAccountTx`, the account half of `gateStorageTx` with no quota check
   that admits a frozen account too (O4), so a member at the limit saves the
-  drawing, is charged for it and goes over, into the usual over-quota states.
-  A paper's files (an assignment answered on paper, `files.attempt_id`) reserve
-  the same way (`reservePaperStorageTx`), within 15 files and the member's
-  source file cap across them; Upload can only start while storage is not
-  full, and the Files page deletes them once marked and closed. A hand-in's
-  files (`files.hand_in_assignment_id`, an unmarked assignment that takes files)
-  reserve the same way within the same bounds, are stored with no parse or
-  credits, and the Files page deletes them once the assignment closes.
-  Like Upload, a hand-in takes a new file only while the member's storage
-  is not full (`storageFullErr` in `checkHandInUploadTx`, at the ticket and the
-  upload session; Epo 2026-11-09, Q728 A): a file added while there was room
-  still saves past the limit, files already added stay, and Hand in and Undo
-  hand in still work. Before you start warns such a member when
-  the paper has drawing parts (`drawingParts`); an assignment's pages show the
-  owner nothing about it. A practice Check of a
+  drawing, charged to no one.
+  Submissions are charged to no one (Epo 2026-11-25, migration
+  `0197_free_submissions.sql`): a paper's files (an assignment answered on
+  paper, `files.attempt_id`) and a hand-in's files
+  (`files.hand_in_assignment_id`, an unmarked assignment that takes files) are
+  kept as handed in for good, so their member could never free those bytes.
+  `account_file_storage` charges only rows with `submission_position IS NULL`,
+  the recount skips submissions, and their upload sessions reserve nothing, so
+  storage never refuses one. Every plan has the same bounds
+  (`fieldlimits.SubmissionFiles`, `SubmissionFileBytes`, `SubmissionBytes`: 10
+  files, 10 MB each, 30 MB in all per paper or hand-in, `submissionRoom`),
+  checked at the ticket and the upload session; the client checks them again
+  after compressing images (`useAddSubmissionFiles`). Hand-in files and the
+  papers of a graded quiz from a file are stored with no parse or credits.
+  Billing's breakdown leaves submissions out too. Staff's marks on a
+  submission's file are rows in `pdf_annotations` and cost no storage; the
+  PDF copy a Word submission is marked on (`files.marked_copy_path`, migration
+  `0199_submission_marked_copies.sql`, mock B6H1Z7o4byVFBVyCRSUK3B C1) is a
+  counted blob reference that no storage trigger charges, at most
+  `fieldlimits.SubmissionCopyBytes` (30 MB, the whole submission's bound). A practice Check of a
   drawing asks `AssertStorageRoom` for its boards and images before the model
   is paid for (Q694): over the limit it is refused with
   `storage_quota_exceeded`, no credits spent. Objects written before a refusal
@@ -356,8 +367,10 @@ objects for the reaper.
   two attempt checks read one clock, so its bucket writes don't run a time
   limit's grace out.
 - **Seen and deleted.** Billing's breakdown shows them as Canvas; Files ›
-  Canvas lists the payer's marked drawings to delete, an assignment's once it
-  has closed with its grades released.
+  Canvas lists the payer's marked drawings, an assignment's once it has closed
+  with its grades released. Only practice drawings may be deleted; an
+  assignment's stays as handed in (Epo 2026-11-25), free, until its assignment
+  goes. The tab's size counts the practice drawings alone.
 
 ### Canvases
 

@@ -2,12 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { linkOptions, useNavigate, useSearch } from '@tanstack/react-router';
 import { memo, useCallback, useContext, useState } from 'react';
 import { qk } from '@/api/client';
-import {
-  usePurgeTrashed,
-  useRestoreTrashed,
-  useTrash,
-  useWorkspaces,
-} from '@/api/hooks';
+import { usePurgeTrashed, useRestoreTrashed, useTrash } from '@/api/hooks';
 import type { FileKind, TrashItem } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import {
@@ -15,12 +10,11 @@ import {
   ItemList,
   ItemPick,
   ItemSkeletonGrid,
-  itemMenuIcon,
 } from '@/components/app/ItemCard';
 import { ListEnd } from '@/components/app/ListEnd';
 import {
+  ListToolbar,
   type ListView,
-  ListViewToggle,
   useListView,
 } from '@/components/app/ListToolbar';
 import { PageBody, PageHeader, PagePanel } from '@/components/app/layout';
@@ -32,6 +26,7 @@ import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
 import { CanvasTab } from '@/features/files/CanvasTab';
 import { formatFileSize } from '@/features/files/fileUtils';
+import { useHeaderAction } from '@/features/files/headerAction';
 import { ItemsList } from '@/features/files/ItemsList';
 import { toastLostAccess } from '@/features/files/lostAccess';
 import {
@@ -39,6 +34,7 @@ import {
   SelectionAction,
   SelectionBar,
 } from '@/features/files/SelectionBar';
+import { useTabFilters } from '@/features/files/tabFilters';
 import {
   collectSelectionPages,
   useFileSelection,
@@ -71,8 +67,8 @@ export default function Files() {
           actions={
             <>
               <AccountStatusButton />
-              {/* Add file moves here on phones, so the toolbar
-                  keeps one row. */}
+              {/* A tab's action (Add file, Empty trash, Delete all) moves
+                  here on phones, so the toolbar keeps one row. */}
               <div className="sm:hidden" ref={setHeaderSlot} />
             </>
           }
@@ -101,12 +97,17 @@ export default function Files() {
       </fieldset>
       {tab === 'trash' ? (
         <TrashTab
+          headerSlot={headerSlot}
           onBusyChange={setBusy}
           onViewChange={changeView}
           view={view}
         />
       ) : tab === 'canvas' ? (
-        <CanvasTab onViewChange={changeView} view={view} />
+        <CanvasTab
+          headerSlot={headerSlot}
+          onViewChange={changeView}
+          view={view}
+        />
       ) : (
         <ItemsList
           headerSlot={headerSlot}
@@ -199,7 +200,6 @@ const TrashCard = memo(function TrashCard({
               onClick: () => onPurge(item),
             },
           ]}
-          triggerIcon={itemMenuIcon(view)}
         />
       }
       details={formatFileSize(item.sizeBytes)}
@@ -234,14 +234,17 @@ function formatDate(iso: string): string {
  * page, as from Files (trashLink). Restore and permanent deletion are the
  * actions. */
 function TrashTab({
+  headerSlot,
   view,
   onViewChange,
   onBusyChange,
 }: {
+  headerSlot: HTMLElement | null;
   view: ListView;
   onViewChange: (view: ListView) => void;
   onBusyChange: (busy: boolean) => void;
 }) {
+  const tab = useTabFilters({ kinds: true });
   const {
     data,
     error,
@@ -253,13 +256,10 @@ function TrashTab({
     isFetchingNextPage,
     isLoading,
     refetch,
-  } = useTrash(undefined, true);
+  } = useTrash(undefined, true, tab.params);
   const revealRef = useLoadingReveal(isLoading);
   // Icons for the list's Workspace column; a deleted workspace has none.
-  const { data: workspaces = [] } = useWorkspaces(
-    { sort: 'accessed' },
-    { errorBoundary: false }
-  );
+  const { workspaces } = tab;
   const { mutateAsync: restore } = useRestoreTrashed();
   const { mutateAsync: purge } = usePurgeTrashed();
   const [purgeRequest, setPurgeRequest] = useState<{
@@ -292,6 +292,19 @@ function TrashTab({
     if (all?.length) setPurgeRequest({ empty: true, items: all });
   }
 
+  const header = useHeaderAction(
+    headerSlot,
+    <Button
+      className="px-2.5"
+      disabled={selection.busy || isFetchingNextPage || items.length === 0}
+      iconLeft="trash"
+      onClick={() => void prepareEmptyTrash()}
+      variant="danger-light"
+    >
+      {m.trash_empty_action()}
+    </Button>
+  );
+
   if (waitsForConnection(fetchStatus, data)) return <QueryPausedState />;
   if (isError && !data) {
     return (
@@ -308,60 +321,52 @@ function TrashTab({
   }
   return (
     <>
-      <div className="page-px -mb-3 flex items-center">
-        {selection.selecting ? (
-          <SelectionBar
-            allSelected={
-              !hasNextPage && selection.selected.length === items.length
-            }
-            busy={selection.busy || isFetchingNextPage}
-            count={selection.selected.length}
-            onClear={selection.clear}
-            onSelectAll={() => void selection.selectAll()}
-          >
-            <SelectionAction
-              disabled={selection.busy || isFetchingNextPage}
-              icon="undo"
-              label={m.trash_restore()}
-              onClick={() =>
-                void selection.run(
-                  // Restoring needs edit access to its workspace.
-                  selection.selected.filter((item) => item.canRestore),
-                  restore
-                )
+      {header.portal}
+      <ListToolbar
+        action={header.toolbarAction}
+        filters={tab.filters}
+        onResetFilters={tab.reset}
+        onViewChange={onViewChange}
+        selection={
+          selection.selecting && (
+            <SelectionBar
+              allSelected={
+                !hasNextPage && selection.selected.length === items.length
               }
-            />
-            <SelectionAction
-              danger
-              disabled={selection.busy || isFetchingNextPage}
-              icon="trash"
-              label={m.trash_delete_forever()}
-              onClick={() =>
-                setPurgeRequest({
-                  empty: false,
-                  items: [...selection.selected],
-                })
-              }
-            />
-          </SelectionBar>
-        ) : (
-          // -mr-1.5: the view toggle's icon on the gutter, as in ListToolbar.
-          <div className="-mr-1.5 ml-auto flex min-h-10 items-center gap-1 sm:min-h-11.5">
-            <Button
-              className="px-2.5"
-              disabled={
-                selection.busy || isFetchingNextPage || items.length === 0
-              }
-              iconLeft="trash"
-              onClick={() => void prepareEmptyTrash()}
-              variant="danger-light"
+              busy={selection.busy || isFetchingNextPage}
+              count={selection.selected.length}
+              onClear={selection.clear}
+              onSelectAll={() => void selection.selectAll()}
             >
-              {m.trash_empty_action()}
-            </Button>
-            <ListViewToggle onViewChange={onViewChange} view={view} />
-          </div>
-        )}
-      </div>
+              <SelectionAction
+                disabled={selection.busy || isFetchingNextPage}
+                icon="undo"
+                label={m.trash_restore()}
+                onClick={() =>
+                  void selection.run(
+                    // Restoring needs edit access to its workspace.
+                    selection.selected.filter((item) => item.canRestore),
+                    restore
+                  )
+                }
+              />
+              <SelectionAction
+                danger
+                disabled={selection.busy || isFetchingNextPage}
+                icon="trash"
+                label={m.trash_delete_forever()}
+                onClick={() =>
+                  setPurgeRequest({
+                    empty: false,
+                    items: [...selection.selected],
+                  })
+                }
+              />
+            </SelectionBar>
+          )
+        }
+        view={view}
+      />
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
       <PageBody belowToolbar onClick={clearOnBlank(selection.clear)}>
         <div className="flex flex-col gap-3">
@@ -377,7 +382,9 @@ function TrashTab({
               <SkeletonCardGrid cardHeight={72} count={3} />
             )
           ) : items.length === 0 ? (
-            <p className="text-fg-muted">{m.trash_empty()}</p>
+            <p className="text-fg-muted">
+              {tab.filtered ? m.common_no_matches() : m.trash_empty()}
+            </p>
           ) : (
             <div ref={revealRef}>
               <ItemPick.Provider value={selection.pickContext}>

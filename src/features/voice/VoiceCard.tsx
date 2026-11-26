@@ -15,12 +15,19 @@ import './voice.css';
 /**
  * The sidebar's voice card, above Settings, inside a slowly turning rainbow
  * ring: it opens the account voice overlay (`onOpen` closes the phone
- * drawer). The mic sits where the rows' icons do, so the 70px rail shows only
+ * drawer). The mic sits where the rows' icons do, so the 62px rail shows only
  * the mic in its ring. Hidden where the browser cannot record. Its hover is
  * a faint tint over its own fill, white or frost, a step lighter than the
  * rows' grey, which would hide the white.
  */
-export function VoiceCard({ onOpen }: { onOpen?: () => void }) {
+export function VoiceCard({
+  onOpen,
+  rail,
+}: {
+  onOpen?: () => void;
+  /** The rail's larger icon. */
+  rail?: boolean;
+}) {
   const [supported] = useState(() => recordingType() !== null);
   if (!supported) return null;
   return (
@@ -38,7 +45,7 @@ export function VoiceCard({ onOpen }: { onOpen?: () => void }) {
       {/* As tall as the two lines beside it, so the ring keeps its height
           on the rail. */}
       <span className="flex size-7 shrink-0 items-center justify-center">
-        <Icon name="microphone" size={19} />
+        <Icon name="microphone" size={rail ? 22 : 19} />
       </span>
       {/* data-label fades them with the rail's other labels. */}
       <span

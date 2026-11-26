@@ -1,6 +1,6 @@
 import { memo, useContext, useState } from 'react';
 import type { SourceFile, Workspace } from '@/api/types';
-import { ItemCard, ItemPick, itemMenuIcon } from '@/components/app/ItemCard';
+import { ItemCard, ItemPick } from '@/components/app/ItemCard';
 import type { ListView } from '@/components/app/ListToolbar';
 import { fileCanClone, formatFileSize } from '@/features/files/fileUtils';
 import { toastLostAccess } from '@/features/files/lostAccess';
@@ -79,7 +79,6 @@ export const FileItem = memo(function FileItem({
               content={toFileActionTarget(file)}
               display="menu"
               menuAlign="end"
-              menuTriggerIcon={itemMenuIcon(view)}
               readOnly
               topics={[]}
               workspaceId={file.workspaceId}
@@ -105,7 +104,6 @@ export const FileItem = memo(function FileItem({
                   : []
               }
               menuAlign="end"
-              menuTriggerIcon={itemMenuIcon(view)}
               renameFieldLabel={m.files_file_name()}
               renameTitle={m.files_rename()}
               showMove={false}

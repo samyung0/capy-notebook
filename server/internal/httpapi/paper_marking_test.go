@@ -164,7 +164,7 @@ func startPaperWithFile(t *testing.T, h http.Handler, st *store.Store, id string
 		ID: fmt.Sprintf("up_%d", time.Now().UnixNano()), CreatedBy: "u_viewer", ObjectPath: "sources/paper-object",
 		FinalPath: fmt.Sprintf("sources/paper-%d", time.Now().UnixNano()), Name: "paper.pdf", Kind: "pdf",
 		ContentType: "application/pdf", DeclaredSize: 2048, ParseMode: "none", ExpiresAt: time.Now().Add(time.Hour),
-		AttemptID: attempt.ID, PaperMaxBytes: 10 << 20,
+		AttemptID: attempt.ID,
 	})
 	if err != nil {
 		t.Fatal(err)

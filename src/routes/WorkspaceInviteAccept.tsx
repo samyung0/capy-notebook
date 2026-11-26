@@ -1,4 +1,5 @@
 import { useNavigate, useParams } from '@tanstack/react-router';
+import type { ReactNode } from 'react';
 import { isApiError, isWorkspaceLimitError } from '@/api/client';
 import {
   useAcceptWorkspaceInvite,
@@ -9,9 +10,9 @@ import { AuthGate } from '@/components/app/AuthProvider';
 import { ErrorState } from '@/components/app/ErrorState';
 import { Panel } from '@/components/app/layout';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
+import { Avatar } from '@/components/ui/Avatar';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { describeError, isNonDisclosing } from '@/lib/errors';
 import { clearStashedToken } from '@/lib/urlTokenStash';
@@ -30,15 +31,23 @@ export function isUnavailableWorkspaceInviteError(error: unknown): boolean {
 export default function WorkspaceInviteAccept() {
   return (
     <main className="h-dvh overflow-hidden p-1.5 sm:p-2.5">
-      <Panel
-        className="h-full w-full"
-        sectionClassName="h-full w-full min-h-full flex items-center justify-center"
-      >
-        <AuthGate>
-          <InviteContent />
-        </AuthGate>
-      </Panel>
+      <AuthGate>
+        <InviteContent />
+      </AuthGate>
     </main>
+  );
+}
+
+/** The page's one panel; an unavailable invite's WorkspaceError brings its
+ * own, so it is not drawn inside this one. */
+function InvitePanel({ children }: { children: ReactNode }) {
+  return (
+    <Panel
+      className="h-full w-full"
+      sectionClassName="h-full w-full min-h-full flex items-center justify-center"
+    >
+      {children}
+    </Panel>
   );
 }
 
@@ -91,66 +100,80 @@ function InviteContent() {
 
   if (failure) {
     return (
-      <ErrorState
-        {...describeError(failure)}
-        action={
-          <div className="flex gap-2">
-            <Button onClick={() => navigate({ to: '/' })} variant="ghost-hover">
-              {m.action_cancel()}
-            </Button>
-            <ErrorAction
-              disabled={acceptIsPending}
-              onClick={() => (acceptError ? accept(token) : refetchPreview())}
-            >
-              {m.error_action_retry()}
-            </ErrorAction>
-          </div>
-        }
-        testId="invite-accept-error"
-        variant="page"
-      />
+      <InvitePanel>
+        <ErrorState
+          {...describeError(failure)}
+          action={
+            <div className="flex gap-2">
+              <Button
+                onClick={() => navigate({ to: '/' })}
+                variant="ghost-hover"
+              >
+                {m.action_cancel()}
+              </Button>
+              <ErrorAction
+                disabled={acceptIsPending}
+                onClick={() => (acceptError ? accept(token) : refetchPreview())}
+              >
+                {m.error_action_retry()}
+              </ErrorAction>
+            </div>
+          }
+          testId="invite-accept-error"
+          variant="page"
+        />
+      </InvitePanel>
     );
   }
 
-  if (!preview) return <Spinner />;
+  if (!preview)
+    return (
+      <InvitePanel>
+        <Spinner />
+      </InvitePanel>
+    );
 
   return (
-    <div className="mx-auto w-full max-w-xl">
-      <div className="flex min-h-80 flex-col items-center justify-center px-6 py-12 text-center">
-        <span className="mb-5 rounded-card bg-tint-accent-1 p-3 text-tint-accent-1-fg">
-          <Icon className="size-6" name="workspaces" />
-        </span>
-        <h1 className="t-large-card-title">{m.invite_title()}</h1>
-        <p className="mt-2 max-w-md text-fg-muted text-sm">{m.invite_body()}</p>
-        {sharesProgress && (
-          <div className="mt-5 max-w-md text-sm">
-            <p className="text-fg-muted">{m.invite_sharing_consent()}</p>
-            <p className="mt-2.5 inline-flex gap-2.5">
-              <Icon
-                className="mt-0.5 shrink-0 text-fg-muted"
-                name="view"
-                size={18}
-              />
-              {m.invite_sharing_progress()}
+    <InvitePanel>
+      <div className="mx-auto w-full max-w-xl">
+        <div className="flex min-h-80 flex-col items-center justify-center px-6 py-12 text-center">
+          <p className="t-card-title text-fg-muted">{m.invite_title()}</p>
+          {/* What they join and whose it is (Epo 2026-11-25), the owner as the
+            class's sharing notice showed one. */}
+          <h1 className="t-large-card-title mt-1 max-w-md break-words">
+            {preview.workspaceName}
+          </h1>
+          <p className="mt-2 flex min-w-0 max-w-md items-center gap-2 font-semibold text-fg-muted text-sm">
+            <Avatar
+              aria-hidden
+              className="size-6 shrink-0 text-[10px]"
+              name={preview.owner.name}
+              src={preview.owner.avatarUrl || undefined}
+            />
+            <span className="truncate">{preview.owner.name}</span>
+          </p>
+          {sharesProgress && (
+            <p className="mt-5 max-w-md text-sm">
+              {m.invite_sharing_consent()}
             </p>
-          </div>
-        )}
+          )}
 
-        <div className="mt-6 flex gap-2">
-          <Button onClick={() => navigate({ to: '/' })} variant="ghost-hover">
-            {m.action_cancel()}
-          </Button>
-          <Button
-            disabled={acceptIsPending || acceptIsSuccess}
-            onClick={() => accept(token)}
-            variant="accent"
-          >
-            {acceptIsPending || acceptIsSuccess
-              ? m.invite_accepting()
-              : m.invite_accept()}
-          </Button>
+          <div className="mt-6 flex gap-2">
+            <Button onClick={() => navigate({ to: '/' })} variant="ghost-hover">
+              {m.action_cancel()}
+            </Button>
+            <Button
+              disabled={acceptIsPending || acceptIsSuccess}
+              onClick={() => accept(token)}
+              variant="accent"
+            >
+              {acceptIsPending || acceptIsSuccess
+                ? m.invite_accepting()
+                : m.invite_accept()}
+            </Button>
+          </div>
         </div>
       </div>
-    </div>
+    </InvitePanel>
   );
 }

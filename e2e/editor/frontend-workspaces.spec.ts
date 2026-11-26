@@ -202,9 +202,7 @@ test('invitations are standalone and transfer previews open only one dialog', as
   page,
 }) => {
   await page.goto('/workspace-invites/mock-token');
-  await expect(
-    page.getByRole('heading', { exact: true, name: m.invite_title() })
-  ).toBeVisible();
+  await expect(page.getByText(m.invite_title(), { exact: true })).toBeVisible();
   await expect(page.locator('main')).toHaveCount(1);
   await expect(
     page.getByRole('link', { exact: true, name: m.nav_workspaces() })

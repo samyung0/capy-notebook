@@ -27,4 +27,6 @@ export interface AssignmentManage {
   showGrades: AssignmentManageShowGrades;
   shuffle: boolean;
   toApprove: number;
+  toGrade: number;
+  toRelease: boolean;
 }

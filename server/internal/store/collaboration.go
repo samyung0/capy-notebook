@@ -683,10 +683,13 @@ func inviteByReference(ctx context.Context, q rowQueryer, reference string, lock
 	return invite, ownerID, kind, err
 }
 
-// InvitePreview is what the invite page tells its invitee before Accept.
+// InvitePreview is what the invite page tells its invitee before Accept: the
+// workspace, who owns it, and so what joining shares (Epo 2026-11-25).
 type InvitePreview struct {
-	Role          WorkspaceRole `json:"role"`
-	WorkspaceKind WorkspaceKind `json:"workspaceKind"`
+	Role          WorkspaceRole  `json:"role"`
+	WorkspaceKind WorkspaceKind  `json:"workspaceKind"`
+	WorkspaceName string         `json:"workspaceName"`
+	Owner         MaterialAuthor `json:"owner"`
 }
 
 // PreviewWorkspaceInvite reads an invite for its own invitee, answering not
@@ -708,7 +711,15 @@ func (s *Store) PreviewWorkspaceInvite(ctx context.Context, reference, userID st
 		invite.InvitedUserID == "" || invite.InvitedUserID != userID {
 		return InvitePreview{}, ErrNotFound
 	}
-	return InvitePreview{Role: invite.Role, WorkspaceKind: kind}, nil
+	preview := InvitePreview{Role: invite.Role, WorkspaceKind: kind}
+	err = s.pool.QueryRow(ctx, `SELECT w.name, `+authorCols+`
+		FROM workspaces w JOIN users owner ON owner.id=w.user_id
+		WHERE w.id=$1`, invite.WorkspaceID).
+		Scan(&preview.WorkspaceName, &preview.Owner.Name, &preview.Owner.AvatarURL)
+	if isNoRows(err) {
+		return InvitePreview{}, ErrNotFound
+	}
+	return preview, err
 }
 
 func (s *Store) acceptWorkspaceInvite(ctx context.Context, reference, userID string) (WorkspaceMember, []string, *Notification, error) {

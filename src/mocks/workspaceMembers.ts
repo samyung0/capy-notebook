@@ -181,4 +181,29 @@ export const mockWorkspaceMembers: WorkspaceMember[] = [
     userId: 'u_mock_leo',
     workspaceId: 'ws_calc',
   },
+  // Physics 11, the class the viewer joined as a student: its owner and
+  // classmates (the viewer's own row is added by the members handler).
+  {
+    avatarUrl: '/icons/avataaars-06.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Daniel Brooks',
+    role: 'owner',
+    userId: 'u_mock_brooks',
+    workspaceId: 'ws_phys',
+  },
+  {
+    createdAt: new Date().toISOString(),
+    name: 'Sam Patel',
+    role: 'viewer',
+    userId: 'u_mock_sam',
+    workspaceId: 'ws_phys',
+  },
+  {
+    avatarUrl: '/icons/avataaars-07.svg',
+    createdAt: new Date().toISOString(),
+    name: 'Mia Chen',
+    role: 'viewer',
+    userId: 'u_mock_mia',
+    workspaceId: 'ws_phys',
+  },
 ];

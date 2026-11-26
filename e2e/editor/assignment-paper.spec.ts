@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
-import { openAssignmentAsMember } from '../helpers/assignments';
+import { openAssignmentAsMember, pressStart } from '../helpers/assignments';
 import { m } from '../i18n';
 
 const PAGE = 'e2e/fixtures/files/images/flat.png';
 
 // Epo 2026-11-08 (S4, S5; S2 and the list 2026-11-19): an assignment that takes
-// uploads asks how in Before you start; Upload shows every question read only
+// uploads asks how when Start is pressed; Upload shows every question read only
 // beside Your answers, whose files can be removed.
 test('a member hands in a paper: two files, one removed, submitted', async ({
   page,
@@ -14,6 +14,7 @@ test('a member hands in a paper: two files, one removed, submitted', async ({
     sessionStorage.setItem('capy.scenario.last', 'workspace-member')
   );
   await openAssignmentAsMember(page, 'as_upload');
+  await pressStart(page);
   const before = page.getByRole('dialog');
   await before
     .getByRole('radio', { name: m.assignment_mode_upload() })
@@ -30,9 +31,9 @@ test('a member hands in a paper: two files, one removed, submitted', async ({
     .getByRole('region', { name: m.assignment_your_answers() })
     .getByRole('listitem');
   await expect(files).toHaveCount(2, { timeout: 15_000 });
-  await files.first().getByRole('button', { name: m.a11y_open_menu() }).click();
-  await page
-    .getByRole('menuitem', { name: m.assignment_hand_in_remove() })
+  await files
+    .first()
+    .getByRole('button', { name: m.assignment_hand_in_remove() })
     .click();
   await expect(files).toHaveCount(1);
   // Every question reads on its own, with nowhere to type.

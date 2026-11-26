@@ -41,7 +41,7 @@ const show = async (attempt: Record<string, unknown>) => {
   read.attempt = { isPending: false, refetch: vi.fn(), ...attempt };
   root ??= createRoot(host);
   await act(async () =>
-    root?.render(<AssignmentAttemptPage attemptId="at1" workspaceId="ws1" />)
+    root?.render(<AssignmentAttemptPage attemptId="at1" />)
   );
 };
 afterEach(() => {

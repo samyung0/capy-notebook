@@ -299,7 +299,7 @@ export function PaperPane({
     });
     flying.current += adding;
     try {
-      await uploads.add(chosen);
+      await uploads.add(chosen, files);
     } finally {
       flying.current -= adding;
     }

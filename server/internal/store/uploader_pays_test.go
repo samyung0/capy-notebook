@@ -159,7 +159,7 @@ func TestRemovedMemberSeesAndPurgesWhatItPaysFor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	trash, err := s.ListTrash(ctx, member, "", 0, "")
+	trash, err := s.ListTrash(ctx, member, "", ListFilter{}, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +239,7 @@ func TestPayerListingsFollowReach(t *testing.T) {
 		if got := (view{blocks.Items[0].LostAccess, blocks.Items[0].WorkspaceName, false}); got != block {
 			t.Fatalf("%s: block = %+v, want %+v", step, got, block)
 		}
-		trash, err := s.ListTrash(ctx, payer, "", 0, "")
+		trash, err := s.ListTrash(ctx, payer, "", ListFilter{}, 0, "")
 		if err != nil || len(trash.Items) != 1 {
 			t.Fatalf("%s: trash = %+v, %v", step, trash.Items, err)
 		}
@@ -443,7 +443,7 @@ func TestListingScopesOutsideAWorkspace(t *testing.T) {
 		workspace string
 		want      int
 	}{{"", 0}, {ws.ID, 1}} {
-		page, err := s.ListTrash(ctx, owner, scope.workspace, 0, "")
+		page, err := s.ListTrash(ctx, owner, scope.workspace, ListFilter{}, 0, "")
 		if err != nil || len(page.Items) != scope.want {
 			t.Fatalf("owner trash in %q = %+v, %v; want %d", scope.workspace, page.Items, err, scope.want)
 		}

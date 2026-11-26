@@ -19,6 +19,9 @@ import (
 
 type trashListInput struct {
 	WorkspaceID string `query:"workspaceId" doc:"Limit to one owned workspace; empty spans every owned workspace and standalone materials"`
+	Kind        string `query:"kind" doc:"Comma-separated kinds: file kinds and block kinds (note, quiz, flashcards, mindmap, diagram, canvas)"`
+	Workspaces  string `query:"workspaces" doc:"Comma-separated workspace ids the rows sit in (the Files page's Workspace filter)"`
+	Location    string `query:"location" doc:"Comma-separated locations: workspace, standalone"`
 	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
 	Cursor      string `query:"cursor" doc:"Opaque cursor from the previous page"`
 }
@@ -131,7 +134,11 @@ func (a *api) listTrash(ctx context.Context, in *trashListInput) (*trashPageOutp
 			return nil, hErr(err)
 		}
 	}
-	page, err := a.s.ListTrash(ctx, userID(ctx), in.WorkspaceID, in.Limit, in.Cursor)
+	filter, err := listFilter(in.Kind, in.Workspaces, in.Location)
+	if err != nil {
+		return nil, err
+	}
+	page, err := a.s.ListTrash(ctx, userID(ctx), in.WorkspaceID, filter, in.Limit, in.Cursor)
 	if err != nil {
 		return nil, hErr(err)
 	}

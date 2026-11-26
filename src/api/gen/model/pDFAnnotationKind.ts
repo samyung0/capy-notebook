@@ -10,8 +10,12 @@ export type PDFAnnotationKind = typeof PDFAnnotationKind[keyof typeof PDFAnnotat
 
 export const PDFAnnotationKind = {
   highlight: 'highlight',
-  rectangle: 'rectangle',
-  ellipse: 'ellipse',
+  underline: 'underline',
+  marker: 'marker',
   pen: 'pen',
   text: 'text',
+  note: 'note',
+  rectangle: 'rectangle',
+  ellipse: 'ellipse',
+  arrow: 'arrow',
 } as const;

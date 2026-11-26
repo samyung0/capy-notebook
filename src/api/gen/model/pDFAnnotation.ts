@@ -4,34 +4,36 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { PDFAnnotationAuthor } from './pDFAnnotationAuthor.ts';
 import type { PDFAnnotationKind } from './pDFAnnotationKind.ts';
 import type { PDFPoint } from './pDFPoint.ts';
 import type { PDFRect } from './pDFRect.ts';
 
 export interface PDFAnnotation {
-  /** A URL to the JSON Schema for this object. */
-  readonly $schema?: string;
-  authorId: string;
+  readonly author?: PDFAnnotationAuthor;
   /** @pattern ^#[0-9a-fA-F]{6}$ */
   color: string;
-  createdAt: string;
-  fileId: string;
+  /** @maxLength 3000 */
+  comment: string;
+  /** @pattern ^ann_[0-9a-f]{10,32}$ */
   id: string;
   kind: PDFAnnotationKind;
   /** @minimum 1 */
   page: number;
-  /**
-     * @maxItems 4096
-     * @nullable
-     */
-  points?: PDFPoint[] | null;
-  /**
-     * @minItems 1
-     * @maxItems 1000
-     */
+  /** @maxItems 1000 */
   rects: PDFRect[];
-  sourceIdentity: string;
+  /**
+     * @minimum 0
+     * @maximum 80
+     */
+  size: number;
+  /** @maxItems 512 */
+  strokes: (PDFPoint[] | null)[];
   /** @maxLength 2000 */
-  text?: string;
-  updatedAt: string;
+  text: string;
+  /**
+     * @minimum 0
+     * @maximum 80
+     */
+  width: number;
 }

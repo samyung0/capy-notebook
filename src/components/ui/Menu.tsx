@@ -81,15 +81,12 @@ export interface MenuProps {
   side?: 'top' | 'bottom';
   /** Custom trigger. Defaults to the unified thick vertical 3-dot button. */
   trigger?: ReactNode;
-  /** Icon of the default trigger; item cards use the horizontal dots. */
-  triggerIcon?: 'moreVertical' | 'moreHorizontal';
 }
 
 /** Convenience action list with the shared menu's keyboard and focus behavior. */
 export function Menu({
   items,
   trigger,
-  triggerIcon = 'moreVertical',
   align = 'end',
   side,
   iconContainerClassName,
@@ -105,7 +102,7 @@ export function Menu({
       {trigger ?? (
         <IconButton
           className={cn('p-2', iconContainerClassName)}
-          icon={triggerIcon}
+          icon="moreVertical"
           label={m.a11y_open_menu()}
           size="md"
           variant="ghost-hover"

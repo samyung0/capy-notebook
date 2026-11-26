@@ -798,8 +798,7 @@ test('a text source at its size limit opens to view only', async ({ page }) => {
   await expect(page.getByText(m.files_size_limit())).toHaveCount(0);
 });
 
-// biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
-test.fixme('a failed annotation save shows its strip on the PDF', async ({
+test('a failed annotation save shows its strip on the PDF', async ({
   page,
 }) => {
   await launch(page, 'annotations-save');

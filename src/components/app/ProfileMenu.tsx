@@ -191,7 +191,7 @@ function ProfileMenuInner({
 }
 
 /** The sidebar's foot: your avatar and name, opening the profile menu
- * upwards. In the 70px rail only the avatar shows. */
+ * upwards. In the 62px rail only the avatar shows. */
 function ProfileRowButton({
   avatarUrl,
   name,

@@ -50,18 +50,10 @@ type sourceRefreshInput struct {
 	}
 }
 type sourceProcessOutput struct{ Body store.SourceProcessResult }
-type annotationsOutput struct {
-	Body []store.PDFAnnotation `nullable:"false"`
-}
-type annotationOutput struct{ Body store.PDFAnnotation }
-type annotationInput struct {
+type annotationsOutput struct{ Body store.PDFAnnotationList }
+type annotationChangesInput struct {
 	ID   string `path:"id"`
-	Body store.PDFAnnotationBody
-}
-type annotationUpdateInput struct {
-	ID           string `path:"id"`
-	AnnotationID string `path:"annotationId"`
-	Body         store.PDFAnnotationBody
+	Body store.PDFAnnotationChanges
 }
 type sourceSessionInput struct {
 	ID string `path:"id"`
@@ -69,10 +61,6 @@ type sourceSessionInput struct {
 	// insert, and state only while a saved checkpoint is ahead of the indexed
 	// one or a publication waits for its rebuild.
 	View bool `query:"view" doc:"Viewer read: read access only, omits state unless checkpoint is ahead of indexedCheckpoint or a publication waits for its rebuild"`
-}
-type annotationIDInput struct {
-	ID           string `path:"id"`
-	AnnotationID string `path:"annotationId"`
 }
 
 // sourceBodyDeadline lets a large source body arrive for as long as the
@@ -104,9 +92,7 @@ func (a *api) registerSourceDocuments(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/files/{id}/checkpoint", "checkpointSourceDocument", tag, "Persist an authorized source checkpoint", http.StatusOK, 150<<20, a.checkpointSourceDocument, sourceBodyDeadline)
 	reg(api, http.MethodPost, "/internal/collaboration/files/{id}/refresh", "requestSourceRefresh", tag, "Admit a saved source refresh", http.StatusAccepted, a.requestSourceRefresh)
 	reg(api, http.MethodGet, "/api/files/{id}/annotations", "listPDFAnnotations", tag, "Read private PDF annotations", http.StatusOK, a.listPDFAnnotations)
-	reg(api, http.MethodPost, "/api/files/{id}/annotations", "createPDFAnnotation", tag, "Create a private PDF annotation", http.StatusCreated, a.createPDFAnnotation)
-	reg(api, http.MethodPatch, "/api/files/{id}/annotations/{annotationId}", "updatePDFAnnotation", tag, "Update an authored PDF annotation", http.StatusOK, a.updatePDFAnnotation)
-	reg(api, http.MethodDelete, "/api/files/{id}/annotations/{annotationId}", "deletePDFAnnotation", tag, "Delete an authored PDF annotation", http.StatusNoContent, a.deletePDFAnnotation)
+	regWithMaxBody(api, http.MethodPatch, "/api/files/{id}/annotations", "changePDFAnnotations", tag, "Save and remove private PDF annotations", http.StatusNoContent, annotationChangesMaxBytes, a.changePDFAnnotations)
 }
 func (a *api) checkSourceSecret(ctx context.Context, secret string) error {
 	if !a.collaborationSecretOK(secret) {
@@ -420,22 +406,12 @@ func (a *api) listPDFAnnotations(ctx context.Context, in *collaborationTokenInpu
 	}
 	return &annotationsOutput{Body: out}, nil
 }
-func (a *api) createPDFAnnotation(ctx context.Context, in *annotationInput) (*annotationOutput, error) {
-	out, err := a.s.SavePDFAnnotation(ctx, userID(ctx), in.ID, "", in.Body)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &annotationOutput{Body: out}, nil
-}
-func (a *api) updatePDFAnnotation(ctx context.Context, in *annotationUpdateInput) (*annotationOutput, error) {
-	out, err := a.s.SavePDFAnnotation(ctx, userID(ctx), in.ID, in.AnnotationID, in.Body)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &annotationOutput{Body: out}, nil
-}
-func (a *api) deletePDFAnnotation(ctx context.Context, in *annotationIDInput) (*Empty, error) {
-	if err := a.s.DeletePDFAnnotation(ctx, userID(ctx), in.ID, in.AnnotationID); err != nil {
+
+// annotationChangesMaxBytes holds a queue of marks the viewer splits at 3 MB.
+const annotationChangesMaxBytes = 4 << 20
+
+func (a *api) changePDFAnnotations(ctx context.Context, in *annotationChangesInput) (*Empty, error) {
+	if err := a.s.ChangePDFAnnotations(ctx, userID(ctx), in.ID, in.Body); err != nil {
 		return nil, hErr(err)
 	}
 	return &Empty{}, nil
