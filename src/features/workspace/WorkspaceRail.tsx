@@ -48,8 +48,8 @@ export function workspaceSections(
   workspace: Pick<Workspace, 'kind' | 'role'>
 ): { value: WorkspaceSection; icon: IconName; label: string }[] {
   const { pages } = studyView(workspace);
-  // Dashboard, Canvas, Assignments (members' too, Epo 2026-11-25), Study,
-  // Files, Agent, Members (Epo 2026-11-24).
+  // Dashboard, Canvas, Files (Epo 2026-11-26), Assignments (members' too, Epo
+  // 2026-11-25), Study, Agent, Members (Epo 2026-11-24).
   return [
     {
       icon: 'dashboard' as const,
@@ -63,6 +63,11 @@ export function workspaceSections(
       value: 'canvas' as const,
     },
     {
+      icon: 'folder' as const,
+      label: m.workspace_tab_files(),
+      value: 'files' as const,
+    },
+    {
       icon: 'clipboard' as const,
       label: m.study_panel_assignments(),
       value: 'todo' as const,
@@ -71,11 +76,6 @@ export function workspaceSections(
       icon: 'book' as const,
       label: m.workspace_tab_study(),
       value: 'study' as const,
-    },
-    {
-      icon: 'folder' as const,
-      label: m.workspace_tab_files(),
-      value: 'files' as const,
     },
     {
       icon: 'ai' as const,
