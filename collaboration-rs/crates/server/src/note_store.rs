@@ -1500,11 +1500,9 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Stored>, S
     };
     let version: i64 = row.get("stored_version");
     let kind: String = row.get("kind");
-    let log: Vec<Vec<u8>> = rows(&tx, material_id, Some(version))
-        .await?
-        .into_iter()
-        .map(|(_, update)| update)
-        .collect();
+    let log = rows(&tx, material_id, Some(version)).await?;
+    let first = log.first().map(|(seq, _)| *seq);
+    let log: Vec<Vec<u8>> = log.into_iter().map(|(_, update)| update).collect();
     largest.note(longest(&log));
     let held = match Model::of(&kind) {
         Model::Board => {
@@ -1528,7 +1526,27 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Stored>, S
         }
         _ => None,
     };
-    let base_projection: Option<Value> = row.get("base_projection");
+    // A fold stores the base's projection at the version of the last row it
+    // folded, and a store appends the stored version plus one, so the rows
+    // left start right after it, or there are none and it is the stored
+    // version. One that does not match is not this base's (a fold by a
+    // server older than 0196, after a rollback, rewrote the base and the
+    // rows and left it): the board is replayed, as with none.
+    let expected = first.map_or(version, |seq| seq - 1);
+    let base_projection: Option<Value> =
+        row.get::<_, Option<Value>>("base_projection")
+            .filter(|projection| {
+                let at = crate::model::projection_version(projection);
+                let current = at == Some(expected);
+                if !current {
+                    observe::log(
+                        Level::Warn,
+                        "board base projection stale",
+                        serde_json::json!({ "expected": expected, "materialId": material_id, "version": at }),
+                    );
+                }
+                current
+            });
     let held = match (held, base_projection) {
         (Some(held), Some(base_projection)) => {
             tx.commit().await?;
@@ -1541,7 +1559,18 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Stored>, S
         }
         (held, _) => held,
     };
-    let base: Vec<u8> = row.get("state");
+    // The read leaves out a board's base when it has a projection: a stale
+    // one's is read now, in the same snapshot.
+    let base: Vec<u8> = match row.get::<_, Option<Vec<u8>>>("state") {
+        Some(base) => base,
+        None => tx
+            .query_one(
+                "SELECT state FROM material_yjs_documents WHERE material_id=$1",
+                &[&material_id],
+            )
+            .await?
+            .get("state"),
+    };
     largest.note(base.len());
     let keys = if kind == "quiz" {
         let found = tx
@@ -1951,6 +1980,93 @@ mod tests {
             panic!("a board without its projection is replayed");
         };
         assert_eq!(replay.base, stored_indexes_match(&pool, &board).await.0);
+    }
+
+    /// A base's projection that is not this base's is replayed (review of
+    /// the fold projection, finding 1): a server older than 0196 that folds
+    /// after a rollback rewrites the base and the rows and leaves the
+    /// projection, which would leave out an image drawn meanwhile. Its
+    /// version must be the one just before the first row left, or the
+    /// stored version when none is left; board rows have no gaps, since a
+    /// store appends the stored version plus one. Against the rooms tests'
+    /// Postgres. Fails if a stale projection is read as the base's.
+    #[tokio::test]
+    async fn a_stale_base_projection_is_read_for_a_replay() {
+        let Some(pool) = it_pool() else { return };
+        let block = serde_json::json!({
+            "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
+            "version": 0, "images": [],
+        });
+        let board = it_material(&pool, "canvas", block).await;
+        let loaded = load(&pool, &board, 1, Doc::Content).await.unwrap();
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(&doc, &loaded.base, &loaded.rows).unwrap();
+        let writer = yrs::Doc::with_options(ydoc::doc_options(7));
+        ydoc::replay(&writer, &state(&doc), &[] as &[&[u8]]).unwrap();
+        let blocks = writer.get_or_insert_map("blocks");
+        let none = sessions::Unsaved::default();
+        let mut stored = Vec::new();
+        for id in ["i1", "i2"] {
+            let before = writer.transact().state_vector();
+            {
+                let mut txn = writer.transact_mut();
+                let image = yrs::Map::insert(&blocks, &mut txn, id, yrs::MapPrelim::default());
+                yrs::Map::insert(&image, &mut txn, "prop:sourceId", format!("asset_{id}"));
+            }
+            let row = writer.transact().encode_state_as_update_v1(&before);
+            let version = append(&pool, &board, 1, Doc::Content, &row, &[], &none, &[])
+                .await
+                .unwrap();
+            stored.push(version);
+            if id == "i1" {
+                fold(&pool, &board, 1, Doc::Content, None, None, None)
+                    .await
+                    .unwrap()
+                    .unwrap();
+            }
+        }
+        let stale = |version: i64| {
+            let (pool, board) = (pool.clone(), board.clone());
+            async move {
+                pool.get()
+                    .await
+                    .unwrap()
+                    .execute(
+                        "UPDATE material_yjs_documents
+                         SET base_projection=jsonb_set(base_projection, '{0,version}', to_jsonb($2::bigint))
+                         WHERE material_id=$1",
+                        &[&board, &version],
+                    )
+                    .await
+                    .unwrap();
+            }
+        };
+        // The fold took the first row: the second is left, right after it.
+        let Some(Stored::Board(between)) = durable(&pool, &board).await.unwrap() else {
+            panic!("a board with its own projection reads it");
+        };
+        assert_eq!(between.rows.len(), 1);
+        stale(stored[0] - 1).await;
+        let Some(Stored::Replay(replay)) = durable(&pool, &board).await.unwrap() else {
+            panic!("a stale projection before the rows left is replayed");
+        };
+        assert_eq!(replay.base, stored_indexes_match(&pool, &board).await.0);
+        assert_eq!(replay.rows.len(), 1);
+        // No row is left: the projection is at the stored version.
+        fold(&pool, &board, 1, Doc::Content, None, None, None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            durable(&pool, &board).await.unwrap(),
+            Some(Stored::Board(_))
+        ));
+        stale(stored[0]).await;
+        let Some(Stored::Replay(replay)) = durable(&pool, &board).await.unwrap() else {
+            panic!("a stale projection with no rows left is replayed");
+        };
+        assert!(replay.rows.is_empty());
+        assert!(replay.held.is_some());
     }
 
     /// `text` typed at the start of `doc`'s first block by `client`: the

@@ -331,6 +331,16 @@ pub fn board_projection_since(
     Ok((base, ids))
 }
 
+/// The stored version a board's projection was made at: its
+/// `canvas_board` block's `version`.
+pub fn projection_version(projection: &Value) -> Option<i64> {
+    projection
+        .as_array()?
+        .iter()
+        .find(|block| block["type"] == "canvas_board")?["version"]
+        .as_i64()
+}
+
 /// The asset ids a `canvas_board` block's `images` list.
 pub fn image_ids(images: &Value) -> Result<BTreeSet<String>, String> {
     images

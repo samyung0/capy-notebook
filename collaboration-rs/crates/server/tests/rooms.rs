@@ -20720,6 +20720,60 @@ async fn an_unloads_exact_list_replaces_the_superset_sent_at_its_version() {
     assert_eq!(content["value"][0]["images"], images_of(&[b]));
 }
 
+/// A board whose base's projection is not its base's is replayed (review
+/// of the fold projection, finding 1): a server older than 0196 that folds
+/// after a rollback rewrites the base and leaves the projection. Here an
+/// image is folded into the base at an unload and the base's projection is
+/// set back to the seed's; on the next open the projection after a stroke's
+/// store (asked for by its id-shaped strings) replays the board and finds
+/// the image Go holds, so it sends nothing, and the unload sends the image
+/// at the stored version. Fails if the stale projection is read, which names
+/// no image and would have Go trash it.
+#[tokio::test]
+async fn a_board_with_a_stale_base_projection_is_replayed() {
+    let Some(env) = env() else { return };
+    let (api, kept) = projections(&env).await;
+    let server = start_configured(&env, Some(&api), &[]).await;
+    let (user, material, room, assets) = canvas_with_assets(&env, &["a"]).await;
+    kept.own(&material);
+    let a = assets[0].as_str();
+    {
+        let mut writer = Client::at_board(server.port, &room, &user).await;
+        let added =
+            writer.edited(|doc| draw_block(doc, "i1", "affine:image", &[("prop:sourceId", a)]));
+        writer.stored(&added, "r1").await;
+        kept.first(&material, 1).await;
+    }
+    unloaded(server.port).await;
+    assert!(log_folded(&env, &material).await);
+    let seed = serde_json::json!([{
+        "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
+        "version": 1, "images": [],
+    }]);
+    db(&env)
+        .await
+        .execute(
+            "UPDATE material_yjs_documents SET base_projection=$2 WHERE material_id=$1",
+            &[&material, &seed],
+        )
+        .await
+        .expect("stale");
+    {
+        let mut writer = Client::at_board(server.port, &room, &user).await;
+        let stroke = writer.edited(|doc| stroke_and_type(doc, "s1", "hello"));
+        writer.stored(&stroke, "r2").await;
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    unloaded(server.port).await;
+    let version = stored_version(&env, &material).await;
+    let sent = kept.first(&material, 2).await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let sent_after = kept.of(&material);
+    assert_eq!(sent_after.len(), 2, "{sent_after:?}");
+    assert_eq!(sent[1]["yjsVersion"], version);
+    assert_eq!(projected_images(&sent[1]), images_of(&[a]));
+}
+
 /// Go trashes an image asset no projection names and restores one named
 /// again (`pruneMaterialAssetsTx`). An image erased from a board stays named
 /// until the projection after the next fold (here at the second row), which
