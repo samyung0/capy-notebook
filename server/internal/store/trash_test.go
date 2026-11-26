@@ -119,14 +119,14 @@ func TestTrashLifecycleAuthorityAndVisibility(t *testing.T) {
 	}
 
 	// The editor who trashed it cannot see or restore the shared bin.
-	page, err := s.ListTrash(ctx, editorID, ws.ID, 50, "")
+	page, err := s.ListTrash(ctx, editorID, ws.ID, ListFilter{}, 50, "")
 	if err != nil || len(page.Items) != 0 {
 		t.Fatalf("editor trash listing = %+v, %v", page, err)
 	}
 	if _, err := s.RestoreTrashed(ctx, editorID, agenttools.KindSourceFile, file.ID, trashed.Effect.TrashEpisodeID, AgentOperation{}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("editor restore = %v", err)
 	}
-	page, err = s.ListTrash(ctx, ownerID, ws.ID, 50, "")
+	page, err = s.ListTrash(ctx, ownerID, ws.ID, ListFilter{}, 50, "")
 	if err != nil || len(page.Items) != 2 {
 		t.Fatalf("owner trash listing = %+v, %v", page, err)
 	}

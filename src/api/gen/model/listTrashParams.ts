@@ -11,6 +11,18 @@ export type ListTrashParams = {
  */
 workspaceId?: string;
 /**
+ * Comma-separated kinds: file kinds and block kinds (note, quiz, flashcards, mindmap, diagram, canvas)
+ */
+kind?: string;
+/**
+ * Comma-separated workspace ids the rows sit in (the Files page's Workspace filter)
+ */
+workspaces?: string;
+/**
+ * Comma-separated locations: workspace, standalone
+ */
+location?: string;
+/**
  * @minimum 1
  * @maximum 100
  */

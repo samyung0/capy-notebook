@@ -142,12 +142,10 @@ export function QuestionRunner({
   showAnswerKey = false,
   questionNumber,
   renderBlock,
-  frameAnswer,
   titleAside,
   headerMarks,
   partResults = true,
   layout = 'boxes',
-  canvasPictures = false,
   pinFrom,
 }: {
   /** Learner questions (no answer key) only render without `review`, which
@@ -162,8 +160,6 @@ export function QuestionRunner({
   showAnswerKey?: boolean;
   questionNumber?: number;
   renderBlock?: QuestionViewProps['renderBlock'];
-  /** The question dialog: wraps each part's answer controls to select them. */
-  frameAnswer?: (partId: string, answer: ReactNode) => ReactNode;
   titleAside?: QuestionViewProps['titleAside'];
   headerMarks?: boolean;
   /** A checked choice part's "Wrong · 0 / 2 marks" line; a member's result
@@ -173,9 +169,6 @@ export function QuestionRunner({
    * it, or as plain lines with Your answer and Correct answer under them (a
    * member's result, Epo 2026-11-18). */
   layout?: AnswerLayout;
-  /** Every canvas as its picture, with nothing to open: an assignment
-   * answered on paper. */
-  canvasPictures?: boolean;
   /** What a board pins when `question` lost its first line to the page's
    * heading (an assignment): the question whole, with its number. */
   pinFrom?: { number: number; question: Question | LearnerQuestion };
@@ -192,7 +185,6 @@ export function QuestionRunner({
     block: CanvasBlock,
     index: number
   ) => {
-    if (canvasPictures) return <QuestionBlockView block={block} />;
     const pinned = pinnedQuestion(pinQuestion, wholePart(part), pinNumber);
     const canvas = partAnswerCanvas(question, part);
     return canvas?.place.section === 'part' && canvas.index === index ? (
@@ -219,7 +211,7 @@ export function QuestionRunner({
     index: number,
     section: BlockSection
   ) => {
-    const parts = canvasPictures ? [] : sharingParts(question, section, index);
+    const parts = sharingParts(question, section, index);
     const [lead] = parts;
     const place = lead && partAnswerCanvas(question, lead)?.place;
     if (!place) return <QuestionBlockView block={block} />;
@@ -295,11 +287,9 @@ export function QuestionRunner({
     // Where its answer control would be (S1); a check gives its verdict.
     const runner =
       place && place !== 'part' && !review ? (
-        !canvasPictures && (
-          <p className="t-meta text-fg-muted">
-            {m.question_canvas_in_canvas_above()}
-          </p>
-        )
+        <p className="t-meta text-fg-muted">
+          {m.question_canvas_in_canvas_above()}
+        </p>
       ) : (
         <PartRunner
           disabled={disabled}
@@ -313,11 +303,7 @@ export function QuestionRunner({
           value={answers[drawing] ?? emptyAnswer(part as QuestionPart)}
         />
       );
-    return (
-      <div className="@container col-[2/-1] min-w-0">
-        {frameAnswer ? frameAnswer(part.id, runner) : runner}
-      </div>
-    );
+    return <div className="@container col-[2/-1] min-w-0">{runner}</div>;
   };
   if (!review)
     return (

@@ -56,15 +56,15 @@ func assertCommentRoomTx(ctx context.Context, tx pgx.Tx, materialID string) erro
 	return nil
 }
 
-// assertAnnotationRoomTx refuses a new annotation at AnnotationsPerFile; the
-// caller holds the file row's lock.
+// assertAnnotationRoomTx refuses a write that left the file past
+// AnnotationsPerFile; the caller holds the file row's lock.
 func assertAnnotationRoomTx(ctx context.Context, tx pgx.Tx, fileID string) error {
 	var n int
 	if err := tx.QueryRow(ctx, `SELECT count(*) FROM pdf_annotations WHERE file_id=$1`,
 		fileID).Scan(&n); err != nil {
 		return err
 	}
-	if n >= AnnotationsPerFile {
+	if n > AnnotationsPerFile {
 		return ErrTooManyAnnotations
 	}
 	return nil

@@ -89,9 +89,6 @@ type assignmentMarkInput struct {
 	ID   string `path:"id"`
 	Body store.AssignmentMark
 }
-type sharingNoticeOutput struct {
-	Body store.SharingNotice
-}
 
 func (a *api) registerAssignments(api huma.API) {
 	const tag = "Assignments"
@@ -116,8 +113,6 @@ func (a *api) registerAssignments(api huma.API) {
 	reg(api, http.MethodGet, "/api/assignment-attempts/{id}", "getAssignmentAttempt", tag, "An attempt: running, or its results", http.StatusOK, a.getAssignmentAttempt)
 	regWithMaxBody(api, http.MethodPut, "/api/assignment-attempts/{id}/answers", "saveAssignmentAnswers", tag, "Save a running attempt's answers", http.StatusNoContent, answersMaxBytes, a.saveAssignmentAnswers)
 	regWithMaxBody(api, http.MethodPost, "/api/assignment-attempts/{id}/submit", "submitAssignmentAttempt", tag, "Submit a running attempt: closed parts marked, open parts left for the owner", http.StatusOK, answersMaxBytes, a.submitAssignmentAttempt)
-	reg(api, http.MethodGet, "/api/workspaces/{id}/sharing-notice", "getSharingNotice", tag, "Whether a class member is yet to be told what they share", http.StatusOK, a.getSharingNotice)
-	reg(api, http.MethodPut, "/api/workspaces/{id}/sharing-notice", "markSharingNoticeSeen", tag, "Record that a class member was told what they share", http.StatusNoContent, a.markSharingNoticeSeen)
 	reg(api, http.MethodPost, "/api/assignment-attempts/{id}/marks", "markAssignmentAnswer", tag, "Set or change a question's marks and comment in a member's answers", http.StatusOK, a.markAssignmentAnswer)
 	reg(api, http.MethodPost, "/api/assignment-attempts/{id}/regrade", "regradeAssignmentQuestion", tag, "Have the AI grade one question of a member's answers again, on the caller's credits", http.StatusOK, a.regradeAssignmentQuestion)
 	reg(api, http.MethodPut, "/api/assignments/{id}/grades/{userId}", "setAssignmentGrade", tag, "Set or clear a member's grade on an assignment graded on points", http.StatusNoContent, a.setAssignmentGrade)
@@ -133,6 +128,12 @@ func assignmentError(err error) error {
 		return conflictError("assignment_closed", err.Error())
 	case errors.Is(err, store.ErrAssignmentNoAttempts):
 		return conflictError("assignment_no_attempts", err.Error())
+	case errors.Is(err, store.ErrPaperHandedIn):
+		return conflictError("paper_handed_in", err.Error())
+	case errors.Is(err, store.ErrAnsweredOnline):
+		return conflictError("answered_online", err.Error())
+	case errors.Is(err, store.ErrHandInFinal):
+		return conflictError("hand_in_final", err.Error())
 	case errors.Is(err, store.ErrAttemptFinished):
 		return conflictError("attempt_finished", err.Error())
 	case errors.Is(err, store.ErrAssignmentQuizGone):
@@ -151,14 +152,15 @@ func assignmentError(err error) error {
 const assignmentPage = 50
 
 type assignmentListInput struct {
-	ID     string `path:"id"`
-	Closed bool   `query:"closed" doc:"Keep the closed ones"`
-	Done   bool   `query:"done" doc:"Keep the ones the caller has done"`
-	Topic  string `query:"topic" doc:"Comma-separated topic ids: only those on one of them"`
-	Kind   string `query:"kind" enum:"marked,unmarked" doc:"Only graded quizzes (marked) or only assignments (unmarked); none keeps both"`
-	Sort   string `query:"sort" enum:"title,kind,topic,posted,due" doc:"A column to order by, open ones still first; none is the page's own order"`
-	Dir    string `query:"dir" enum:"asc,desc" default:"asc"`
-	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
+	ID      string `path:"id"`
+	Pending bool   `query:"pending" doc:"Staff: only what waits on them, open or closed: answers to mark, submissions to grade, grades to release"`
+	Closed  bool   `query:"closed" doc:"Keep the closed ones"`
+	Done    bool   `query:"done" doc:"Keep the ones the caller has done"`
+	Topic   string `query:"topic" doc:"Comma-separated topic ids: only those on one of them"`
+	Kind    string `query:"kind" enum:"marked,unmarked" doc:"Only graded quizzes (marked) or only assignments (unmarked); none keeps both"`
+	Sort    string `query:"sort" enum:"title,kind,topic,posted,due" doc:"A column to order by, open ones still first; none is the page's own order"`
+	Dir     string `query:"dir" enum:"asc,desc" default:"asc"`
+	Cursor  string `query:"cursor" doc:"Opaque cursor from the previous page"`
 }
 
 func (a *api) listAssignments(ctx context.Context, in *assignmentListInput) (*assignmentListOutput, error) {
@@ -171,7 +173,7 @@ func (a *api) listAssignments(ctx context.Context, in *assignmentListInput) (*as
 		offset = n
 	}
 	res, err := a.s.ListAssignments(ctx, userID(ctx), in.ID, time.Now(), store.AssignmentListParams{
-		Closed: in.Closed, Done: in.Done, TopicIDs: commaValues(in.Topic), Kind: in.Kind,
+		Pending: in.Pending, Closed: in.Closed, Done: in.Done, TopicIDs: commaValues(in.Topic), Kind: in.Kind,
 		Sort: in.Sort, Ascending: in.Dir == "asc", Offset: offset, Limit: assignmentPage,
 	})
 	if err != nil {
@@ -678,25 +680,13 @@ func (a *api) setAssignmentGrade(ctx context.Context, in *assignmentGradeInput) 
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
 	}
-	if err := a.s.SetAssignmentGrade(ctx, userID(ctx), in.ID, in.UserID, (*float64)(in.Body.Points), time.Now()); err != nil {
+	sent, err := a.s.SetAssignmentGrade(ctx, userID(ctx), in.ID, in.UserID, (*float64)(in.Body.Points), time.Now())
+	if err != nil {
 		return nil, assignmentError(err)
 	}
+	if sent != nil {
+		a.publishNotifications(ctx, []store.Notification{*sent})
+	}
 	a.publishTodo(ctx, append(a.todoAudience(ctx, in.ID, true), in.UserID)...)
-	return &Empty{}, nil
-}
-
-// getSharingNotice reads the caller's own flag, so it needs no access check.
-func (a *api) getSharingNotice(ctx context.Context, in *assignmentIDInput) (*sharingNoticeOutput, error) {
-	notice, err := a.s.SharingNoticeFor(ctx, userID(ctx), in.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &sharingNoticeOutput{Body: notice}, nil
-}
-
-func (a *api) markSharingNoticeSeen(ctx context.Context, in *assignmentIDInput) (*Empty, error) {
-	if err := a.s.MarkSharingNoticeSeen(ctx, userID(ctx), in.ID, time.Now()); err != nil {
-		return nil, hErr(err)
-	}
 	return &Empty{}, nil
 }

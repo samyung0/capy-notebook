@@ -30,7 +30,9 @@ type TodoList struct {
 const (
 	todoOpenRows = `NOT a.draft AND a.closed_at IS NULL`
 	todoNamed    = `EXISTS (SELECT 1 FROM assignment_assignees aa WHERE aa.assignment_id=a.id AND aa.user_id=$2)`
-	todoWaiting  = `EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=a.id AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0)`
+	todoWaiting  = `(EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=a.id AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0)
+		OR (a.points IS NOT NULL AND EXISTS (SELECT 1 FROM assignment_done d WHERE d.assignment_id=a.id
+			AND NOT EXISTS (SELECT 1 FROM assignment_grades g WHERE g.assignment_id=a.id AND g.user_id=d.user_id))))`
 
 	todoStaffRows  = `a.workspace_id = ANY($1) AND (` + todoWaiting + ` OR (` + todoOpenRows + ` AND ` + todoNamed + `))`
 	todoMemberRows = `a.workspace_id = ANY($1) AND ` + todoOpenRows + ` AND (a.assign_all OR ` + todoNamed + `)`
@@ -276,7 +278,8 @@ func (s *Store) HideTodoDone(ctx context.Context, userID string, ids []string, n
 // isTodo: answers waiting for this staff member, or work given to the caller
 // that is published and not closed.
 func isTodo(a Assignment) bool {
-	if a.Manage != nil && a.Manage.ToApprove > 0 {
+	// Answers to mark, or submissions to grade (Epo 2026-11-26).
+	if a.Manage != nil && (a.Manage.ToApprove > 0 || a.Manage.ToGrade > 0) {
 		return true
 	}
 	return a.Mine != nil && !a.Draft && a.ClosedAt == nil

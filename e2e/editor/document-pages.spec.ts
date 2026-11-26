@@ -32,15 +32,6 @@ const openItem = (page: Page, name: string) =>
     .getByRole('button', { exact: true, name: m.files_select_item({ name }) })
     .dblclick();
 
-async function editPdf(page: Page) {
-  await page.getByRole('button', { name: m.material_mode() }).click();
-  await expect(page).toHaveURL(/mode=edit/);
-
-  await expect(
-    page.getByRole('button', { exact: true, name: m.pdf_draw() })
-  ).toBeEnabled();
-}
-
 test('Files page rows open the shared document page', async ({ page }) => {
   await page.goto('/files');
   await openItem(page, 'Study journal 001');
@@ -100,13 +91,19 @@ test('Files page rows open the shared document page', async ({ page }) => {
   ).toBeVisible({ timeout: 30_000 });
 });
 
-// TODO: better UX for PDF highlighting and overlays. These need the PDF's
-// Edit/View switch, hidden until then (ANNOTATION_TOOLS in PdfView.tsx).
-// biome-ignore lint/suspicious/noSkippedTests: PDF tools are hidden for now.
-test.fixme('PDF tools persist private marks, undo restores IDs, and narrow tools scroll', async ({
+/** Subpaths in the page's ink: a pen mark draws each stroke as its own. */
+const subpaths = (path: ReturnType<Page['locator']>) =>
+  path.evaluate(
+    (element) => (element.getAttribute('d') ?? '').split('M').length - 1
+  );
+
+// PDF marks round 1 (Epo 2026-11-24): marks draw at once and save behind,
+// select, move and resize, take comments beside the page, and persist.
+test('PDF marks draw at once, select and move, take comments and persist', async ({
   page,
   context,
 }) => {
+  test.setTimeout(120_000);
   await context.route(
     'https://raw.githubusercontent.com/mozilla/pdf.js/**',
     (route) =>
@@ -116,6 +113,7 @@ test.fixme('PDF tools persist private marks, undo restores IDs, and narrow tools
         path: path.resolve('e2e/fixtures/files/basic/digital.pdf'),
       })
   );
+  await page.setViewportSize({ height: 900, width: 1280 });
   await page.goto('/files/f_1');
   await expect(page.getByText('Page 1 of 1', { exact: true })).toBeVisible({
     timeout: 30_000,
@@ -125,211 +123,189 @@ test.fixme('PDF tools persist private marks, undo restores IDs, and narrow tools
   const toolbar = page.getByRole('toolbar', {
     name: m.pdf_private_annotations(),
   });
-  await expect(
-    toolbar.getByRole('button', { exact: true, name: m.pdf_draw() })
-  ).toBeDisabled();
-  await editPdf(page);
+  const button = (name: string) =>
+    toolbar.getByRole('button', { exact: true, name });
+  // Marks are private, so the tools are on from the start, with no Edit.
+  await expect(button(m.pdf_pen())).toBeEnabled();
+  await expect(button(m.pdf_select())).toHaveAttribute('aria-pressed', 'true');
 
-  const select = toolbar.getByRole('button', {
-    exact: true,
-    name: m.pdf_select(),
-  });
-  const draw = toolbar.getByRole('button', { exact: true, name: m.pdf_draw() });
-  await expect(select).toHaveAttribute('aria-pressed', 'true');
-  await expect(draw).toHaveAttribute('aria-haspopup', 'dialog');
-
-  await toolbar
-    .getByRole('button', { exact: true, name: m.pdf_draw() })
-    .click();
-  await page.getByRole('button', { exact: true, name: m.pdf_pen() }).click();
-  await expect(draw).toHaveAttribute('aria-pressed', 'true');
-  await expect(select).toHaveAttribute('aria-pressed', 'false');
+  const ink = pdfPage.locator('svg[data-pdf-marks] path[d]:not([data-live])');
   const bounds = await pdfPage.boundingBox();
   if (!bounds) throw new Error('PDF page has no bounds');
-  const start = { x: bounds.x + 90, y: bounds.y + 130 };
-  await page.mouse.move(start.x, start.y);
-  await page.mouse.down();
-  await page.mouse.move(start.x, start.y + 220, { steps: 8 });
-  await page.mouse.move(start.x + 220, start.y + 220, { steps: 8 });
-  await page.mouse.up();
-  const marks = pdfPage.locator('svg[aria-hidden="true"] > g');
-  await expect(marks.locator('polyline')).toHaveCount(1);
-  const undo = toolbar.getByRole('button', {
-    exact: true,
-    name: m.editor_undo(),
-  });
-  const redo = toolbar.getByRole('button', {
-    exact: true,
-    name: m.editor_redo(),
-  });
-  await expect(undo).toBeEnabled();
-  await toolbar
-    .getByRole('button', { exact: true, name: m.pdf_eraser() })
-    .click();
-  await page.mouse.click(start.x + 110, start.y + 110);
-  await expect(undo).toBeEnabled();
-  await expect(marks.locator('polyline')).toHaveCount(1);
-  await page.mouse.click(start.x + 20, start.y + 10);
-  await expect(marks.locator('polyline')).toHaveCount(0);
-  await expect(undo).toBeEnabled();
-  await undo.click();
-  await expect(marks.locator('polyline')).toHaveCount(1);
-  await expect(undo).toBeEnabled();
-  await undo.click();
-  await expect(marks.locator('polyline')).toHaveCount(0);
-  await expect(redo).toBeEnabled();
-  await redo.click();
-  await expect(marks.locator('polyline')).toHaveCount(1);
-  await expect(redo).toBeEnabled();
-  await redo.click();
-  await expect(marks.locator('polyline')).toHaveCount(0);
-  await expect(undo).toBeEnabled();
-  await undo.click();
-  await expect(marks.locator('polyline')).toHaveCount(1);
-  await expect(undo).toBeEnabled();
+  const at = (x: number, y: number) => ({ x: bounds.x + x, y: bounds.y + y });
+  const stroke = async (points: { x: number; y: number }[]) => {
+    await page.mouse.move(points[0].x, points[0].y);
+    await page.mouse.down();
+    for (const point of points.slice(1))
+      await page.mouse.move(point.x, point.y, { steps: 8 });
+    await page.mouse.up();
+  };
 
-  await toolbar
-    .getByRole('button', { exact: true, name: m.pdf_text() })
+  // Two strokes in quick succession are one pen mark (D6); undo takes the
+  // second off, redo puts it back.
+  await button(m.pdf_pen()).click();
+  await expect(button(m.pdf_pen())).toHaveAttribute('aria-pressed', 'true');
+  await stroke([at(90, 130), at(90, 350), at(310, 350)]);
+  await stroke([at(330, 130), at(330, 200)]);
+  await expect(ink).toHaveCount(1);
+  expect(await subpaths(ink)).toBe(2);
+  await button(m.editor_undo()).click();
+  expect(await subpaths(ink)).toBe(1);
+  await button(m.editor_redo()).click();
+  expect(await subpaths(ink)).toBe(2);
+
+  // The eraser cuts the stroke where it crosses (D7), not the whole mark.
+  await button(m.pdf_eraser()).click();
+  await stroke([at(60, 240), at(120, 240)]);
+  await expect.poll(() => subpaths(ink)).toBe(3);
+  await button(m.editor_undo()).click();
+  await expect.poll(() => subpaths(ink)).toBe(2);
+
+  // A shape opens selected with its bar (Epo 2026-11-24); the bar recolours it.
+  await button(m.pdf_shape()).click();
+  await page.getByRole('button', { name: m.pdf_rectangle() }).click();
+  await stroke([at(420, 130), at(560, 200)]);
+  const rect = pdfPage.locator('svg[data-pdf-marks] rect[stroke]');
+  await expect(rect).toHaveCount(1);
+  const bar = page.locator('[data-pdf-bar]');
+  await bar
+    .getByRole('button', { exact: true, name: m.pdf_color_blue() })
+    .click();
+  await expect(rect).toHaveAttribute('stroke', '#287bb8');
+  // Its width is a button in the bar, drawn as a line (Epo 2026-11-24).
+  await bar
+    .getByRole('button', { exact: true, name: m.pdf_width_thick() })
+    .click();
+  await expect(rect).toHaveAttribute('stroke-width', '5.5');
+
+  // Placing it went back to Select, which drags it by its outline; a comment
+  // goes beside the page (D11 B).
+  await expect(button(m.pdf_select())).toHaveAttribute('aria-pressed', 'true');
+  const before = await rect.boundingBox();
+  await stroke([at(420, 165), at(440, 205)]);
+  await expect
+    .poll(async () => (await rect.boundingBox())?.y ?? 0)
+    .toBeGreaterThan((before?.y ?? 0) + 30);
+  await bar
+    .getByRole('button', { exact: true, name: m.editor_comment() })
     .click();
   await page
-    .getByRole('textbox', { exact: true, name: m.pdf_text() })
-    .fill('Cell membrane');
+    .getByRole('textbox', { name: m.editor_comment() })
+    .fill('Membrane width');
   await page
-    .getByRole('button', { exact: true, name: m.pdf_place_text() })
+    .getByRole('button', { exact: true, name: m.action_save() })
     .click();
-  await page.mouse.click(start.x + 140, start.y + 80);
-  await expect(marks.locator('text')).toHaveText('Cell membrane');
-  await expect(undo).toBeEnabled();
-  await toolbar
-    .getByRole('button', { exact: true, name: m.common_color() })
-    .click();
-  await page
+  const comments = button(m.pdf_comments({ count: '1' }));
+  await expect(comments).toHaveAttribute('aria-pressed', 'true');
+  // A card shows its comment as text; collapsed, an icon names it instead.
+  const card = page.locator('button[data-mark]', { hasText: 'Membrane width' });
+  await expect(card).toBeVisible();
+  await comments.click();
+  await expect(card).toHaveCount(0);
+  await expect(
+    page.getByRole('button', {
+      name: m.pdf_comment_label({ comment: 'Membrane width' }),
+    })
+  ).toBeVisible();
+  await comments.click();
+
+  // Placed text switches to Select; Escape closes the box selected with its
+  // bar (Epo 2026-11-24).
+  await button(m.pdf_text()).click();
+  await page.mouse.click(bounds.x + 140, bounds.y + 420);
+  await page.keyboard.type('Cell membrane');
+  await expect(button(m.pdf_select())).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await expect(bar).toBeVisible();
+  await expect(
+    pdfPage.getByText('Cell membrane', { exact: true })
+  ).toBeVisible();
+
+  // Selected text takes its bar (D3); a dot highlights it.
+  await page.mouse.click(bounds.x + bounds.width - 20, bounds.y + 20);
+  const span = pdfPage.locator('.react-pdf__Page__textContent span').first();
+  const text = await span.boundingBox();
+  if (!text) throw new Error('No PDF text');
+  await stroke([
+    { x: text.x + 1, y: text.y + text.height / 2 },
+    { x: text.x + text.width - 1, y: text.y + text.height / 2 },
+  ]);
+  await bar
     .getByRole('button', {
       exact: true,
-      name: m.pdf_annotation_color({ color: '#287bb8' }),
+      name: m.pdf_highlight_color({ color: m.pdf_color_yellow() }),
     })
     .click();
-  await toolbar
-    .getByRole('button', { exact: true, name: m.pdf_shape() })
-    .click();
-  await page
-    .getByRole('button', { exact: true, name: m.pdf_rectangle() })
-    .click();
-  await page.mouse.move(start.x + 220, start.y + 130);
-  await page.mouse.down();
-  await page.mouse.move(start.x + 350, start.y + 190, { steps: 6 });
-  await page.mouse.up();
-  await expect(marks.locator('rect')).toHaveAttribute('stroke', '#287bb8');
-  await expect(undo).toBeEnabled();
-  await toolbar
-    .getByRole('button', { exact: true, name: m.pdf_select() })
-    .click();
-  await pdfPage
-    .locator('.react-pdf__Page__textContent span')
-    .first()
-    .evaluate((element) => {
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      window.getSelection()?.removeAllRanges();
-      window.getSelection()?.addRange(range);
-    });
-  await toolbar
-    .getByRole('button', { exact: true, name: m.pdf_draw() })
-    .click();
-  await page
-    .getByRole('button', { exact: true, name: m.pdf_highlight() })
-    .click();
-  await expect(marks.locator('rect[fill="#287bb8"]')).toHaveCount(1);
-  await expect(undo).toBeEnabled();
-  await undo.click();
-  await expect(marks.locator('rect[fill="#287bb8"]')).toHaveCount(0);
-  await expect(undo).toBeEnabled();
-  await toolbar
-    .getByRole('button', { exact: true, name: m.pdf_select() })
-    .click();
-  await pdfPage
-    .locator('.react-pdf__Page__textContent span')
-    .first()
-    .evaluate((element) => {
-      const range = document.createRange();
-      range.selectNodeContents(element);
-      window.getSelection()?.removeAllRanges();
-      window.getSelection()?.addRange(range);
-    });
-  await page.mouse.click(start.x + 350, start.y + 40);
-  await expect
-    .poll(() => page.evaluate(() => window.getSelection()?.toString()))
-    .toBe('');
-  await toolbar
-    .getByRole('button', { exact: true, name: m.pdf_draw() })
-    .click();
-  await page
-    .getByRole('button', { exact: true, name: m.pdf_highlight() })
-    .click();
-  await expect(undo).toBeEnabled();
-  await expect(marks.locator('rect[fill="#287bb8"]')).toHaveCount(0);
-  await page
-    .getByRole('button', { exact: true, name: m.material_zoom_in() })
-    .click();
-  await expect
-    .poll(async () => (await pdfPage.boundingBox())?.width ?? 0)
-    .toBeGreaterThan(bounds.width);
-  await page
-    .getByRole('button', { exact: true, name: m.material_zoom_out() })
-    .click();
-  await expect
-    .poll(async () => (await pdfPage.boundingBox())?.width ?? 0)
-    .toBeCloseTo(bounds.width);
+  await expect(
+    pdfPage.locator('svg[data-pdf-marks] rect[fill="#dfa626"]')
+  ).not.toHaveCount(0);
 
-  // Reopen through client navigation: MSW keeps marks, while component history resets.
+  // The Marks list holds every mark in page order (D5).
+  await button(m.pdf_marks()).click();
+  const list = page.getByRole('dialog');
+  for (const kind of [
+    m.pdf_pen(),
+    m.pdf_rectangle(),
+    m.pdf_text(),
+    m.pdf_highlight(),
+  ])
+    await expect(
+      list.getByText(m.pdf_mark_place({ kind, page: 1 }))
+    ).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByText(m.editor_status_saved()).first()).toBeVisible();
+
+  // Reopen through client navigation: marks persist, history starts over.
   await makeNewest(page, { files: ['f_1'] });
   await page.getByRole('button', { exact: true, name: m.nav_files() }).click();
   await openItem(page, 'Cell structure.pdf');
+  await expect(ink).toHaveCount(1);
   await expect(
-    page.getByRole('button', { name: m.material_mode() })
-  ).toHaveAttribute('aria-pressed', 'true');
-  await expect(marks.locator('polyline')).toHaveCount(1);
-  await expect(marks.locator('text')).toHaveText('Cell membrane');
-  await expect(undo).toBeDisabled();
-  await expect(redo).toBeDisabled();
+    pdfPage.getByText('Cell membrane', { exact: true })
+  ).toBeVisible();
+  await expect(button(m.editor_undo())).toBeDisabled();
 
-  // Phone toolbars use compact buttons (2026-10-10), so at 320px wide the
-  // tools just fit; 280px (a folded phone) is narrow enough to overflow.
-  await page.setViewportSize({ height: 844, width: 280 });
-  await expect(
-    page.getByRole('button', { exact: true, name: m.material_zoom_in() })
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole('button', { exact: true, name: m.material_zoom_out() })
-  ).toHaveCount(0);
+  // A narrow pane has no margin: the tools scroll and Comments lists them.
+  await page.setViewportSize({ height: 844, width: 360 });
+  const tools = toolbar.locator('.scroll-fade-x');
   await expect
     .poll(() =>
-      toolbar.evaluate((element) => element.scrollWidth > element.clientWidth)
+      tools.evaluate((element) => element.scrollWidth > element.clientWidth)
     )
     .toBe(true);
-  await toolbar.hover();
-  await page.mouse.wheel(0, 1000);
-  await expect
-    .poll(() => toolbar.evaluate((element) => element.scrollLeft))
-    .toBeGreaterThan(0);
-  await page.mouse.wheel(0, -1000);
-  await expect
-    .poll(() => toolbar.evaluate((element) => element.scrollLeft))
-    .toBe(0);
-  await page.mouse.wheel(0, 1000);
-  await expect
-    .poll(() => toolbar.evaluate((element) => element.scrollLeft))
-    .toBeGreaterThan(0);
-  await toolbar
-    .getByRole('button', { exact: true, name: m.common_color() })
-    .click();
+  await button(m.pdf_comments({ count: '1' })).click();
   await expect(
-    page.getByRole('button', {
-      exact: true,
-      name: m.pdf_annotation_color({ color: '#287bb8' }),
-    })
+    page.getByRole('dialog').getByText('Membrane width')
   ).toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+
+  // A placed note moves with Select; a click opens its comment.
+  const commentBox = page.getByRole('textbox', { name: m.editor_comment() });
+  await button(m.pdf_note()).click();
+  const narrow = await pdfPage.boundingBox();
+  if (!narrow) throw new Error('PDF page has no bounds');
+  // A blank spot below the marks drawn so far.
+  await page.mouse.click(narrow.x + 60, narrow.y + 330);
+  await commentBox.fill('Ribosomes');
+  await page
+    .getByRole('button', { exact: true, name: m.action_save() })
+    .click();
+  await button(m.pdf_select()).click();
+  const note = pdfPage.locator('svg[data-pdf-marks] g[transform]');
+  const from = await note.boundingBox();
+  if (!from) throw new Error('The note has no bounds');
+  const middle = { x: from.x + from.width / 2, y: from.y + from.height / 2 };
+  await stroke([middle, { x: middle.x + 40, y: middle.y + 40 }]);
+  await expect
+    .poll(async () => (await note.boundingBox())?.x ?? 0)
+    .toBeGreaterThan(from.x + 30);
+  await expect(commentBox).toHaveCount(0);
+  // Marks sit under the text layer; the page finds them where they are.
+  const moved = await note.boundingBox();
+  if (!moved) throw new Error('The note has no bounds');
+  await page.mouse.click(moved.x + moved.width / 2, moved.y + moved.height / 2);
+  await expect(commentBox).toHaveValue('Ribosomes');
 });
 
 test('a PDF stays on the same spot of its page through zoom and a narrower pane', async ({
@@ -432,11 +408,8 @@ test('a chat citation finds its note block by id after the text changed', async 
   );
 });
 
-// biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
-test.fixme('workspace PDF mode survives reload and retains the citation page', async ({
-  page,
-}) => {
-  await page.goto('/workspaces/ws_bio?file=f_1&page=1&mode=edit');
+test('workspace file mode survives reload', async ({ page }) => {
+  await page.goto('/workspaces/ws_bio?file=f_2&mode=edit');
   const mode = page
     .getByTestId('content-header')
     .getByRole('button', { name: m.material_mode() });
@@ -453,7 +426,7 @@ test.fixme('workspace PDF mode survives reload and retains the citation page', a
   await expect(mode).toHaveAttribute('aria-pressed', 'false');
   await expect
     .poll(() => Object.fromEntries(new URL(page.url()).searchParams))
-    .toEqual({ file: 'f_1', mode: 'view', page: '1' });
+    .toEqual({ file: 'f_2', mode: 'view' });
   await page.reload();
   await expect(mode).toHaveAttribute('aria-pressed', 'false', {
     timeout: 30_000,
@@ -560,8 +533,9 @@ test('a chat citation opens the PDF, scrolls its box to the middle, then flashes
   expect(Math.abs(again.centerOffset)).toBeLessThan(4);
 });
 
-// biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
-test.fixme('workspace links remember each file and material mode independently', async ({
+// Notes open at their reader's highest mode with no switch, so only files
+// remember one (Epo 2026-11-24 took the PDF's switch too).
+test("workspace links remember each file's mode independently", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -569,42 +543,39 @@ test.fixme('workspace links remember each file and material mode independently',
   await showPanelView(page, m.workspace_tab_files());
   const origin = await page.evaluate(() => performance.timeOrigin);
   const tree = page.locator('[data-workspace-file-tree]');
-  const material = tree.getByRole('link', {
-    exact: true,
-    name: 'Editor matrix note',
-  });
   const file = tree.getByRole('link', {
     exact: true,
-    name: 'Cell structure.pdf',
+    name: 'Organelles cheatsheet.md',
+  });
+  const other = tree.getByRole('link', {
+    exact: true,
+    name: 'Cell cycle notes.md',
   });
   const mode = page
     .getByTestId('content-header')
     .getByRole('button', { name: m.material_mode() });
-  await expect(material).toHaveAttribute(
-    'href',
-    '/workspaces/ws_bio?material=mat_e2e_editor',
-    { timeout: 30_000 }
-  );
-  await material.click();
-  await expect(mode).toHaveAttribute('aria-pressed', 'false');
-  await mode.click();
-  await expect(page).toHaveURL(/mode=edit/);
+  // Each toggle shows once its file, its links and the viewer chunk load,
+  // the reads one after another through the mock's 1 s latency.
   await file.click();
-  // The PDF's toggle shows once the file, its links and the viewer chunk
-  // load, the two reads one after another through the mock's 1 s latency.
   await expect(mode).toHaveAttribute('aria-pressed', 'false', {
     timeout: 30_000,
   });
   await mode.click();
   await expect(page).toHaveURL(/mode=edit/);
-  await material.click();
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
+  await other.click();
+  await expect(mode).toHaveAttribute('aria-pressed', 'false', {
+    timeout: 30_000,
+  });
+  await file.click();
+  await expect(mode).toHaveAttribute('aria-pressed', 'true', {
+    timeout: 30_000,
+  });
   await mode.click();
   await expect(page).toHaveURL(/mode=view/);
-  await file.click();
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
-  await material.click();
-  await expect(mode).toHaveAttribute('aria-pressed', 'false');
+  await other.click();
+  await expect(mode).toHaveAttribute('aria-pressed', 'false', {
+    timeout: 30_000,
+  });
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(origin);
 
   const currentURL = page.url();
@@ -612,64 +583,54 @@ test.fixme('workspace links remember each file and material mode independently',
   await file.click({ modifiers: ['ControlOrMeta'] });
   const popup = await popupReady;
   // Only the new tab's URL matters; its full Vite load can exceed 5 s.
-  await popup.waitForURL(/file=f_1/, { waitUntil: 'commit' });
+  await popup.waitForURL(/file=f_2/, { waitUntil: 'commit' });
   await expect(page).toHaveURL(currentURL);
   await popup.close();
 
-  await page.goto('/workspaces/ws_bio?file=f_1&mode=view');
+  await page.goto('/workspaces/ws_bio?file=f_2&mode=view');
   await expect(mode).toHaveAttribute('aria-pressed', 'false', {
     timeout: 30_000,
   });
-  await page.goto('/files/f_1');
+  await page.goto('/files/f_2');
   await expect(mode).toHaveAttribute('aria-pressed', 'false', {
     timeout: 30_000,
   });
 });
 
-// biome-ignore lint/suspicious/noSkippedTests: needs the PDF's Edit/View switch (ANNOTATION_TOOLS in PdfView.tsx).
-test.fixme('Files page and recent links use saved modes without reloading the app', async ({
+test('Files page and recent links use saved modes without reloading the app', async ({
   page,
 }) => {
   test.setTimeout(90_000);
-  await page.addInitScript(() => {
-    for (const key of [
-      'file.f_1',
-      'material.mat_pagination_1',
-      'material.mat_e2e_editor',
-    ]) {
-      localStorage.setItem(`capy.document.mode.${key}`, 'edit');
-    }
-  });
-  await page.goto('/files');
+  await page.addInitScript(() =>
+    localStorage.setItem('capy.document.mode.file.f_2', 'edit')
+  );
+  await page.goto('/workspaces');
   const origin = await page.evaluate(() => performance.timeOrigin);
   const mode = page
     .getByTestId('content-header')
     .getByRole('button', { name: m.material_mode() });
-  await openItem(page, 'Study journal 001');
+  // The markdown samples are newer than f_2 and fill the first Files page.
+  await makeNewest(page, { files: ['f_2'] });
+  await page.getByRole('link', { exact: true, name: m.nav_files() }).click();
+  await openItem(page, 'Organelles cheatsheet.md');
   await expect(mode).toHaveAttribute('aria-pressed', 'true', {
     timeout: 30_000,
   });
-  await makeNewest(page, { files: ['f_1'], materials: ['mat_e2e_editor'] });
-  await page.getByRole('link', { exact: true, name: m.nav_files() }).click();
-  await openItem(page, 'Cell structure.pdf');
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
   // Workspaces, the workspace's card, then its Dashboard's Recent files.
-  const openFromDashboard = async (name: RegExp) => {
-    await page
-      .getByRole('link', { exact: true, name: m.nav_workspaces() })
-      .click();
-    await page
-      .getByRole('link', { name: /Biology 101/ })
-      .first()
-      .click();
-    await page.getByRole('link', { name }).first().click();
-  };
-  await openFromDashboard(/Cell structure.pdf/);
-  await expect(page).toHaveURL('/workspaces/ws_bio?file=f_1');
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
-  // The workspace rail's Workspaces goes back to the list.
-  await openFromDashboard(/Editor matrix note/);
-  await expect(page).toHaveURL('/workspaces/ws_bio?material=mat_e2e_editor');
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
+  await page
+    .getByRole('link', { exact: true, name: m.nav_workspaces() })
+    .click();
+  await page
+    .getByRole('link', { name: /Biology 101/ })
+    .first()
+    .click();
+  await page
+    .getByRole('link', { name: /Organelles cheatsheet.md/ })
+    .first()
+    .click();
+  await expect(page).toHaveURL('/workspaces/ws_bio?file=f_2');
+  await expect(mode).toHaveAttribute('aria-pressed', 'true', {
+    timeout: 30_000,
+  });
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(origin);
 });

@@ -42,4 +42,5 @@ export interface AssignmentAttempt {
   userName: string;
   waitingAnswers: number;
   waitingMarks: number;
+  workspaceId: string;
 }

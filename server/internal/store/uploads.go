@@ -59,12 +59,11 @@ type NewUploadSession struct {
 	ParseMode    string
 	ExpiresAt    time.Time
 	BatchID      string
-	// AttemptID makes the upload a file of that running paper attempt; its bytes
-	// then fit PaperMaxBytes across the paper and save past the storage limit.
-	AttemptID     string
-	PaperMaxBytes int64
+	// AttemptID makes the upload a file of that running paper attempt, within the
+	// submission bounds and charged to no one (Epo 2026-11-25).
+	AttemptID string
 	// HandInID makes the upload a file of the uploader's hand-in on that
-	// unmarked assignment, within PaperMaxBytes and past the storage limit too.
+	// unmarked assignment, the same way.
 	HandInID string
 }
 
@@ -156,7 +155,9 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 	if err := s.assertUploadTopicFitsTx(ctx, tx, in.WorkspaceID, in.TopicName); err != nil {
 		return UploadSession{}, err
 	}
-	// The uploader pays (Sam 2026-10-18).
+	// The uploader pays (Sam 2026-10-18); a submission reserves nothing, as no
+	// one pays for it (Epo 2026-11-25).
+	var reserved int64
 	if submission {
 		if in.WorkspaceID != "" || (in.AttemptID != "" && in.HandInID != "") {
 			return UploadSession{}, ErrPaperClosed
@@ -166,17 +167,17 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 			return UploadSession{}, err
 		}
 		if in.AttemptID != "" {
-			if err := s.checkPaperUploadTx(ctx, tx, in.AttemptID, in.CreatedBy, in.DeclaredSize, in.PaperMaxBytes, time.Now()); err != nil {
+			if err := s.checkPaperUploadTx(ctx, tx, in.AttemptID, in.CreatedBy, in.DeclaredSize, time.Now()); err != nil {
 				return UploadSession{}, err
 			}
-		} else if err := s.checkHandInUploadTx(ctx, tx, in.HandInID, in.CreatedBy, in.DeclaredSize, in.PaperMaxBytes); err != nil {
+		} else if err := s.checkHandInUploadTx(ctx, tx, in.HandInID, in.CreatedBy, in.DeclaredSize); err != nil {
 			return UploadSession{}, err
 		}
-		if err := s.reservePaperStorageTx(ctx, tx, in.CreatedBy, in.DeclaredSize); err != nil {
+	} else {
+		if err := s.reserveStorageTx(ctx, tx, in.CreatedBy, in.DeclaredSize); err != nil {
 			return UploadSession{}, err
 		}
-	} else if err := s.reserveStorageTx(ctx, tx, in.CreatedBy, in.DeclaredSize); err != nil {
-		return UploadSession{}, err
+		reserved = in.DeclaredSize
 	}
 	if in.WorkspaceID != "" {
 		if err := s.gateWorkspaceFilesTx(ctx, tx, in.WorkspaceID, 1); err != nil {
@@ -186,12 +187,12 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 	_, err = tx.Exec(ctx, `INSERT INTO upload_sessions
 		(id, target, workspace_id, user_id, created_by, topic_id, topic_name,
 		 object_path, final_path, name, kind, content_type, declared_size, reserved_size, parse_mode,
-		 expires_at, batch_id, hidden, attempt_id, hand_in_assignment_id)
-		VALUES ($1,'source',NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15,$16,NULLIF($17,''),NULLIF($18,''))`,
+		 expires_at, batch_id, hidden, attempt_id, hand_in_assignment_id, submission)
+		VALUES ($1,'source',NULLIF($2,''),$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$19,$13,$14,$15,$16,NULLIF($17,''),NULLIF($18,''),$20)`,
 		in.ID, in.WorkspaceID, in.CreatedBy, nullStr(in.CreatedBy), in.TopicID, in.TopicName,
 		in.ObjectPath, in.FinalPath,
 		in.Name, in.Kind, in.ContentType, in.DeclaredSize, in.ParseMode,
-		in.ExpiresAt, nullStr(in.BatchID), in.Hidden, in.AttemptID, in.HandInID)
+		in.ExpiresAt, nullStr(in.BatchID), in.Hidden, in.AttemptID, in.HandInID, reserved, in.AttemptID != "" || in.HandInID != "")
 	if err != nil {
 		return UploadSession{}, err
 	}
@@ -242,15 +243,21 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, actorID, uploadID, so
 
 	var workspaceID, payerID, attemptID, handInID string
 	var createdBy *string
+	var submission bool
 	if err := tx.QueryRow(ctx, `SELECT COALESCE(workspace_id, ''), user_id, created_by, COALESCE(attempt_id, ''),
-			COALESCE(hand_in_assignment_id, '')`+uploadSessionFrom+`id=$1`, uploadID).
-		Scan(&workspaceID, &payerID, &createdBy, &attemptID, &handInID); err != nil {
+			COALESCE(hand_in_assignment_id, ''), submission`+uploadSessionFrom+`id=$1`, uploadID).
+		Scan(&workspaceID, &payerID, &createdBy, &attemptID, &handInID, &submission); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
 		}
 		return File{}, err
 	}
 	if actorID == "" || createdBy == nil || *createdBy != actorID {
+		return File{}, ErrNotFound
+	}
+	// A submission whose attempt or assignment went (ON DELETE SET NULL) never
+	// lands as an ordinary file.
+	if submission && attemptID == "" && handInID == "" {
 		return File{}, ErrNotFound
 	}
 	if attemptID != "" {
@@ -337,14 +344,15 @@ func (s *Store) finalizeUploadSessionTx(
 	if err != nil {
 		return File{}, err
 	}
-	var paper, handIn bool
-	if err := tx.QueryRow(ctx, `SELECT attempt_id IS NOT NULL, hand_in_assignment_id IS NOT NULL FROM upload_sessions WHERE id=$1`, u.ID).
-		Scan(&paper, &handIn); err != nil {
+	var paper, handIn, unread bool
+	if err := tx.QueryRow(ctx, `SELECT s.attempt_id IS NOT NULL, s.hand_in_assignment_id IS NOT NULL, COALESCE(a.paper_file, false)
+		FROM upload_sessions s LEFT JOIN attempts t ON t.id=s.attempt_id LEFT JOIN assignments a ON a.id=t.assignment_id
+		WHERE s.id=$1`, u.ID).Scan(&paper, &handIn, &unread); err != nil {
 		return File{}, err
 	}
-	// Nothing reads a hand-in's files: they are stored, never parsed (nor
-	// converted).
-	ready := processingPlan.Route == sourceupload.RouteStoreOnly || handIn
+	// Nothing reads a hand-in's files, nor a paper's on a file's graded quiz
+	// (handInPaperTx): they are stored, never parsed (nor converted).
+	ready := processingPlan.Route == sourceupload.RouteStoreOnly || handIn || unread
 	status := "pending"
 	if ready {
 		status = "ready"

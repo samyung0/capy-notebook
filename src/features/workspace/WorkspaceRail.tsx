@@ -47,12 +47,30 @@ export const PAGE_SECTION = {
 export function workspaceSections(
   workspace: Pick<Workspace, 'kind' | 'role'>
 ): { value: WorkspaceSection; icon: IconName; label: string }[] {
-  const { manages, pages } = studyView(workspace);
+  const { pages } = studyView(workspace);
+  // Dashboard, Canvas, Assignments (members' too, Epo 2026-11-25), Study,
+  // Files, Agent, Members (Epo 2026-11-24).
   return [
     {
       icon: 'dashboard' as const,
       label: m.workspace_section_dashboard(),
       value: 'dashboard' as const,
+    },
+    // Each member's own canvas, stored as their canvas material.
+    {
+      icon: 'shape' as const,
+      label: m.workspace_section_canvas(),
+      value: 'canvas' as const,
+    },
+    {
+      icon: 'clipboard' as const,
+      label: m.study_panel_assignments(),
+      value: 'todo' as const,
+    },
+    {
+      icon: 'book' as const,
+      label: m.workspace_tab_study(),
+      value: 'study' as const,
     },
     {
       icon: 'folder' as const,
@@ -64,28 +82,10 @@ export function workspaceSections(
       label: m.workspace_section_agent(),
       value: 'agent' as const,
     },
-    manages
-      ? {
-          icon: 'clipboard' as const,
-          label: m.study_panel_assignments(),
-          value: 'todo' as const,
-        }
-      : { icon: 'todo' as const, label: m.nav_todo(), value: 'todo' as const },
     {
       icon: 'userGroup' as const,
       label: m.study_panel_members(),
       value: 'members' as const,
-    },
-    {
-      icon: 'book' as const,
-      label: m.workspace_tab_study(),
-      value: 'study' as const,
-    },
-    // Each member's own canvas, stored as their canvas material.
-    {
-      icon: 'shape' as const,
-      label: m.workspace_section_canvas(),
-      value: 'canvas' as const,
     },
   ].filter((section) =>
     section.value === 'canvas'
@@ -97,7 +97,19 @@ export function workspaceSections(
 
 /* A rail item: the icon over its label, as the app sidebar's rows look. */
 const ITEM =
-  'flex w-[68px] cursor-pointer flex-col items-center gap-0.5 rounded-button-lg px-1 pt-2 pb-1.5 font-medium text-[11px] text-fg leading-[1.1] outline-none transition-colors hover:bg-fg/6 focus-visible:ring-2 focus-visible:ring-action';
+  'flex w-[62px] cursor-pointer flex-col items-center gap-0.5 rounded-button-lg px-0.5 pt-2 pb-1.5 font-medium text-[11px] text-fg leading-[1.1] outline-none transition-colors hover:bg-fg/6 focus-visible:ring-2 focus-visible:ring-action';
+
+/** An item's label; the long ones (Assignments, Workspaces) a size smaller so
+ * they fit the 62px rail (Epo 2026-11-24). */
+function RailLabel({ label }: { label: string }) {
+  return (
+    <span
+      className={cn('whitespace-nowrap', label.length > 9 && 'text-[10px]')}
+    >
+      {label}
+    </span>
+  );
+}
 
 function RailItem({
   active,
@@ -135,7 +147,7 @@ function RailItem({
         )}
         {dot && <PendingDot className="-top-1 -right-1.5" />}
       </span>
-      <span>{label}</span>
+      <RailLabel label={label} />
     </button>
   );
 }
@@ -168,11 +180,11 @@ export function WorkspaceRail({
     // page frame shows straight through.
     <nav
       aria-label={m.workspace_rail_label()}
-      className="flex h-full w-17 shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden py-3"
+      className="flex h-full w-[62px] shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden py-3"
     >
       <Link className={cn(ITEM, 'mb-1')} preload="intent" to="/">
         <Icon name="navigationBack" size={20} />
-        <span>{m.nav_workspaces()}</span>
+        <RailLabel label={m.nav_workspaces()} />
       </Link>
       {workspaceSections(workspace).map((section) => (
         <RailItem

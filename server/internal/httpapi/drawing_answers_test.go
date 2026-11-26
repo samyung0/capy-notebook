@@ -241,7 +241,7 @@ func fillStorageToLimit(t *testing.T, st *store.Store, userID string) store.Stor
 
 // TestAssignmentDrawingSavesPastStorage (Epo 2026-11-08, superseding Q693's
 // refusal): storage never blocks an assignment, so a member at their limit saves
-// a drawing all the same and goes over it, the bytes charged to them.
+// a drawing all the same, charged to no one (Epo 2026-11-25).
 func TestAssignmentDrawingSavesPastStorage(t *testing.T) {
 	h, st, _, _ := openGradingAPIWithBlob(t, "full")
 	ctx := context.Background()
@@ -253,8 +253,8 @@ func TestAssignmentDrawingSavesPastStorage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if after.UsedBytes <= usage.LimitBytes {
-		t.Fatalf("used %d after saving at the limit %d, want over it", after.UsedBytes, usage.LimitBytes)
+	if after.UsedBytes != usage.LimitBytes {
+		t.Fatalf("used %d after saving, want the limit %d unchanged", after.UsedBytes, usage.LimitBytes)
 	}
 }
 

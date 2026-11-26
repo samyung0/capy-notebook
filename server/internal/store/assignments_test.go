@@ -475,8 +475,13 @@ func TestAssignmentRun(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if done.Status != "submitted" || done.Correct != 3 || done.Total != 6 || done.WaitingMarks != 3 || done.WaitingAnswers != 1 || done.Late {
+	// An answer waits, so the member reads no mark so far (Epo 2026-11-25).
+	if done.Status != "submitted" || !done.GradesHidden || done.Correct != 0 || done.Late {
 		t.Fatalf("submitted = %+v", done)
+	}
+	if owner, err := f.s.GetAssignmentAttempt(ctx, f.user, run.ID, now.Add(2*time.Minute)); err != nil ||
+		owner.Correct != 3 || owner.Total != 6 || owner.WaitingMarks != 3 || owner.WaitingAnswers != 1 {
+		t.Fatalf("the owner's read = %+v, err %v", owner, err)
 	}
 	if _, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now.Add(3*time.Minute)); !errors.Is(err, ErrAssignmentNoAttempts) {
 		t.Fatalf("a start past the attempts = %v", err)
@@ -888,8 +893,14 @@ func TestAssignmentLatePenalty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !done.Late || done.LatePenaltyPct != 20 || done.Correct != 3 || done.Mark != 2.4 {
+	// Its open answer waits: the member reads no mark so far (Epo 2026-11-25),
+	// staff read the late mark of what is decided.
+	if !done.Late || !done.GradesHidden {
 		t.Fatalf("late = %+v", done)
+	}
+	if staff, err := f.s.GetAssignmentAttempt(ctx, f.user, late.ID, past); err != nil ||
+		staff.LatePenaltyPct != 20 || staff.Correct != 3 || staff.Mark != 2.4 {
+		t.Fatalf("late, as staff read it = %+v, err %v", staff, err)
 	}
 	marked, _, err := f.s.MarkAssignmentAnswer(ctx, f.editor, late.ID, AssignmentMark{
 		QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{2, 1}}},
@@ -1617,47 +1628,6 @@ func fileCloneRight(t *testing.T, s *Store, userID, fileID string) bool {
 	return false
 }
 
-// TestSharingNoticeIsToldOnce: a class's viewer member is told once, with its
-// owner; staff, a stranger and a personal workspace's member never.
-func TestSharingNoticeIsToldOnce(t *testing.T) {
-	f := newAssignmentFixture(t, "sharing-notice")
-	ctx := context.Background()
-	stranger := newBlobTestUser(t, f.s, "sharing-notice-stranger")
-	if _, err := f.s.pool.Exec(ctx, `UPDATE users SET name='Ms Wong', avatar_url='https://example.com/wong.png' WHERE id=$1`, f.user); err != nil {
-		t.Fatal(err)
-	}
-	due := func(userID string) bool {
-		t.Helper()
-		got, err := f.s.SharingNoticeFor(ctx, userID, f.ws.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return got.Due
-	}
-	if !due(f.viewer) || !due(f.other) {
-		t.Fatal("a class's viewer members are not due the notice")
-	}
-	notice, err := f.s.SharingNoticeFor(ctx, f.viewer, f.ws.ID)
-	if err != nil || notice.Owner == nil || notice.Owner.Name != "Ms Wong" || notice.Owner.AvatarURL != "https://example.com/wong.png" {
-		t.Fatalf("the notice = %+v, err %v", notice, err)
-	}
-	if due(f.user) || due(f.editor) || due(stranger) {
-		t.Fatal("the notice is due someone who shares nothing")
-	}
-	if err := f.s.MarkSharingNoticeSeen(ctx, f.viewer, f.ws.ID, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if due(f.viewer) || !due(f.other) {
-		t.Fatal("telling one member did not tell only them")
-	}
-	if _, err := f.s.pool.Exec(ctx, `UPDATE workspaces SET kind='personal' WHERE id=$1`, f.ws.ID); err != nil {
-		t.Fatal(err)
-	}
-	if due(f.other) {
-		t.Fatal("a personal workspace's member is due the notice")
-	}
-}
-
 // TestAssignmentSweepPassesOverABadRow: an attempt that cannot submit and an
 // assignment that cannot release leave the others' to go through.
 // A batch that a failing row fills still reaches the row behind it in a later sweep.
@@ -2360,7 +2330,8 @@ func TestRepublishReplacesTheFrozenCopy(t *testing.T) {
 		t.Fatalf("submitted on the new copy = %+v", finished)
 	}
 
-	kept, err := f.s.GetAssignmentAttempt(ctx, f.other, done.ID, later)
+	// Read by staff: its open answer still waits, so its member sees no mark.
+	kept, err := f.s.GetAssignmentAttempt(ctx, f.user, done.ID, later)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2725,6 +2696,10 @@ func TestAnswersShownAfterClose(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.ID, map[string]any{"p3": "The membrane is dilute."}, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	// Marked, so nothing waits: a waiting answer hides the results whole.
+	if _, _, err := f.s.MarkAssignmentAnswer(ctx, f.user, run.ID, AssignmentMark{QuestionID: "q3", Parts: []AssignmentPartMark{{PartID: "p3", Items: []float64{1, 0}}}}, now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	open, err := f.s.GetAssignmentAttempt(ctx, f.viewer, run.ID, now.Add(2*time.Second))

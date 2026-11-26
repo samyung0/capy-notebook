@@ -38,6 +38,7 @@ const sent: Pick<AppNotification, 'data' | 'kind'>[] = [
   { data: { code: 'account_deletion_cancelled' }, kind: 'system' },
   { data: { code: 'grades_released', title: 'Paper 1' }, kind: 'system' },
   { data: { code: 'mark_changed', title: 'Paper 1' }, kind: 'system' },
+  { data: { code: 'grade_ready', title: 'Paper 1' }, kind: 'system' },
   {
     data: {
       code: 'workspace_invite_accepted',

@@ -50,14 +50,12 @@ func TestRowCapsRefuseThePastTheLimitRow(t *testing.T) {
 		t.Fatalf("discussion past the cap: %v, want ErrTooManyComments", err)
 	}
 
-	mark := PDFAnnotationBody{SourceIdentity: "revision:1", Page: 1, Kind: "rectangle", Color: "#d94848",
-		Rects: []PDFRect{{X: 10, Y: 20, Width: 200, Height: 50}}}
-	if _, err := s.pool.Exec(ctx, `INSERT INTO pdf_annotations (id, file_id, author_id, source_identity, page, kind, rects, color)
-		SELECT 'ann_cap_' || n, $1, $2, 'revision:1', 1, 'rectangle', '[{"x":1,"y":1,"width":1,"height":1}]', '#d94848'
+	if _, err := s.pool.Exec(ctx, `INSERT INTO pdf_annotations (id, file_id, author_id, source_identity, page, kind, rects, strokes, width, size, text, comment, color)
+		SELECT 'ann_cap_' || n, $1, $2, 'revision:1', 1, 'rectangle', '[{"x":1,"y":1,"width":1,"height":1}]', '[]', 3, 0, '', '', '#d94848'
 		FROM generate_series(1, $3::int) n`, pdf.ID, reader, AnnotationsPerFile); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SavePDFAnnotation(ctx, owner, pdf.ID, "", mark); !errors.Is(err, ErrTooManyAnnotations) {
+	if err := saveMarks(ctx, s, owner, pdf.ID, testMark("rectangle")); !errors.Is(err, ErrTooManyAnnotations) {
 		t.Fatalf("annotation on a file another author filled: %v, want ErrTooManyAnnotations", err)
 	}
 

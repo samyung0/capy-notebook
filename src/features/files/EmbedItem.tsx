@@ -1,7 +1,7 @@
 import { linkOptions } from '@tanstack/react-router';
 import { memo } from 'react';
 import type { EditorAssetItem } from '@/api/types';
-import { ItemCard, itemMenuIcon } from '@/components/app/ItemCard';
+import { ItemCard } from '@/components/app/ItemCard';
 import type { ListView } from '@/components/app/ListToolbar';
 import { Menu } from '@/components/ui/Menu';
 import { relativeTime } from '@/features/materials/MaterialListCard';
@@ -44,7 +44,6 @@ export const EmbedItem = memo(function EmbedItem({
               onClick: () => onDelete(item),
             },
           ]}
-          triggerIcon={itemMenuIcon(view)}
         />
       }
       details={`${fileKindLabel(kind)} · ${formatFileSize(item.sizeBytes)}`}

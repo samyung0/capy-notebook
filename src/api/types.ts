@@ -428,7 +428,6 @@ export type {
   ReviewSuggestion,
   Row as BankListRow,
   SessionScore,
-  SharingNotice,
   StudyTopics,
   SummaryTopic,
   TopicProgress as BankTopicProgress,
@@ -818,6 +817,8 @@ export type MaterialDiscussion = GenDiscussion;
 export type {
   BrowserSourceSession as SourceSession,
   MaterialAuthor,
+  PDFAnnotationKind,
+  PDFPoint,
   PDFRect,
   SourceCollaborationToken,
   SourceProcessResult,
@@ -825,14 +826,25 @@ export type {
   WorkspaceSummaryFile,
   WorkspaceSummaryTopic,
 } from './gen/model';
-export type PDFAnnotationBody = Omit<
-  import('./gen/model').PDFAnnotationBody,
-  'rects'
-> & { rects: import('./gen/model').PDFRect[] };
+/** A stroke is never null: the generated model only reads Go's slice type. */
 export type PDFAnnotation = Omit<
   import('./gen/model').PDFAnnotation,
-  'rects'
-> & { rects: import('./gen/model').PDFRect[] };
+  'rects' | 'strokes'
+> & {
+  rects: import('./gen/model').PDFRect[];
+  strokes: import('./gen/model').PDFPoint[][];
+};
+export type PDFAnnotationList = Omit<
+  import('./gen/model').PDFAnnotationList,
+  '$schema' | 'marks'
+> & {
+  marks: PDFAnnotation[];
+};
+export type PDFAnnotationChanges = {
+  sourceIdentity: string;
+  save: PDFAnnotation[];
+  remove: string[];
+};
 
 /* Item banks (todo-graded-quizzes.md): the caller's own (`me`) and a class
    workspace's; a question carries its keys, since only its editors read it. */

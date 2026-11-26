@@ -15,7 +15,6 @@ import type {
   MaterialRef,
   PaperFile,
   PaperFileReq,
-  SharingNotice,
   SubmittedPaper,
   TodoDonePage,
   TodoList,
@@ -41,6 +40,7 @@ import {
 } from '@/features/quizzes/drawing/canvasParts';
 import type { Answers } from '@/features/quizzes/grade';
 import { scorePart } from '@/features/quizzes/grade';
+import essayDocxURL from '../../e2e/fixtures/files/basic/lesson.docx?url';
 import { learnerView } from './answerKeys';
 import { surfaceAreaGraph } from './biologyQuiz';
 import * as db from './db';
@@ -108,6 +108,8 @@ type Attempt = {
 
 /** A paper file's bytes, as links read them. */
 const paperUrls = new Map<string, string>();
+// A Word submission's PDF copy staff stored (C1), as the links' preview.
+const markedCopies = new Map<string, string>();
 /** As the server signs read links (`B2_LINK_TTL`, 5 minutes). */
 const LINK_TTL_MS = 5 * 60_000;
 
@@ -144,7 +146,9 @@ export function addPaperFile(
   const file: PaperFile = {
     id: newId('f'),
     kind,
+    marked: false,
     name,
+    revision: 1,
     sizeBytes: bytes.size,
     status: 'ready',
   };
@@ -193,7 +197,9 @@ export function addHandInFile(
   const file: PaperFile = {
     id: newId('f'),
     kind,
+    marked: false,
     name,
+    revision: 1,
     sizeBytes: bytes.size,
     status: 'ready',
   };
@@ -298,7 +304,8 @@ const WS = 'ws_bio';
 const ASSIGNMENT_GRACE_MS = 15_000;
 const DAY = 86_400_000;
 
-// Files › Canvas: marked drawings the viewer pays for, with seeded boards.
+// Files › Canvas: marked practice drawings the viewer pays for, with seeded
+// boards; an assignment's drawing (dr_marked_1) is on its results alone.
 const wave = Array.from({ length: 60 }, (_, i) => [
   i * 8,
   120 + Math.sin(i / 5) * 60,
@@ -318,19 +325,6 @@ mockDrawings.set(
 );
 const markedDrawings: MarkedDrawing[] = [
   {
-    assignment: true,
-    attemptId: 'at_1',
-    bytes: 86 * 1024,
-    createdAt: new Date(Date.now() - 4 * DAY).toISOString(),
-    id: 'dr_marked_1',
-    part: 1,
-    question: 1,
-    quizName: 'Distance and speed',
-    workspaceId: 'ws_bio',
-    workspaceName: 'Biology 101',
-  },
-  {
-    assignment: false,
     attemptId: 'at_2',
     bytes: 54 * 1024,
     createdAt: new Date(Date.now() - DAY).toISOString(),
@@ -1427,6 +1421,54 @@ function seed() {
         workspaceId,
       })
     ),
+    // Physics 11, the class the viewer joined as a student: work to start as
+    // a member under the default handlers (Epo 2026-11-25).
+    {
+      ...common,
+      dueAt: at(2, 18),
+      id: 'as_phys_quiz',
+      kind: 'marked',
+      postedAt: at(-2, 9),
+      questions: worksheet(8),
+      timeLimitMin: 20,
+      title: "Forces and Newton's laws quiz",
+      workspaceId: 'ws_phys',
+    },
+    {
+      ...common,
+      allowUploads: true,
+      dueAt: at(5, 18),
+      id: 'as_phys_paper',
+      kind: 'marked',
+      postedAt: at(-1, 9),
+      // A written last question waits for marks, so a student sees it being
+      // graded (Epo 2026-11-25).
+      questions: [
+        ...worksheet(9),
+        open(
+          'w10',
+          "Explain why a wave's speed changes as it moves into shallower water.",
+          [
+            ['Names the change of depth', 1],
+            ['Links speed to wavelength at a fixed frequency', 1],
+          ]
+        ),
+      ],
+      timeLimitMin: 45,
+      title: 'Waves test: answer here or upload your paper',
+      workspaceId: 'ws_phys',
+    },
+    {
+      ...common,
+      allowUploads: true,
+      dueAt: at(4, 23),
+      id: 'as_phys_lab',
+      kind: 'unmarked',
+      points: 10,
+      postedAt: at(-1, 11),
+      title: 'Pendulum lab report',
+      workspaceId: 'ws_phys',
+    },
   ];
   for (const row of list) rows.set(row.id, row);
 
@@ -1461,7 +1503,9 @@ function seed() {
       {
         id: 'f_scan',
         kind: 'image',
+        marked: false,
         name: 'Mock exam scan.jpg',
+        revision: 1,
         sizeBytes: 1_900_000,
         status: 'ready',
       },
@@ -1480,7 +1524,9 @@ function seed() {
       {
         id: 'f_scan',
         kind: 'image',
+        marked: false,
         name: 'Cell structure answers.jpg',
+        revision: 1,
         sizeBytes: 1_400_000,
         status: 'ready',
       },
@@ -1501,18 +1547,25 @@ function seed() {
     {
       id: 'f_mine_scan',
       kind: 'image',
+      marked: false,
       name: 'Cell structure answers.jpg',
+      revision: 1,
       sizeBytes: 1_400_000,
       status: 'ready',
     },
     {
       id: 'f_mine_q3',
       kind: 'pdf',
+      // Kate marked it (handlers' pdfAnnotations): Feedback given.
+      marked: true,
       name: 'Question 3 working.pdf',
+      revision: 1,
       sizeBytes: 380_000,
       status: 'ready',
     },
   ];
+  // A PDF, so Kate's marks show on it.
+  paperUrls.set('f_mine_q3', paperPdf('Question 3 working', 1));
   const [graded] = mine.graded;
   if (graded) {
     graded.parts = graded.parts.map((part) => ({
@@ -1548,10 +1601,17 @@ function seed() {
   done.set('as_read', new Map(class6.slice(0, 4).map((id) => [id, at(0, 9)])));
   done.set('as_notes', new Map(class6.slice(0, 2).map((id) => [id, at(0, 9)])));
   // T2: four of the class handed in their write-ups.
-  const work = (id: string, name: string, kind: string, sizeBytes: number) => ({
+  const work = (
+    id: string,
+    name: string,
+    kind: string,
+    sizeBytes: number
+  ): PaperFile => ({
     id,
     kind,
+    marked: false,
     name,
+    revision: 1,
     sizeBytes,
     status: 'ready',
   });
@@ -1570,8 +1630,10 @@ function seed() {
         work(`f_lab_eve${n}`, `IMG_04${n}.jpg`, 'image', 1_200_000)
       ),
     ],
-    ['u_mock_farah', [work('f_lab_farah', 'Osmosis lab.docx', 'docx', 60_000)]],
+    ['u_mock_farah', [work('f_lab_farah', 'Osmosis lab.docx', 'doc', 60_000)]],
   ];
+  // A real .docx, so staff's first open draws its PDF copy (C1).
+  paperUrls.set('f_lab_farah', essayDocxURL);
   for (const [id, handed] of lab) setHandIn('as_lab', id, handed);
   // A handed-in PDF reads as one, so its pages show on the Grading tab.
   for (const [, handed] of lab)
@@ -1599,6 +1661,7 @@ const todoChecks = new Map<string, { approvals?: string; work?: string }>();
 const POSTERS: Record<string, string> = {
   ws_eng: 'Ms Rivera',
   ws_hist: 'Mr Okafor',
+  ws_phys: 'Daniel Brooks',
 };
 /** Rows taken off Done, by when: finished again after, they come back. */
 const todoHidden = new Map<string, number>();
@@ -1652,7 +1715,7 @@ const assignedTo = (row: Row, viewer: Viewer) => {
       // The Member scenario's viewer is in the class, and staff see a paper
       // they handed in.
       ...(row.assignAll &&
-      (viewer === 'member' ||
+      (viewerIn(row.workspaceId, viewer) === 'member' ||
         submissions(row.id, db.user.id).some((a) => a.paper))
         ? [db.user.id]
         : []),
@@ -1761,9 +1824,16 @@ function finish(row: Row, attempt: Attempt, answers: Answers, auto: boolean) {
 const isClass = (workspaceId: string) =>
   db.workspaces.find((ws) => ws.id === workspaceId)?.kind === 'class';
 
+/** A class the viewer joined as a student (ws_phys) answers as its member
+ * under either handler set. */
+const viewerIn = (workspaceId: string, viewer: Viewer): Viewer =>
+  db.workspaces.find((ws) => ws.id === workspaceId)?.role === 'viewer'
+    ? 'member'
+    : viewer;
+
 /** Whether the viewer runs the row as its staff: a class's owner. */
 const runs = (row: Row, viewer: Viewer) =>
-  viewer === 'owner' && isClass(row.workspaceId);
+  viewerIn(row.workspaceId, viewer) === 'owner' && isClass(row.workspaceId);
 
 function toAssignment(row: Row, viewer: Viewer): Assignment {
   sweep(row);
@@ -1821,15 +1891,23 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     ...(row.moreTopicIds ?? []).filter((id) => !topicIds.includes(id))
   );
   const gradesHidden = row.showGrades === 'manual' && !row.gradesReleasedAt;
+  const doneCount = row.kind === 'marked' ? countedRows.length : ticked.length;
+  const waitingAnswers = assigned
+    .flatMap((id) => submissions(row.id, id))
+    .reduce((sum, a) => sum + totals(a.graded).waitingAnswers, 0);
+  // A graded Assignment's submissions with no grade yet (Epo 2026-11-26).
+  const toGrade =
+    row.points === undefined
+      ? 0
+      : ticked.filter((id) => grades.get(row.id)?.get(id) === undefined).length;
+  // No mark so far (Epo 2026-11-25): none while an answer waits.
+  const noMark = gradesHidden || (myTotals?.waitingAnswers ?? 0) > 0;
   return {
     allowUploads: row.allowUploads,
     attempts: row.attempts,
     closed: isClosed(row),
     closedAt: closedAtOf(row),
     draft: row.draft,
-    drawingParts: (row.questions ?? []).some((q) =>
-      q.parts.some((p) => p.answer.type === 'canvas')
-    ),
     dueAt: row.dueAt,
     files: row.files.flatMap((f): Assignment['files'] => {
       const file = db.files.find((x) => x.id === f.fileId);
@@ -1903,7 +1981,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                   ? graded.reduce((sum, share) => sum + share, 0) /
                     graded.length
                   : undefined,
-            done: row.kind === 'marked' ? countedRows.length : ticked.length,
+            done: doneCount,
             // Submissions with every mark decided, past members' too.
             graded: [...attempts.values()].filter(
               (a) =>
@@ -1933,24 +2011,34 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
             showAnswers: row.showAnswers,
             showGrades: row.showGrades,
             shuffle: row.shuffle,
-            toApprove: assigned
-              .flatMap((id) => submissions(row.id, id))
-              .reduce((sum, a) => sum + totals(a.graded).waitingAnswers, 0),
+            toApprove: waitingAnswers,
+            toGrade,
+            // As the server's: held grades with every submission graded, once
+            // closed or everyone it went to has submitted.
+            toRelease:
+              gradesHidden &&
+              (row.kind === 'marked' || row.points !== undefined) &&
+              doneCount > 0 &&
+              waitingAnswers === 0 &&
+              toGrade === 0 &&
+              (isClosed(row) || doneCount >= assigned.length),
           },
         }
       : {}),
     ...(assigned.includes(db.user.id) && !row.draft
       ? {
           mine: {
+            // Attempts count answers in the app; after the one paper nothing starts.
             attemptsUsed: [...attempts.values()].filter(
               (a) =>
                 a.assignmentId === row.id &&
                 a.userId === db.user.id &&
-                a.submittedAt
+                a.submittedAt &&
+                !a.paper
             ).length,
             checkedAt: todoChecks.get(row.id)?.work,
             checkedOff: !!todoChecks.get(row.id)?.work,
-            correct: gradesHidden ? undefined : myTotals?.correct,
+            correct: noMark ? undefined : myTotals?.correct,
             countedAttemptId: mine?.id,
             done: !!mine || !!tick,
             doneAt: mine?.submittedAt ?? tick,
@@ -1961,7 +2049,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
             late: isLate(row, mine?.submittedAt ?? tick),
             latePenaltyPct: myPenalty,
             mark:
-              myTotals && !gradesHidden
+              myTotals && !noMark
                 ? penalised(myTotals.correct, myPenalty)
                 : undefined,
             missing:
@@ -1969,8 +2057,15 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
               !mine &&
               !!row.dueAt &&
               Date.parse(row.dueAt) <= Date.now(),
+            paperHandedIn: [...attempts.values()].some(
+              (a) =>
+                a.assignmentId === row.id &&
+                a.userId === db.user.id &&
+                a.submittedAt &&
+                a.paper
+            ),
             runningAttemptId: running?.id,
-            total: gradesHidden ? undefined : myTotals?.total,
+            total: noMark ? undefined : myTotals?.total,
             waitingAnswers: gradesHidden ? 0 : (myTotals?.waitingAnswers ?? 0),
             waitingMarks: gradesHidden ? 0 : (myTotals?.waitingMarks ?? 0),
           },
@@ -2003,6 +2098,7 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
     userAvatarUrl: member?.avatarUrl,
     userId: attempt.userId,
     userName: name,
+    workspaceId: row.workspaceId,
   };
   if (!attempt.submittedAt)
     return {
@@ -2018,11 +2114,12 @@ function attemptView(attempt: Attempt, row: Row, viewer: Viewer) {
       waitingAnswers: 0,
       waitingMarks: 0,
     } satisfies AssignmentAttempt;
-  // Show grades Manual: a member reads their answers alone until release.
+  // Show grades Manual: a member reads their answers alone until release, and
+  // until nothing waits (no mark so far, Epo 2026-11-25).
   if (
     !runs(row, viewer) &&
-    row.showGrades === 'manual' &&
-    !row.gradesReleasedAt
+    ((row.showGrades === 'manual' && !row.gradesReleasedAt) ||
+      totals(attempt.graded).waitingAnswers > 0)
   )
     return {
       ...common,
@@ -2331,13 +2428,6 @@ export function assignmentActivity(workspaceId: string): WorkspaceActivity[] {
     }));
 }
 
-/** Told once in this page's life. */
-let sharingNoticeSeen = false;
-/** The invite page told the member as they joined. */
-export const markSharingNoticeSeen = () => {
-  sharingNoticeSeen = true;
-};
-
 /** GET /api/recent: a graded quiz's own quiz lists nowhere (migration 0174). */
 export function recentFor(url: string) {
   const page = db.listRecent(new URL(url));
@@ -2372,7 +2462,7 @@ export function workspaceMaterialRefs(wsId: string, viewer: Viewer) {
       title: mt.title,
       topicId: mt.topicId,
     }))
-    .filter((ref) => viewer === 'owner' || !ref.hidden)
+    .filter((ref) => viewerIn(wsId, viewer) === 'owner' || !ref.hidden)
     .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
   return refs;
 }
@@ -2392,39 +2482,32 @@ export function numberedTitle(wsId: string, title: string) {
   return candidate;
 }
 
-/** The viewer's submissions on the Files page: papers of closed assignments,
- * every part marked; hand-ins of closed ones. */
+/** A submission's file for its marks (Epo 2026-11-25): staff's shared marks,
+ * which its member reads only. Null for any other file. */
+export function submissionMarkScope(fileId: string) {
+  seed();
+  for (const a of attempts.values())
+    if (a.paperFiles?.some((f) => f.id === fileId))
+      return { readOnly: a.userId === db.user.id };
+  for (const byUser of handIns.values())
+    for (const [userId, files] of byUser)
+      if (files.some((f) => f.id === fileId))
+        return { readOnly: userId === db.user.id };
+  return null;
+}
+
+/** The viewer's hand-in files on the Files page (Epo 2026-11-25): only ones
+ * left unhanded when their assignment closed, free and deletable; handed-in
+ * work is on its assignment's page. */
 export function submittedPapers(): SubmittedPaper[] {
   seed();
   const workspaceName = (id: string) =>
     db.workspaces.find((w) => w.id === id)?.name ?? '';
-  const items: SubmittedPaper[] = [...attempts.values()].flatMap((a) => {
-    const row = rows.get(a.assignmentId);
-    const marked = a.graded.every((q) => q.parts.every((p) => !p.pending));
-    if (
-      !row ||
-      a.userId !== db.user.id ||
-      a.paper !== 'read' ||
-      !marked ||
-      !closedAtOf(row)
-    )
-      return [];
-    return (a.paperFiles ?? []).map((f) => ({
-      assignmentId: row.id,
-      attemptId: a.id,
-      bytes: f.sizeBytes,
-      createdAt: a.submittedAt ?? a.startedAt,
-      id: f.id,
-      kind: f.kind,
-      name: f.name,
-      quizName: row.title,
-      workspaceId: row.workspaceId,
-      workspaceName: workspaceName(row.workspaceId),
-    }));
-  });
+  const items: SubmittedPaper[] = [];
   for (const [assignmentId, byUser] of handIns) {
     const row = rows.get(assignmentId);
-    if (!row || !isClosed(row)) continue;
+    if (!row) continue;
+    if (done.get(assignmentId)?.has(db.user.id) || !isClosed(row)) continue;
     for (const f of byUser.get(db.user.id) ?? [])
       items.push({
         assignmentId,
@@ -2472,9 +2555,10 @@ export const assignmentHandlers = (viewer: Viewer) => {
             .filter(
               (a) =>
                 (a.manage?.toApprove ?? 0) > 0 ||
+                (a.manage?.toGrade ?? 0) > 0 ||
                 (a.mine && !a.draft && !a.closedAt)
             ),
-          manages: viewer === 'owner' && ws.kind === 'class',
+          manages: viewerIn(ws.id, viewer) === 'owner' && ws.kind === 'class',
           name: ws.name,
           workspaceId: ws.id,
         }))
@@ -2516,7 +2600,10 @@ export const assignmentHandlers = (viewer: Viewer) => {
           ws = {
             iconId: source?.iconId ?? '',
             items: [],
-            manages: viewer === 'owner' && source?.kind === 'class',
+            manages:
+              !!source &&
+              viewerIn(source.id, viewer) === 'owner' &&
+              source.kind === 'class',
             name: source?.name ?? '',
             workspaceId: a.workspaceId,
           };
@@ -2539,17 +2626,29 @@ export const assignmentHandlers = (viewer: Viewer) => {
         .split(',')
         .filter(Boolean);
       const kind = url.searchParams.get('kind');
+      // Staff's To grade: what waits on them, open or closed.
+      const pending = url.searchParams.get('pending') === 'true';
       const sort = url.searchParams.get('sort');
       const ascending = url.searchParams.get('dir') !== 'desc';
       const offset = Number(url.searchParams.get('cursor') ?? 0);
-      const staff = viewer === 'owner' && isClass(String(params.id));
+      const staff =
+        viewerIn(String(params.id), viewer) === 'owner' &&
+        isClass(String(params.id));
       const all = [...rows.values()]
         .filter((row) => row.workspaceId === params.id)
         .filter((row) => staff || !row.draft)
         .map((row) => toAssignment(row, viewer))
         .filter((a) => a.manage || a.mine)
-        .filter((a) => closed || !a.closed)
-        .filter((a) => done || !a.mine?.done)
+        .filter((a) => closed || pending || !a.closed)
+        .filter((a) => done || pending || !a.mine?.done)
+        .filter(
+          (a) =>
+            !pending ||
+            (!!a.manage &&
+              (a.manage.toApprove > 0 ||
+                a.manage.toGrade > 0 ||
+                a.manage.toRelease))
+        )
         .filter(
           (a) =>
             topics.length === 0 || a.topicIds.some((t) => topics.includes(t))
@@ -2638,26 +2737,12 @@ export const assignmentHandlers = (viewer: Viewer) => {
         const body = (await request.json()) as AssignmentFormReq;
         const wsId = String(params.id);
         // Only a class's staff give out work.
-        if (!(viewer === 'owner' && isClass(wsId)))
+        if (!(viewerIn(wsId, viewer) === 'owner' && isClass(wsId)))
           return new HttpResponse(null, { status: 403 });
         const row = addRow(wsId, body);
         return HttpResponse.json(toAssignment(row, viewer), { status: 201 });
       }
     ),
-    http.get('/api/workspaces/:id/sharing-notice', ({ params }) => {
-      const ws = db.workspaces.find((w) => w.id === params.id);
-      if (viewer !== 'member' || ws?.kind !== 'class' || sharingNoticeSeen)
-        return HttpResponse.json({ due: false } satisfies SharingNotice);
-      // The name the Dashboard and assignments show as this class's owner.
-      return HttpResponse.json({
-        due: true,
-        owner: { avatarUrl: db.user.avatarUrl, name: db.user.name },
-      } satisfies SharingNotice);
-    }),
-    http.put('/api/workspaces/:id/sharing-notice', () => {
-      sharingNoticeSeen = true;
-      return new HttpResponse(null, { status: 204 });
-    }),
     http.get('/api/assignments/:id', ({ params }) => {
       const row = rowOf(params.id);
       if (!row) return gone();
@@ -2807,8 +2892,16 @@ export const assignmentHandlers = (viewer: Viewer) => {
       if (row?.kind === 'marked')
         return new HttpResponse(null, { status: 400 });
       if (row?.allowUploads && row.kind === 'unmarked') {
-        const open = body.done ? handInOpen(id) : done.get(id)?.has(db.user.id);
-        if (!open || (body.done && !handInOf(id, db.user.id).length))
+        // Hand in is final (Epo 2026-11-25).
+        if (!body.done)
+          return HttpResponse.json(
+            {
+              code: 'hand_in_final',
+              message: "work you submitted can't be taken back",
+            },
+            { status: 409 }
+          );
+        if (!handInOpen(id) || !handInOf(id, db.user.id).length)
           return HttpResponse.json(
             {
               code: 'hand_in_closed',
@@ -2859,16 +2952,29 @@ export const assignmentHandlers = (viewer: Viewer) => {
       if (running) return HttpResponse.json(attemptView(running, row, viewer));
       if (closedAtOf(row))
         return conflict('assignment_closed', 'This assignment is closed.');
-      const used = [...attempts.values()].filter(
-        (a) => a.assignmentId === row.id && a.userId === db.user.id
-      ).length;
-      if (used >= row.attempts)
-        return conflict('assignment_no_attempts', 'No attempts are left.');
       if (row.uploadOnly && !upload)
         return HttpResponse.json(
           { detail: 'this assignment takes uploads only', status: 422 },
           { status: 422 }
         );
+      // The first start picks the way for good: attempts are for answers in
+      // the app, and a paper is handed in once.
+      const handed = [...attempts.values()].filter(
+        (a) => a.assignmentId === row.id && a.userId === db.user.id
+      );
+      const online = handed.filter((a) => !a.paper).length;
+      if (handed.some((a) => a.paper))
+        return conflict(
+          'paper_handed_in',
+          'You have submitted your paper already.'
+        );
+      if (upload && online > 0)
+        return conflict(
+          'answered_online',
+          'You answer this assignment online.'
+        );
+      if (!upload && online >= row.attempts)
+        return conflict('assignment_no_attempts', 'No attempts are left.');
       const attempt: Attempt = {
         answers: {},
         assignmentId: row.id,
@@ -3005,13 +3111,22 @@ export const assignmentHandlers = (viewer: Viewer) => {
         return new HttpResponse(null, { status: 204 });
       }
     ),
-    http.get('/api/drawings', () =>
-      HttpResponse.json({
+    http.get('/api/drawings', ({ request }) => {
+      const query = new URL(request.url).searchParams;
+      const list = (name: string) => query.get(name)?.split(',');
+      const workspaces = list('workspaces');
+      const locations = list('location');
+      return HttpResponse.json({
         count: markedDrawings.length,
-        items: markedDrawings,
+        items: markedDrawings.filter(
+          (d) =>
+            (!workspaces || workspaces.includes(d.workspaceId ?? '')) &&
+            (!locations ||
+              locations.includes(d.workspaceId ? 'workspace' : 'standalone'))
+        ),
         totalBytes: markedDrawings.reduce((sum, d) => sum + d.bytes, 0),
-      })
-    ),
+      });
+    }),
     http.delete('/api/drawings/:id', ({ params }) => {
       const i = markedDrawings.findIndex((d) => d.id === params.id);
       if (i < 0) return gone();
@@ -3061,6 +3176,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
         const url = paperUrls.get(String(params.fileId)) ?? scan();
         return HttpResponse.json({
           expiresAt: new Date(Date.now() + LINK_TTL_MS).toISOString(),
+          previewUrl: markedCopies.get(String(params.fileId)),
           url,
         });
       }
@@ -3078,19 +3194,31 @@ export const assignmentHandlers = (viewer: Viewer) => {
     http.get('/api/assignments/:id/hand-in/:fileId/links', ({ params }) =>
       HttpResponse.json({
         expiresAt: new Date(Date.now() + LINK_TTL_MS).toISOString(),
+        previewUrl: markedCopies.get(String(params.fileId)),
         url: paperUrls.get(String(params.fileId)) ?? scan(),
       })
     ),
+    // Staff store a Word submission's PDF copy once (C1).
+    http.post('/api/files/:id/marked-copy', async ({ params, request }) => {
+      const id = String(params.id);
+      if (submissionMarkScope(id)?.readOnly !== false) return gone();
+      if (markedCopies.has(id))
+        return conflict('marked_copy_taken', 'this file already has its copy');
+      markedCopies.set(id, URL.createObjectURL(await request.blob()));
+      return new HttpResponse(null, { status: 204 });
+    }),
+    // Only a hand-in file left unhanded at the close goes (Epo 2026-11-25).
     http.delete('/api/papers/:id', ({ params }) => {
-      for (const a of attempts.values())
-        a.paperFiles = a.paperFiles?.filter((f) => f.id !== params.id);
-      for (const [assignmentId] of handIns)
-        setHandIn(
-          assignmentId,
-          db.user.id,
-          handInOf(assignmentId, db.user.id).filter((f) => f.id !== params.id)
-        );
-      return HttpResponse.json({ deleted: 1 });
+      const left = submittedPapers().find((item) => item.id === params.id);
+      if (!left) return gone();
+      setHandIn(
+        left.assignmentId,
+        db.user.id,
+        handInOf(left.assignmentId, db.user.id).filter(
+          (f) => f.id !== params.id
+        )
+      );
+      return new HttpResponse(null, { status: 204 });
     }),
     http.post(
       '/api/assignment-attempts/:id/submit',

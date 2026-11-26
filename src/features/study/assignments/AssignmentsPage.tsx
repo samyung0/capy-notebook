@@ -16,6 +16,7 @@ import type { ColumnSort } from '@/components/app/SortHeader';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
+import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -30,16 +31,15 @@ import {
 import { studyView } from '../practice/studyView';
 import type { AssignmentsSearch } from '../studyRoutes';
 import { AssignmentAttemptPage } from './AssignmentAttemptPage';
+import { CHIP } from './AssignmentHead';
 import { AssignmentReport } from './AssignmentReport';
 import { dayLabel, kindLabel, percentText } from './assignmentText';
 import { MemberAssignment } from './MemberAssignment';
 import { NewAssignmentMenu } from './NewAssignmentMenu';
-import { TodoSection } from './TodoSection';
 
-/** A class's To do, Assignments to its staff (boards W1, W2; its own page on
- * the rail since Epo 2026-11-11), the workspace's centre page at
- * `assignments`. A member's is To do's table for this class (Epo 2026-11-20),
- * as its Dashboard shows it. */
+/** A class's Assignments (boards W1, W2; its own page on the rail since Epo
+ * 2026-11-11), the workspace's centre page at `assignments`. Its members get
+ * the same table with their own status and grade (Epo 2026-11-25). */
 export function AssignmentsPage({
   search,
   workspaceId,
@@ -59,7 +59,6 @@ export function AssignmentsPage({
             : undefined
         }
         key={search.attempt}
-        workspaceId={workspaceId}
       />
     );
   if (search.assignment)
@@ -70,14 +69,12 @@ export function AssignmentsPage({
         search={search}
       />
     );
-  return studyView(ws).manages ? (
-    <StaffList key={workspaceId} workspaceId={workspaceId} />
-  ) : (
-    // A member's: the To do page's table for this class (Epo 2026-11-20), as
-    // its Dashboard shows it.
-    <PracticeFrame className="@container">
-      <TodoSection manages={false} page workspace={ws} />
-    </PracticeFrame>
+  return (
+    <AssignmentList
+      key={workspaceId}
+      manages={studyView(ws).manages}
+      workspaceId={workspaceId}
+    />
   );
 }
 
@@ -134,9 +131,17 @@ function useAssignmentSort() {
   return { server, sorting };
 }
 
-/** The owner's and teaching assistants' table (W1, W2): open ones newest first,
- * closed ones behind Show closed. A row opens the report. */
-function StaffList({ workspaceId }: { workspaceId: string }) {
+/** The table (W1, W2): open ones newest first, closed ones behind Show closed.
+ * Its staff's rows show everyone's progress and average and open the report;
+ * a member's (Epo 2026-11-25, no New) show their own status and grade and
+ * open their page. */
+function AssignmentList({
+  manages,
+  workspaceId,
+}: {
+  manages: boolean;
+  workspaceId: string;
+}) {
   const navigate = useNavigate();
   const { data: workspaceTopics } = useTopics(workspaceId);
   const [showClosed, setShowClosed] = useState(false);
@@ -179,21 +184,23 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2.25">
         {/* The title alone: no hint text beside it (Epo 2026-11-13). */}
         <h1 className="t-page-title">{m.study_panel_assignments()}</h1>
-        <NewAssignmentMenu
-          // New graded quiz says its own, with Open (GradedQuizDialog).
-          onCreated={(created) => {
-            if (created.kind === 'marked') return;
-            userToast({
-              button: {
-                label: m.assignment_undo(),
-                onClick: () => remove(created.id),
-              },
-              title: m.assignment_created(),
-              variant: 'success',
-            });
-          }}
-          workspaceId={workspaceId}
-        />
+        {manages && (
+          <NewAssignmentMenu
+            // New graded quiz says its own, with Open (GradedQuizDialog).
+            onCreated={(created) => {
+              if (created.kind === 'marked') return;
+              userToast({
+                button: {
+                  label: m.assignment_undo(),
+                  onClick: () => remove(created.id),
+                },
+                title: m.assignment_created(),
+                variant: 'success',
+              });
+            }}
+            workspaceId={workspaceId}
+          />
+        )}
       </div>
       <div className="mt-4 mb-1.25 flex flex-wrap items-center gap-2 md:mb-2">
         <Button
@@ -281,8 +288,16 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
                 <Th sort={{ sorting, value: 'due' as const }}>
                   {m.assignment_col_due()}
                 </Th>
-                <Th>{m.assignment_col_progress()}</Th>
-                <Th>{m.assignment_col_average()}</Th>
+                <Th>
+                  {manages
+                    ? m.assignment_col_progress()
+                    : m.assignment_col_status()}
+                </Th>
+                <Th>
+                  {manages
+                    ? m.assignment_col_average()
+                    : m.assignment_col_grade()}
+                </Th>
               </tr>
             </thead>
             <tbody>
@@ -307,19 +322,32 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
                   </Td>
                   <Td muted>{dayLabel(row.postedAt)}</Td>
                   <Td muted>{row.dueAt ? dayLabel(row.dueAt) : '–'}</Td>
-                  {/* The count alone; the phones' rows keep the bar. */}
-                  <Td>
-                    <Progress row={row} />
-                  </Td>
-                  <Td>
-                    {row.manage?.average === undefined ? (
-                      <span className="text-fg-muted">–</span>
-                    ) : (
-                      <span className="font-bold">
-                        {percentText(row.manage.average)}
-                      </span>
-                    )}
-                  </Td>
+                  {manages ? (
+                    <>
+                      {/* The count alone; the phones' rows keep the bar. */}
+                      <Td>
+                        <Progress row={row} />
+                      </Td>
+                      <Td>
+                        {row.manage?.average === undefined ? (
+                          <span className="text-fg-muted">–</span>
+                        ) : (
+                          <span className="font-bold">
+                            {percentText(row.manage.average)}
+                          </span>
+                        )}
+                      </Td>
+                    </>
+                  ) : (
+                    <>
+                      <Td>
+                        <MineStatus row={row} />
+                      </Td>
+                      <Td>
+                        <MineGrade row={row} />
+                      </Td>
+                    </>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -333,11 +361,15 @@ function StaffList({ workspaceId }: { workspaceId: string }) {
                 onOpen={() => void open(row.id)}
               >
                 <div className="min-w-0 flex-1">
-                  {/* Title and progress only, two lines (Epo 2026-11-20):
-                        the kind is the wide table's column. */}
+                  {/* Title and progress (a member's status) only, two lines
+                        (Epo 2026-11-20): the kind is the wide table's column. */}
                   <StaffTitle row={row} />
                   <div className="mt-1">
-                    <Progress bar row={row} />
+                    {manages ? (
+                      <Progress bar row={row} />
+                    ) : (
+                      <MineStatus row={row} />
+                    )}
                   </div>
                 </div>
                 {/* The due date at the row's end, not the average (Epo
@@ -413,6 +445,65 @@ function Progress({ bar, row }: { bar?: boolean; row: Assignment }) {
           />
         </span>
       )}
+    </span>
+  );
+}
+
+/** A member's own state on a row (Epo 2026-11-25), in the chips their profile
+ * shows staff: done in green, running, missed or overdue in red, else what is
+ * still to do in plain words. */
+function MineStatus({ row }: { row: Assignment }) {
+  const mine = row.mine;
+  if (!mine) return <span className="text-fg-muted">–</span>;
+  const marked = row.kind === 'marked';
+  const overdue =
+    !row.closedAt && !!row.dueAt && Date.parse(row.dueAt) <= Date.now();
+  if (mine.done)
+    return (
+      <span className={cn(CHIP, 'bg-tint-success text-tint-success-fg')}>
+        {marked
+          ? m.assignment_submitted()
+          : row.allowUploads
+            ? m.todo_submitted()
+            : m.assignment_done()}
+      </span>
+    );
+  if (mine.runningAttemptId)
+    return <span className={CHIP}>{m.assignment_in_progress()}</span>;
+  if (mine.missing || overdue)
+    return (
+      <span className={cn(CHIP, 'bg-tint-error text-tint-error-fg')}>
+        {mine.missing ? m.assignment_missing() : m.assignment_overdue()}
+      </span>
+    );
+  return (
+    <span className="font-semibold text-fg-muted">
+      {marked
+        ? m.assignment_not_started()
+        : row.allowUploads
+          ? m.assignment_not_submitted()
+          : m.assignment_not_done()}
+    </span>
+  );
+}
+
+/** A member's grade once they may see it: its marks, Waiting while some are
+ * still to be given, else a dash. */
+function MineGrade({ row }: { row: Assignment }) {
+  const mine = row.mine;
+  if (mine?.mark !== undefined && mine.waitingMarks === 0)
+    return (
+      <span>
+        <span className="font-bold">{formatPoints(mine.mark)}</span>
+        <span className="font-semibold text-fg-muted">
+          {' / '}
+          {formatPoints(mine.total ?? 0)}
+        </span>
+      </span>
+    );
+  return (
+    <span className="text-fg-muted">
+      {mine?.done && mine.waitingMarks > 0 ? m.assignment_grade_waiting() : '–'}
     </span>
   );
 }

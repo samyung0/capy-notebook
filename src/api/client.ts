@@ -442,9 +442,6 @@ export const qk = {
   reviewRoot: ['review'] as const,
   reviewSession: (id: string) => ['review', 'session', id] as const,
   search: (q: string) => ['search', q] as const,
-  /** Whether a class member is yet to be told what they share. */
-  sharingNotice: (wsId: string) =>
-    ['workspace', wsId, 'sharing-notice'] as const,
   sourceUploadPolicy: (wsId?: string) =>
     ['source-upload-policy', wsId ?? null] as const,
   study: (wsId: string) => ['workspace', wsId, 'study'] as const,

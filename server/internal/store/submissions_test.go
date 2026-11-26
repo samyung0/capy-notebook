@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 )
 
@@ -55,7 +56,7 @@ func addPaperFile(t *testing.T, f assignmentFixture, attemptID, name, kind strin
 	upload, err := f.s.CreateUploadSession(ctx, NewUploadSession{
 		ID: uid("up"), CreatedBy: f.viewer, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
 		Name: name, Kind: kind, ContentType: "application/octet-stream", DeclaredSize: 2048, ParseMode: "none",
-		ExpiresAt: now.Add(time.Hour), AttemptID: attemptID, PaperMaxBytes: 10 << 20,
+		ExpiresAt: now.Add(time.Hour), AttemptID: attemptID,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -76,19 +77,19 @@ func TestPaperFileOpensForItsMemberAndStaffOnly(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	run := startPaper(t, f, now, nil)
 	file := addPaperFile(t, f, run.attemptID, "paper.pdf", "pdf", now)
-	if _, _, err := f.s.PaperFileBlob(ctx, f.viewer, run.attemptID, file.ID); err != nil {
+	if _, err := f.s.PaperFileBlob(ctx, f.viewer, run.attemptID, file.ID); err != nil {
 		t.Fatalf("member: %v", err)
 	}
-	if _, _, err := f.s.PaperFileBlob(ctx, f.user, run.attemptID, file.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := f.s.PaperFileBlob(ctx, f.user, run.attemptID, file.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("staff before submit: %v", err)
 	}
 	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, run.attemptID, map[string]any{}, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.s.PaperFileBlob(ctx, f.other, run.attemptID, file.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := f.s.PaperFileBlob(ctx, f.other, run.attemptID, file.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another member: %v", err)
 	}
-	if _, _, err := f.s.PaperFileBlob(ctx, f.editor, run.attemptID, file.ID); err != nil {
+	if _, err := f.s.PaperFileBlob(ctx, f.editor, run.attemptID, file.ID); err != nil {
 		t.Fatalf("staff after submit: %v", err)
 	}
 }
@@ -102,19 +103,19 @@ func TestHandInFileOpensForItsMemberAndStaffOnly(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	created := unmarkedHandIn(t, f, now)
 	file := addHandInFile(t, f, created.ID, f.viewer, now)
-	if _, _, err := f.s.HandInFileBlob(ctx, f.viewer, created.ID, file.ID); err != nil {
+	if _, err := f.s.HandInFileBlob(ctx, f.viewer, created.ID, file.ID); err != nil {
 		t.Fatalf("member: %v", err)
 	}
-	if _, _, err := f.s.HandInFileBlob(ctx, f.user, created.ID, file.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := f.s.HandInFileBlob(ctx, f.user, created.ID, file.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("staff before hand in: %v", err)
 	}
 	if err := f.s.SetAssignmentDone(ctx, f.viewer, created.ID, true, now); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := f.s.HandInFileBlob(ctx, f.other, created.ID, file.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := f.s.HandInFileBlob(ctx, f.other, created.ID, file.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("another member: %v", err)
 	}
-	if _, _, err := f.s.HandInFileBlob(ctx, f.user, created.ID, file.ID); err != nil {
+	if _, err := f.s.HandInFileBlob(ctx, f.user, created.ID, file.ID); err != nil {
 		t.Fatalf("staff after hand in: %v", err)
 	}
 }
@@ -136,7 +137,7 @@ func addHandInFile(t *testing.T, f assignmentFixture, assignmentID, userID strin
 	upload, err := f.s.CreateUploadSession(ctx, NewUploadSession{
 		ID: uid("up"), CreatedBy: userID, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
 		Name: "write-up.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: 2048, ParseMode: "none",
-		ExpiresAt: now.Add(time.Hour), HandInID: assignmentID, PaperMaxBytes: 10 << 20,
+		ExpiresAt: now.Add(time.Hour), HandInID: assignmentID,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -156,62 +157,73 @@ func TestAnUploadJoinsOnlyTheUploadersOwnWork(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	run := startPaper(t, f, now, nil)
-	if err := f.s.AssertPaperUpload(ctx, run.attemptID, f.other, 1024, 10<<20, now); !errors.Is(err, ErrNotFound) {
+	if err := f.s.AssertPaperUpload(ctx, run.attemptID, f.other, 1024, now); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("ticket on another's attempt: %v", err)
 	}
 	if _, err := f.s.CreateUploadSession(ctx, NewUploadSession{
 		ID: uid("up"), CreatedBy: f.other, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
 		Name: "paper.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: 1024, ParseMode: "none",
-		ExpiresAt: now.Add(time.Hour), AttemptID: run.attemptID, PaperMaxBytes: 10 << 20,
+		ExpiresAt: now.Add(time.Hour), AttemptID: run.attemptID,
 	}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("session on another's attempt: %v", err)
 	}
 	handIn := unmarkedHandIn(t, f, now, f.viewer)
-	if err := f.s.AssertHandInUpload(ctx, handIn.ID, f.other, 1024, 10<<20); !errors.Is(err, ErrNotFound) {
+	if err := f.s.AssertHandInUpload(ctx, handIn.ID, f.other, 1024); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("hand-in by a member it did not go to: %v", err)
 	}
-	if err := f.s.AssertHandInUpload(ctx, handIn.ID, f.viewer, 1024, 10<<20); err != nil {
+	if err := f.s.AssertHandInUpload(ctx, handIn.ID, f.viewer, 1024); err != nil {
 		t.Fatalf("hand-in by its member: %v", err)
 	}
 }
 
-// TestHandInTakesNoFileOnceStorageIsFull (Q728 A): a file added while there
-// is room saves though it takes the member past their limit; once full, the
-// ticket and the upload session refuse the next file, as a Marked paper's
-// start does, while Hand in and Undo hand in still work.
-func TestHandInTakesNoFileOnceStorageIsFull(t *testing.T) {
-	f := newAssignmentFixture(t, "handin-full")
+// TestSubmissionsAreChargedToNoOne (Epo 2026-11-25): a full account still adds
+// a file to its hand-in, which reserves and charges nothing, and hands it in;
+// the bounds refuse a file over 10 MiB and one past 30 MiB in all.
+func TestSubmissionsAreChargedToNoOne(t *testing.T) {
+	f := newAssignmentFixture(t, "handin-free")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	handIn := unmarkedHandIn(t, f, now, f.viewer)
 	limit := mustPlanLimits(t, f.s, PlanFree).StorageBytes
 	if _, err := f.s.pool.Exec(ctx, `INSERT INTO user_storage (user_id, used_bytes) VALUES ($1, $2)
-		ON CONFLICT (user_id) DO UPDATE SET used_bytes=EXCLUDED.used_bytes`, f.viewer, limit-1024); err != nil {
+		ON CONFLICT (user_id) DO UPDATE SET used_bytes=EXCLUDED.used_bytes`, f.viewer, limit); err != nil {
 		t.Fatal(err)
 	}
-	addHandInFile(t, f, handIn.ID, f.viewer, now) // 2048 bytes into 1024 of room
-	var quota *QuotaExceededError
-	if err := f.s.AssertHandInUpload(ctx, handIn.ID, f.viewer, 1024, 10<<20); !errors.As(err, &quota) {
-		t.Fatalf("ticket once full = %v", err)
+	addHandInFile(t, f, handIn.ID, f.viewer, now)
+	if usage, err := f.s.StorageUsage(ctx, f.viewer); err != nil || usage.UsedBytes != limit || usage.ReservedBytes != 0 {
+		t.Fatalf("charged %+v, err %v", usage, err)
 	}
-	if _, err := f.s.CreateUploadSession(ctx, NewUploadSession{
-		ID: uid("up"), CreatedBy: f.viewer, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
-		Name: "more.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: 1024, ParseMode: "none",
-		ExpiresAt: now.Add(time.Hour), HandInID: handIn.ID, PaperMaxBytes: 10 << 20,
-	}); !errors.As(err, &quota) {
-		t.Fatalf("upload session once full = %v", err)
+	if err := f.s.AssertHandInUpload(ctx, handIn.ID, f.viewer, fieldlimits.SubmissionFileBytes+1); !errors.Is(err, ErrPaperFull) {
+		t.Fatalf("a file over the cap = %v", err)
+	}
+	session := func() error {
+		_, err := f.s.CreateUploadSession(ctx, NewUploadSession{
+			ID: uid("up"), CreatedBy: f.viewer, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
+			Name: "more.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: fieldlimits.SubmissionFileBytes,
+			ParseMode: "none", ExpiresAt: now.Add(time.Hour), HandInID: handIn.ID,
+		})
+		return err
+	}
+	for range 2 {
+		if err := session(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := session(); !errors.Is(err, ErrPaperFull) {
+		t.Fatalf("past 30 MiB in all = %v", err)
+	}
+	if usage, err := f.s.StorageUsage(ctx, f.viewer); err != nil || usage.ReservedBytes != 0 {
+		t.Fatalf("reserved %+v, err %v", usage, err)
 	}
 	if err := f.s.SetAssignmentDone(ctx, f.viewer, handIn.ID, true, now); err != nil {
 		t.Fatalf("hand in when full: %v", err)
-	}
-	if err := f.s.SetAssignmentDone(ctx, f.viewer, handIn.ID, false, now); err != nil {
-		t.Fatalf("undo hand in when full: %v", err)
 	}
 }
 
 // TestSubmissionIsNoAccountDocumentAndReadOnly (security, finding 4): a
 // handed-in file opens no editing session for its member, takes no edit, and
-// is neither listed nor readable in their account chat.
+// is neither listed nor readable in their account chat; a handed-in PDF takes
+// no marks from them either (Epo 2026-11-25).
 func TestSubmissionIsNoAccountDocumentAndReadOnly(t *testing.T) {
 	f := newAssignmentFixture(t, "submission-scope")
 	ctx := context.Background()
@@ -240,6 +252,18 @@ func TestSubmissionIsNoAccountDocumentAndReadOnly(t *testing.T) {
 	read, err := f.s.AccountDocumentAccess(ctx, f.viewer, []agenttools.ResourceRef{{Kind: agenttools.KindSourceFile, ID: file.ID}})
 	if err != nil || read[0].CanRead {
 		t.Fatalf("account chat reads it: %+v, err %v", read, err)
+	}
+	handIn := unmarkedHandIn(t, f, now, f.viewer)
+	pdf := addHandInFile(t, f, handIn.ID, f.viewer, now)
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, handIn.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := saveMarks(ctx, f.s, f.viewer, pdf.ID, testMark("highlight")); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("marked a handed-in PDF: %v", err)
+	}
+	renamed := "renamed.pdf"
+	if _, err := f.s.UpdateFile(ctx, f.viewer, pdf.ID, FilePatch{Name: &renamed}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("renamed a handed-in file: %v", err)
 	}
 }
 

@@ -1,52 +1,65 @@
-import { Link, useNavigate } from '@tanstack/react-router';
-import { memo, useMemo, useState } from 'react';
+import { memo, Suspense, useMemo, useState } from 'react';
 import {
   useDeleteAllDrawings,
   useDeleteDrawing,
   useMarkedDrawings,
-  useWorkspaces,
 } from '@/api/hooks';
 import type { MarkedDrawing } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
 import {
+  ITEM_LIST_COLUMNS,
   ItemCard,
-  ItemGrid,
+  ItemList,
   ItemSkeletonGrid,
-  itemMenuIcon,
 } from '@/components/app/ItemCard';
 import { ListEnd } from '@/components/app/ListEnd';
-import { type ListView, ListViewToggle } from '@/components/app/ListToolbar';
+import { ListToolbar, type ListView } from '@/components/app/ListToolbar';
 import { PageBody } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { WorkspaceCell } from '@/components/app/WorkspaceCell';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { formatFileSize } from '@/features/files/fileUtils';
+import { useHeaderAction } from '@/features/files/headerAction';
+import { useTabFilters } from '@/features/files/tabFilters';
+import { DrawingBoardScreen } from '@/features/materials/blockCode';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import {
   DrawingPreview,
   drawingPreviewUrl,
   useDrawingBoard,
 } from '@/features/quizzes/drawing/DrawingPreview';
-import { DRAWING_DELETED } from '@/features/quizzes/drawing/drawingBoards';
+import {
+  DRAWING_DELETED,
+  fetchDrawingPicture,
+} from '@/features/quizzes/drawing/drawingBoards';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { describeError } from '@/lib/errors';
 import { waitsForConnection } from '@/lib/online';
 
 /**
  * Files › Canvas (Epo 2026-11-06, mocks S2 list and S3 grid): the drawn answers
  * the caller pays for whose parts are marked, newest first, so they can delete
- * them; marks stay. Each is named by its quiz, with no score, and drawn from its
- * board, as material previews draw from their data.
+ * them; marks stay. Only practice drawings: an assignment's is free and kept as
+ * handed in, on its results (Epo 2026-11-25). Each is named by its quiz, with
+ * no score, and drawn from its board, as material previews draw from their
+ * data. The Files toolbar with Location and Workspace filters and Delete all;
+ * a drawing opens its own board, read only (Epo 2026-11-26).
  */
 export function CanvasTab({
+  headerSlot,
   view,
   onViewChange,
 }: {
+  /** Where Delete all goes on phones. */
+  headerSlot: HTMLElement | null;
   view: ListView;
   onViewChange: (view: ListView) => void;
 }) {
+  const tab = useTabFilters();
   const {
     data,
     error,
@@ -58,17 +71,30 @@ export function CanvasTab({
     isFetchingNextPage,
     isLoading,
     refetch,
-  } = useMarkedDrawings(true);
-  const { data: workspaces = [] } = useWorkspaces(
-    { sort: 'accessed' },
-    { errorBoundary: false }
-  );
+  } = useMarkedDrawings(true, tab.params);
   const { mutate: deleteOne, isPending: deletingOne } = useDeleteDrawing();
   const { mutate: deleteAll, isPending: deletingAll } = useDeleteAllDrawings();
   const [confirm, setConfirm] = useState<MarkedDrawing | 'all' | null>(null);
+  const [opened, setOpened] = useState<MarkedDrawing | null>(null);
   const items = data?.pages.flatMap((page) => page.items) ?? [];
-  const first = data?.pages[0];
+  // Every drawing's, whatever the filters keep: Delete all deletes them all.
+  const count = data?.pages[0]?.count ?? 0;
   const busy = deletingOne || deletingAll;
+  const iconOf = (workspaceId?: string) =>
+    tab.workspaces.find((ws) => ws.id === workspaceId)?.iconId;
+
+  const header = useHeaderAction(
+    headerSlot,
+    <Button
+      className="px-2.5"
+      disabled={busy || count === 0}
+      iconLeft="trash"
+      onClick={() => setConfirm('all')}
+      variant="danger-light"
+    >
+      {m.canvas_delete_all()}
+    </Button>
+  );
 
   if (waitsForConnection(fetchStatus, data)) return <QueryPausedState />;
   if (isError && !data) {
@@ -86,29 +112,14 @@ export function CanvasTab({
   }
   return (
     <>
-      <div className="page-px -mb-3 flex items-center gap-3">
-        {first && first.count > 0 && (
-          <p className="t-meta text-fg-muted">
-            {m.canvas_summary({
-              count: first.count,
-              size: formatFileSize(first.totalBytes),
-            })}
-          </p>
-        )}
-        {/* -mr-1.5: the view toggle's icon on the gutter, as in ListToolbar. */}
-        <div className="-mr-1.5 ml-auto flex min-h-10 items-center gap-1 sm:min-h-11.5">
-          <Button
-            className="px-2.5"
-            disabled={busy || items.length === 0}
-            iconLeft="trash"
-            onClick={() => setConfirm('all')}
-            variant="danger-light"
-          >
-            {m.canvas_delete_all()}
-          </Button>
-          <ListViewToggle onViewChange={onViewChange} view={view} />
-        </div>
-      </div>
+      {header.portal}
+      <ListToolbar
+        action={header.toolbarAction}
+        filters={tab.filters}
+        onResetFilters={tab.reset}
+        onViewChange={onViewChange}
+        view={view}
+      />
       <PageBody belowToolbar>
         <div className="flex flex-col gap-3">
           {isLoading ? (
@@ -118,26 +129,39 @@ export function CanvasTab({
               <SkeletonCardGrid cardHeight={76} count={3} />
             )
           ) : items.length === 0 ? (
-            <p className="text-fg-muted">{m.canvas_empty()}</p>
-          ) : view === 'grid' ? (
-            <ItemGrid>
-              {items.map((item) => (
-                <CanvasCard
-                  item={item}
-                  key={item.id}
-                  onDelete={setConfirm}
-                  workspaceIconId={
-                    workspaces.find((ws) => ws.id === item.workspaceId)?.iconId
-                  }
-                />
-              ))}
-            </ItemGrid>
+            <p className="text-fg-muted">
+              {tab.filtered ? m.common_no_matches() : m.canvas_empty()}
+            </p>
           ) : (
-            <div className="flex flex-col">
-              {items.map((item) => (
-                <CanvasRow item={item} key={item.id} onDelete={setConfirm} />
-              ))}
-            </div>
+            <ItemList
+              columns={[
+                m.list_col_name(),
+                m.create_filter_workspace(),
+                m.common_size(),
+                m.files_sort_added(),
+              ]}
+              view={view}
+            >
+              {items.map((item) =>
+                view === 'grid' ? (
+                  <CanvasCard
+                    item={item}
+                    key={item.id}
+                    onDelete={setConfirm}
+                    onOpen={setOpened}
+                    workspaceIconId={iconOf(item.workspaceId)}
+                  />
+                ) : (
+                  <CanvasRow
+                    item={item}
+                    key={item.id}
+                    onDelete={setConfirm}
+                    onOpen={setOpened}
+                    workspaceIconId={iconOf(item.workspaceId)}
+                  />
+                )
+              )}
+            </ItemList>
           )}
           <ListEnd
             fetchNextPage={fetchNextPage}
@@ -148,7 +172,7 @@ export function CanvasTab({
           <ConfirmDialog
             body={
               confirm === 'all'
-                ? m.canvas_delete_all_body({ count: first?.count ?? 0 })
+                ? m.canvas_delete_all_body({ count })
                 : m.canvas_delete_body({ name: confirm?.quizName ?? '' })
             }
             confirmLabel={
@@ -168,6 +192,9 @@ export function CanvasTab({
           />
         </div>
       </PageBody>
+      {opened && (
+        <OpenedDrawing item={opened} onClose={() => setOpened(null)} />
+      )}
     </>
   );
 }
@@ -182,30 +209,18 @@ function questionLabel(item: MarkedDrawing) {
     : m.canvas_question({ number: item.question });
 }
 
-const resultLink = (item: MarkedDrawing) =>
-  ({
-    params: { attemptId: item.attemptId },
-    to: '/quizzes/attempts/$attemptId',
-  }) as const;
-
+/** A drawing's ⋮: Delete. The row or card itself opens the drawing (Epo
+ * 2026-11-26: no Open result). */
 function CanvasMenu({
   item,
   onDelete,
-  view,
 }: {
   item: MarkedDrawing;
   onDelete: (item: MarkedDrawing) => void;
-  view: ListView;
 }) {
-  const navigate = useNavigate();
   return (
     <Menu
       items={[
-        {
-          icon: 'navigationForward',
-          label: m.canvas_open_result(),
-          onClick: () => void navigate(resultLink(item)),
-        },
         {
           danger: true,
           icon: 'trash',
@@ -213,7 +228,6 @@ function CanvasMenu({
           onClick: () => onDelete(item),
         },
       ]}
-      triggerIcon={itemMenuIcon(view)}
     />
   );
 }
@@ -224,16 +238,51 @@ function useListedBoard(id: string) {
   return board === DRAWING_DELETED ? null : board;
 }
 
+/** A listed drawing's own board, full screen and read only, as a checked
+ * answer's Open canvas shows it: its question named in the corner. */
+function OpenedDrawing({
+  item,
+  onClose,
+}: {
+  item: MarkedDrawing;
+  onClose: () => void;
+}) {
+  const board = useListedBoard(item.id);
+  const question = questionLabel(item);
+  if (!board) return null;
+  return (
+    <Suspense fallback={null}>
+      <DrawingBoardScreen
+        onClose={onClose}
+        pictures={{ load: (id) => fetchDrawingPicture(item.id, id) }}
+        pinned={{
+          body: <p className="t-meta text-fg-muted">{item.quizName}</p>,
+          marks: '',
+          short: question,
+          summary: item.quizName,
+          title: question,
+        }}
+        readOnly
+        saved={board}
+      />
+    </Suspense>
+  );
+}
+
+type CanvasItemProps = {
+  item: MarkedDrawing;
+  onDelete: (item: MarkedDrawing) => void;
+  onOpen: (item: MarkedDrawing) => void;
+  workspaceIconId?: string;
+};
+
 /** S3: the file card, the drawing drawn in its preview. */
 const CanvasCard = memo(function CanvasCard({
   item,
   onDelete,
+  onOpen,
   workspaceIconId,
-}: {
-  item: MarkedDrawing;
-  onDelete: (item: MarkedDrawing) => void;
-  workspaceIconId?: string;
-}) {
+}: CanvasItemProps) {
   const board = useListedBoard(item.id);
   // The card's 16:11 preview box, the drawing framed by its panel (S3).
   const thumbnailUrl = useMemo(
@@ -243,10 +292,10 @@ const CanvasCard = memo(function CanvasCard({
   );
   return (
     <ItemCard
-      actions={<CanvasMenu item={item} onDelete={onDelete} view="grid" />}
+      actions={<CanvasMenu item={item} onDelete={onDelete} />}
       icon="drawing"
-      link={resultLink(item)}
       meta={relativeTime(item.createdAt)}
+      onOpen={() => onOpen(item)}
       thumbnail={{ thumbnailUrl }}
       title={item.quizName}
       view="grid"
@@ -256,60 +305,65 @@ const CanvasCard = memo(function CanvasCard({
   );
 });
 
-/** S2: a list row, its second line naming the question, practice or
- * assignment, and the workspace. */
+/** S2: a list row on the Files list's columns, taller for its drawing (Epo
+ * 2026-11-26): the drawing, the quiz and its question, then the workspace,
+ * size and date. Phones keep two lines, as every list row: the quiz, then
+ * question · workspace · size. */
 const CanvasRow = memo(function CanvasRow({
   item,
   onDelete,
-}: {
-  item: MarkedDrawing;
-  onDelete: (item: MarkedDrawing) => void;
-}) {
+  onOpen,
+  workspaceIconId,
+}: CanvasItemProps) {
   const board = useListedBoard(item.id);
-  const when = relativeTime(item.createdAt);
   const size = formatFileSize(item.bytes);
   return (
     <div
-      className="relative grid min-h-19 grid-cols-[72px_minmax(0,1fr)_36px] items-center gap-3 border-divider border-b py-2 text-sm hover:bg-surface-hover-bg md:grid-cols-[96px_minmax(0,1fr)_140px_90px_36px]"
+      className={cn(
+        'relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 border-divider border-b py-2 text-sm hover:bg-surface-hover-bg md:gap-3',
+        ITEM_LIST_COLUMNS
+      )}
       data-item
     >
-      <div className="grid h-15 place-items-center">
-        {board && (
-          <DrawingPreview
-            board={board}
-            className="max-h-15 object-contain"
-            height={60}
-            width={94}
-          />
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="grid h-12 w-18 shrink-0 place-items-center">
+          {board && (
+            <DrawingPreview
+              board={board}
+              className="max-h-12 object-contain"
+              height={48}
+              width={72}
+            />
+          )}
+        </div>
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <button
+            className="truncate text-left after:absolute after:inset-0 after:z-1 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset"
+            onClick={() => onOpen(item)}
+            type="button"
+          >
+            {item.quizName}
+          </button>
+          <span className="t-meta truncate text-fg-muted">
+            {questionLabel(item)}
+            <span className="md:hidden">
+              {[item.workspaceName, size]
+                .filter(Boolean)
+                .map((part) => ` · ${part}`)
+                .join('')}
+            </span>
+          </span>
+        </div>
+      </div>
+      <div className="hidden min-w-0 md:block">
+        {item.workspaceName && (
+          <WorkspaceCell iconId={workspaceIconId} name={item.workspaceName} />
         )}
       </div>
-      <div className="flex min-w-0 flex-col gap-0.5">
-        <Link
-          {...resultLink(item)}
-          className="truncate after:absolute after:inset-0 after:z-1 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset"
-        >
-          {item.quizName}
-        </Link>
-        <span className="t-meta truncate text-fg-muted">
-          {[
-            questionLabel(item),
-            item.assignment ? m.canvas_assignment() : m.canvas_practice(),
-            item.workspaceName,
-          ]
-            .filter(Boolean)
-            .join(' · ')}
-        </span>
-        {/* Phones fold the time and size columns into a third line. */}
-        <span className="t-meta truncate text-fg-muted md:hidden">
-          {`${when} · ${size}`}
-        </span>
-      </div>
-      <span className="t-meta hidden text-fg-muted md:block">{when}</span>
-      <span className="t-meta hidden text-right text-fg-muted md:block">
-        {size}
-      </span>
-      <div className="relative z-10 flex justify-self-end">
-        <CanvasMenu item={item} onDelete={onDelete} view="list" />
+      <p className="hidden md:block">{size}</p>
+      <p className="hidden md:block">{relativeTime(item.createdAt)}</p>
+      <div className="relative z-10 -my-2 flex justify-self-end">
+        <CanvasMenu item={item} onDelete={onDelete} />
       </div>
     </div>
   );

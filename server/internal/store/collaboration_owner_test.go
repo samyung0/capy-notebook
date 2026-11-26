@@ -184,7 +184,6 @@ func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	commentText := "hi"
-	mark := PDFAnnotationBody{SourceIdentity: "revision:1", Page: 1, Kind: "rectangle", Color: "#d94848", Rects: []PDFRect{{X: 10, Y: 20, Width: 200, Height: 50}}}
 	for name, reach := range map[string]func(owner, ws string){
 		"full": func(owner, _ string) {
 			if _, err := s.pool.Exec(ctx, `INSERT INTO user_storage (user_id, used_bytes) VALUES ($1, $2)
@@ -224,8 +223,7 @@ func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 				}
 				_, err := s.CreateCommentDiscussion(ctx, note.ID, who, nil, nil, nil, 1, "", commentText)
 				want("comment", err)
-				_, err = s.SavePDFAnnotation(ctx, who, pdf.ID, "", mark)
-				want("PDF mark", err)
+				want("PDF mark", saveMarks(ctx, s, who, pdf.ID, testMark("rectangle")))
 				session, err := s.SourceSession(ctx, who, text.ID)
 				wantFull := StorageFullPayer
 				if who == owner {
@@ -375,9 +373,8 @@ func TestFrozenEdges(t *testing.T) {
 	ws, pdf := sourceTestFile(t, s, frozenUser, "marks.pdf", "pdf")
 	textWS, text := sourceTestFile(t, s, frozenUser, "notes.txt", "txt")
 	addWorkspaceEditor(t, s, textWS.ID, member)
-	mark := PDFAnnotationBody{SourceIdentity: "revision:1", Page: 1, Kind: "rectangle", Color: "#d94848", Rects: []PDFRect{{X: 10, Y: 20, Width: 200, Height: 50}}}
-	saved, err := s.SavePDFAnnotation(ctx, frozenUser, pdf.ID, "", mark)
-	if err != nil {
+	saved := testMark("rectangle")
+	if err := saveMarks(ctx, s, frozenUser, pdf.ID, saved); err != nil {
 		t.Fatal(err)
 	}
 	standalone, err := s.CreateMaterial(ctx, Material{CreatedBy: frozenUser, Kind: "note", Title: "Shared note", Content: materialTestContent(t, ""), Privacy: PrivacyLink})
@@ -426,9 +423,8 @@ func TestFrozenEdges(t *testing.T) {
 		t.Fatalf("trashing the whole set: %v", err)
 	}
 
-	_, err = s.SavePDFAnnotation(ctx, frozenUser, pdf.ID, "", mark)
-	wantOverQuotaLock(t, "PDF mark", err)
-	wantOverQuotaLock(t, "deleting a PDF mark", s.DeletePDFAnnotation(ctx, frozenUser, pdf.ID, saved.ID))
+	wantOverQuotaLock(t, "PDF mark", saveMarks(ctx, s, frozenUser, pdf.ID, testMark("rectangle")))
+	wantOverQuotaLock(t, "deleting a PDF mark", removeMarks(ctx, s, frozenUser, pdf.ID, saved.ID))
 
 	for _, actor := range []string{frozenUser, member} {
 		session, err := s.SourceSession(ctx, actor, text.ID)

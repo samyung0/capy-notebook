@@ -14,6 +14,7 @@ const { document, window } = parseHTML(
 Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 
 vi.mock('@/api/hooks', () => ({
+  useFile: () => ({ data: undefined }),
   useMarkAssignmentAnswer: () => ({ mutate: vi.fn() }),
   useStartAssignment: () => ({ isPending: false, mutate: vi.fn() }),
   useWorkspace: () => ({ data: undefined }),
@@ -52,6 +53,7 @@ const attempt = {
   correct: 0,
   gradesHidden: true,
   mark: 0,
+  paperFiles: [],
   questions: [
     {
       id: 'q1',
@@ -74,23 +76,42 @@ const attempt = {
   total: 0,
 } as unknown as AssignmentAttempt;
 
-it('lists answers without marks while grades wait for release', async () => {
+const hiddenText = async (gradesHidden: boolean) => {
   const host = document.createElement('div');
   document.body.append(host);
   const root = createRoot(host);
   await act(async () =>
     root.render(
       <AttemptResults
-        assignment={{ postedBy: 'Kate', workspaceId: 'ws1' } as Assignment}
+        assignment={
+          { gradesHidden, postedBy: 'Kate', workspaceId: 'ws1' } as Assignment
+        }
         attempt={attempt}
       />
     )
   );
-  const text = host.textContent ?? '';
+  return { host, root, text: host.textContent ?? '' };
+};
+
+it('lists answers without marks while grades wait for release', async () => {
+  const { host, root, text } = await hiddenText(true);
   expect(text).toContain(m.assignment_grades_hidden_note({ name: 'Kate' }));
-  expect(text).toContain(m.assignment_answered());
-  expect(text).toContain(m.assignment_blank());
+  // Each question whole with its answer (Epo 2026-11-25), its worth in place
+  // of a mark.
+  expect(text).toContain('Name it');
+  expect(
+    [...host.querySelectorAll('input, textarea')].map(
+      (field) => (field as HTMLInputElement).value
+    )
+  ).toContain('osmosis');
   expect(text).not.toContain('/ 2');
+  act(() => root.unmount());
+});
+
+// Epo 2026-11-25: shown grades still wait while a mark does: being graded.
+it('says it is being graded while a mark waits under shown grades', async () => {
+  const { root, text } = await hiddenText(false);
+  expect(text).toContain(m.assignment_being_graded_note());
   act(() => root.unmount());
 });
 
@@ -247,10 +268,12 @@ async function renderPaper(assignment: Assignment, shown: AssignmentAttempt) {
   return { host, root, text: host.textContent ?? '' };
 }
 
+// A member's: the comment under the numbers, then the paper and their work as
+// the Files block's cards (Epo 2026-11-25, mock NgtaKfyZp9yk2uh9Ysxhhi).
 it("shows a file quiz's member the feedback, their files and the paper, with no question row", async () => {
   const { root, text } = await renderPaper(paperAssignment, paperAttempt);
-  expect(text).toContain(m.assignment_feedback());
   expect(text).toContain('Kate Malone · Good labelling');
+  expect(text).toContain(m.assignment_your_work());
   expect(text).toContain('Cell answers.jpg');
   expect(text).toContain('Cell structure.pdf');
   expect(text).not.toContain('Q1');
@@ -280,10 +303,10 @@ it("gives staff a file quiz's grade and answers, with no question row", async ()
 });
 
 it("shows a file quiz's files alone while grades wait for release", async () => {
-  const { root, text } = await renderPaper(paperAssignment, {
-    ...paperAttempt,
-    gradesHidden: true,
-  });
+  const { root, text } = await renderPaper(
+    { ...paperAssignment, gradesHidden: true },
+    { ...paperAttempt, gradesHidden: true }
+  );
   expect(text).toContain(m.assignment_grades_hidden_note({ name: 'Kate' }));
   expect(text).toContain('Cell answers.jpg');
   expect(text).not.toContain('Good labelling');

@@ -7,13 +7,12 @@
 
 export interface SubmittedPaper {
   assignmentId: string;
-  attemptId?: string;
   bytes: number;
   createdAt: string;
   id: string;
   kind: string;
   name: string;
   quizName: string;
-  workspaceId?: string;
+  workspaceId: string;
   workspaceName: string;
 }

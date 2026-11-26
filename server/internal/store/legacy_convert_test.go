@@ -180,7 +180,7 @@ func TestSubmissionLegacyFilesStayUnconverted(t *testing.T) {
 		in.ID, in.CreatedBy = uid("up"), f.viewer
 		in.ObjectPath, in.FinalPath = "sources/"+uid("blob"), "sources/"+uid("blob")
 		in.Name, in.Kind, in.ContentType = "answers.doc", "doc", "application/msword"
-		in.DeclaredSize, in.PaperMaxBytes, in.ExpiresAt = 2048, 10<<20, now.Add(time.Hour)
+		in.DeclaredSize, in.ExpiresAt = 2048, now.Add(time.Hour)
 		upload, err := f.s.CreateUploadSession(ctx, in)
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)

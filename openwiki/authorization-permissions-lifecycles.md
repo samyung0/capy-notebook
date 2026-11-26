@@ -709,8 +709,9 @@ Sources: [migration](../server/migrations/0140_hidden_from_members.sql),
   `account_over_quota`, since joining is an edit. An invite that belongs to
   another account answers the same 404 as a missing one, by invite id or by
   token, so neither is an existence oracle. Before Accept the invite page reads
-  the invite (`GET /api/workspace-invites/{token}`: its role and workspace kind,
-  so a class's viewer can agree to what they share) under the same rules, the
+  the invite (`GET /api/workspace-invites/{token}`: its role, the workspace's
+  kind and name and its owner's name and avatar, so the invitee sees what they
+  join and a class's viewer can agree to what they share) under the same rules, the
   same 404 wherever Accept would answer one; the in-app notification already
   names the workspace to that invitee, so this tells them nothing new.
 - Role changes and removals refuse an empty actor rather than reading it as the
@@ -1465,15 +1466,17 @@ Sources: [item bank routes](../server/internal/httpapi/huma_item_banks.go) and
 ### Drawing answers
 
 A drawing part's answer is its saved board (and, while its part waits on the
-AI, a marking image), stored under `drawings/<attempt or user>/` and charged to
-the person attempting (see [study-progress.md](study-progress.md) and
+AI, a marking image), stored under `drawings/<attempt or user>/`, charged to
+the person attempting in practice and to no one in an assignment (Epo
+2026-11-25; see [study-progress.md](study-progress.md) and
 [backend-storage-quota.md](backend-storage-quota.md#drawing-answers)).
 
 - **Writing (assignment Done).** `PUT /api/assignment-attempts/{id}/drawings/{partId}`
   writes nothing to the bucket until `CheckAssignmentDrawing` passes: the
   caller's own running attempt, in a class they still belong to, the attempt's
-  time not run out, a drawing part of its frozen copy, and the caller's storage
-  for what the part adds (Q693). A part answering in the canvas above takes
+  time not run out, a drawing part of its frozen copy, and the caller's account
+  state; storage never blocks it (Epo 2026-11-08) and it is charged to no one
+  (Epo 2026-11-25). A part answering in the canvas above takes
   none unless it is the first part answering there, whose drawing answers
   them all (`drawingPartIn`, `questions.DrawingParts`; Epo 2026-11-23); a
   practice check sending one under another is refused the same way
@@ -1495,11 +1498,13 @@ the person attempting (see [study-progress.md](study-progress.md) and
 - **Marking.** A drawing's drawn sample answer image goes to the model only
   when it is a ready, untrashed image of the quiz checked or of the
   assignment's frozen copy; otherwise the part stays Not marked.
-- **Deleting.** A payer deletes their marked drawings from Files › Canvas
-  (`DELETE /api/drawings/{id}`, `DELETE /api/drawings`); one still waiting on
-  marking is not listed and not found, and an assignment's waits until the
-  assignment has closed and, under Show grades Manual, its grades are released,
-  so staff can still revise marks (Epo 2026-11-08). A drawing answering
+- **Deleting.** A payer deletes their marked practice drawings from Files ›
+  Canvas (`DELETE /api/drawings/{id}`, `DELETE /api/drawings`); one still
+  waiting on marking is not listed and not found. An assignment's drawing is
+  listed once the assignment has closed and, under Show grades Manual, its
+  grades are released (Epo 2026-11-08), but is never deleted: it stays as
+  handed in, as submitted uploads do (Epo 2026-11-25), and goes with its
+  assignment. A drawing answering
   several parts in one canvas counts as marked only once every shared canvas
   part of its question is (`sharedUnmarkedSQL`), for this list and for a
   leaver. Drawings go with their assignment, with
@@ -1657,15 +1662,24 @@ standalone uploads, linked to the attempt by `files.attempt_id`, so a viewer
 member hands one in and no other member sees it. Its member adds, removes and
 orders files while the attempt runs; `GET /api/assignment-attempts/{id}/paper/{fileId}/links`
 signs a file for its member and, once submitted, for the class's owners and
-editors (`PaperFileBlob`); nothing else reads it. The files go with the attempt
-and its assignment (cascade), never list in Files, search, Recent, account chat
+editors (`PaperFileBlob`); nothing else reads it. A member hands in one paper
+per assignment whatever the attempts, which count answers in the app only, and
+the first start picks the way for good (Epo 2026-11-25): after a paper nothing
+starts (`409 paper_handed_in`), and after an online answer no paper does
+(`409 answered_online`). The files go with the attempt
+and its assignment (cascade), never list in search, Recent, account chat
 (`AccountDocuments`, `AccountDocumentAccess` and the pipeline's standalone
-legs skip `submission_position`) or the trash path, open read only for their
+legs skip `submission_position`) or the trash path, and open read only for their
 member (no editing session: `SourceSession` reads, and `sourceActorsAllowed`
-refuses an edit with 403; Q714, finding 4), and their member deletes them from
-the Files page under the drawings'
-rule, a leaver's going once read with
-nothing waiting (`dropLeaverSubmissionsTx`). A frozen account still attempts
+refuses an edit with 403; Q714, finding 4). Once submitted they are kept as
+handed in for good (Epo 2026-11-25, as Google Classroom and Canvas keep a
+turned-in file): the Files page lists them read only, with no Delete, their
+member's PDF marks are refused (`annotationLock`, 403), and a rename or move
+answers 404 (`UpdateFile`, `readMovingFilesTx`), since staff may grade at any
+time after the due date. An upload session remembers it was a submission
+(`upload_sessions.submission`), so one whose attempt or assignment was deleted
+mid-upload never lands as an ordinary file. A leaver's papers go once read with nothing waiting
+(`dropLeaverSubmissionsTx`). A frozen account still attempts
 and submits, drawings and papers included (Epo 2026-11-08, O4): an answer is no
 material it edits.
 
@@ -1676,12 +1690,17 @@ the assignment and owned by its member. The member adds and removes files
 not handed in and the assignment not closed (by hand, or at its due date under
 No late submissions); without No late a due date that passed still takes work,
 which the Members tab shows Late. Hand in (`PUT /api/assignments/{id}/done`)
-needs a file and locks them; Undo hand in reopens them while it is open.
+needs a file, asks first and is final (Epo 2026-11-25): there is no Undo, and
+`done: false` on a hand-in is `409 hand_in_final`, also once the owner turns
+uploads off while the member has hand-in files.
 `GET /api/assignments/{id}/hand-in/{fileId}/links` signs a file for its member
 and, once handed in, for the class's owners and editors (`HandInFileBlob`).
-The files go with the assignment (cascade), with the member as they leave the
-class, and list on the Files page once it closes, for the member to
-delete; like a paper's they are read only and out of account chat. They
+The files go with the assignment (cascade) and with the member as they leave the
+class. Handed-in files list on the Files page at once, read only for good like a
+submitted paper's (no Delete, no marks); files a member added but never handed
+in list once the assignment closes, and only those can be deleted
+(`DELETE /api/papers/{id}`, `DeleteLeftHandIn`). Like a paper's they are out of
+account chat. They
 are stored as uploaded and never parsed, so a legacy Office file handed in is
 not converted and stays a `.doc`, `.xls` or `.ppt`: Retry processing refuses
 a hand-in's file (`409 revision_conflict`), which the file viewer's Convert
@@ -2511,9 +2530,13 @@ five hits of each kind; the dialog shows each kind under its own heading.
 
 The Files page shows one list (Epo 2026-11-09, `GET /api/items`,
 `store.ListItems`): to the user a file is any of them, so uploaded files, the
-files it handed in (submissions, once deletable), its blocks (notes, quizzes,
+files it handed in (submitted papers and handed-in files, read only; hand-in files left unhanded once the assignment closes, deletable), its blocks (notes, quizzes,
 flashcard sets) and the images and audio it added to notes page, sort and
-filter together, beside the Canvas and Trash tabs. A narrow `UNION ALL` over
+filter together, beside the Canvas and Trash tabs, which share its toolbar
+and filters (Epo 2026-11-26: Trash's Kind, Location and Workspace, Canvas's
+Location and Workspace, as `kind`, `location` and `workspaces` on `GET
+/api/trash` and `GET /api/drawings` through `store.ListFilter`; `workspaces`
+narrows the caller's own rows and grants nothing). A narrow `UNION ALL` over
 `files`, `materials` and `editor_assets` picks the page by a shared sort value
 (added, name, size, kind or workspace) with a `type:id` tie-break, then each
 row is read whole by its own listing by ids (`ListOwnedFiles`,
@@ -2879,10 +2902,23 @@ transfer use the collaboration eviction/outbox and processing fences.
 
 Private PDF annotations belong to one actor and exact source identity. Reading
 and mutation require current file access, and one actor cannot read or modify
-another actor's marks. A file holds at most 2,000 annotations across all
+another actor's marks: mark IDs come from the viewer, so a save over an ID
+another author holds is a conflict and a remove of it touches nothing. A file holds at most 2,000 annotations across all
 authors (409 `annotation_limit`), as decided; at the cap, a reader learns
 only that the file is full, never whose marks fill it. Clones and downloads do not include them, and
 `PurgeUser` deletes the actor's marks at account purge.
+
+A submission's file (a hand-in's or a paper's) holds staff's shared marks
+instead (Epo 2026-11-25, mock B6H1Z7o4byVFBVyCRSUK3B; `submissionMarkAccess`):
+staff of the class read them once it is handed in or submitted, as they read
+the file, and change any staff member's when the assignment is graded; its
+member reads them, read only, once they see the grade, and nobody else learns
+the file exists (404). Saving is a content edit of the marking staff member's
+own account only (`assertContentEditableTx(actor, actor)`): the file is charged
+to no one. A Word submission's PDF copy (`files.marked_copy_path`) is stored by
+the same staff (`AssertMarkedCopy`, the same account check as a mark), once;
+its member's links carry it only once the marks show; it goes with the file
+through `blob_unref`.
 
 Image-caption reuse checks current containing files. Private workspace reuse
 stays within that workspace; link/public workspaces permit global reuse.

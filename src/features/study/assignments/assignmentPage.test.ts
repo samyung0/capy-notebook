@@ -33,10 +33,9 @@ it("gives each report its tabs, a graded quiz's draft no Responses", () => {
   // Epo 2026-11-21: an Assignment's Content and Responses, as a quiz's.
   expect(tabs('unmarked', false)).toEqual(['content', 'responses', 'settings']);
   expect(tabs('unmarked', true)).toEqual(['settings']);
-  // Epo 2026-11-19: Grading for one taking files, its points too (2026-11-21).
+  // Epo 2026-11-25: one taking files lists its members on Grading alone.
   expect(tabs('unmarked', false, true)).toEqual([
     'content',
-    'responses',
     'grading',
     'settings',
   ]);
@@ -48,4 +47,7 @@ it('opens a tab the report has, else its first', () => {
     reportView(quiz, { by: 'question', tab: 'responses' }).byQuestion
   ).toBe(true);
   expect(reportView(quiz, { tab: 'content' }).tab).toBe('questions');
+  // A link to an Assignment taking files' Responses lands on its Grading.
+  const files = { allowUploads: true, draft: false, kind: 'unmarked' as const };
+  expect(reportView(files, { tab: 'responses' }).tab).toBe('grading');
 });

@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
+import { pressStart } from '../helpers/assignments';
 import { m } from '../i18n';
 
 /**
@@ -154,10 +155,10 @@ for (const { screen, width } of SCREENS) {
     );
     await page.goto('/workspaces/ws_bio');
     await hideMockPanel(page);
-    // A class tells a member once what it shares, before anything else.
-    await page
-      .getByRole('button', { name: m.sharing_notice_ok() })
-      .click({ timeout: 60_000 });
+    // The page is up, so the mock it runs is the one assigning.
+    await expect(page.getByText('Biology 101').first()).toBeVisible({
+      timeout: 60_000,
+    });
     const assignment = await page.evaluate(async () => {
       const { assignAsMockOwner } = await import(
         '/src/mocks/assignments.ts' as string
@@ -181,12 +182,13 @@ for (const { screen, width } of SCREENS) {
       }) as string;
     });
 
-    // The member draws, and Done stores the drawing at once. With no time
-    // limit the assignment opens straight into its attempt.
+    // The member draws, and Done stores the drawing at once. The page waits
+    // for Start (Epo 2026-11-25), and an online one starts straight in.
     await page.evaluate((to) => {
       history.pushState({}, '', to);
       dispatchEvent(new PopStateEvent('popstate'));
     }, `/workspaces/ws_bio/assignments?assignment=${assignment}`);
+    await pressStart(page);
     const take = page.locator('[data-assignment-take]');
     await expect(take).toBeVisible({ timeout: 30_000 });
     await openQuestion(page);

@@ -18,14 +18,8 @@ import {
 } from '@/api/hooks';
 import type { AssignmentAttempt, AssignmentFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogTitle,
-} from '@/components/ui/Dialog';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { FormAlert } from '@/components/ui/FormAlert';
-import { Icon } from '@/components/ui/Icon';
 import { userToast } from '@/components/ui/userToast';
 import {
   RemovedAssetsContext,
@@ -58,12 +52,12 @@ import { keptAnswers, renamedDrafts } from '@/features/quizzes/stillAnswers';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
+import { earliest, HOUR, TimeLeft, useTimeLeft } from './assignmentClock';
 import { PaperPane, QuestionPaperCard, QuestionPaperView } from './LazyPaper';
+import { PaperSheet } from './PaperSheet';
 import { NumberStrip, QuestionNumbers } from './QuestionNumbers';
+import { SplitColumns } from './SplitColumns';
 import { useAddSubmissionFiles } from './useAddSubmissionFiles';
-
-/** Answers written into a field, which an upload's questions leave out. */
-const WRITTEN = new Set(['short', 'open', 'canvas']);
 
 /** How long typing rests before answers save. */
 const SAVE_AFTER_MS = 2000;
@@ -113,28 +107,16 @@ export function TakeQuestion({
   children,
   number,
   onChange,
-  paper = false,
   question,
 }: {
   answers: Answers;
   children?: ReactNode;
   number: number;
   onChange: (partId: string, value: Answer) => void;
-  /** Answered by upload (S5): the question alone, no field to answer in. */
-  paper?: boolean;
   question: LearnerQuestion | Question;
 }) {
   const type = question.parts[0]?.answer.type as QuestionType | undefined;
   const heading = useMemo(() => questionHeading(question), [question]);
-  const written = useMemo(
-    () =>
-      new Set(
-        question.parts
-          .filter((part) => WRITTEN.has(part.answer.type))
-          .map((part) => part.id)
-      ),
-    [question]
-  );
   return (
     <div className="motion-safe:motion-text-in mx-auto flex w-full max-w-180 flex-col gap-3">
       <p className="t-meta text-fg-secondary">
@@ -149,20 +131,10 @@ export function TakeQuestion({
           <TextView marks text={heading.text} />
         </h2>
       )}
-      {/* Written answers get the paper's room on this page. */}
+      {/* Written answers get the room of a page. */}
       <div className="[&_textarea]:max-h-none [&_textarea]:min-h-[calc(var(--ruled-line)*10)]">
         <QuestionRunner
           answers={answers}
-          // On paper a canvas is its picture, as an image is.
-          canvasPictures={paper}
-          disabled={paper}
-          // On paper the options still show, read only; a field to write in
-          // does not.
-          frameAnswer={
-            paper
-              ? (partId, runner) => (written.has(partId) ? null : runner)
-              : undefined
-          }
           headerMarks={false}
           onChange={onChange}
           pinFrom={{ number, question }}
@@ -198,65 +170,6 @@ function useBookmarks(attemptId: string) {
       return next;
     });
   return { marks, toggle };
-}
-
-/** The clock left, counted from the server's time at the read. With `within`,
- * it ticks each second only from that long before the end: until then it
- * rechecks once a minute, which also survives a sleeping laptop. */
-function useTimeLeft(
-  deadlineAt: string | undefined,
-  serverNow: string,
-  within?: number
-) {
-  const offset = useRef(Date.parse(serverNow) - Date.now());
-  const left = useCallback(
-    () =>
-      deadlineAt
-        ? Date.parse(deadlineAt) - (Date.now() + offset.current)
-        : null,
-    [deadlineAt]
-  );
-  const [ms, setMs] = useState(left);
-  useEffect(() => {
-    // An end taken away (No late turned off) leaves no clock.
-    setMs(left());
-    if (!deadlineAt) return;
-    let tick: ReturnType<typeof setInterval> | undefined;
-    let later: ReturnType<typeof setTimeout> | undefined;
-    const arm = () => {
-      const wait = within === undefined ? 0 : (left() ?? 0) - within;
-      if (wait > 0) {
-        later = setTimeout(arm, Math.min(wait, 60_000));
-        return;
-      }
-      setMs(left());
-      tick = setInterval(() => setMs(left()), 1000);
-    };
-    arm();
-    return () => {
-      clearTimeout(later);
-      clearInterval(tick);
-    };
-  }, [deadlineAt, left, within]);
-  return ms;
-}
-
-const HOUR = 60 * 60 * 1000;
-
-/** The earliest of the times given, if any. */
-const earliest = (...times: (string | undefined)[]) =>
-  times
-    .filter((t): t is string => !!t)
-    .sort((a, b) => Date.parse(a) - Date.parse(b))[0];
-
-function clockText(ms: number) {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  const hours = Math.floor(total / 3600);
-  const minutes = Math.floor((total % 3600) / 60);
-  const seconds = String(total % 60).padStart(2, '0');
-  return hours
-    ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
-    : `${minutes}:${seconds}`;
 }
 
 /** Answering an assignment: one question at a time beside the quiz's list, on a
@@ -506,14 +419,7 @@ export function AssignmentTake({
   // A timed attempt always shows its clock; one only a due date ends shows it
   // in the last hour (Epo 2026-11-08).
   const clock = left !== null && (!!attempt.deadlineAt || left <= HOUR) && (
-    <span
-      aria-live="off"
-      className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-page-hover px-3.5 font-bold"
-      role="timer"
-    >
-      <Icon name="clock" size={16} />
-      {m.assignment_time_left({ time: clockText(left) })}
-    </span>
+    <TimeLeft ms={left} />
   );
   const savedState = (
     <span
@@ -530,17 +436,17 @@ export function AssignmentTake({
           : m.assignment_not_saved()}
     </span>
   );
-  const confirmText = paper
-    ? files.length === 0
-      ? m.assignment_submit_paper_empty()
-      : files.length === 1
+  // Final either way; a paper with files says how many, and what is missing
+  // follows it in the error colour (Epo 2026-11-25).
+  const confirmText =
+    paper && files.length
+      ? files.length === 1
         ? m.assignment_submit_paper_one()
         : m.assignment_submit_paper({ count: files.length })
-    : unanswered === 0
-      ? m.assignment_submit_all_answered()
-      : unanswered === 1
-        ? m.assignment_submit_unanswered_one()
-        : m.assignment_submit_unanswered({ count: unanswered });
+      : m.assignment_submit_all_answered();
+  const confirmMissing = paper
+    ? files.length === 0 && m.assignment_submit_paper_empty()
+    : unanswered > 0 && m.assignment_submit_unanswered();
   const submitButton = (
     <span title={uploading ? m.assignment_submit_wait_upload() : undefined}>
       <Button
@@ -575,60 +481,58 @@ export function AssignmentTake({
               // card above Your answers at the side, the file in the
               // workspace's viewer beside them; a phone reads the file
               // first, its name and Download over it, Your answers under it.
-              <div className="flex min-h-0 flex-1 flex-col md:grid md:grid-cols-[300px_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)]">
+              <div className="flex min-h-0 flex-1 flex-col">
                 <div className="flex items-center gap-1 border-divider border-b py-1.5 pr-4 pl-2 md:hidden">
                   {leave}
                   <span className="truncate font-bold">{attempt.title}</span>
                 </div>
-                <aside className="flex flex-col gap-4 border-divider border-t px-4 py-3 max-md:order-last max-md:max-h-[40dvh] max-md:overflow-y-auto md:min-h-0 md:overflow-y-auto md:border-t-0 md:border-r">
-                  <QuestionPaperCard
-                    className="border-divider border-b pb-4 max-md:hidden"
-                    file={questionPaper}
-                  />
-                  <PaperPane
-                    attemptId={attempt.id}
-                    files={files}
-                    uploads={uploads}
-                  />
-                </aside>
-                <div className="min-h-0 flex-1">
+                <SplitColumns
+                  className="min-h-0 flex-1"
+                  mainClassName="min-h-0 flex-1"
+                  side={
+                    <>
+                      <QuestionPaperCard
+                        className="border-divider border-b pb-4 max-md:hidden"
+                        file={questionPaper}
+                      />
+                      <PaperPane
+                        attemptId={attempt.id}
+                        files={files}
+                        uploads={uploads}
+                      />
+                    </>
+                  }
+                  sideClassName="flex flex-col gap-4 border-divider border-t px-4 py-3 max-md:order-last max-md:max-h-[40dvh] max-md:overflow-y-auto md:border-t-0"
+                >
                   <QuestionPaperView file={questionPaper} />
-                </div>
+                </SplitColumns>
               </div>
             ) : paper ? (
               // Answered by upload (S5, Epo 2026-11-19): Your answers beside
-              // every question in one scroll, read only.
-              // One Your answers: phones scroll it above the questions.
-              <div className="min-h-0 flex-1 overflow-y-auto md:grid md:grid-cols-[300px_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)] md:overflow-hidden">
+              // the questions as a printed paper, in Grading's two columns
+              // (Epo 2026-11-25, mock A). Phones scroll Your answers above
+              // the questions.
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto md:overflow-hidden">
                 <div className="flex items-center gap-1 border-divider border-b py-1.5 pr-4 pl-2 md:hidden">
                   {leave}
                   <span className="truncate font-bold">{attempt.title}</span>
                 </div>
-                <aside className="border-divider border-b px-4 py-3 md:min-h-0 md:overflow-y-auto md:border-r md:border-b-0">
-                  <PaperPane
-                    attemptId={attempt.id}
-                    files={files}
-                    uploads={uploads}
-                  />
-                </aside>
-                <div className="md:min-h-0 md:overflow-y-auto">
-                  <div className={TAKE_PANE}>
-                    {questions.map((q, i) => (
-                      <div
-                        className="border-divider border-b py-8 first:pt-0 last:border-b-0"
-                        key={q.id}
-                      >
-                        <TakeQuestion
-                          answers={answers}
-                          number={i + 1}
-                          onChange={change}
-                          paper
-                          question={q}
-                        />
-                      </div>
-                    ))}
+                <SplitColumns
+                  className="md:flex-1"
+                  mainClassName="md:overflow-y-auto"
+                  side={
+                    <PaperPane
+                      attemptId={attempt.id}
+                      files={files}
+                      uploads={uploads}
+                    />
+                  }
+                  sideClassName="border-divider border-b px-4 py-3 md:border-b-0"
+                >
+                  <div className="mx-auto max-w-205 px-4 pt-4 pb-6 sm:px-6 md:pb-24 lg:pt-6">
+                    <PaperSheet questions={questions} />
                   </div>
-                </div>
+                </SplitColumns>
               </div>
             ) : (
               <QuizSplit
@@ -664,13 +568,21 @@ export function AssignmentTake({
                       question={question}
                     >
                       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                        {/* Borderless (Epo 2026-11-25), pulled left by its
+                            padding so the icon lines up with the question;
+                            a marked one fills its icon, still in the text's
+                            colour. */}
                         <Button
+                          aria-pressed={bookmarks.includes(question.id)}
+                          className="-ml-2.5 px-2.5"
                           iconLeft="bookmark"
+                          iconLeftClassName={cn(
+                            bookmarks.includes(question.id) &&
+                              '[&_path]:fill-current'
+                          )}
                           onClick={() => toggleBookmark(question.id)}
                           size="sm"
-                          variant={
-                            bookmarks.includes(question.id) ? 'gray' : 'outline'
-                          }
+                          variant="ghost-hover"
                         >
                           {m.assignment_bookmark()}
                         </Button>
@@ -705,52 +617,33 @@ export function AssignmentTake({
               </span>
             </div>
           </div>
-          {confirming && (
-            <Dialog
-              onOpenChange={(open) => {
-                if (open || submitting) return;
-                setConfirming(false);
-                setSubmitError(null);
-              }}
-              open
-            >
-              <DialogContent
-                aria-describedby={undefined}
-                className="sm:max-w-115"
-                compact
-                showCloseButton={false}
-              >
-                <DialogTitle closable={false}>
-                  {m.assignment_submit_confirm()}
-                </DialogTitle>
-                <p className="mt-1 text-fg-secondary">{confirmText}</p>
-                <FormAlert
-                  errorId={submitError?.errorId}
-                  message={submitError?.message ?? null}
-                />
-                <DialogFooter>
-                  <Button
-                    disabled={submitting}
-                    onClick={() => {
-                      setConfirming(false);
-                      setSubmitError(null);
-                    }}
-                    variant="ghost"
-                  >
-                    {m.action_cancel()}
-                  </Button>
-                  <Button
-                    disabled={submitting || uploading}
-                    onClick={() => submit(true)}
-                  >
-                    {submitting
-                      ? m.assignment_submitting()
-                      : m.assignment_submit()}
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
+          {/* The shared confirm (Epo 2026-11-25): its gap and accent Submit. */}
+          <ConfirmDialog
+            closeOnConfirm={false}
+            confirmLabel={m.assignment_submit()}
+            danger={false}
+            disabled={uploading}
+            isSubmitting={submitting}
+            onClose={() => {
+              setConfirming(false);
+              setSubmitError(null);
+            }}
+            onConfirm={() => submit(true)}
+            open={confirming}
+            title={m.assignment_submit_confirm()}
+          >
+            {/* ConfirmDialog's body size, what is missing on the same line. */}
+            <p className="text-[0.9375rem] sm:text-base">
+              {confirmText}
+              {confirmMissing && (
+                <span className="text-tint-error-fg"> {confirmMissing}</span>
+              )}
+            </p>
+            <FormAlert
+              errorId={submitError?.errorId}
+              message={submitError?.message ?? null}
+            />
+          </ConfirmDialog>
         </DrawingUploader.Provider>
       </DrawingDraftScope.Provider>
     </RemovedAssetsContext.Provider>

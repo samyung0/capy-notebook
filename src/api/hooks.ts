@@ -151,7 +151,6 @@ import type {
   ReviewStart,
   SearchResult,
   SetModelPrefsReq,
-  SharingNotice,
   SourceFile,
   SourceUploadPolicy,
   SpendingLimitReq,
@@ -1861,23 +1860,45 @@ export function useUndoEdit() {
 
 /* ---------------- trash ---------------- */
 
-export const trashQuery = (wsId?: string) => ({
+/** The Files page's Kind, Workspace and Location filters on its Trash and
+ * Canvas tabs. */
+export type ListFilterParams = {
+  kinds?: string[];
+  locations?: string[];
+  workspaceIds?: string[];
+};
+
+/** A filter's query parameters, each left out when empty. */
+function setListFilter(params: URLSearchParams, filter: ListFilterParams) {
+  if (filter.kinds?.length) params.set('kind', filter.kinds.join(','));
+  if (filter.workspaceIds?.length)
+    params.set('workspaces', filter.workspaceIds.join(','));
+  if (filter.locations?.length)
+    params.set('location', filter.locations.join(','));
+}
+
+export const trashQuery = (wsId?: string, filter: ListFilterParams = {}) => ({
   getNextPageParam: (last: TrashPage) => last.nextCursor || undefined,
   initialPageParam: '',
   queryFn: ({ pageParam }: { pageParam: string }) => {
     const params = new URLSearchParams();
     if (wsId) params.set('workspaceId', wsId);
+    setListFilter(params, filter);
     if (pageParam) params.set('cursor', pageParam);
     const query = params.toString();
     return api.get<TrashPage>(`/trash${query ? `?${query}` : ''}`);
   },
-  queryKey: qk.trash(wsId),
+  queryKey: [...qk.trash(wsId), filter] as const,
 });
 /** Owner-scoped trash listing. Lazy: the Files page only loads it when the
  * Trash tab is open. Secondary query, so it renders its own error state. */
-export const useTrash = (wsId: string | undefined, enabled: boolean) =>
+export const useTrash = (
+  wsId: string | undefined,
+  enabled: boolean,
+  filter?: ListFilterParams
+) =>
   useInfiniteQuery({
-    ...trashQuery(wsId),
+    ...trashQuery(wsId, filter),
     enabled,
     meta: { errorBoundary: false },
   });
@@ -2965,8 +2986,6 @@ export function useAcceptWorkspaceInvite() {
       });
       qc.invalidateQueries({ queryKey: qk.notifications });
       qc.invalidateQueries({ queryKey: qk.notificationUnread });
-      // Agreed to on the invite page: a copy cached before then is stale.
-      qc.invalidateQueries({ queryKey: qk.sharingNotice(member.workspaceId) });
     },
   });
 }
@@ -3370,6 +3389,8 @@ export interface AssignmentListParams {
   done: boolean;
   /** Only graded quizzes or only assignments; none keeps both. */
   kind?: Assignment['kind'];
+  /** Staff: only what waits on them, open or closed (a class's To grade). */
+  pending?: boolean;
   /** A column's order, open ones still first; none is the page's own. */
   sort?: { ascending: boolean; by: AssignmentSort };
   /** Only those on one of these topics; none keeps all. */
@@ -3396,6 +3417,7 @@ export const useAssignments = (
             dir: params.sort ? (params.sort.ascending ? 'asc' : 'desc') : '',
             done: String(params.done),
             kind: params.kind,
+            pending: params.pending ? 'true' : undefined,
             sort: params.sort?.by,
             topic: params.topics,
           },
@@ -3404,23 +3426,6 @@ export const useAssignments = (
       ),
     queryKey: [...qk.assignments(workspaceId), params],
   });
-
-/** Whether this class member is yet to be told what they share (board V1). */
-export const useSharingNotice = (workspaceId: string, enabled: boolean) =>
-  useQuery({
-    enabled,
-    meta: queryMeta({ errorBoundary: false }),
-    queryFn: () =>
-      api.get<SharingNotice>(`/workspaces/${workspaceId}/sharing-notice`),
-    queryKey: qk.sharingNotice(workspaceId),
-  });
-
-export function useMarkSharingNoticeSeen(workspaceId: string) {
-  return useMutation({
-    mutationFn: () =>
-      api.put<void>(`/workspaces/${workspaceId}/sharing-notice`),
-  });
-}
 
 export const useAssignment = (id: string, options?: QueryUiOptions) =>
   useQuery({
@@ -3769,17 +3774,23 @@ export const deleteAssignmentDrawing = (attemptId: string, partId: string) =>
 
 /** Files › Canvas: the caller's marked drawings, newest first. Lazy, like the
  * Trash tab; secondary, so it renders its own error state. */
-export const useMarkedDrawings = (enabled: boolean) =>
+export const useMarkedDrawings = (
+  enabled: boolean,
+  filter: ListFilterParams = {}
+) =>
   useInfiniteQuery({
     enabled,
     getNextPageParam: (last: MarkedDrawings) => last.nextCursor || undefined,
     initialPageParam: '',
     meta: { errorBoundary: false },
-    queryFn: ({ pageParam }: { pageParam: string }) =>
-      api.get<MarkedDrawings>(
-        `/drawings${pageParam ? `?${new URLSearchParams({ cursor: pageParam })}` : ''}`
-      ),
-    queryKey: qk.drawings,
+    queryFn: ({ pageParam }: { pageParam: string }) => {
+      const params = new URLSearchParams();
+      setListFilter(params, filter);
+      if (pageParam) params.set('cursor', pageParam);
+      const query = params.toString();
+      return api.get<MarkedDrawings>(`/drawings${query ? `?${query}` : ''}`);
+    },
+    queryKey: [...qk.drawings, filter],
   });
 
 function invalidateAfterDrawingDelete(qc: QueryClient, ids: string[] | null) {
@@ -3857,17 +3868,31 @@ export const paperFileLinksQuery = (of: SubmissionOf, fileId: string) =>
 export const usePaperFileLinks = (of: SubmissionOf, fileId: string) =>
   useQuery(paperFileLinksQuery(of, fileId));
 
-function invalidateAfterPaperDelete(qc: QueryClient) {
-  qc.invalidateQueries({ queryKey: qk.itemsRoot });
-  qc.invalidateQueries({ queryKey: qk.billing });
+/** Store the PDF copy staff mark a Word submission on (mock
+ * B6H1Z7o4byVFBVyCRSUK3B C1); its links then sign it as their preview. A
+ * browser that lost the race (marked_copy_taken) reads the stored one the
+ * same way. Its one caller reports a failure itself: no global toast. */
+export function useStoreMarkedCopy(of: SubmissionOf, fileId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: (pdf: Blob) =>
+      api.postBlob<void>(`/files/${fileId}/marked-copy`, pdf),
+    onSettled: () =>
+      qc.invalidateQueries({
+        queryKey: paperFileLinksQuery(of, fileId).queryKey,
+      }),
+  });
 }
 
-/** Delete one handed-in paper file; its marks stay. */
+/** Delete one hand-in file left unhanded when its assignment closed; handed-in
+ * files stay (Epo 2026-11-25). Submissions are charged to no one, so storage
+ * reads the same after. */
 export function useDeletePaper() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.del<{ deleted: number }>(`/papers/${id}`),
-    onSuccess: () => invalidateAfterPaperDelete(qc),
+    mutationFn: (id: string) => api.del<void>(`/papers/${id}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.itemsRoot }),
   });
 }
 

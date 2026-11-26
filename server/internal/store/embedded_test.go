@@ -128,7 +128,7 @@ func TestEmbeddedMaterialFollowsItsNote(t *testing.T) {
 		t.Fatalf("an unreferenced row is purged in %s, want a day", left)
 	}
 	content := noteWithRefs(t, quiz, cards)
-	trash, err := s.ListTrash(ctx, ownerID, "", 10, "")
+	trash, err := s.ListTrash(ctx, ownerID, "", ListFilter{}, 10, "")
 	if err != nil {
 		t.Fatal(err)
 	}

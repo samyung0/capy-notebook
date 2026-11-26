@@ -72,6 +72,10 @@ pub const QUIZ_OPEN_ANSWER_MAX: usize = 5000;
 pub const QUIZ_OPEN_PARTS_MAX: usize = 100;
 pub const QUIZ_PARTS_MAX: usize = 150;
 pub const QUIZ_QUESTION_PARTS_MAX: usize = 7;
+pub const SUBMISSION_BYTES_MAX: usize = 31457280;
+pub const SUBMISSION_COPY_MAX: usize = 31457280;
+pub const SUBMISSION_FILES_MAX: usize = 10;
+pub const SUBMISSION_FILE_MAX: usize = 10485760;
 
 /// What an element gives its document's index text (`index_text`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -68,7 +68,7 @@ import type {
 import { officeSwapPlaces } from './officeSwapPlaces';
 import { SourceTextView } from './SourceTextView';
 import { officeRuntimeKey } from './useOfficeRuntime';
-import { pdfAnnotationsQuery } from './usePdfAnnotations';
+import { pdfAnnotationsQuery } from './usePdfMarks';
 
 const PdfView = lazy(() => import('./PdfView'));
 const SheetView = lazy(() => import('./SheetView'));

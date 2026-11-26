@@ -74,7 +74,6 @@ import {
   searchFromOpenItem,
   type WorkspaceOpenSearch,
 } from '@/features/materials/openItem';
-import { SharingNotice } from '@/features/study/assignments/SharingNotice';
 import { type StudyPage, studyView } from '@/features/study/practice/studyView';
 import {
   assignmentsLink,
@@ -1253,7 +1252,6 @@ function WorkspaceOpen() {
         tab={search.settings}
         workspace={ws}
       />
-      <SharingNotice workspace={ws} />
       {canClone && (
         <CloneWorkspaceDialog
           open={cloneOpen}

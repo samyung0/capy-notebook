@@ -1,6 +1,11 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { type ReactNode, useRef, useState } from 'react';
-import { type Control, Controller, useController } from 'react-hook-form';
+import {
+  type Control,
+  Controller,
+  useController,
+  useWatch,
+} from 'react-hook-form';
 import { z } from 'zod';
 import {
   CreateAssignmentBody,
@@ -96,11 +101,11 @@ export function SwitchRow({
   label,
   name,
 }: {
-  control: Control<AssignmentFormReq>;
+  control: Control<AssignmentFormValues>;
   /** Held as it is, as Draft only is for questions read before they go out. */
   disabled?: boolean;
   label: string;
-  name: 'allowUploads' | 'draft' | 'noLate' | 'shuffle';
+  name: 'allowUploads' | 'draft' | 'graded' | 'noLate' | 'shuffle';
 }) {
   return (
     <Controller
@@ -189,7 +194,7 @@ export function AssignToField({
   control,
   workspaceId,
 }: {
-  control: Control<AssignmentFormReq>;
+  control: Control<AssignmentFormValues>;
   workspaceId: string;
 }) {
   const { data: members } = useWorkspaceMembers(workspaceId);
@@ -455,11 +460,15 @@ export function FilesField({
   );
 }
 
+/** The form's values: the API's, and Graded, the switch over an Assignment's
+ * Points (Epo 2026-11-25): on, it is graded out of 1 or more; off, it has none. */
+export type AssignmentFormValues = AssignmentFormReq & { graded: boolean };
+
 /** The form's values for a saved assignment, or a new one's starting values. */
 export function assignmentDefaults(
   existing: Assignment | undefined,
-  start: Partial<AssignmentFormReq> = {}
-): AssignmentFormReq {
+  start: Partial<AssignmentFormValues> = {}
+): AssignmentFormValues {
   const manage = existing?.manage;
   return {
     allowUploads: existing?.allowUploads ?? false,
@@ -472,6 +481,7 @@ export function assignmentDefaults(
       fileId,
       materialId,
     })),
+    graded: existing?.points !== undefined,
     kind: existing?.kind ?? 'marked',
     latePenaltyPct: existing?.latePenaltyPct ?? 0,
     marking: manage?.marking ?? 'ai_approve',
@@ -489,8 +499,8 @@ export function assignmentDefaults(
   };
 }
 
-/** The form's rules beyond the API's: a title (unless `untitled`), and a
- * marked one's due date once published. */
+/** The form's rules beyond the API's: a title (unless `untitled`), Points
+ * when Graded is on, and a marked one's due date once published. */
 const assignmentRules = (untitled: boolean) =>
   zodResolver(
     (untitled
@@ -498,21 +508,34 @@ const assignmentRules = (untitled: boolean) =>
           title: z.string().max(createAssignmentBodyTitleMax),
         })
       : CreateAssignmentBody
-    ).superRefine((v, ctx) => {
-      if (!(untitled || v.title.trim()))
-        ctx.addIssue({
-          code: 'custom',
-          message: m.assignment_title_required(),
-          path: ['title'],
-        });
-      if (v.kind !== 'marked') return;
-      if (!v.draft && !v.dueAt)
-        ctx.addIssue({
-          code: 'custom',
-          message: m.assignment_due_required(),
-          path: ['dueAt'],
-        });
-    })
+    )
+      .extend({ graded: z.boolean() })
+      .superRefine((v, ctx) => {
+        if (!(untitled || v.title.trim()))
+          ctx.addIssue({
+            code: 'custom',
+            message: m.assignment_title_required(),
+            path: ['title'],
+          });
+        if (
+          v.kind === 'unmarked' &&
+          v.allowUploads &&
+          v.graded &&
+          v.points === undefined
+        )
+          ctx.addIssue({
+            code: 'custom',
+            message: m.assignment_points_required(),
+            path: ['points'],
+          });
+        if (v.kind !== 'marked') return;
+        if (!v.draft && !v.dueAt)
+          ctx.addIssue({
+            code: 'custom',
+            message: m.assignment_due_required(),
+            path: ['dueAt'],
+          });
+      })
   );
 export const assignmentResolver = assignmentRules(false);
 /** New graded quiz's Settings: an empty title takes its quiz's name, known
@@ -522,12 +545,14 @@ export const gradedSettingsResolver = assignmentRules(true);
 /** What is sent for the form's values: each kind's own fields, a late policy
  * that fits its due date, and only assignees still in the class. */
 export function assignmentBody(
-  values: AssignmentFormReq,
+  { graded, ...values }: AssignmentFormValues,
   members: WorkspaceMember[] | undefined
 ): AssignmentFormReq {
   const marked = values.kind === 'marked';
-  // An Assignment is graded only on what is handed in (Epo 2026-11-21).
-  const points = marked || !values.allowUploads ? undefined : values.points;
+  // An Assignment is graded only on what is handed in (Epo 2026-11-21), and
+  // only with Graded on (Epo 2026-11-25).
+  const points =
+    marked || !values.allowUploads || !graded ? undefined : values.points;
   return {
     ...values,
     ...latePolicy({ ...values, points }),
@@ -547,7 +572,7 @@ export function assignmentBody(
   };
 }
 
-type Controlled = { control: Control<AssignmentFormReq> };
+type Controlled = { control: Control<AssignmentFormValues> };
 
 /** A whole number of marks: a class's Assignment's Points (Epo 2026-11-14,
  * board Task), empty is not graded, staff then grading each member out of
@@ -640,16 +665,20 @@ export function TimeLimitSelect({ control }: Controlled) {
   );
 }
 
+/** Attempts at answering in the app; Upload only holds it at 1, as an upload
+ * is handed in once (Epo 2026-11-25). */
 export function AttemptsSelect({
   control,
   layout,
 }: Controlled & { layout?: 'row' }) {
+  const uploadOnly = useWatch({ control, name: 'uploadOnly' });
   return (
     <Controller
       control={control}
       name="attempts"
       render={({ field }) => (
         <Select
+          disabled={uploadOnly}
           onValueChange={(value) => field.onChange(Number(value))}
           value={String(field.value)}
         >
@@ -670,6 +699,22 @@ export function AttemptsSelect({
       )}
     />
   );
+}
+
+/** What Attempts means under the field: it applies to online submissions
+ * only, an upload being handed in once whatever it says, and the highest
+ * attempt counts (Epo 2026-11-25). */
+export function AttemptsNote({ control }: Controlled) {
+  const [attempts, uploads, uploadOnly] = useWatch({
+    control,
+    name: ['attempts', 'allowUploads', 'uploadOnly'],
+  });
+  const lines = [
+    (uploads || uploadOnly) && m.assignment_attempts_online_only(),
+    attempts > 1 && m.assignment_highest_counts(),
+  ].filter(Boolean);
+  if (!lines.length) return null;
+  return <span className="t-meta text-fg-muted">{lines.join(' ')}</span>;
 }
 
 /** How answers are marked (A4, Epo 2026-11-06). `disabled`: a file's graded
@@ -719,12 +764,16 @@ export function SubmissionSelect({
   const {
     field: { onChange: setOnly, value: only },
   } = useController({ control, name: 'uploadOnly' });
+  const {
+    field: { onChange: setAttempts },
+  } = useController({ control, name: 'attempts' });
   return (
     <Select
       disabled={disabled}
       onValueChange={(value) => {
         setUploads(value !== 'online');
         setOnly(value === 'upload');
+        if (value === 'upload') setAttempts(1);
       }}
       value={only ? 'upload' : uploads ? 'both' : 'online'}
     >

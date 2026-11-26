@@ -18,13 +18,15 @@ import type {
   FlashcardSet,
   GenerateOptions,
   HiddenBody,
+  InvitePreview,
   Item,
   Material,
   MaterialDiscussion,
   ModelRef,
   MoveFilesReq,
   PDFAnnotation,
-  PDFAnnotationBody,
+  PDFAnnotationChanges,
+  PDFAnnotationList,
   Question,
   SearchResult,
   SourceCollaborationToken,
@@ -76,9 +78,9 @@ import {
   addPaperFile,
   assignmentActivity,
   assignmentHandlers,
-  markSharingNoticeSeen,
   numberedTitle,
   recentFor,
+  submissionMarkScope,
   submittedPapers,
   workspaceMaterialRefs,
 } from './assignments';
@@ -271,6 +273,16 @@ interface MockInviteCandidate {
 
 const mockDiscussions = db.discussions;
 const mockWorkspaceInvites: MockWorkspaceInvite[] = [];
+/** An invite's page: the mock's workspaces are all the signed-in user's. */
+const invitePreview = (
+  ws: Workspace,
+  role: InvitePreview['role']
+): InvitePreview => ({
+  owner: { avatarUrl: db.user.avatarUrl, name: db.user.name },
+  role,
+  workspaceKind: ws.kind,
+  workspaceName: ws.name,
+});
 const mockInviteCandidates: MockInviteCandidate[] = [
   {
     email: 'morgan@example.com',
@@ -544,7 +556,41 @@ function trashedEntry(id: unknown) {
   return { ...entry, trash: { canRestore, episodeId, purgeAfter } };
 }
 
-const pdfAnnotations: Record<string, PDFAnnotation[]> = {};
+const KATE = { avatarUrl: '', id: 'u_mock_kate', name: 'Kate Malone' };
+const pdfAnnotations: Record<string, PDFAnnotation[]> = {
+  // Staff's feedback on the member's graded quiz upload (Epo 2026-11-25, S1).
+  f_mine_q3: [
+    {
+      author: KATE,
+      color: '#d94848',
+      comment: 'Show the working for the surface area here.',
+      id: 'ann_mockq3rect01',
+      kind: 'rectangle',
+      page: 1,
+      rects: [{ height: 120, width: 520, x: 90, y: 160 }],
+      size: 0,
+      strokes: [],
+      text: '',
+      width: 3,
+    },
+    {
+      author: KATE,
+      color: '#7c5cc4',
+      comment: 'Good: units on every line.',
+      id: 'ann_mockq3note01',
+      kind: 'note',
+      page: 1,
+      rects: [{ height: 24, width: 24, x: 680, y: 420 }],
+      size: 0,
+      strokes: [],
+      text: '',
+      width: 0,
+    },
+  ],
+};
+/** The bytes a file's marks are saved on, as the server names them. */
+const mockMarkIdentity = (fileId: string) =>
+  `revision:${(db.files.find((row) => row.id === fileId) ?? trashedEntry(fileId)?.file)?.revision ?? 1}`;
 
 export { mockWorkspaceMembers } from './workspaceMembers';
 
@@ -1043,44 +1089,52 @@ export const handlers = [
     }
   ),
   ...voiceInputHandlers,
-  http.get('/api/files/:id/annotations', ({ params }) =>
-    params.id === 'mock-preview-annotations'
-      ? new HttpResponse(null, { status: 503 })
-      : HttpResponse.json(pdfAnnotations[String(params.id)] ?? [])
-  ),
-  http.post('/api/files/:id/annotations', async ({ params, request }) => {
+  http.get('/api/files/:id/annotations', ({ params }) => {
+    if (params.id === 'mock-preview-annotations')
+      return new HttpResponse(null, { status: 503 });
     const fileId = String(params.id);
-    const body = (await request.json()) as PDFAnnotationBody;
-    const mark: PDFAnnotation = {
-      ...body,
-      authorId: db.user.id,
-      createdAt: new Date().toISOString(),
-      fileId,
-      id: uid('annotation'),
-      updatedAt: new Date().toISOString(),
-    };
-    pdfAnnotations[fileId] ??= [];
-    pdfAnnotations[fileId].push(mark);
-    return HttpResponse.json(mark, { status: 201 });
+    const submission = submissionMarkScope(fileId);
+    return HttpResponse.json<PDFAnnotationList>({
+      marks: pdfAnnotations[fileId] ?? [],
+      readOnly: !!submission?.readOnly,
+      shared: !!submission,
+      sourceIdentity: mockMarkIdentity(fileId),
+    });
   }),
-  http.patch(
-    '/api/files/:id/annotations/:annotationId',
-    async ({ params, request }) => {
-      const mark = pdfAnnotations[String(params.id)]?.find(
-        (item) => item.id === params.annotationId
-      );
-      if (!mark) return new HttpResponse(null, { status: 404 });
-      Object.assign(mark, await request.json(), {
-        updatedAt: new Date().toISOString(),
-      });
-      return HttpResponse.json(mark);
-    }
-  ),
-  http.delete('/api/files/:id/annotations/:annotationId', ({ params }) => {
+  http.patch('/api/files/:id/annotations', async ({ params, request }) => {
     const fileId = String(params.id);
-    pdfAnnotations[fileId] = (pdfAnnotations[fileId] ?? []).filter(
-      (item) => item.id !== params.annotationId
+    const body = (await request.json()) as PDFAnnotationChanges;
+    if (body.sourceIdentity !== mockMarkIdentity(fileId))
+      return HttpResponse.json(
+        {
+          code: 'revision_conflict',
+          message: 'someone else changed this first',
+        },
+        { status: 409 }
+      );
+    // A submission's marks are shared: a new one names its maker, as the
+    // server's list does (Epo 2026-11-25).
+    const maker = submissionMarkScope(fileId)
+      ? { avatarUrl: '', id: db.user.id, name: db.user.name }
+      : undefined;
+    const saved = new Map(
+      body.save.map((mark) => [
+        mark.id,
+        {
+          ...mark,
+          author:
+            (pdfAnnotations[fileId] ?? []).find((row) => row.id === mark.id)
+              ?.author ?? maker,
+        },
+      ])
     );
+    const kept = (pdfAnnotations[fileId] ?? [])
+      .filter((mark) => !body.remove.includes(mark.id))
+      .map((mark) => saved.get(mark.id) ?? mark);
+    const added = [...saved.values()].filter(
+      (mark) => !kept.some((row) => row.id === mark.id)
+    );
+    pdfAnnotations[fileId] = [...kept, ...added];
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/files/:id/links', ({ params }) => {
@@ -1768,6 +1822,20 @@ export const handlers = [
         ...collaborators,
       ]);
     }
+    // A class the viewer joined (ws_phys): its people, then the viewer.
+    if (ws?.role === 'viewer' || ws?.role === 'editor') {
+      return HttpResponse.json([
+        ...collaborators,
+        {
+          createdAt: ws.createdAt,
+          email: db.user.email,
+          name: db.user.name,
+          role: ws.role,
+          userId: db.user.id,
+          workspaceId,
+        },
+      ]);
+    }
     return HttpResponse.json(collaborators);
   }),
   http.get('/api/workspaces/:id/collaborators', async ({ params }) => {
@@ -1975,7 +2043,12 @@ export const handlers = [
     // Scenario and spec links (mock-…) open as any invite would; what
     // Accept answers is the scenario's.
     if (String(params.token).startsWith('mock-'))
-      return HttpResponse.json({ role: 'editor', workspaceKind: 'personal' });
+      return HttpResponse.json(
+        invitePreview(
+          db.workspaces.find((w) => w.kind === 'personal') ?? db.workspaces[0],
+          'editor'
+        )
+      );
     const invite = mockWorkspaceInvites.find(
       (item) =>
         (item.id === params.token || item.token === params.token) &&
@@ -1984,7 +2057,7 @@ export const handlers = [
     );
     const ws = db.workspaces.find((w) => w.id === invite?.workspaceId);
     if (!invite || !ws) return new HttpResponse(null, { status: 404 });
-    return HttpResponse.json({ role: invite.role, workspaceKind: ws.kind });
+    return HttpResponse.json(invitePreview(ws, invite.role));
   }),
   http.post('/api/workspace-invites/:token/accept', async ({ params }) => {
     const invite = mockWorkspaceInvites.find(
@@ -2021,10 +2094,6 @@ export const handlers = [
       (notification) => notification.href === `/workspace-invites/${invite.id}`
     );
     if (notificationIndex >= 0) db.notifications.splice(notificationIndex, 1);
-    // A class's member agreed to what they share on the invite page.
-    const ws = db.workspaces.find((w) => w.id === invite.workspaceId);
-    if (ws?.kind === 'class' && invite.role === 'viewer')
-      markSharingNoticeSeen();
     return HttpResponse.json(member);
   }),
   http.delete('/api/workspaces/:id', async ({ params }) => {
@@ -2541,7 +2610,13 @@ export const handlers = [
       activity: rows,
       members: roster.length,
       ownerName:
-        ws.role === 'owner' ? db.user.name : (roster[1]?.name ?? db.user.name),
+        ws.role === 'owner'
+          ? db.user.name
+          : (mockWorkspaceMembers.find(
+              (mb) => mb.workspaceId === ws.id && mb.role === 'owner'
+            )?.name ??
+            roster[1]?.name ??
+            db.user.name),
     } satisfies WorkspaceDashboard);
   }),
   http.get('/api/workspaces/:id/recent', async ({ params }) =>
@@ -2628,11 +2703,27 @@ export const handlers = [
   }),
   /* ---------------- trash (owner-only bin) ---------------- */
   http.get('/api/trash', async ({ request }) => {
-    const { limit, offset, param } = listParams(request.url);
+    const { limit, list: values, offset, param } = listParams(request.url);
     const wsId = param('workspaceId');
+    // Each filter, or none when the URL leaves it out.
+    const list = (name: string) => {
+      const picked = values(name);
+      return picked.length ? picked : undefined;
+    };
+    const kinds = list('kind');
+    const workspaces = list('workspaces');
+    const locations = list('location');
     const items = db.trash
-      .filter((entry) => !wsId || entry.item.workspaceId === wsId)
-      .map((entry) => entry.item);
+      .map((entry) => entry.item)
+      .filter(
+        (item) =>
+          (!wsId || item.workspaceId === wsId) &&
+          (!kinds ||
+            kinds.includes(item.materialKind ?? item.fileKind ?? '')) &&
+          (!workspaces || workspaces.includes(item.workspaceId ?? '')) &&
+          (!locations ||
+            locations.includes(item.workspaceId ? 'workspace' : 'standalone'))
+      );
     return HttpResponse.json({
       items: items.slice(offset, offset + limit),
       nextCursor:

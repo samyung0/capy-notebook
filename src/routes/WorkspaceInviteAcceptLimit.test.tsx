@@ -17,7 +17,12 @@ const limit = new ApiError(403, 'Forbidden', undefined, {
 });
 const spies = vi.hoisted(() => ({
   clear: vi.fn(),
-  preview: { role: 'editor', workspaceKind: 'personal' },
+  preview: {
+    owner: { name: 'Ms Wong' },
+    role: 'editor',
+    workspaceKind: 'personal',
+    workspaceName: 'Algebra',
+  },
   toast: vi.fn(),
 }));
 vi.mock('@/api/hooks', async () => {
@@ -81,13 +86,20 @@ it('keeps the invite open and stashed when the workspace cap refuses it', async 
   act(() => root.unmount());
 });
 
-// A class's member agrees to what they share before Accept (Epo 2026-11-19).
+// A class's member agrees to what they share before Accept (Epo 2026-11-19),
+// seeing the class and its owner (Epo 2026-11-25).
 it('asks a class member to agree to sharing their practice before Accept', async () => {
-  spies.preview = { role: 'viewer', workspaceKind: 'class' };
+  spies.preview = {
+    owner: { name: 'Ms Wong' },
+    role: 'viewer',
+    workspaceKind: 'class',
+    workspaceName: 'Biology 101',
+  };
   const root = createRoot(document.getElementById('root') as never);
   await act(async () => root.render(<WorkspaceInviteAccept />));
+  expect(document.querySelector('h1')?.textContent).toBe('Biology 101');
+  expect(document.body.textContent).toContain('Ms Wong');
   expect(document.body.textContent).toContain(m.invite_sharing_consent());
-  expect(document.body.textContent).toContain(m.invite_sharing_progress());
   expect(acceptButton()).toBeDefined();
   act(() => root.unmount());
 });

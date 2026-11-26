@@ -566,7 +566,7 @@ export const failureScenarios = [
   {
     id: 'annotations-save',
     label: 'PDF annotation save 500',
-    method: 'post',
+    method: 'patch',
     paths: ['/api/files/:id/annotations'],
     status: 500,
   },

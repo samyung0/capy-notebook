@@ -672,8 +672,11 @@ func (s *Store) ReconcileStorage(
 
 // storageRecountSQL is reconciliation's count of a user's ($1) used and
 // reserved bytes from the authoritative rows.
+// A paper's or hand-in's file and its upload, and an assignment's drawing, are
+// charged to no one (Epo 2026-11-25, account_file_storage and
+// account_drawing_storage), and reserve nothing.
 const storageRecountSQL = `SELECT
-	COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1), 0)
+	COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1 AND submission_position IS NULL), 0)
 	+ COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id=$1),0)
 	+ COALESCE((SELECT sum(size_bytes) FROM editor_assets
 		WHERE user_id=$1 AND status='ready'), 0)
@@ -682,7 +685,7 @@ const storageRecountSQL = `SELECT
 	+ COALESCE((SELECT sum(frozen_bytes) FROM assignments
 		WHERE frozen_by=$1), 0)
 	+ COALESCE((SELECT sum(board_bytes + image_bytes + picture_bytes) FROM drawings
-		WHERE user_id=$1), 0),
+		WHERE user_id=$1 AND NOT assignment), 0),
 	COALESCE((SELECT sum(COALESCE(reserved_size, declared_size)) FROM upload_sessions
 		WHERE user_id=$1 AND status='pending' AND expires_at > now()), 0)`
 
@@ -790,7 +793,7 @@ func (s *Store) storageBreakdown(ctx context.Context, userID string) (StorageBre
 		  FROM editor_assets a LEFT JOIN materials m ON m.id = a.material_id
 		 WHERE a.user_id=$1 AND a.status='ready'
 	) SELECT
-		COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1), 0)
+		COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id=$1 AND submission_position IS NULL), 0)
 		+ COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id=$1), 0)
 		+ COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id=$1 AND kind <> 'canvas'), 0)
 		+ COALESCE((SELECT sum(frozen_bytes) FROM assignments WHERE frozen_by=$1), 0)
@@ -798,7 +801,7 @@ func (s *Store) storageBreakdown(ctx context.Context, userID string) (StorageBre
 			WHERE purpose IN ('pdf','file') AND on_canvas IS NOT TRUE), 0),
 		COALESCE((SELECT sum(size_bytes) FROM assets
 			WHERE purpose IN ('image','audio') AND on_canvas IS NOT TRUE), 0),
-		COALESCE((SELECT sum(board_bytes + image_bytes + picture_bytes) FROM drawings WHERE user_id=$1), 0)
+		COALESCE((SELECT sum(board_bytes + image_bytes + picture_bytes) FROM drawings WHERE user_id=$1 AND NOT assignment), 0)
 		+ COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id=$1 AND kind = 'canvas'), 0)
 		+ COALESCE((SELECT sum(size_bytes) FROM assets
 			WHERE purpose = 'board' OR on_canvas), 0)`, userID).

@@ -13,12 +13,13 @@ import (
 
 const orderingQuestion = `{"id":"q4","stem":[],"layout":"paper","labels":"letters","parts":[{"id":"p4","blocks":[{"type":"text","text":"Order them"}],"answer":{"type":"ordering","items":["first","second","third"]},"marks":1,"solution":[]}]}`
 
-// TestPaperIsHandedInReadAndDeleted: a member answering on paper uploads a file
+// TestPaperIsHandedInReadAndKept: a member answering on paper uploads a file
 // into their attempt, which submits with every part waiting; the read's
 // letters, taken from the member's seeded view, mark the closed parts against
-// the key, the open part waits for the AI on its pages, and once marked and
-// closed the member may delete the file from Files › Submissions.
-func TestPaperIsHandedInReadAndDeleted(t *testing.T) {
+// the key, and the open part waits for the AI on its pages. Submitted, the
+// file stays off the Files page (it is on the assignment's), charged to no
+// one, and stays after the close (Epo 2026-11-25).
+func TestPaperIsHandedInReadAndKept(t *testing.T) {
 	f := newAssignmentFixture(t, "paper")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
@@ -40,7 +41,7 @@ func TestPaperIsHandedInReadAndDeleted(t *testing.T) {
 	upload, err := f.s.CreateUploadSession(ctx, NewUploadSession{
 		ID: uid("up"), CreatedBy: f.viewer, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
 		Name: "paper.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: 4096, ParseMode: "none",
-		ExpiresAt: now.Add(time.Hour), AttemptID: run.ID, PaperMaxBytes: 10 << 20,
+		ExpiresAt: now.Add(time.Hour), AttemptID: run.ID,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -53,8 +54,13 @@ func TestPaperIsHandedInReadAndDeleted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if done.Paper != PaperReading || done.WaitingAnswers != 4 || len(done.PaperFiles) != 1 || done.PaperFiles[0].ID != file.ID {
-		t.Fatalf("handed in = %s, waiting %d, files %+v", done.Paper, done.WaitingAnswers, done.PaperFiles)
+	// Waiting, the member reads no mark so far (Epo 2026-11-25); the owner reads
+	// what waits.
+	if done.Paper != PaperReading || !done.GradesHidden || len(done.PaperFiles) != 1 || done.PaperFiles[0].ID != file.ID {
+		t.Fatalf("handed in = %s, hidden %v, files %+v", done.Paper, done.GradesHidden, done.PaperFiles)
+	}
+	if owner, err := f.s.GetAssignmentAttempt(ctx, f.user, run.ID, now.Add(time.Minute)); err != nil || owner.WaitingAnswers != 4 {
+		t.Fatalf("the owner's read: waiting %d, err %v", owner.WaitingAnswers, err)
 	}
 
 	paper, err := f.s.GetPaper(ctx, run.ID)
@@ -100,36 +106,91 @@ func TestPaperIsHandedInReadAndDeleted(t *testing.T) {
 	}, now.Add(3*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	// Marked but open: staff may still revise it.
+	// Handed-in work is on its assignment's page, not Files (Epo 2026-11-25).
 	if got := submissionsOf(t, f.s, f.viewer); len(got) != 0 {
-		t.Fatalf("open assignment listed %+v", got)
+		t.Fatalf("a submitted paper listed on Files: %+v", got)
+	}
+	if usage, err := f.s.StorageUsage(ctx, f.viewer); err != nil || usage.UsedBytes != 0 || usage.ReservedBytes != 0 {
+		t.Fatalf("charged %+v, err %v", usage, err)
 	}
 	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(4*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if got := submissionsOf(t, f.s, f.viewer); len(got) != 1 || got[0].ID != file.ID || got[0].Bytes != 4096 {
-		t.Fatalf("listed %+v", got)
-	}
-	if n, err := f.s.DeleteSubmittedPapers(ctx, f.viewer, nil); err != nil || n != 1 {
-		t.Fatalf("deleted %d, err %v", n, err)
+	if err := f.s.DeleteLeftHandIn(ctx, f.viewer, file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted a submitted paper: %v", err)
 	}
 	after, err := f.s.GetAssignmentAttempt(ctx, f.user, run.ID, now.Add(5*time.Minute))
-	if err != nil || after.Correct != 7 || len(after.PaperFiles) != 0 {
-		t.Fatalf("after delete = %v, files %d, err %v", after.Correct, len(after.PaperFiles), err)
+	if err != nil || after.Correct != 7 || len(after.PaperFiles) != 1 {
+		t.Fatalf("after close = %v, files %d, err %v", after.Correct, len(after.PaperFiles), err)
 	}
 }
 
-// TestHandInIsHandedInAndDeleted: on an unmarked assignment that takes files, a
+// TestOneWayToAnswer: the first start picks the way for good (Epo
+// 2026-11-25). Upload only takes one attempt; a member who answered online
+// uploads no paper, and one who handed in a paper starts nothing more.
+func TestOneWayToAnswer(t *testing.T) {
+	f := newAssignmentFixture(t, "one-way")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.form(t, now.Add(time.Hour))
+	form.AllowUploads, form.UploadOnly, form.Attempts = true, true, 2
+	if _, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now); err == nil {
+		t.Fatal("upload only took two attempts")
+	}
+	form.UploadOnly, form.Attempts = false, 3
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	online, err := f.s.StartAssignment(ctx, f.viewer, created.ID, false, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.viewer, online.ID, map[string]any{}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.StartAssignment(ctx, f.viewer, created.ID, true, now); !errors.Is(err, ErrAnsweredOnline) {
+		t.Fatalf("paper after answering online: %v", err)
+	}
+	run, err := f.s.StartAssignment(ctx, f.other, created.ID, true, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload, err := f.s.CreateUploadSession(ctx, NewUploadSession{
+		ID: uid("up"), CreatedBy: f.other, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
+		Name: "paper.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: 1024, ParseMode: "none",
+		ExpiresAt: now.Add(time.Hour), AttemptID: run.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.FinalizeUploadSession(ctx, f.other, upload.ID, "etag", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SubmitAssignmentAttempt(ctx, f.other, run.ID, map[string]any{}, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	for _, paper := range []bool{true, false} {
+		if _, err := f.s.StartAssignment(ctx, f.other, created.ID, paper, now.Add(2*time.Minute)); !errors.Is(err, ErrPaperHandedIn) {
+			t.Fatalf("start after the paper (upload %v): %v", paper, err)
+		}
+	}
+}
+
+// TestHandInIsFinalAndKept: on an unmarked assignment that takes files, a
 // member's upload joins their hand-in, stored with no parse; Hand in needs a
-// file and locks it; staff read the files on the member's row, and once the
-// assignment closes the member may delete them from Files › Submissions.
-func TestHandInIsHandedInAndDeleted(t *testing.T) {
+// file and is final; staff read the files on the member's row. Handed in, the
+// files stay off the Files page, charged to no one, and stay after the close;
+// a file another member added but never handed in lists on their Files page
+// for them to delete once it closes (Epo 2026-11-25).
+func TestHandInIsFinalAndKept(t *testing.T) {
 	f := newAssignmentFixture(t, "handin")
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, AssignmentForm{Kind: AssignmentUnmarked, Title: "Lab write-up",
+	form := AssignmentForm{Kind: AssignmentUnmarked, Title: "Lab write-up",
 		Attempts: 1, AssignAll: true, Marking: MarkingAIApprove, ShowAnswers: AnswersAfterClose, ShowGrades: GradesAutomatic,
-		Files: []AssignmentFileRef{}, AllowUploads: true}, now)
+		Files: []AssignmentFileRef{}, AllowUploads: true}
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +200,7 @@ func TestHandInIsHandedInAndDeleted(t *testing.T) {
 	upload, err := f.s.CreateUploadSession(ctx, NewUploadSession{
 		ID: uid("up"), CreatedBy: f.viewer, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
 		Name: "write-up.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: 2048, ParseMode: "none",
-		ExpiresAt: now.Add(time.Hour), HandInID: created.ID, PaperMaxBytes: 10 << 20,
+		ExpiresAt: now.Add(time.Hour), HandInID: created.ID,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -158,6 +219,21 @@ func TestHandInIsHandedInAndDeleted(t *testing.T) {
 	if err := f.s.RemoveHandInFile(ctx, f.viewer, created.ID, file.ID); !errors.Is(err, ErrHandInClosed) {
 		t.Fatalf("removed after hand in: %v", err)
 	}
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, created.ID, false, now.Add(time.Minute)); !errors.Is(err, ErrHandInFinal) {
+		t.Fatalf("undid hand in: %v", err)
+	}
+	// Uploads turned off later leave no Undo either.
+	form.AllowUploads = false
+	if _, err := f.s.UpdateAssignment(ctx, f.user, created.ID, form, now); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, created.ID, false, now.Add(time.Minute)); !errors.Is(err, ErrHandInFinal) {
+		t.Fatalf("undid hand in with uploads off: %v", err)
+	}
+	form.AllowUploads = true
+	if _, err := f.s.UpdateAssignment(ctx, f.user, created.ID, form, now); err != nil {
+		t.Fatal(err)
+	}
 	report, err := f.s.GetAssignmentReport(ctx, f.user, created.ID, now)
 	if err != nil {
 		t.Fatal(err)
@@ -171,21 +247,45 @@ func TestHandInIsHandedInAndDeleted(t *testing.T) {
 	if len(handedIn) != 1 || handedIn[0].ID != file.ID {
 		t.Fatalf("member row files = %+v", handedIn)
 	}
-	if _, _, err := f.s.HandInFileBlob(ctx, f.user, created.ID, file.ID); err != nil {
+	if _, err := f.s.HandInFileBlob(ctx, f.user, created.ID, file.ID); err != nil {
 		t.Fatalf("staff link: %v", err)
 	}
 
 	if got := submissionsOf(t, f.s, f.viewer); len(got) != 0 {
-		t.Fatalf("open assignment listed %+v", got)
+		t.Fatalf("a handed-in file listed on Files: %+v", got)
+	}
+	if usage, err := f.s.StorageUsage(ctx, f.viewer); err != nil || usage.UsedBytes != 0 || usage.ReservedBytes != 0 {
+		t.Fatalf("charged %+v, err %v", usage, err)
+	}
+	left, err := f.s.CreateUploadSession(ctx, NewUploadSession{
+		ID: uid("up"), CreatedBy: f.other, ObjectPath: "sources/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
+		Name: "draft.pdf", Kind: "pdf", ContentType: "application/pdf", DeclaredSize: 1024, ParseMode: "none",
+		ExpiresAt: now.Add(time.Hour), HandInID: created.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, err := f.s.FinalizeUploadSession(ctx, f.other, left.ID, "etag", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := submissionsOf(t, f.s, f.other); len(got) != 0 {
+		t.Fatalf("an open hand-in listed %+v", got)
 	}
 	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if got := submissionsOf(t, f.s, f.viewer); len(got) != 1 || got[0].ID != file.ID || got[0].QuizName != "Lab write-up" || got[0].AttemptID != "" {
-		t.Fatalf("listed %+v", got)
+	if err := f.s.DeleteLeftHandIn(ctx, f.viewer, file.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deleted a handed-in file: %v", err)
 	}
-	if n, err := f.s.DeleteSubmittedPapers(ctx, f.viewer, nil); err != nil || n != 1 {
-		t.Fatalf("deleted %d, err %v", n, err)
+	if got := submissionsOf(t, f.s, f.other); len(got) != 1 || got[0].ID != draft.ID || got[0].QuizName != "Lab write-up" {
+		t.Fatalf("left file listed %+v", got)
+	}
+	if got := submissionsOf(t, f.s, f.viewer); len(got) != 0 {
+		t.Fatalf("a handed-in file listed on Files after the close: %+v", got)
+	}
+	if err := f.s.DeleteLeftHandIn(ctx, f.other, draft.ID); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -340,8 +440,11 @@ func TestFileGradedQuiz(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if done.Paper != PaperRead || done.WaitingAnswers != 1 {
-		t.Fatalf("handed in = %s, waiting %d", done.Paper, done.WaitingAnswers)
+	if done.Paper != PaperRead || !done.GradesHidden {
+		t.Fatalf("handed in = %s, hidden %v", done.Paper, done.GradesHidden)
+	}
+	if owner, err := f.s.GetAssignmentAttempt(ctx, f.user, run.ID, now.Add(time.Minute)); err != nil || owner.WaitingAnswers != 1 {
+		t.Fatalf("the owner's read: waiting %d, err %v", owner.WaitingAnswers, err)
 	}
 	q := done.Questions[0]
 	part := q["parts"].([]any)[0].(map[string]any)

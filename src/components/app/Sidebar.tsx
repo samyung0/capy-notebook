@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router';
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useMediaQuery } from 'usehooks-ts';
 import { useTodo, useUnreadNotificationCount } from '@/api/hooks';
 import { Icon, type IconName } from '@/components/ui/Icon';
@@ -108,7 +108,7 @@ function isActive(pathname: string, item: NavItem): boolean {
   return pathname === item.to || pathname.startsWith(item.to + '/');
 }
 
-// Rows clip their own label so the 70px rail shows only the icon. The phone
+// Rows clip their own label so the 62px rail shows only the icon. The phone
 // drawer keeps the taller row for touch.
 const ROW_CLASS =
   'flex h-9 w-full justify-start gap-3 overflow-hidden whitespace-nowrap px-3 leading-(--body-line-height) active:-rotate-1 sm:h-8';
@@ -120,16 +120,28 @@ const RAIL_LABELS =
 const ROW_IDLE = 'font-medium text-fg hover:bg-page-hover';
 // The rail spaces its icons out; the full sidebar keeps its rows close.
 const rowGap = (rail: boolean) => (rail ? 'gap-2' : 'gap-1 sm:gap-0.5');
+/** The rail's icons, larger on a narrower card, still centred in its 42px
+ * (Epo 2026-11-24). */
+const RAIL_ICON = 22;
+const RAIL_ROW = 'px-2.5';
+
+/** The rail's groups, which have no section labels, part with a line as wide
+ * as its rows, as the one above its foot, widening with it (Epo 2026-11-24). */
+function RailDivider() {
+  return <div aria-hidden className="h-px w-full bg-line" />;
+}
 
 function Row({
   item,
   active,
+  rail,
   onNavigate,
   unreadCount,
   dotLabel,
 }: {
   item: NavItem;
   active: boolean;
+  rail?: boolean;
   onNavigate?: () => void;
   /** Notifications' unread and To do's open count: the dot, and the count for
    * tests and screen readers. */
@@ -142,6 +154,7 @@ function Row({
       className={cn(
         BASE_BUTTON_STYLE,
         ROW_CLASS,
+        rail && RAIL_ROW,
         active ? 'bg-action font-bold text-action-fg' : ROW_IDLE
       )}
       data-unread-count={unreadCount}
@@ -150,7 +163,7 @@ function Row({
       to={item.to}
     >
       <span className="relative shrink-0">
-        <Icon name={item.icon} size={19} />
+        <Icon name={item.icon} size={rail ? RAIL_ICON : 19} />
         {!!unreadCount && <PendingDot className="-top-1 -right-1" />}
       </span>
       <span className="translate-y-px font-semibold" data-label>
@@ -161,16 +174,16 @@ function Row({
 }
 
 /** A nav-style row that opens the search dialog. */
-function SearchRow() {
+function SearchRow({ rail }: { rail: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button
-        className={cn(BASE_BUTTON_STYLE, ROW_CLASS, ROW_IDLE)}
+        className={cn(BASE_BUTTON_STYLE, ROW_CLASS, rail && RAIL_ROW, ROW_IDLE)}
         onClick={() => setOpen(true)}
         type="button"
       >
-        <Icon className="shrink-0" name="search" size={19} />
+        <Icon className="shrink-0" name="search" size={rail ? RAIL_ICON : 19} />
         <span className="translate-y-px font-semibold" data-label>
           {m.nav_search()}
         </span>
@@ -188,7 +201,7 @@ const NOTIFICATIONS = '/notifications';
  * menu (Settings, Billing, Theme, Log out); in the phone drawer the row links
  * to account settings and has its own Log out button instead.
  *
- * `rail` is the 640–1023px sidebar: the same rows clipped to 70px, where a
+ * `rail` is the 640–1023px sidebar: the same rows clipped to 62px, where a
  * row's icon already sits at the rail's centre, without section labels. On
  * hover (or keyboard focus, or while one of its menus is open) it widens over
  * the page to the full sidebar, so only its width animates.
@@ -232,7 +245,7 @@ export function Sidebar({
           <span className="motion-smoke rail-open:motion-smoked shrink-0 group-hover/rail:delay-100">
             <LogoMark size={36} />
           </span>
-          <p className="t-card-title absolute top-1 left-3 whitespace-nowrap font-extrabold tracking-tight opacity-0 rail-open:opacity-100 transition-opacity duration-0 rail-open:duration-(--motion-duration-fast) group-hover/rail:delay-(--motion-duration-fast)">
+          <p className="t-card-title absolute top-1 left-2.5 whitespace-nowrap font-extrabold tracking-tight opacity-0 rail-open:opacity-100 transition-opacity duration-0 rail-open:duration-(--motion-duration-fast) group-hover/rail:delay-(--motion-duration-fast)">
             {m.app_name()}
           </p>
         </div>
@@ -261,7 +274,7 @@ export function Sidebar({
         <div
           className={cn('flex flex-col', rowGap(rail), rail ? 'mb-2' : 'mb-4')}
         >
-          <SearchRow />
+          <SearchRow rail={rail} />
           <Row
             active={pathname === NOTIFICATIONS}
             dotLabel={(count) => m.notifications_unread_count({ count })}
@@ -271,6 +284,7 @@ export function Sidebar({
               to: NOTIFICATIONS,
             }}
             onNavigate={onNavigate}
+            rail={rail}
             unreadCount={unread?.count ?? 0}
           />
         </div>
@@ -278,16 +292,20 @@ export function Sidebar({
 
       {rail ? (
         <div className={cn('flex flex-col', rowGap(true))}>
-          {nav.sections.flatMap((section) =>
-            section.items.map((i) => (
-              <Row
-                active={isActive(pathname, i)}
-                item={i}
-                key={i.to}
-                {...dot(i)}
-              />
-            ))
-          )}
+          {nav.sections.map((section) => (
+            <Fragment key={section.label}>
+              <RailDivider />
+              {section.items.map((i) => (
+                <Row
+                  active={isActive(pathname, i)}
+                  item={i}
+                  key={i.to}
+                  rail
+                  {...dot(i)}
+                />
+              ))}
+            </Fragment>
+          ))}
         </div>
       ) : (
         nav.sections.map((section, index) => (
@@ -316,10 +334,11 @@ export function Sidebar({
       )}
 
       <div className="mt-auto" />
-      {withAccount && <VoiceCard onOpen={onNavigate} />}
+      {withAccount && <VoiceCard onOpen={onNavigate} rail={rail} />}
       <div
         className={cn(
-          'mt-3 flex flex-col border-divider border-t pt-2',
+          // `line`, a shade over `divider`, shows on the page colour.
+          'mt-3 flex flex-col border-line border-t pt-2',
           rowGap(rail)
         )}
       >
@@ -335,6 +354,7 @@ export function Sidebar({
             item={i}
             key={i.to}
             onNavigate={onNavigate}
+            rail={rail}
           />
         ))}
         {withAccount &&
@@ -354,10 +374,10 @@ export function Sidebar({
     return (
       // The hover area is the whole strip from the window edge to the page
       // panel; it reaches over the shell's 10px padding without taking layout
-      // width (-mr). The 70px card sits 4px in from both, its rows centred in
+      // width (-mr). The 62px card sits 4px in from both, its rows centred in
       // the strip, and widens over the page. Frosted, it blurs the page it
       // covers.
-      <div className="group/rail relative z-40 -mr-2.5 w-19.5 shrink-0">
+      <div className="group/rail relative z-40 -mr-2.5 w-17.5 shrink-0">
         {/* Once the widening starts, the hover area is the full width at
             once, so moving right while the card still grows keeps it open.
             A pass across the rail under the 100ms delay never catches it. */}
@@ -366,7 +386,7 @@ export function Sidebar({
           asChild
           className={cn(
             RAIL_LABELS,
-            'absolute inset-y-2.5 left-1 z-40 flex rail-open:w-56 w-[70px] items-stretch gap-0 overflow-y-auto overflow-x-hidden px-3.5 pt-4 pb-2.5 transition-[width,box-shadow] duration-(--motion-duration-fast) ease-(--motion-ease-smooth-out) group-hover/rail:shadow-pop group-hover/rail:delay-100',
+            'absolute inset-y-2.5 left-1 z-40 flex rail-open:w-56 w-[62px] items-stretch gap-0 overflow-y-auto overflow-x-hidden px-2.5 pt-4 pb-2.5 transition-[width,box-shadow] duration-(--motion-duration-fast) ease-(--motion-ease-smooth-out) group-hover/rail:shadow-pop group-hover/rail:delay-100',
             frosted && 'backdrop-blur-[16px]'
           )}
           data-frosted={frosted || undefined}

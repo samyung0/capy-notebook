@@ -39,7 +39,8 @@ func TestGradedAssignment(t *testing.T) {
 		t.Fatal(err)
 	}
 	grade := func(actor, member string, points float64) error {
-		return f.s.SetAssignmentGrade(ctx, actor, created.ID, member, &points, now)
+		_, err := f.s.SetAssignmentGrade(ctx, actor, created.ID, member, &points, now)
+		return err
 	}
 	if err := grade(f.viewer, f.viewer, 20); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("a member's grade = %v", err)
@@ -94,7 +95,7 @@ func TestGradedAssignment(t *testing.T) {
 	}
 
 	// Cleared, it reads as not graded again.
-	if err := f.s.SetAssignmentGrade(ctx, f.user, created.ID, f.viewer, nil, now); err != nil {
+	if _, err := f.s.SetAssignmentGrade(ctx, f.user, created.ID, f.viewer, nil, now); err != nil {
 		t.Fatal(err)
 	}
 	if mine, err = f.s.GetAssignment(ctx, f.viewer, created.ID, at); err != nil || mine.Mine.Mark != nil {
@@ -115,7 +116,7 @@ func TestGradedAssignmentWaitsForRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	points := 7.5
-	if err := f.s.SetAssignmentGrade(ctx, f.user, created.ID, f.viewer, &points, now); err != nil {
+	if _, err := f.s.SetAssignmentGrade(ctx, f.user, created.ID, f.viewer, &points, now); err != nil {
 		t.Fatal(err)
 	}
 	held, err := f.s.GetAssignment(ctx, f.viewer, created.ID, now)
@@ -149,5 +150,67 @@ func TestPointsOnlyOnAnAssignmentTakingUploads(t *testing.T) {
 	ticked.AllowUploads = false
 	if _, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, ticked, now); !errors.As(err, &input) {
 		t.Fatalf("points on one taking no uploads = %v", err)
+	}
+}
+
+// What waits on staff (Epo 2026-11-26): a submission with no grade is to grade,
+// on the staff's To do and the class's pending list; graded under Manual and
+// closed, its grades are to release, on the pending list only; released,
+// nothing waits.
+func TestGradedAssignmentPendingForStaff(t *testing.T) {
+	f := newAssignmentFixture(t, "graded-pending")
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	form := f.gradedForm(now.Add(time.Hour), 10)
+	form.ShowGrades = GradesManual
+	created, err := f.s.makeAssignment(ctx, f.user, f.ws.ID, form, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	addHandInFile(t, f, created.ID, f.viewer, now)
+	if err := f.s.SetAssignmentDone(ctx, f.viewer, created.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	pending := func() []Assignment {
+		t.Helper()
+		list, err := f.s.ListAssignments(ctx, f.user, f.ws.ID, now, AssignmentListParams{Pending: true, Limit: 50})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return list.Items
+	}
+	onTodo := func() bool {
+		t.Helper()
+		todo, err := f.s.ListTodo(ctx, f.user, now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, w := range todo.Workspaces {
+			for _, a := range w.Items {
+				if a.ID == created.ID {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if got := pending(); len(got) != 1 || got[0].Manage.ToGrade != 1 || got[0].Manage.ToRelease || !onTodo() {
+		t.Fatalf("to grade = %+v", got)
+	}
+	points := 8.0
+	if _, err := f.s.SetAssignmentGrade(ctx, f.user, created.ID, f.viewer, &points, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := pending(); len(got) != 1 || got[0].Manage.ToGrade != 0 || !got[0].Manage.ToRelease || onTodo() {
+		t.Fatalf("to release = %+v", got)
+	}
+	if _, _, err := f.s.ReleaseAssignmentGrades(ctx, f.user, created.ID, now); err != nil {
+		t.Fatal(err)
+	}
+	if got := pending(); len(got) != 0 {
+		t.Fatalf("released, still pending = %+v", got)
 	}
 }

@@ -321,12 +321,17 @@ func decodeTimeCursor(cursor string) (*time.Time, string, error) {
 // everything trashed in that workspace, whoever pays. An editor who trashed
 // someone else's item never sees it here. LostAccess marks an item in a
 // workspace the caller can no longer open (lostAccessSQL), which shows only
-// its name, size and dates.
-func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limit int, cursor string) (TrashPage, error) {
+// its name, size and dates. f narrows the rows as the Files page's filters do.
+func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, f ListFilter, limit int, cursor string) (TrashPage, error) {
 	if limit <= 0 || limit > trashPageMax {
 		limit = trashPageMax
 	}
 	cursorAt, cursorID, err := decodeTimeCursor(cursor)
+	if err != nil {
+		return TrashPage{}, err
+	}
+	args := []any{ownerID, workspaceID, cursorAt, cursorID, limit + 1}
+	filter, err := f.where(&args, "t.sub_kind::text", "NULLIF(t.workspace_id, '')")
 	if err != nil {
 		return TrashPage{}, err
 	}
@@ -346,9 +351,9 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 			WHERE m.trashed_at IS NOT NULL AND m.parent_material_id IS NULL
 				AND (($2='' AND m.owner_user_id=$1) OR (m.workspace_id=$2 AND w.user_id=$1))
 		) t
-		WHERE $3::timestamptz IS NULL OR (t.trashed_at, t.id) < ($3::timestamptz, $4::text)
+		WHERE ($3::timestamptz IS NULL OR (t.trashed_at, t.id) < ($3::timestamptz, $4::text))`+filter+`
 		ORDER BY t.trashed_at DESC, t.id DESC
-		LIMIT $5`, ownerID, workspaceID, cursorAt, cursorID, limit+1)
+		LIMIT $5`, args...)
 	if err != nil {
 		return TrashPage{}, err
 	}

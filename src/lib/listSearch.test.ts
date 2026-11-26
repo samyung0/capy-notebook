@@ -31,10 +31,14 @@ describe('list search', () => {
     expect(parseFilesSearch({ sort: 'name', tab: 'files' })).toEqual({
       sort: 'name',
     });
-    // Canvas and Trash keep only their tab.
-    expect(parseFilesSearch({ sort: 'name', tab: 'trash' })).toEqual({
-      tab: 'trash',
-    });
+    // Trash keeps its kind, location and workspace filters, Canvas the last
+    // two; neither sorts.
+    expect(
+      parseFilesSearch({ kind: 'canvas,pdf', sort: 'name', tab: 'trash' })
+    ).toEqual({ kind: 'canvas,pdf', tab: 'trash' });
+    expect(
+      parseFilesSearch({ kind: 'pdf', tab: 'canvas', workspace: 'ws_a' })
+    ).toEqual({ tab: 'canvas', workspace: 'ws_a' });
     // The router parses number-like values; a tag can be one.
     expect(parseWorkspacesSearch({ tag: 2024 })).toEqual({ tag: '2024' });
   });

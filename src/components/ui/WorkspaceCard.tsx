@@ -80,7 +80,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       ? []
       : [
           {
-            icon: 'eraser' as const,
+            icon: 'forget' as const,
             label: m.action_forget(),
             onClick: () => forget(workspace.id),
           },
