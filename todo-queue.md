@@ -147,6 +147,7 @@ afterwards". It is separate. Mock: section V of https://claude.ai/artifact/GDgyx
 - **Drag-and-drop copies** (`auto-scroll` and `hitbox` on 2.0.2 beside the vendored 1.4.0): matters at the notes cut.
 - **Remake a quiz from another one** (Epo, 2026-11-08): write a new quiz based on an existing one, in place of Members' "Draft a follow-up quiz", which was removed from the member profile on `claude/study-members` ("its not that useful, teacher can see which topic the user is weaker anyway, and make a quiz on those topics").
 - **Results page and answers:** results hide answers after an assignment closes while Practice shows them. Optional, Epo hasn't decided.
+- **A ManimGL exporter** (Epo, 2026-11-26: "ideally we make a different exporter targetting manimgl that can work similarly"): ManimGX only runs Manim CE's API, so 3Blue1Brown-style ManimGL files don't run on it (15 of 80 scenes ran through a name-mapping stand-in, only short equation overlays). Make a second exporter that renders ManimGL scenes into CMV films (at least the video form) the way `bench/manim`'s ManimGX exporter does. Findings: `bench/manim/reports/2026-11-26-cmv-playback.md`. Comes after the ManimGX exporter is integrated.
 
 ## Older plan files
 
