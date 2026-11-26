@@ -5176,7 +5176,31 @@ impl Room {
         let (content, freed, deleted, lost) = match content {
             Ok(content) => content,
             Err(error) => {
-                // Admission counted on an apply that did not happen.
+                // yrs keeps the structs it integrated before the error: part
+                // of a refused update may be in the document, which peers
+                // lack until they resync and the next store saves. No known
+                // shape gets here past admission (`ydoc::inspect` refuses an
+                // item under a non-type of its own update), so it is
+                // reported. The room keeps its document: discarding it would
+                // drop the other editors' unsaved changes.
+                let (material, kind) = match &self.kind {
+                    Kindly::Note(note) => (note.material_id.as_str(), note.kind.clone()),
+                    Kindly::Source(source) => (
+                        source.room.file_id.as_str(),
+                        format!("{:?}", source.format).to_ascii_lowercase(),
+                    ),
+                };
+                observe::capture(
+                    &format!("an admitted update failed to apply, maybe in part: {error}"),
+                    None,
+                    &[
+                        ("room", &self.name),
+                        ("stage", "live_apply"),
+                        ("material", material),
+                        ("kind", &kind),
+                    ],
+                );
+                // Admission's bound may no longer match the document.
                 if let Kindly::Note(note) = &mut self.kind {
                     note.validator.invalidate();
                 }
@@ -7648,12 +7672,16 @@ mod pace_tests {
 mod tests {
     #![allow(clippy::unwrap_used)]
 
-    use std::collections::HashSet;
+    use std::collections::{HashMap, HashSet};
 
     use serde_json::json;
+    use yrs::block::{ClientID, ItemContent};
+    use yrs::encoding::write::Write as _;
     use yrs::types::text::YChange;
+    use yrs::updates::encoder::Encode as _;
     use yrs::{
-        Any, Doc, Map, MapRef, Out, ReadTxn, StateVector, Text, TextRef, Transact, XmlTextRef,
+        Any, Doc, ID, IdSet, Map, MapRef, Out, ReadTxn, StateVector, Text, TextPrelim, TextRef,
+        Transact, UpdateBlock, XmlTextRef,
     };
 
     use crate::markers;
@@ -7891,6 +7919,358 @@ mod tests {
                 "{kind}: another server write"
             );
             assert_eq!(whole(&room), whole(&before), "{kind}");
+        }
+    }
+
+    /// A document room's admission, as `admit_screened` runs it.
+    enum Admission {
+        Doc(crate::model::RoomValidator),
+        Source(sources::SourceFormat, sources::Estimate),
+    }
+
+    /// A document room on its stored base: its document as the load replays
+    /// it, its admission, and the rows its stores wrote, each its delta since
+    /// the last with live markers hidden.
+    struct Stored {
+        doc: Doc,
+        base: Vec<u8>,
+        rows: Vec<Vec<u8>>,
+        durable: ydoc::Durable,
+        admission: Admission,
+        /// A note's room, whose sessions hold its deletions.
+        sessioned: bool,
+    }
+
+    impl Stored {
+        fn new(base: Vec<u8>, admission: impl FnOnce(&Doc) -> Admission, sessioned: bool) -> Self {
+            let doc = super::loaded_doc(base.clone(), Vec::new(), &HashSet::new()).unwrap();
+            let durable = ydoc::Durable::of(&doc.transact());
+            Stored {
+                admission: admission(&doc),
+                doc,
+                base,
+                rows: Vec::new(),
+                durable,
+                sessioned,
+            }
+        }
+
+        /// A writer's update through the room's marker check and admission,
+        /// then applied as the room applies it; why it was refused, else.
+        fn send(&mut self, bytes: &[u8]) -> Result<(), String> {
+            let update = ydoc::decode(bytes).unwrap();
+            markers::check(&self.doc.transact(), &update, self.doc.client_id())
+                .map_err(|error| error.to_string())?;
+            match &mut self.admission {
+                Admission::Doc(validator) => match validator.admit(&self.doc, &update, false) {
+                    crate::model::Admitted::Accepted => {}
+                    crate::model::Admitted::Refused(why) => return Err(why),
+                    _ => return Err("not accepted".into()),
+                },
+                Admission::Source(format, estimate) => {
+                    match sources::admit_update(&self.doc, *format, bytes, estimate, 4 << 20, 0) {
+                        sources::Admission::Accept => {}
+                        refused => return Err(format!("{refused:?}")),
+                    }
+                }
+            }
+            let applied = match (&self.admission, self.sessioned) {
+                (Admission::Source(..), _) => {
+                    ydoc::apply_freeing(&self.doc, update, None).map(|_| ())
+                }
+                (_, true) => ydoc::apply_deleting(&self.doc, update).map(|_| ()),
+                (_, false) => ydoc::apply(&self.doc, update).map(|_| ()),
+            };
+            applied.map_err(|error| format!("applied in part: {error}"))
+        }
+
+        /// The room's marker, written under its own client as a writer's
+        /// first update does; its id.
+        fn mark(&self) -> ID {
+            let markers = self.doc.get_or_insert_map(ydoc::CONTRIBUTORS_ROOT);
+            let value = HashMap::from([
+                ("access".to_owned(), Any::from("write")),
+                ("nonce".to_owned(), Any::from("n1")),
+            ]);
+            let before = self.doc.transact().state_vector();
+            markers.insert(&mut self.doc.transact_mut(), "writer", Any::from(value));
+            ID::new(self.doc.client_id(), before.get(&self.doc.client_id()))
+        }
+
+        /// A store's row, then the markers it hid cleared, as the room does.
+        fn store(&mut self) {
+            let hidden = markers::live_items(&self.doc);
+            let (row, durable) = ydoc::delta_update(&self.doc.transact(), &self.durable, &hidden);
+            self.rows.push(row);
+            self.durable = durable;
+            let markers = self.doc.get_or_insert_map(ydoc::CONTRIBUTORS_ROOT);
+            markers.remove(&mut self.doc.transact_mut(), "writer");
+        }
+
+        /// The stored base and rows as a load, a fold or a projection replays
+        /// them: in one transaction.
+        fn replayed(&self) -> Doc {
+            let doc = ydoc::scratch_doc();
+            ydoc::replay(&doc, &self.base, &self.rows).unwrap();
+            doc
+        }
+    }
+
+    /// A held value or text: its id and length, the item of the type
+    /// holding it (none in a root) and the item after it.
+    #[derive(Clone, Copy)]
+    struct Held {
+        id: ID,
+        len: u32,
+        holder: Option<ID>,
+        right: Option<ID>,
+    }
+
+    /// Each live text of `doc`, then each live value, by client and clock.
+    fn values(doc: &Doc) -> Vec<Held> {
+        let txn = doc.transact();
+        let mut clients: Vec<_> = txn.state_vector().iter().map(|(c, e)| (*c, *e)).collect();
+        clients.sort_unstable();
+        let (mut texts, mut values) = (Vec::new(), Vec::new());
+        for (client, end) in clients {
+            for (_, item) in txn.store().blocks_in(&client, 0..end) {
+                let Some(item) = item.filter(|item| !item.is_deleted()) else {
+                    continue;
+                };
+                let found = match item.content() {
+                    ItemContent::String(_) => &mut texts,
+                    ItemContent::Any(_) => &mut values,
+                    _ => continue,
+                };
+                found.push(Held {
+                    id: *item.id(),
+                    len: item.len(),
+                    holder: item
+                        .parent_branch()
+                        .and_then(|branch| branch.item())
+                        .map(|holder| *holder.id()),
+                    right: item.right().map(|right| *right.id()),
+                });
+            }
+        }
+        texts.extend(values);
+        texts
+    }
+
+    /// Client `client`'s first struct under the item `parent` names by id,
+    /// with no origin: `true` at key `k`, or `"x"` typed into it.
+    fn under(client: u64, parent: ID, typed: bool) -> Vec<u8> {
+        let mut sent = vec![1, 1];
+        sent.write_var(client);
+        sent.write_var(0u32);
+        sent.push(if typed { 0x04 } else { 0x28 });
+        sent.write_var(0u32);
+        sent.write_var(parent.client.get());
+        sent.write_var(parent.clock);
+        if typed {
+            sent.write_string("x");
+        } else {
+            sent.write_string("k");
+            sent.extend([1, 120]);
+        }
+        sent.push(0);
+        sent
+    }
+
+    /// Client `client`'s `"yy"` typed after `held`'s last unit, then a struct
+    /// under that text, as [under] writes one.
+    fn under_own(client: u64, held: Held, typed: bool) -> Vec<u8> {
+        let mut sent = vec![1, 2];
+        sent.write_var(client);
+        sent.write_var(0u32);
+        sent.push(0x84 | if held.right.is_some() { 0x40 } else { 0 });
+        sent.write_var(held.id.client.get());
+        sent.write_var(held.id.clock + held.len - 1);
+        if let Some(right) = held.right {
+            sent.write_var(right.client.get());
+            sent.write_var(right.clock);
+        }
+        sent.write_string("yy");
+        // One section: the second struct after the first, its header (one
+        // client, one struct, the client, its clock) left out.
+        let second = under(client, ID::new(ClientID::new(client), 0), typed);
+        sent.extend(&second[4..]);
+        sent
+    }
+
+    fn deleting(id: ID, len: u32) -> Vec<u8> {
+        let mut deleted = IdSet::default();
+        deleted.insert(id, len);
+        let mut sent = vec![0];
+        sent.extend(deleted.encode_v1());
+        sent
+    }
+
+    /// Security audit (after the board's `parent_type` check): yrs fails to
+    /// integrate an item whose parent is an item of other content than a
+    /// type, where Yjs collects it. A board stores its writers' bytes and
+    /// had to refuse such parents; a document room stores its own
+    /// document's deltas, so what its document collected is stored as
+    /// collected, and its rows replay. In each document room (a note, a
+    /// flashcard set, a quiz's questions and keys, a text and a DOCX
+    /// source), `true` at a key and `"x"` typed under a held value (a text
+    /// where the room holds one), under the room's live marker and under a
+    /// text of the update's own are refused, applying nothing (the first two
+    /// by admission's trial on a copy, the last by `ydoc::inspect`); under
+    /// a value deleted since the base, a unit collected since the base (a
+    /// value, its holder deleted) and a marker cleared since the base they
+    /// are taken, collected and stored so. After each, the stored base and
+    /// rows replay in one transaction to the room's document. Fails if a
+    /// room stores what its document did not integrate, or (before
+    /// `ydoc::inspect` refused an item under its own update's text) with an
+    /// update applied in part: the note's for the key set under its own
+    /// text, the text and Word sources' for both, while the flashcard set's
+    /// and the quiz's shape checks refused both first.
+    #[test]
+    fn a_document_rooms_stored_rows_replay_whatever_parent_an_update_names() {
+        let note = [json!({ "type": "p", "id": "b1", "children": [{ "text": "Body text" }] })];
+        let face = |kind: &str, text: &str| json!({ "type": kind, "children": [{ "text": text }] });
+        let set = [json!({
+            "type": "flashcards", "id": "set", "children": [{
+                "type": "flashcard", "id": "c1",
+                "children": [face("flashcard_front", "Front"), face("flashcard_back", "Back")],
+            }],
+        })];
+        let question = json!({
+            "id": "q1", "labels": "letters", "layout": "paper",
+            "stem": [{ "type": "text", "text": "Stem" }],
+            "parts": [{
+                "id": "q1:part:1", "marks": 1, "solution": [],
+                "blocks": [{ "type": "text", "text": "True?" }],
+                "answer": { "type": "boolean", "correct": true },
+            }],
+        });
+        let quiz = [json!({ "type": "quiz", "id": "quiz", "children": [{
+            "type": "quiz_question", "id": "q1", "question": question,
+            "children": [{ "text": "" }],
+        }] })];
+        let (questions, keys) = items::quiz::states_from_value(&quiz, 0);
+        let docx = {
+            let doc = Doc::with_options(ydoc::doc_options(5));
+            doc.get_or_insert_map("stories").insert(
+                &mut doc.transact_mut(),
+                "body",
+                TextPrelim::new("Body text"),
+            );
+            whole(&doc)
+        };
+        let validator = |model: Model, kind: &'static str| {
+            move |doc: &Doc| {
+                Admission::Doc(model.validator(kind, model.measure(&doc.transact()).unwrap()))
+            }
+        };
+        let source = |format| move |_: &Doc| Admission::Source(format, sources::Estimate::new(0));
+        type Open = Box<dyn Fn() -> Stored>;
+        let rooms: [(&str, Open); 6] = [
+            ("note", {
+                let base = Model::Note.state_from_value(&note);
+                Box::new(move || Stored::new(base.clone(), validator(Model::Note, "note"), true))
+            }),
+            ("flashcards", {
+                let model = Model::Item(items::Kind::Flashcards);
+                let base = model.state_from_value(&set);
+                Box::new(move || Stored::new(base.clone(), validator(model, "flashcards"), false))
+            }),
+            ("quiz questions", {
+                Box::new(move || {
+                    Stored::new(
+                        questions.clone(),
+                        validator(Model::Item(items::Kind::Quiz), "quiz"),
+                        false,
+                    )
+                })
+            }),
+            ("quiz keys", {
+                Box::new(move || {
+                    Stored::new(
+                        keys.clone(),
+                        validator(Model::Item(items::Kind::QuizKeys), "quiz"),
+                        false,
+                    )
+                })
+            }),
+            ("text source", {
+                let base = sources::text::text_seed(b"Line one\nLine two").unwrap();
+                Box::new(move || {
+                    Stored::new(base.clone(), source(sources::SourceFormat::Text), false)
+                })
+            }),
+            (
+                "docx source",
+                Box::new(move || {
+                    Stored::new(docx.clone(), source(sources::SourceFormat::Docx), false)
+                }),
+            ),
+        ];
+        for (room, open) in &rooms {
+            for typed in [false, true] {
+                let case = |shape: &str| format!("{room}, {shape}, typed {typed}");
+                // The first live text (a value where none is held), and
+                // one under a type of its own (none in a text source, whose
+                // root holds its text).
+                let values = values(&open().doc);
+                let value = values[0];
+                let nested = values.iter().find(|held| held.holder.is_some()).copied();
+                let mut refused = vec![
+                    ("a held value", open(), under(21, value.id, typed)),
+                    ("its own text", open(), under_own(21, value, typed)),
+                ];
+                let marked = open();
+                let marker = marked.mark();
+                refused.push(("a marker", marked, under(21, marker, typed)));
+                for (shape, mut stored, sent) in refused {
+                    let before = whole(&stored.doc);
+                    assert!(stored.send(&sent).is_err(), "{}", case(shape));
+                    assert_eq!(
+                        whole(&stored.doc),
+                        before,
+                        "{}: applied in part",
+                        case(shape)
+                    );
+                }
+                let mut deleted = open();
+                deleted.send(&deleting(value.id, value.len)).unwrap();
+                deleted.store();
+                let mut taken = vec![("a deleted value", deleted, under(21, value.id, typed))];
+                if let Some(nested) = nested {
+                    let mut collected = open();
+                    collected
+                        .send(&deleting(nested.holder.unwrap(), 1))
+                        .unwrap();
+                    collected.store();
+                    taken.push(("a collected value", collected, under(21, nested.id, typed)));
+                }
+                let mut cleared = open();
+                let marker = cleared.mark();
+                cleared.store();
+                taken.push(("a cleared marker", cleared, under(21, marker, typed)));
+                for (shape, mut stored, sent) in taken {
+                    stored
+                        .send(&sent)
+                        .unwrap_or_else(|why| panic!("{}: {why}", case(shape)));
+                    stored.store();
+                    let row = ydoc::decode(stored.rows.last().unwrap()).unwrap();
+                    assert!(
+                        row.blocks().any(|block| matches!(
+                            block,
+                            UpdateBlock::Gc(range) if range.client == ClientID::new(21)
+                        )),
+                        "{}: not stored collected",
+                        case(shape)
+                    );
+                    assert_eq!(
+                        whole(&stored.replayed()),
+                        whole(&stored.doc),
+                        "{}",
+                        case(shape)
+                    );
+                }
+            }
         }
     }
 }

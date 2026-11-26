@@ -3985,6 +3985,21 @@ is refused at admit, before it can cost the room time or memory
   steps and a 300-paragraph paste 0; copying that room takes 15 to 19 ms and
   admitting either update 32 to 46 ms. A class of 100 typing into one empty
   block at once is never refused (the earlier per-spot cap is dropped);
+- an item that names as its parent an item holding no type: yrs fails to
+  integrate it (`InvalidParent`; Yjs collects it) after the structs before it
+  went into the room's document. Under an item of the same update it is
+  refused by `ydoc::inspect` itself (it had been taken as a small edit and
+  left the room holding part of an update its writer was told was refused);
+  under one the room holds, the update is no small edit, and its trial fails
+  on the copy. Under a unit the room holds deleted or collected, yrs collects
+  the item, and the room stores its own document's delta, which holds it
+  collected, so the stored rows still replay in one transaction (a board,
+  which stores its writers' bytes, refuses an item under a value deleted
+  since its base on its own: `Board::parent_type`,
+  [the canvas's room](#the-boards-tools)). An admitted update whose live apply
+  still fails is reported to Sentry (stage `live_apply`, with the material and
+  its kind), since part of it may be in the room's document, which the room
+  keeps: discarding it would drop the other editors' unsaved changes;
 - in a note text, content other than strings, formats and element texts, and
   non-plain attribute, mark or marker values (invisible to the projection and
   the size metrics).
@@ -6592,6 +6607,16 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
         Only a board counts splits; the other rooms inspect as before;
       - writes only the `blocks` root (`BOARD_ROOT`) besides the room's own
         contributor markers;
+      - puts each new item it names a parent for under a type, never under other
+        content (a value, a contributor marker, a value of the same update): yrs
+        fails to integrate such an item where Yjs collects it, so a board storing
+        one would never replay again (no fold, trial or projection). No editor
+        writes one. An item under a unit the stored base holds deleted is taken and
+        collected; one under a value deleted since the base is refused, since a
+        replay applies the base and its rows in one transaction, where that value
+        keeps its content. A block or other type deleted since the base is still
+        a parent, as it is in that replay: a stale tab's key set in a deleted
+        block is taken (`Board::read`, `Board::parent_type`);
       - keeps the state within `CANVAS_BOARD_MAX`, 4 MiB (Epo 2026-11-18), the largest
         sync message the server takes (`NOTE_MAX_SYNC_BYTES`). The validator keeps an
         upper bound of the state's bytes; while the bound plus the most the update
