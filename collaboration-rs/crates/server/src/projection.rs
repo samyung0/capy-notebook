@@ -111,10 +111,11 @@ impl Drop for Slot<'_> {
     }
 }
 
-/// What a projection did: the stored version it projected or checked,
-/// whether it reached Go, and for a canvas its editor assets as read
-/// (`note_store::Held`), which the room's [crate::model::names_asset] checks
-/// updates against.
+/// What a projection did: the version Go's projection reaches after it (the
+/// stored version it sent, or for a board it did not send, the one Go held
+/// already), whether it reached Go, and for a canvas its editor assets as
+/// read (`note_store::Held`), which the room's [crate::model::names_asset]
+/// checks updates against.
 pub struct Checked {
     pub version: i64,
     pub sent: bool,
@@ -273,11 +274,13 @@ pub async fn project(
 /// Projects a material from its durable rows: a room loaded nowhere here,
 /// the cadence, every board projection, and every quiz projection (a quiz
 /// projects from both its documents, read together at one version), in
-/// the material's slot ([Slots]). A board reaches Go only when its images
-/// differ from what Go holds (Epo 2026-11-26), or, with `catch_up` (its
-/// unload and the pending scan), when Go's projected version lags the
-/// stored one: that send moves the watermark the pending scan reads and
-/// the canvas's charge, which Go recomputes on a content write.
+/// the material's slot ([Slots]). A board reaches Go when its images differ
+/// from what Go holds, at once (Epo 2026-11-26), or, with `catch_up` (the
+/// idle projection, the cadence, an on-demand one, the unload and the
+/// pending scan), when Go's projected version lags the stored one, as every
+/// projection did before: that send moves the watermark the pending scan
+/// reads and the canvas's charge, which Go recomputes on a content write.
+/// A store alone, or a fold, sends only changed images.
 pub async fn project_durable(
     app: &Shared,
     material_id: &str,
@@ -366,7 +369,11 @@ async fn project_board(
         project(app, material_id, version, &envelope(value), None).await?;
     }
     Ok(Checked {
-        version,
+        version: if sent {
+            version
+        } else {
+            held.projected_version
+        },
         sent,
         assets: Some(assets),
     })

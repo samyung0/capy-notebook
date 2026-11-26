@@ -20509,22 +20509,37 @@ fn stroke_and_type(doc: &Doc, id: &str, text: &str) {
     typed.insert(&mut txn, end, text);
 }
 
-/// A board reaches Go only when its images change (Epo 2026-11-26): strokes
-/// drawn and text typed, stored over and over, checked at the cadence
-/// (500 ms here) and after each fold (every third row), send nothing while
-/// the room is open; the idle projection takes the same check. The unload
-/// sends once, since Go's projected version lags the stored one, so the
-/// canvas's charge follows its board. Fails if a store, the cadence or a
-/// fold sends a board whose images did not change.
+/// The base's projection version: the version of the last fold's last row.
+async fn folded_through(env: &Env, material: &str) -> i64 {
+    db(env)
+        .await
+        .query_one(
+            "SELECT (base_projection->0->>'version')::bigint FROM material_yjs_documents
+             WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("document")
+        .get(0)
+}
+
+/// Strokes and typing reach Go only at the idle projection, the cadence or
+/// the unload, as every edit did before (Epo 2026-11-26), never at a store
+/// or a fold: four stores of strokes and typed text in a row, one of them
+/// folding (every third row), send nothing; the idle projection (3 s here)
+/// then sends the stored version once, with no image; two stores more send
+/// nothing, and the unload (or the idle projection, whichever comes first)
+/// sends their version once. Fails if a store or a fold sends unchanged
+/// images, or the idle projection or the unload leaves Go behind.
 #[tokio::test]
-async fn strokes_and_typing_never_reach_go() {
+async fn strokes_and_typing_reach_go_at_the_idle_projection_and_the_unload() {
     let Some(env) = env() else { return };
     let (api, kept) = projections(&env).await;
     let server = start_configured(
         &env,
         Some(&api),
         &[
-            ("COLLABORATION_PROJECTION_CADENCE_MS", "500"),
+            ("COLLABORATION_PROJECTION_IDLE_MS", "3000"),
             ("COLLABORATION_FOLD_MAX_ROWS", "3"),
         ],
     )
@@ -20533,38 +20548,76 @@ async fn strokes_and_typing_never_reach_go() {
     kept.own(&material);
     {
         let mut writer = Client::at_board(server.port, &room, &user).await;
-        for n in 0..9 {
+        for n in 0..4 {
             let update = writer.edited(|doc| stroke_and_type(doc, &format!("s{n}"), "hello"));
             writer.stored(&update, &format!("r{n}")).await;
-            // Past the cadence for the next store.
-            tokio::time::sleep(Duration::from_millis(600)).await;
         }
-        let folded: i64 = db(&env)
-            .await
-            .query_one(
-                "SELECT (base_projection->0->>'version')::bigint FROM material_yjs_documents
-                 WHERE material_id=$1",
-                &[&material],
-            )
-            .await
-            .expect("document")
-            .get(0);
-        assert!(folded > 1, "no fold ran");
+        assert!(folded_through(&env, &material).await > 1, "no fold ran");
         assert_eq!(kept.of(&material), Vec::<serde_json::Value>::new());
+        let idle = stored_version(&env, &material).await;
+        let sent = kept.first(&material, 1).await;
+        assert_eq!(sent[0]["yjsVersion"], idle);
+        assert_eq!(projected_images(&sent[0]), images_of(&[]));
+        for n in 4..6 {
+            let update = writer.edited(|doc| stroke_and_type(doc, &format!("s{n}"), "more"));
+            writer.stored(&update, &format!("r{n}")).await;
+        }
+        assert_eq!(kept.of(&material).len(), 1);
     }
     unloaded(server.port).await;
     let version = stored_version(&env, &material).await;
-    let sent = kept.at(&material, version).await.expect("the unload's");
-    assert_eq!(projected_images(&sent), images_of(&[]));
+    let sent = kept.first(&material, 2).await;
+    assert_eq!(sent[1]["yjsVersion"], version);
     tokio::time::sleep(Duration::from_millis(500)).await;
-    assert_eq!(kept.of(&material).len(), 1, "{:?}", kept.of(&material));
+    assert_eq!(kept.of(&material).len(), 2, "{:?}", kept.of(&material));
 }
 
-/// A board reaches Go once per change of its images (Epo 2026-11-26): an
-/// image added, given another asset (both named between folds), and, after
-/// a fold dropped it (the projection after the fold sends that once),
-/// brought back by Undo each send one projection, and strokes between them
-/// none. Fails if a change is sent twice or not at all.
+/// While strokes keep coming the idle projection never runs, and the
+/// cadence (2 s here) sends the board at most once per its period, not at
+/// every store: over 5 s of strokes stored every quarter second, at least
+/// one projection and at most one for each 2 s since the room loaded.
+/// Fails if a store sends unchanged images or the cadence sends nothing.
+#[tokio::test]
+async fn strokes_and_typing_reach_go_at_the_cadence() {
+    let Some(env) = env() else { return };
+    let (api, kept) = projections(&env).await;
+    let server = start_configured(
+        &env,
+        Some(&api),
+        &[("COLLABORATION_PROJECTION_CADENCE_MS", "2000")],
+    )
+    .await;
+    let (user, material, room, _) = canvas_with_assets(&env, &["a"]).await;
+    kept.own(&material);
+    let loaded = std::time::Instant::now();
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    let mut stores = 0;
+    while loaded.elapsed() < Duration::from_secs(5) {
+        let update = writer.edited(|doc| stroke_and_type(doc, &format!("s{stores}"), "hi"));
+        writer.stored(&update, &format!("r{stores}")).await;
+        stores += 1;
+        tokio::time::sleep(Duration::from_millis(250)).await;
+    }
+    let periods = loaded.elapsed().as_millis() / 2000;
+    let sent = kept.of(&material);
+    assert!(
+        !sent.is_empty() && sent.len() as u128 <= periods,
+        "{} projections over {stores} stores and {periods} periods",
+        sent.len()
+    );
+    assert!(
+        sent.iter()
+            .all(|body| projected_images(body) == images_of(&[]))
+    );
+}
+
+/// A board reaches Go once per change of its images, right after the store
+/// that made it (Epo 2026-11-26), long before the idle projection (60 s in
+/// these tests): an image added, given another asset (both named between
+/// folds), and, after a fold dropped it (the projection after the fold
+/// sends that once), brought back by Undo each send one projection, and
+/// strokes between them none. Fails if a change is sent twice, late or not
+/// at all.
 #[tokio::test]
 async fn each_change_of_a_boards_images_reaches_go_once() {
     use yrs::Map as _;

@@ -383,12 +383,11 @@ workspace or not (who holds it:
   content writes, so the charge is the board's stored bytes as of its last
   projection Go took (each one changes the content, since the block carries
   the stored version); a fold between projections is not charged again, and a
-  rename, a share or a trash charges nothing. A board reaches Go only when its
-  images change, and at its unload (and the pending scan) when Go's projected
-  version lags (Epo 2026-11-26,
-  [plate-editor](frontend/plate-editor.md#the-boards-tools)), so a room's
-  drawing is charged when it adds or drops an image and when the room
-  unloads, at most 4 MiB a canvas (the cap below), not at every idle. The board's base indexes
+  rename, a share or a trash charges nothing. The idle projection, the
+  cadence and the unload send the board whenever Go's projected version lags,
+  so the charge follows the board as often as before; a store alone sends
+  only changed images (Epo 2026-11-26,
+  [plate-editor](frontend/plate-editor.md#the-boards-tools)). The board's base indexes
   (`base_state_vector` and `base_delete_set`, migration 0193, and
   `base_indexes`, migration 0195: ids and place hashes only, written at the
   seed and each fold, about 0.6 MB beside a 6,000-stroke, 4.7 MiB pen
@@ -461,13 +460,12 @@ workspace or not (who holds it:
   deleted since the last fold stays named, and charged to its uploader, until
   the projection after the next fold (at 256 KiB or 1,000 rows of log, and at
   every unload), which the room makes once that fold committed; Go takes it at
-  the version it projected already too. A projection reaches Go only when its
-  images differ from Go's block. A board update that writes one of the
+  the version it projected already too. A store's or a fold's projection
+  reaches Go only when its images differ from Go's block. A board update that
+  writes one of the
   canvas's assets makes the room project after its next store instead of at
   the idle cadence, so an image deleted and brought back by Undo is served to
-  the others again within seconds. An asset uploaded but never named is
-  trashed by the next projection Go takes once it is a minute old, as before,
-  which may now be the unload's. The canvas routes list every ready image asset of the canvas, a
+  the others again within seconds. The canvas routes list every ready image asset of the canvas, a
   trashed one included (`ownImageAssetIds`, `CanvasImageAssets`). A full
   storage refuses the upload as it refuses any editor asset. An editor keeps
   paying for its images on a canvas it can no longer open until it deletes

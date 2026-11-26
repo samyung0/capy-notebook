@@ -6980,17 +6980,18 @@ impl Room {
     /// after its fold committed, at a version projected already too, so the
     /// base's new projection, the board's exact images, reaches Go. The live
     /// document may already hold newer edits, so this projects the durable
-    /// state from the store. A board's projection reaches Go only when its
-    /// images differ from Go's (`projection::project_durable`).
+    /// state from the store. Those two send a board only when its images
+    /// differ from Go's; the cadence's also when Go lags
+    /// (`projection::project_durable`).
     fn project_on_cadence(&mut self) {
         let handle = self.own_handle();
         let cadence = self.app.config.projection_cadence;
         let Kindly::Note(note) = &mut self.kind else {
             return;
         };
-        let due = note.recheck
-            || (note.stored_version > note.projected_version
-                && (note.project_soon || note.projected_at.elapsed() >= cadence));
+        let lags = note.stored_version > note.projected_version;
+        let catch_up = lags && note.projected_at.elapsed() >= cadence;
+        let due = note.recheck || catch_up || (lags && note.project_soon);
         if note.projecting || !due {
             return;
         }
@@ -7002,7 +7003,7 @@ impl Room {
         note.recheck = false;
         let (app, material_id) = (self.app.clone(), note.material_id.clone());
         tokio::spawn(async move {
-            let checked = projection::project_durable(&app, &material_id, false).await;
+            let checked = projection::project_durable(&app, &material_id, catch_up).await;
             let _ = handle.tx.send(RoomCmd::Projected(checked)).await;
         });
     }
@@ -7051,8 +7052,9 @@ impl Room {
                 let Some(handle) = self.own_handle() else {
                     return;
                 };
+                // The idle projection and an on-demand one catch Go up.
                 tokio::spawn(async move {
-                    let checked = projection::project_durable(&app, &material_id, false).await;
+                    let checked = projection::project_durable(&app, &material_id, true).await;
                     let _ = handle.tx.send(RoomCmd::Projected(checked)).await;
                 });
                 return;
@@ -7081,11 +7083,12 @@ impl Room {
         });
     }
 
-    /// A projection finished: the room's projection reaches its version,
-    /// sent or checked (a board's that found Go's images unchanged sends
-    /// nothing), and a board keeps the assets it read. Only a sent one tells
-    /// the tabs. A board asked meanwhile to project again (its fold
-    /// committed, an update named an asset) does.
+    /// A projection finished: the room's projection reaches the version Go
+    /// holds after it (a board's that found Go's images unchanged sent
+    /// nothing, so the idle projection and the cadence still catch Go up),
+    /// and a board keeps the assets it read. Only a sent one restarts the
+    /// cadence and tells the tabs. A board asked meanwhile to project again
+    /// (its fold committed, an update named an asset) does.
     fn projected(&mut self, result: Result<projection::Checked, String>) {
         let Kindly::Note(note) = &mut self.kind else {
             return;
@@ -7095,7 +7098,9 @@ impl Room {
             Ok(checked) => {
                 let version = checked.version;
                 note.projected_version = note.projected_version.max(version);
-                note.projected_at = Instant::now();
+                if checked.sent {
+                    note.projected_at = Instant::now();
+                }
                 if let Some(assets) = checked.assets {
                     note.board_assets = Some(assets);
                 }

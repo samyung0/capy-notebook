@@ -6664,26 +6664,26 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       canvas's whole document, one `canvas_board` block with the constant id `board`,
       `version` the stored version projected and `images: [{ assetId }]`. Go writes
       the block through `ProjectMaterialContent`, and its asset pruner keeps the
-      images named and trashes the canvas's others. A board reaches Go only when its
-      images change (Epo 2026-11-26): each projection reads, in its snapshot, the
-      images Go's stored block names, and sends only when its own differ. The
-      projection runs on the note's cadence (30 s idle, every 5 minutes), after each
-      fold and on unload, and right after a store whose update writes one of the
-      canvas's assets as the room's last projection read them (before one has read
-      them, any string shaped like an asset id; `names_asset`, `project_soon`), so an
-      image added, pasted, brought back by Undo or given another asset, whose asset
-      Go had trashed, is served again within seconds. Every struct counts, not only
-      one keyed `prop:sourceId`: an overwrite of a key carries its origin and no key.
-      Strokes and typing write no asset's id, so they ask for no projection, and
-      when a cadence, idle or fold projection runs anyway it finds the images
-      unchanged and sends nothing: while a board is drawn on, Go hears from it once
-      per change of its images. An asset made since the room's last read is named by
-      the next projection that runs (the idle one at the latest); none prunes it
-      before, as each reads the assets anew. The unload also sends when Go's
-      projected version lags the stored one, and so does the pending scan, so the
-      watermark the scan reads catches up and Go recomputes the canvas's charge
-      (the board's stored bytes) once per room life: the charge no longer follows
-      every idle projection, only image changes and the unload.
+      images named and trashes the canvas's others. Each projection reads, in its
+      snapshot, Go's projected version and the images Go's stored block names
+      (Epo 2026-11-26). It sends at once when its images differ from Go's: right
+      after a store whose update writes one of the canvas's assets as the room's
+      last projection read them (before one has read them, any string shaped like
+      an asset id; `names_asset`, `project_soon`), so an image added, pasted,
+      brought back by Undo or given another asset, whose asset Go had trashed, is
+      served again within seconds, and right after a fold commits. Every struct
+      counts, not only one keyed `prop:sourceId`: an overwrite of a key carries
+      its origin and no key. The idle projection (30 s after edits stop), the
+      cadence (every 5 minutes while they go on), an on-demand one, the unload and
+      the pending scan also send whenever Go's projected version lags the stored
+      one, images changed or not, as every projection did before, so Go
+      recomputes the canvas's charge (the board's stored bytes) as often as it
+      did and the pending scan does not find the board again. A store alone, or a
+      fold, never sends unchanged images: strokes and typing write no asset's id,
+      so they ask for no projection at a store, and reach Go only at the idle
+      projection, the cadence or the unload. An asset made since the room's last
+      read is named by the next projection that runs (the idle one at the
+      latest); none prunes it before, as each reads the assets anew.
     - **The projection rides on the fold (Epo 2026-11-26).** Every board fold already
       replays the board into a whole document under the board work permit
       (`note_store::fold`); it runs `Model::projection` on that document and stores the
