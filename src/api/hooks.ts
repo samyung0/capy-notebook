@@ -1860,23 +1860,45 @@ export function useUndoEdit() {
 
 /* ---------------- trash ---------------- */
 
-export const trashQuery = (wsId?: string) => ({
+/** The Files page's Kind, Workspace and Location filters on its Trash and
+ * Canvas tabs. */
+export type ListFilterParams = {
+  kinds?: string[];
+  locations?: string[];
+  workspaceIds?: string[];
+};
+
+/** A filter's query parameters, each left out when empty. */
+function setListFilter(params: URLSearchParams, filter: ListFilterParams) {
+  if (filter.kinds?.length) params.set('kind', filter.kinds.join(','));
+  if (filter.workspaceIds?.length)
+    params.set('workspaces', filter.workspaceIds.join(','));
+  if (filter.locations?.length)
+    params.set('location', filter.locations.join(','));
+}
+
+export const trashQuery = (wsId?: string, filter: ListFilterParams = {}) => ({
   getNextPageParam: (last: TrashPage) => last.nextCursor || undefined,
   initialPageParam: '',
   queryFn: ({ pageParam }: { pageParam: string }) => {
     const params = new URLSearchParams();
     if (wsId) params.set('workspaceId', wsId);
+    setListFilter(params, filter);
     if (pageParam) params.set('cursor', pageParam);
     const query = params.toString();
     return api.get<TrashPage>(`/trash${query ? `?${query}` : ''}`);
   },
-  queryKey: qk.trash(wsId),
+  queryKey: [...qk.trash(wsId), filter] as const,
 });
 /** Owner-scoped trash listing. Lazy: the Files page only loads it when the
  * Trash tab is open. Secondary query, so it renders its own error state. */
-export const useTrash = (wsId: string | undefined, enabled: boolean) =>
+export const useTrash = (
+  wsId: string | undefined,
+  enabled: boolean,
+  filter?: ListFilterParams
+) =>
   useInfiniteQuery({
-    ...trashQuery(wsId),
+    ...trashQuery(wsId, filter),
     enabled,
     meta: { errorBoundary: false },
   });
@@ -3367,6 +3389,8 @@ export interface AssignmentListParams {
   done: boolean;
   /** Only graded quizzes or only assignments; none keeps both. */
   kind?: Assignment['kind'];
+  /** Staff: only what waits on them, open or closed (a class's To grade). */
+  pending?: boolean;
   /** A column's order, open ones still first; none is the page's own. */
   sort?: { ascending: boolean; by: AssignmentSort };
   /** Only those on one of these topics; none keeps all. */
@@ -3393,6 +3417,7 @@ export const useAssignments = (
             dir: params.sort ? (params.sort.ascending ? 'asc' : 'desc') : '',
             done: String(params.done),
             kind: params.kind,
+            pending: params.pending ? 'true' : undefined,
             sort: params.sort?.by,
             topic: params.topics,
           },
@@ -3749,17 +3774,23 @@ export const deleteAssignmentDrawing = (attemptId: string, partId: string) =>
 
 /** Files › Canvas: the caller's marked drawings, newest first. Lazy, like the
  * Trash tab; secondary, so it renders its own error state. */
-export const useMarkedDrawings = (enabled: boolean) =>
+export const useMarkedDrawings = (
+  enabled: boolean,
+  filter: ListFilterParams = {}
+) =>
   useInfiniteQuery({
     enabled,
     getNextPageParam: (last: MarkedDrawings) => last.nextCursor || undefined,
     initialPageParam: '',
     meta: { errorBoundary: false },
-    queryFn: ({ pageParam }: { pageParam: string }) =>
-      api.get<MarkedDrawings>(
-        `/drawings${pageParam ? `?${new URLSearchParams({ cursor: pageParam })}` : ''}`
-      ),
-    queryKey: qk.drawings,
+    queryFn: ({ pageParam }: { pageParam: string }) => {
+      const params = new URLSearchParams();
+      setListFilter(params, filter);
+      if (pageParam) params.set('cursor', pageParam);
+      const query = params.toString();
+      return api.get<MarkedDrawings>(`/drawings${query ? `?${query}` : ''}`);
+    },
+    queryKey: [...qk.drawings, filter],
   });
 
 function invalidateAfterDrawingDelete(qc: QueryClient, ids: string[] | null) {

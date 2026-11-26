@@ -630,7 +630,7 @@ when its quiz is deleted for good, an assignment's with the assignment; a leavin
 member keeps their unmarked boards and loses the marked ones.
 
 Files › Canvas (`CanvasTab`, mocks S2 and S3) lists the payer's drawings whose
-parts are marked (`GET /api/drawings`), named by the quiz with no score; the
+parts are marked (`GET /api/drawings`), named by the quiz with no score; the row or card opens the drawing's own board read only (the full-screen board, its question named in the corner), its ⋮ holds only Delete, and the Files toolbar filters it by Location and Workspace (`location`, `workspaces`; the response's `count` stays every drawing's, as Delete all deletes them all; Epo 2026-11-26); the
 payer deletes a practice one (`DELETE /api/drawings/{id}`) or every practice one
 (`DELETE /api/drawings`, the response's `deletable` counting them), the marks
 staying, and the result then says "Drawing deleted". An assignment's drawing has

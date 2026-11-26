@@ -78,6 +78,45 @@ var itemLocations = map[string]string{
 	"standalone": `u.workspace_id IS NULL`,
 }
 
+// ListFilter is the Files page's Kind, Location and Workspace filters for its
+// Trash and Canvas tabs; empty slices mean no filter.
+type ListFilter struct {
+	Kinds        []string
+	WorkspaceIDs []string
+	// Locations holds "workspace" and "standalone".
+	Locations []string
+}
+
+// where appends f's arguments to args and returns its " AND ..." clause over
+// the kind and workspace id columns given (a standalone row's id is NULL).
+// kind is "" where the list has no kinds.
+func (f ListFilter) where(args *[]any, kind, workspaceID string) (string, error) {
+	clause := ""
+	if len(f.Kinds) > 0 && kind != "" {
+		*args = append(*args, f.Kinds)
+		clause += fmt.Sprintf(` AND %s = ANY($%d::text[])`, kind, len(*args))
+	}
+	if len(f.WorkspaceIDs) > 0 {
+		*args = append(*args, f.WorkspaceIDs)
+		clause += fmt.Sprintf(` AND %s = ANY($%d::text[])`, workspaceID, len(*args))
+	}
+	if len(f.Locations) > 0 {
+		preds := make([]string, 0, len(f.Locations))
+		for _, location := range f.Locations {
+			switch location {
+			case "workspace":
+				preds = append(preds, workspaceID+` IS NOT NULL`)
+			case "standalone":
+				preds = append(preds, workspaceID+` IS NULL`)
+			default:
+				return "", fmt.Errorf("unknown list location %q", location)
+			}
+		}
+		clause += ` AND (` + strings.Join(preds, " OR ") + `)`
+	}
+	return clause, nil
+}
+
 // itemUnionSQL is the four tables as one, for the caller $1. All files reads
 // the caller's own rows and its workspaces' others' rows as separate branches,
 // each on its own index (TestItemsCost, 2026-11-09).

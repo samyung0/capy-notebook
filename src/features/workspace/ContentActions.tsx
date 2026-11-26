@@ -93,7 +93,6 @@ export function ContentActions({
   beforeDeleteItems = [],
   menuAlign,
   menuTrigger,
-  menuTriggerIcon,
   hoverIconContainerClassName,
   onDeleted,
   onMove,
@@ -132,7 +131,6 @@ export function ContentActions({
   beforeDeleteItems?: MenuItem[];
   menuAlign?: MenuProps['align'];
   menuTrigger?: ReactNode;
-  menuTriggerIcon?: MenuProps['triggerIcon'];
   hoverIconContainerClassName?: string;
   onDeleted?: () => void;
   onMove?: (topicId: string | null) => void;
@@ -339,12 +337,7 @@ export function ContentActions({
         />
       )}
       {display === 'menu' && (
-        <Menu
-          align={menuAlign}
-          items={items}
-          trigger={menuTrigger}
-          triggerIcon={menuTriggerIcon}
-        />
+        <Menu align={menuAlign} items={items} trigger={menuTrigger} />
       )}
 
       {content && (

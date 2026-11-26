@@ -4,9 +4,22 @@ import type { ReactNode } from 'react';
 import { qk } from '@/api/client';
 import type { Assignment, FileKind, MaterialKind } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { assignmentsLink, attemptLink } from '../studyRoutes';
+
+/** "4 submissions to grade": a graded Assignment's submissions with no
+ * grade (Epo 2026-11-26). */
+export const submissionsText = (count: number) =>
+  count === 1
+    ? m.todo_submissions_waiting_one()
+    : m.todo_submissions_waiting({ count });
+
+/** Only submissions to grade wait on this approval row, no answers (a graded
+ * Assignment's). */
+export const gradesOnly = (a: Assignment) =>
+  !a.manage?.toApprove && (a.manage?.toGrade ?? 0) > 0;
 
 /** A chip naming a quiz: the assignment's quill, tinted (Epo 2026-11-03). */
 export function WorkChip({ title }: { title: string }) {

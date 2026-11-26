@@ -126,8 +126,10 @@ func (a *api) deleteAssignmentDrawing(ctx context.Context, in *assignmentDrawing
 }
 
 type drawingListInput struct {
-	Limit  int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
-	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
+	Workspaces string `query:"workspaces" doc:"Comma-separated workspace ids of the drawings' quizzes"`
+	Location   string `query:"location" doc:"Comma-separated locations: workspace, standalone"`
+	Limit      int    `query:"limit" minimum:"1" maximum:"100" default:"50"`
+	Cursor     string `query:"cursor" doc:"Opaque cursor from the previous page"`
 }
 
 type drawingListOutput struct {
@@ -135,7 +137,11 @@ type drawingListOutput struct {
 }
 
 func (a *api) listDrawings(ctx context.Context, in *drawingListInput) (*drawingListOutput, error) {
-	page, err := a.s.ListMarkedDrawings(ctx, userID(ctx), in.Cursor, in.Limit)
+	filter, err := listFilter("", in.Workspaces, in.Location)
+	if err != nil {
+		return nil, err
+	}
+	page, err := a.s.ListMarkedDrawings(ctx, userID(ctx), filter, in.Cursor, in.Limit)
 	if err != nil {
 		return nil, hErr(err)
 	}

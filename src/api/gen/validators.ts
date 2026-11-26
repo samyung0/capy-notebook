@@ -549,7 +549,9 @@ export const GetAssignmentResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({
@@ -685,7 +687,9 @@ export const UpdateAssignmentResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({
@@ -797,7 +801,9 @@ export const SetAssignmentClosedResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({
@@ -988,7 +994,9 @@ export const ChangeAssignmentPaperFileResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({
@@ -1079,7 +1087,9 @@ export const PublishAssignmentResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({
@@ -1170,7 +1180,9 @@ export const ReleaseAssignmentGradesResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({
@@ -1338,7 +1350,9 @@ export const RepublishAssignmentResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({
@@ -2909,6 +2923,8 @@ export const listDrawingsQueryLimitMax = 100;
 
 
 export const ListDrawingsQueryParams = zod.object({
+  "workspaces": zod.string().optional().describe('Comma-separated workspace ids of the drawings\' quizzes'),
+  "location": zod.string().optional().describe('Comma-separated locations: workspace, standalone'),
   "limit": zod.int().min(1).max(listDrawingsQueryLimitMax).default(listDrawingsQueryLimitDefault),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
@@ -4297,7 +4313,9 @@ export const MakeFileGradedQuizResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({
@@ -7975,7 +7993,9 @@ export const CopyQuizToGradedQuizResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({
@@ -8815,7 +8835,9 @@ export const GetTodoResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({
@@ -8920,7 +8942,9 @@ export const GetTodoDoneResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({
@@ -9033,6 +9057,9 @@ export const listTrashQueryLimitMax = 100;
 
 export const ListTrashQueryParams = zod.object({
   "workspaceId": zod.string().optional().describe('Limit to one owned workspace; empty spans every owned workspace and standalone materials'),
+  "kind": zod.string().optional().describe('Comma-separated kinds: file kinds and block kinds (note, quiz, flashcards, mindmap, diagram, canvas)'),
+  "workspaces": zod.string().optional().describe('Comma-separated workspace ids the rows sit in (the Files page\'s Workspace filter)'),
+  "location": zod.string().optional().describe('Comma-separated locations: workspace, standalone'),
   "limit": zod.int().min(1).max(listTrashQueryLimitMax).default(listTrashQueryLimitDefault),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
@@ -9635,6 +9662,7 @@ export const ListAssignmentsParams = zod.object({
 export const listAssignmentsQueryDirDefault = `asc`;
 
 export const ListAssignmentsQueryParams = zod.object({
+  "pending": zod.boolean().optional().describe('Staff: only what waits on them, open or closed: answers to mark, submissions to grade, grades to release'),
   "closed": zod.boolean().optional().describe('Keep the closed ones'),
   "done": zod.boolean().optional().describe('Keep the ones the caller has done'),
   "topic": zod.string().optional().describe('Comma-separated topic ids: only those on one of them'),
@@ -9686,7 +9714,9 @@ export const ListAssignmentsResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({
@@ -9825,7 +9855,9 @@ export const CreateAssignmentResponse = zod.object({
   "showAnswers": zod.enum(['closed', 'submitted', 'never']),
   "showGrades": zod.enum(['automatic', 'manual']),
   "shuffle": zod.boolean(),
-  "toApprove": zod.int()
+  "toApprove": zod.int(),
+  "toGrade": zod.int(),
+  "toRelease": zod.boolean()
 }).optional(),
   "marks": zod.number(),
   "mine": zod.object({

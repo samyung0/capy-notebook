@@ -15,6 +15,7 @@ import {
 } from '@/features/home/RecentItemsCard';
 import { mergeRecentItems, type RecentItem } from '@/features/home/recentItems';
 import { TodoSection } from '@/features/study/assignments/TodoSection';
+import { ToGradeSection } from '@/features/study/assignments/ToGradeSection';
 import { ContinueCards } from '@/features/study/ContinueCards';
 import { studyView } from '@/features/study/practice/studyView';
 import { assignmentsLink } from '@/features/study/studyRoutes';
@@ -109,10 +110,14 @@ export function WorkspaceDashboard({
       </header>
       <AccountStatusBanner />
       {practises && <ContinueCards workspaceId={workspace.id} />}
-      {/* A class's only: nothing is given out in a personal workspace. */}
-      {workspace.kind === 'class' && (
-        <TodoSection manages={manages} workspace={workspace} />
-      )}
+      {/* A class's only: nothing is given out in a personal workspace. Its
+          owner and editors get what waits on them to grade (Epo 2026-11-26). */}
+      {workspace.kind === 'class' &&
+        (manages ? (
+          <ToGradeSection workspaceId={workspace.id} />
+        ) : (
+          <TodoSection workspace={workspace} />
+        ))}
       {empty && <WorkspaceEmpty onUpload={canAdd ? onUpload : undefined} />}
       {/* Recent files load as their cards' shapes (Epo 2026-11-12). */}
       {!recent && (

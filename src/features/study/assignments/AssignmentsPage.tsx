@@ -464,7 +464,7 @@ function MineStatus({ row }: { row: Assignment }) {
         {marked
           ? m.assignment_submitted()
           : row.allowUploads
-            ? m.todo_handed_in()
+            ? m.todo_submitted()
             : m.assignment_done()}
       </span>
     );
@@ -481,7 +481,7 @@ function MineStatus({ row }: { row: Assignment }) {
       {marked
         ? m.assignment_not_started()
         : row.allowUploads
-          ? m.assignment_not_handed_in()
+          ? m.assignment_not_submitted()
           : m.assignment_not_done()}
     </span>
   );

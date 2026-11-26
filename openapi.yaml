@@ -962,6 +962,11 @@ components:
         toApprove:
           format: int64
           type: integer
+        toGrade:
+          format: int64
+          type: integer
+        toRelease:
+          type: boolean
       required:
         - assignAll
         - assignees
@@ -973,6 +978,8 @@ components:
         - done
         - toApprove
         - notGraded
+        - toGrade
+        - toRelease
         - graded
         - approvalsCheckedOff
       type: object
@@ -12077,6 +12084,20 @@ paths:
     get:
       operationId: listDrawings
       parameters:
+        - description: Comma-separated workspace ids of the drawings' quizzes
+          explode: false
+          in: query
+          name: workspaces
+          schema:
+            description: Comma-separated workspace ids of the drawings' quizzes
+            type: string
+        - description: "Comma-separated locations: workspace, standalone"
+          explode: false
+          in: query
+          name: location
+          schema:
+            description: "Comma-separated locations: workspace, standalone"
+            type: string
         - explode: false
           in: query
           name: limit
@@ -15885,6 +15906,27 @@ paths:
           schema:
             description: Limit to one owned workspace; empty spans every owned workspace and standalone materials
             type: string
+        - description: "Comma-separated kinds: file kinds and block kinds (note, quiz, flashcards, mindmap, diagram, canvas)"
+          explode: false
+          in: query
+          name: kind
+          schema:
+            description: "Comma-separated kinds: file kinds and block kinds (note, quiz, flashcards, mindmap, diagram, canvas)"
+            type: string
+        - description: Comma-separated workspace ids the rows sit in (the Files page's Workspace filter)
+          explode: false
+          in: query
+          name: workspaces
+          schema:
+            description: Comma-separated workspace ids the rows sit in (the Files page's Workspace filter)
+            type: string
+        - description: "Comma-separated locations: workspace, standalone"
+          explode: false
+          in: query
+          name: location
+          schema:
+            description: "Comma-separated locations: workspace, standalone"
+            type: string
         - explode: false
           in: query
           name: limit
@@ -16311,6 +16353,13 @@ paths:
           required: true
           schema:
             type: string
+        - description: "Staff: only what waits on them, open or closed: answers to mark, submissions to grade, grades to release"
+          explode: false
+          in: query
+          name: pending
+          schema:
+            description: "Staff: only what waits on them, open or closed: answers to mark, submissions to grade, grades to release"
+            type: boolean
         - description: Keep the closed ones
           explode: false
           in: query

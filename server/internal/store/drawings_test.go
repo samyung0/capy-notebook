@@ -198,7 +198,7 @@ func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 	if _, err := f.s.SetAssignmentClosed(ctx, f.user, created.ID, true, now.Add(3*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
-	if page, err := f.s.ListMarkedDrawings(ctx, f.viewer, "", 50); err != nil || page.Count != 0 || len(page.Items) != 0 {
+	if page, err := f.s.ListMarkedDrawings(ctx, f.viewer, ListFilter{}, "", 50); err != nil || page.Count != 0 || len(page.Items) != 0 {
 		t.Fatalf("an assignment drawing listed: %+v, err %v", page, err)
 	}
 	graded, given := gradeAttempt(frozenFixture(t), map[string]any{})
@@ -209,7 +209,7 @@ func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, err := f.s.ListMarkedDrawings(ctx, f.viewer, "", 50)
+	page, err := f.s.ListMarkedDrawings(ctx, f.viewer, ListFilter{}, "", 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,6 +218,13 @@ func TestMarkedDrawingsListAndDeleteForTheirPayer(t *testing.T) {
 	}
 	if got := page.Items[0]; got.AttemptID != practice.ID || got.Question != 1 || got.QuizName == "" {
 		t.Fatalf("listed = %+v", got)
+	}
+	// The Canvas tab's Workspace filter keeps the drawings of its quizzes.
+	if page.Items[0].WorkspaceID != "" {
+		inWs, err := f.s.ListMarkedDrawings(ctx, f.viewer, ListFilter{WorkspaceIDs: []string{page.Items[0].WorkspaceID}}, "", 50)
+		if err != nil || len(inWs.Items) != 1 {
+			t.Fatalf("workspace filter = %+v, err %v", inWs.Items, err)
+		}
 	}
 	if n, err := f.s.DeleteMarkedDrawings(ctx, f.viewer, nil); err != nil || n != 1 {
 		t.Fatalf("deleted %d, err %v", n, err)

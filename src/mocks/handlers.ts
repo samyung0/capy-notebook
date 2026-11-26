@@ -2703,11 +2703,27 @@ export const handlers = [
   }),
   /* ---------------- trash (owner-only bin) ---------------- */
   http.get('/api/trash', async ({ request }) => {
-    const { limit, offset, param } = listParams(request.url);
+    const { limit, list: values, offset, param } = listParams(request.url);
     const wsId = param('workspaceId');
+    // Each filter, or none when the URL leaves it out.
+    const list = (name: string) => {
+      const picked = values(name);
+      return picked.length ? picked : undefined;
+    };
+    const kinds = list('kind');
+    const workspaces = list('workspaces');
+    const locations = list('location');
     const items = db.trash
-      .filter((entry) => !wsId || entry.item.workspaceId === wsId)
-      .map((entry) => entry.item);
+      .map((entry) => entry.item)
+      .filter(
+        (item) =>
+          (!wsId || item.workspaceId === wsId) &&
+          (!kinds ||
+            kinds.includes(item.materialKind ?? item.fileKind ?? '')) &&
+          (!workspaces || workspaces.includes(item.workspaceId ?? '')) &&
+          (!locations ||
+            locations.includes(item.workspaceId ? 'workspace' : 'standalone'))
+      );
     return HttpResponse.json({
       items: items.slice(offset, offset + limit),
       nextCursor:

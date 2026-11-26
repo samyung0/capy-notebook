@@ -26,7 +26,7 @@ var ErrPaperClosed = errors.New("this attempt no longer takes files")
 
 // ErrPaperFull: one more file would pass a paper's or hand-in's bounds
 // (fieldlimits.SubmissionFiles, SubmissionFileBytes and SubmissionBytes).
-var ErrPaperFull = errors.New("you can hand in at most 10 files, 10 MB each and 30 MB in all")
+var ErrPaperFull = errors.New("you can submit at most 10 files, 10 MB each and 30 MB in all")
 
 // submissionRoom admits one more file of size bytes beside files files of
 // bytes bytes in a paper or hand-in.

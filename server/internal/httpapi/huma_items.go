@@ -35,13 +35,27 @@ func (a *api) registerItems(api huma.API) {
 		http.StatusOK, a.listItems)
 }
 
-func (a *api) listItems(ctx context.Context, in *itemsListInput) (*itemPageOutput, error) {
-	for _, location := range csv(in.Location) {
-		switch location {
-		case "workspace", "standalone":
-		default:
-			return nil, huma.Error400BadRequest("unsupported location")
+// listFilter reads the Files page's Kind, Workspace and Location filters for
+// its Trash and Canvas tabs.
+func listFilter(kind, workspaces, location string) (store.ListFilter, error) {
+	if err := checkLocations(location); err != nil {
+		return store.ListFilter{}, err
+	}
+	return store.ListFilter{Kinds: csv(kind), WorkspaceIDs: csv(workspaces), Locations: csv(location)}, nil
+}
+
+func checkLocations(location string) error {
+	for _, l := range csv(location) {
+		if l != "workspace" && l != "standalone" {
+			return huma.Error400BadRequest("unsupported location")
 		}
+	}
+	return nil
+}
+
+func (a *api) listItems(ctx context.Context, in *itemsListInput) (*itemPageOutput, error) {
+	if err := checkLocations(in.Location); err != nil {
+		return nil, err
 	}
 	page, err := a.s.ListItems(ctx, userID(ctx), store.ItemListFilter{
 		Kinds: csv(in.Kind), WorkspaceIDs: csv(in.WorkspaceID), Locations: csv(in.Location),

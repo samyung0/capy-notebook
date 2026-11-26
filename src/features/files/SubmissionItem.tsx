@@ -1,7 +1,7 @@
 import { type LinkProps, useNavigate } from '@tanstack/react-router';
 import { memo } from 'react';
 import type { SourceFile, SubmittedPaper } from '@/api/types';
-import { ItemCard, itemMenuIcon } from '@/components/app/ItemCard';
+import { ItemCard } from '@/components/app/ItemCard';
 import type { ListView } from '@/components/app/ListToolbar';
 import { Menu } from '@/components/ui/Menu';
 import { relativeTime } from '@/features/materials/MaterialListCard';
@@ -49,7 +49,6 @@ export const SubmissionItem = memo(function SubmissionItem({
               onClick: () => onDelete(item),
             },
           ]}
-          triggerIcon={itemMenuIcon(view)}
         />
       }
       details={`${item.quizName} · ${formatFileSize(item.bytes)}`}

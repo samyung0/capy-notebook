@@ -2520,7 +2520,11 @@ The Files page shows one list (Epo 2026-11-09, `GET /api/items`,
 `store.ListItems`): to the user a file is any of them, so uploaded files, the
 files it handed in (submitted papers and handed-in files, read only; hand-in files left unhanded once the assignment closes, deletable), its blocks (notes, quizzes,
 flashcard sets) and the images and audio it added to notes page, sort and
-filter together, beside the Canvas and Trash tabs. A narrow `UNION ALL` over
+filter together, beside the Canvas and Trash tabs, which share its toolbar
+and filters (Epo 2026-11-26: Trash's Kind, Location and Workspace, Canvas's
+Location and Workspace, as `kind`, `location` and `workspaces` on `GET
+/api/trash` and `GET /api/drawings` through `store.ListFilter`; `workspaces`
+narrows the caller's own rows and grants nothing). A narrow `UNION ALL` over
 `files`, `materials` and `editor_assets` picks the page by a shared sort value
 (added, name, size, kind or workspace) with a `type:id` tie-break, then each
 row is read whole by its own listing by ids (`ListOwnedFiles`,

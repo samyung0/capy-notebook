@@ -595,8 +595,10 @@ type MarkedDrawings struct {
 // ListMarkedDrawings lists the practice drawings userID pays for whose parts
 // are marked (Epo 2026-11-06), so they can delete them. An assignment's drawing
 // is free and kept as handed in, shown on the assignment's page (Epo
-// 2026-11-25), so it is never listed here.
-func (s *Store) ListMarkedDrawings(ctx context.Context, userID, cursor string, limit int) (MarkedDrawings, error) {
+// 2026-11-25), so it is never listed here. f narrows the page by its quiz's
+// workspace; Count and TotalBytes stay every drawing's, as Delete all
+// deletes them all.
+func (s *Store) ListMarkedDrawings(ctx context.Context, userID string, f ListFilter, cursor string, limit int) (MarkedDrawings, error) {
 	out := MarkedDrawings{Items: []MarkedDrawing{}}
 	if err := s.pool.QueryRow(ctx, `SELECT count(*), COALESCE(sum(d.board_bytes + d.image_bytes + d.picture_bytes), 0)
 		FROM drawings d JOIN attempts t ON t.id = d.attempt_id
@@ -608,14 +610,19 @@ func (s *Store) ListMarkedDrawings(ctx context.Context, userID, cursor string, l
 	if err != nil {
 		return out, err
 	}
+	args := []any{userID, after, afterID, limit + 1}
+	filter, err := f.where(&args, "", "NULLIF(t.workspace_id, '')")
+	if err != nil {
+		return out, err
+	}
 	rows, err := s.pool.Query(ctx, `SELECT d.id, d.attempt_id,
 			COALESCE(t.quiz_name, ''), COALESCE(t.workspace_id, ''), COALESCE(t.workspace_name, ''), m.question, CASE WHEN m.parts > 1 THEN m.part ELSE 0 END,
 			d.board_bytes + d.image_bytes + d.picture_bytes, d.created_at
 		FROM drawings d JOIN attempts t ON t.id = d.attempt_id
 		CROSS JOIN LATERAL (`+markedDrawingSQL+`) m
-		WHERE d.user_id = $1 AND NOT d.assignment AND ($2::timestamptz IS NULL OR (d.created_at, d.id) < ($2, $3))
+		WHERE d.user_id = $1 AND NOT d.assignment AND ($2::timestamptz IS NULL OR (d.created_at, d.id) < ($2, $3))`+filter+`
 		ORDER BY d.created_at DESC, d.id DESC
-		LIMIT $4`, userID, after, afterID, limit+1)
+		LIMIT $4`, args...)
 	if err != nil {
 		return out, err
 	}

@@ -5,6 +5,7 @@ import { ItemCard } from '@/components/app/ItemCard';
 import { ListViewToggle, useListView } from '@/components/app/ListToolbar';
 import type { Thumbnail } from '@/components/app/ThumbnailPanel';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
+import { IconButton } from '@/components/ui/IconButton';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -13,7 +14,8 @@ import { fileLink } from './assignmentPage';
 import { assignmentFileIcon } from './todoParts';
 
 /** One file in a `FileCards` block: a link, or `onOpen` for one opened in
- * place (a submission's viewer); `menu` puts a ⋮ on it. */
+ * place (a submission's viewer); `menu` puts a ⋮ on it, `remove` a trash
+ * button in its place (Epo 2026-11-26: work not yet submitted). */
 export interface FileCard {
   icon: FileIconName;
   key: string;
@@ -23,7 +25,25 @@ export interface FileCard {
   /** The card's foot, the row's end: a submitted file's Feedback given. */
   note?: ReactNode;
   onOpen?: () => void;
+  remove?: { disabled: boolean; onRemove: () => void };
   thumbnail?: Thumbnail;
+}
+
+/** A file's own button at its row's end or its card's corner. */
+function FileActions({ file }: { file: FileCard }) {
+  if (file.remove)
+    return (
+      <IconButton
+        disabled={file.remove.disabled}
+        icon="trash"
+        label={m.assignment_hand_in_remove()}
+        onClick={file.remove.onRemove}
+        size="md"
+        tooltip
+        variant="danger-light"
+      />
+    );
+  return file.menu ? <Menu items={file.menu} /> : null;
 }
 
 /** A titled block of files (Epo 2026-11-19, as the Files page): rows that open
@@ -66,7 +86,9 @@ export function FileCards({
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-[repeat(auto-fill,176px)]">
             {files.map((file) => (
               <ItemCard
-                actions={file.menu && <Menu items={file.menu} />}
+                actions={
+                  (file.menu || file.remove) && <FileActions file={file} />
+                }
                 icon={file.icon}
                 key={file.key}
                 link={file.link}
@@ -87,7 +109,7 @@ export function FileCards({
               >
                 <FileRow file={file} />
                 {file.note}
-                {file.menu && <Menu items={file.menu} />}
+                <FileActions file={file} />
               </li>
             ))}
           </ul>

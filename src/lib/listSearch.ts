@@ -131,8 +131,20 @@ export const ITEM_SORTS: ItemListSort[] = [
 ];
 export const ITEM_SORT_DEFAULT: ItemListSort = 'added';
 
-/** The Files page: the tab, then the list's sort and filters (Canvas and
- * Trash have none). */
+/** Trash's Kind filter: every file kind, then every block that can be
+ * trashed. */
+export const TRASH_KINDS = [
+  ...FILE_KINDS,
+  ...MATERIAL_KINDS,
+  'mindmap',
+  'diagram',
+  'canvas',
+] as const;
+export type TrashKind = (typeof TRASH_KINDS)[number];
+
+/** The Files page: the tab, then the list's sort and filters. Trash filters
+ * by kind, location and workspace, Canvas by location and workspace; neither
+ * sorts (Epo 2026-11-26). */
 export type FilesSearch = {
   tab?: FilesTab;
   /** All files adds every file and block of the caller's own and member
@@ -147,9 +159,19 @@ export type FilesSearch = {
 };
 export function parseFilesSearch(search: Record<string, unknown>): FilesSearch {
   const tab = one(FILES_TABS, search.tab);
-  // Canvas and Trash have no sort or filters; `files`, the default, drops
-  // out of the URL.
-  if (tab && tab !== 'files') return { tab };
+  const where = {
+    location: search.location === 'workspace' ? 'workspace' : undefined,
+    workspace: anyList(search.workspace),
+  } as const;
+  // Canvas and Trash have no sort or owner; `files`, the default, drops out
+  // of the URL.
+  if (tab === 'canvas') return { tab, ...where };
+  if (tab === 'trash')
+    return {
+      kind: csv(listOf<string>(TRASH_KINDS, search.kind)),
+      tab,
+      ...where,
+    };
   return {
     dir: dirOf(search.dir),
     kind: csv(listOf<string>(ITEM_KINDS, search.kind)),
@@ -157,6 +179,16 @@ export function parseFilesSearch(search: Record<string, unknown>): FilesSearch {
     owner: search.owner === 'all' ? 'all' : undefined,
     sort: one(ITEM_SORTS, search.sort),
     workspace: anyList(search.workspace),
+  };
+}
+/** Trash's and Canvas's filters as their lists take them. */
+export function tabFilterParams(search: FilesSearch) {
+  const kinds = listOf<string>(TRASH_KINDS, search.kind);
+  const workspaceIds = commaList(search.workspace);
+  return {
+    ...(kinds.length ? { kinds } : {}),
+    ...(search.location ? { locations: [search.location] } : {}),
+    ...(workspaceIds.length ? { workspaceIds } : {}),
   };
 }
 export function itemListParams(search: FilesSearch): ItemListParams {

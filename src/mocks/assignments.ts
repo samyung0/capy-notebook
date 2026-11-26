@@ -1888,6 +1888,15 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
     ...(row.moreTopicIds ?? []).filter((id) => !topicIds.includes(id))
   );
   const gradesHidden = row.showGrades === 'manual' && !row.gradesReleasedAt;
+  const doneCount = row.kind === 'marked' ? countedRows.length : ticked.length;
+  const waitingAnswers = assigned
+    .flatMap((id) => submissions(row.id, id))
+    .reduce((sum, a) => sum + totals(a.graded).waitingAnswers, 0);
+  // A graded Assignment's submissions with no grade yet (Epo 2026-11-26).
+  const toGrade =
+    row.points === undefined
+      ? 0
+      : ticked.filter((id) => grades.get(row.id)?.get(id) === undefined).length;
   // No mark so far (Epo 2026-11-25): none while an answer waits.
   const noMark = gradesHidden || (myTotals?.waitingAnswers ?? 0) > 0;
   return {
@@ -1969,7 +1978,7 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
                   ? graded.reduce((sum, share) => sum + share, 0) /
                     graded.length
                   : undefined,
-            done: row.kind === 'marked' ? countedRows.length : ticked.length,
+            done: doneCount,
             // Submissions with every mark decided, past members' too.
             graded: [...attempts.values()].filter(
               (a) =>
@@ -1999,9 +2008,17 @@ function toAssignment(row: Row, viewer: Viewer): Assignment {
             showAnswers: row.showAnswers,
             showGrades: row.showGrades,
             shuffle: row.shuffle,
-            toApprove: assigned
-              .flatMap((id) => submissions(row.id, id))
-              .reduce((sum, a) => sum + totals(a.graded).waitingAnswers, 0),
+            toApprove: waitingAnswers,
+            toGrade,
+            // As the server's: held grades with every submission graded, once
+            // closed or everyone it went to has submitted.
+            toRelease:
+              gradesHidden &&
+              (row.kind === 'marked' || row.points !== undefined) &&
+              doneCount > 0 &&
+              waitingAnswers === 0 &&
+              toGrade === 0 &&
+              (isClosed(row) || doneCount >= assigned.length),
           },
         }
       : {}),
@@ -2535,6 +2552,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
             .filter(
               (a) =>
                 (a.manage?.toApprove ?? 0) > 0 ||
+                (a.manage?.toGrade ?? 0) > 0 ||
                 (a.mine && !a.draft && !a.closedAt)
             ),
           manages: viewerIn(ws.id, viewer) === 'owner' && ws.kind === 'class',
@@ -2605,6 +2623,8 @@ export const assignmentHandlers = (viewer: Viewer) => {
         .split(',')
         .filter(Boolean);
       const kind = url.searchParams.get('kind');
+      // Staff's To grade: what waits on them, open or closed.
+      const pending = url.searchParams.get('pending') === 'true';
       const sort = url.searchParams.get('sort');
       const ascending = url.searchParams.get('dir') !== 'desc';
       const offset = Number(url.searchParams.get('cursor') ?? 0);
@@ -2616,8 +2636,16 @@ export const assignmentHandlers = (viewer: Viewer) => {
         .filter((row) => staff || !row.draft)
         .map((row) => toAssignment(row, viewer))
         .filter((a) => a.manage || a.mine)
-        .filter((a) => closed || !a.closed)
-        .filter((a) => done || !a.mine?.done)
+        .filter((a) => closed || pending || !a.closed)
+        .filter((a) => done || pending || !a.mine?.done)
+        .filter(
+          (a) =>
+            !pending ||
+            (!!a.manage &&
+              (a.manage.toApprove > 0 ||
+                a.manage.toGrade > 0 ||
+                a.manage.toRelease))
+        )
         .filter(
           (a) =>
             topics.length === 0 || a.topicIds.some((t) => topics.includes(t))
@@ -2866,7 +2894,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
           return HttpResponse.json(
             {
               code: 'hand_in_final',
-              message: "work you handed in can't be taken back",
+              message: "work you submitted can't be taken back",
             },
             { status: 409 }
           );
@@ -2935,7 +2963,7 @@ export const assignmentHandlers = (viewer: Viewer) => {
       if (handed.some((a) => a.paper))
         return conflict(
           'paper_handed_in',
-          'You have handed in your paper already.'
+          'You have submitted your paper already.'
         );
       if (upload && online > 0)
         return conflict(
@@ -3080,13 +3108,22 @@ export const assignmentHandlers = (viewer: Viewer) => {
         return new HttpResponse(null, { status: 204 });
       }
     ),
-    http.get('/api/drawings', () =>
-      HttpResponse.json({
+    http.get('/api/drawings', ({ request }) => {
+      const query = new URL(request.url).searchParams;
+      const list = (name: string) => query.get(name)?.split(',');
+      const workspaces = list('workspaces');
+      const locations = list('location');
+      return HttpResponse.json({
         count: markedDrawings.length,
-        items: markedDrawings,
+        items: markedDrawings.filter(
+          (d) =>
+            (!workspaces || workspaces.includes(d.workspaceId ?? '')) &&
+            (!locations ||
+              locations.includes(d.workspaceId ? 'workspace' : 'standalone'))
+        ),
         totalBytes: markedDrawings.reduce((sum, d) => sum + d.bytes, 0),
-      })
-    ),
+      });
+    }),
     http.delete('/api/drawings/:id', ({ params }) => {
       const i = markedDrawings.findIndex((d) => d.id === params.id);
       if (i < 0) return gone();

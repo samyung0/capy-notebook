@@ -48,7 +48,7 @@ var (
 	ErrAssignmentNoAttempts = errors.New("no attempts are left on this assignment")
 	// ErrPaperHandedIn: a member hands in one paper, and then answers no more
 	// (Epo 2026-11-25).
-	ErrPaperHandedIn = errors.New("you have handed in your paper already")
+	ErrPaperHandedIn = errors.New("you have submitted your paper already")
 	// ErrAnsweredOnline: a member who answered online uploads no paper; the
 	// first start picks the way for good (Epo 2026-11-25).
 	ErrAnsweredOnline = errors.New("you answer this assignment online")
@@ -176,6 +176,13 @@ type AssignmentManage struct {
 	// 2026-11-08, mock T3).
 	ToApprove int `json:"toApprove"`
 	NotGraded int `json:"notGraded"`
+	// ToGrade counts a graded Assignment's submissions (done, by tick or upload)
+	// with no grade yet (Epo 2026-11-26).
+	ToGrade int `json:"toGrade"`
+	// ToRelease: its grades wait for staff to release them, every submission
+	// graded, and it has closed or everyone it went to has submitted (Epo
+	// 2026-11-26).
+	ToRelease bool `json:"toRelease"`
 	// Graded counts submissions with every mark decided, past members' too: a
 	// graded quiz from a file asks before its total changes while any is
 	// (Epo 2026-11-20), as setPaperMarksTx checks them all.
@@ -239,6 +246,9 @@ type AssignmentList struct {
 // AssignmentSort), open ones still before closed ones; empty is the page's
 // own order.
 type AssignmentListParams struct {
+	// Pending (staff): only what waits on staff, open or closed: answers to
+	// mark, submissions to grade or grades to release (Epo 2026-11-26).
+	Pending   bool
 	Closed    bool
 	Done      bool
 	TopicIDs  []string
@@ -262,6 +272,23 @@ var AssignmentSorts = map[string]string{
 }
 
 // assignmentClosedSQL is assignmentClosedAt's "closed" for assignments a at $now.
+// pendingSQL keeps assignment a when something may wait on its staff (Pending
+// decides from the counts): answers waiting for a mark, a graded Assignment's
+// submission with no grade, or grades held back with something submitted.
+const pendingSQL = `(EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=a.id AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0)
+	OR (a.points IS NOT NULL AND EXISTS (SELECT 1 FROM assignment_done d WHERE d.assignment_id=a.id
+		AND NOT EXISTS (SELECT 1 FROM assignment_grades g WHERE g.assignment_id=a.id AND g.user_id=d.user_id)))
+	OR (a.grades_shown = 'manual' AND a.grades_released_at IS NULL AND (a.kind = 'marked' OR a.points IS NOT NULL)
+		AND (EXISTS (SELECT 1 FROM assignment_done d WHERE d.assignment_id=a.id)
+			OR EXISTS (SELECT 1 FROM attempts t WHERE t.assignment_id=a.id AND t.submitted_at IS NOT NULL))))`
+
+// Pending: something waits on staff (Manage's counts): answers to mark,
+// submissions to grade or grades to release.
+func (a Assignment) Pending() bool {
+	m := a.Manage
+	return m != nil && (m.ToApprove > 0 || m.ToGrade > 0 || m.ToRelease)
+}
+
 func assignmentClosedSQL(now string) string {
 	return `(a.closed_at IS NOT NULL OR (a.no_late AND a.due_at <= ` + now + `))`
 }
@@ -601,31 +628,47 @@ func (s *Store) fillAssignmentManage(ctx context.Context, userID string, ids []s
 			GROUP BY 1),
 		gr AS (SELECT t.assignment_id, count(*)::int AS n FROM attempts t
 			WHERE t.assignment_id = ANY($1) AND t.submitted_at IS NOT NULL AND t.waiting_answers = 0 GROUP BY 1),
+		ug AS (SELECT d.assignment_id, count(*)::int AS n FROM assignment_done d
+			JOIN e ON e.assignment_id=d.assignment_id AND e.user_id=d.user_id
+			JOIN assignments a ON a.id=d.assignment_id AND a.points IS NOT NULL
+			WHERE NOT EXISTS (SELECT 1 FROM assignment_grades g WHERE g.assignment_id=d.assignment_id AND g.user_id=d.user_id)
+			GROUP BY 1),
+		-- Ticked off until another submission waits: answers to mark, or one
+		-- to grade.
 		k AS (SELECT x.assignment_id FROM assignment_todo_checks x
 			WHERE x.assignment_id = ANY($1) AND x.user_id=$2 AND x.approvals
-				AND x.checked_at >= COALESCE((SELECT max(t.submitted_at) FROM attempts t
-					WHERE t.assignment_id=x.assignment_id AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0), '-infinity'))
+				AND x.checked_at >= GREATEST(
+					COALESCE((SELECT max(t.submitted_at) FROM attempts t
+						WHERE t.assignment_id=x.assignment_id AND t.submitted_at IS NOT NULL AND t.waiting_answers > 0), '-infinity'),
+					COALESCE((SELECT max(d.done_at) FROM assignment_done d
+						WHERE d.assignment_id=x.assignment_id AND NOT EXISTS (SELECT 1 FROM assignment_grades g
+							WHERE g.assignment_id=d.assignment_id AND g.user_id=d.user_id)), '-infinity')))
 		SELECT c.assignment_id, c.n, COALESCE(d.n, 0), COALESCE(r.n, 0), v.mean, COALESCE(w.n, 0), COALESCE(u.n, 0),
-			k.assignment_id IS NOT NULL, COALESCE(gr.n, 0)
+			k.assignment_id IS NOT NULL, COALESCE(gr.n, 0), COALESCE(ug.n, 0)
 		FROM c LEFT JOIN d ON d.assignment_id=c.assignment_id LEFT JOIN r ON r.assignment_id=c.assignment_id
 		LEFT JOIN v ON v.assignment_id=c.assignment_id
 		LEFT JOIN w ON w.assignment_id=c.assignment_id LEFT JOIN u ON u.assignment_id=c.assignment_id
-		LEFT JOIN k ON k.assignment_id=c.assignment_id LEFT JOIN gr ON gr.assignment_id=c.assignment_id`, ids, userID)
+		LEFT JOIN k ON k.assignment_id=c.assignment_id LEFT JOIN gr ON gr.assignment_id=c.assignment_id
+		LEFT JOIN ug ON ug.assignment_id=c.assignment_id`, ids, userID)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id string
-		var assigned, ticked, submitted, waiting, ungraded, graded int
+		var assigned, ticked, submitted, waiting, ungraded, graded, toGrade int
 		var mean *float64
 		var checkedOff bool
-		if err := rows.Scan(&id, &assigned, &ticked, &submitted, &mean, &waiting, &ungraded, &checkedOff, &graded); err != nil {
+		if err := rows.Scan(&id, &assigned, &ticked, &submitted, &mean, &waiting, &ungraded, &checkedOff, &graded, &toGrade); err != nil {
 			return err
 		}
-		m := list[at[id]].Manage
+		a := &list[at[id]]
+		m := a.Manage
 		m.Assigned, m.Done, m.ToApprove, m.NotGraded, m.Graded = assigned, ticked+submitted, waiting, ungraded, graded
+		m.ToGrade = toGrade
 		m.ApprovalsCheckedOff = checkedOff
+		m.ToRelease = a.GradesHidden && (a.Kind == "marked" || a.Points != nil) && m.Done > 0 &&
+			waiting == 0 && toGrade == 0 && (a.Closed || m.Done >= assigned)
 		// From the first submission: staff see every member's mark anyway (Epo
 		// 2026-11-13 dropped the five-result minimum here).
 		m.Average = mean
@@ -798,8 +841,9 @@ func (s *Store) ListAssignments(ctx context.Context, userID, wsID string, now ti
 			AND ($6::text[] IS NULL OR m.topic_id = ANY($6) OR EXISTS (SELECT 1 FROM topics t
 				WHERE t.workspace_id=a.workspace_id AND t.id = ANY($6) AND t.id IN (`+questionTopicIDsSQL+`)))
 			AND ($9 = '' OR a.kind = $9)
+			AND (NOT $10 OR `+pendingSQL+`)
 		ORDER BY `+closed+`, `+order+`, a.posted_at DESC, a.id
-		LIMIT $7 OFFSET $8`, wsID, userID, now, p.Closed, p.Done, topics, p.Limit+1, p.Offset, p.Kind)
+		LIMIT $7 OFFSET $8`, wsID, userID, now, p.Closed || p.Pending, p.Done || p.Pending, topics, p.Limit+1, p.Offset, p.Kind, p.Pending && staff)
 	if err != nil {
 		return out, err
 	}
@@ -821,7 +865,7 @@ func (s *Store) ListAssignments(ctx context.Context, userID, wsID string, now ti
 			read[a.ID] = a
 		}
 		for _, id := range ids {
-			if a, ok := read[id]; ok {
+			if a, ok := read[id]; ok && (!p.Pending || a.Pending()) {
 				out.Items = append(out.Items, a)
 			}
 		}

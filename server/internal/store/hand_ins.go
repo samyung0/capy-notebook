@@ -19,7 +19,7 @@ import (
 var ErrHandInClosed = errors.New("this assignment no longer takes your files")
 
 // ErrHandInFinal: work handed in is not taken back (Epo 2026-11-25).
-var ErrHandInFinal = errors.New("work you handed in can't be taken back")
+var ErrHandInFinal = errors.New("work you submitted can't be taken back")
 
 // lockHandInTx takes the assignment's workspace first, as submitting does, and
 // returns it with whether the assignment takes files.
@@ -143,7 +143,7 @@ func (s *Store) setHandedInTx(ctx context.Context, tx pgx.Tx, assignmentID, user
 		return err
 	}
 	if files == 0 {
-		return assignmentInput("add your work before handing it in")
+		return assignmentInput("add your work before submitting it")
 	}
 	return nil
 }

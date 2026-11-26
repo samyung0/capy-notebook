@@ -34,6 +34,8 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 vi.mock('@/api/hooks', () => ({
+  // Staff's To grade reads the class's pending assignments.
+  useAssignments: () => ({ data: { pages: [{ items: page.assignments }] } }),
   useContinue: () => ({ data: [] }),
   useHideTodoDone: () => ({ mutateAsync: vi.fn() }),
   useMe: () => ({ data: { account: page.account } }),
@@ -127,14 +129,14 @@ it('marks a hidden item on its activity row', () => {
 
 // Epo 2026-11-10: a class's To do stays, and the empty state stands where
 // Recent files would.
-it('shows an empty class its To do, then its art, a short title and one button', () => {
+it('shows an empty class its To grade, then its art, a short title and one button', () => {
   page.data = { activity: [], members: 1, ownerName: 'Ms Wong' };
   page.kind = 'class';
   const html = render();
   expect(html).toContain('Biology 101');
-  expect(html).toContain(m.todo_empty());
+  expect(html).toContain(m.to_grade_none());
   expect(html.indexOf(m.workspace_empty_title())).toBeGreaterThan(
-    html.indexOf(m.todo_empty())
+    html.indexOf(m.to_grade_none())
   );
   expect(html).toContain(m.action_add_file());
   expect(html).not.toContain(m.action_upload());
@@ -146,17 +148,20 @@ it('shows an empty class its To do, then its art, a short title and one button',
   page.kind = 'personal';
 });
 
-it("lists a class's To do: answers to approve for its owner, Nothing to do when empty", () => {
+// Epo 2026-11-26: a class's owner gets To grade, one row per assignment with
+// what waits on them, in place of To do.
+it("lists a class's To grade for its owner, Nothing to grade when empty", () => {
   page.data = { activity: [], members: 7, ownerName: 'Ms Wong' };
   page.kind = 'class';
   page.assignments = [];
-  expect(render()).toContain(m.todo_empty());
+  expect(render()).toContain(m.to_grade_none());
   page.assignments = [
     {
       allowUploads: false,
       attempts: 1,
       closed: false,
       draft: false,
+      dueAt: '2026-11-29T08:00:00Z',
       files: [],
       gradesHidden: false,
       id: 'as_1',
@@ -170,11 +175,13 @@ it("lists a class's To do: answers to approve for its owner, Nothing to do when 
         done: 5,
         graded: 0,
         marking: 'ai_approve',
-        notGraded: 0,
+        notGraded: 2,
         showAnswers: 'submitted',
         showGrades: 'automatic',
         shuffle: false,
         toApprove: 5,
+        toGrade: 0,
+        toRelease: false,
       },
       marks: 40,
       noLate: false,
@@ -186,13 +193,18 @@ it("lists a class's To do: answers to approve for its owner, Nothing to do when 
       topicIds: [],
       uploadOnly: false,
       workspaceId: 'ws',
-    } as Assignment,
+    },
   ];
   const html = render();
-  expect(html).toContain(m.dashboard_todo());
+  expect(html).toContain(m.dashboard_to_grade());
+  expect(html).not.toContain(m.dashboard_todo());
   expect(html).toContain('Past paper');
-  // The To do page's table: the row opens its details, with Approve marks.
-  expect(html).toContain(m.todo_answers_waiting({ count: 5 }));
+  // What the AI marked waits for approval, what it could not waits to be marked.
+  expect(html).toContain(
+    `${m.to_grade_ai_marks({ count: 3 })} · ${m.to_grade_answers({ count: 2 })}`
+  );
+  expect(html).toContain(m.to_grade_submitted({ done: 5, total: 6 }));
+  expect(html).toContain('29 Nov 2026');
   page.assignments = [];
   page.kind = 'personal';
 });
@@ -206,10 +218,7 @@ it('has no To do in a personal workspace', () => {
 it('keeps an empty To do, saying Nothing to do', () => {
   const html = renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <TodoSection
-        manages={false}
-        workspace={{ iconId: 'i', id: 'ws', name: 'Notes' }}
-      />
+      <TodoSection workspace={{ iconId: 'i', id: 'ws', name: 'Notes' }} />
     </QueryClientProvider>
   );
   expect(html).toContain(m.todo_empty());

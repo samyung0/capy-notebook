@@ -350,7 +350,7 @@ export function useAssignmentForm({
         )}
       </div>
       {/* C2 (Epo 2026-11-08): Files below Due and Assign to, then the switch:
-          members hand in files with Hand in, graded out of the Points under
+          members submit files with Submit, graded out of the Points under
           it, as a graded quiz's sit with its Submission (Epo 2026-11-21). */}
       {kind === 'unmarked' && (
         <>

@@ -657,7 +657,7 @@ under the workspace's `study` key).
 - **Storage full** (Epo 2026-11-08, added since the mock): a red chip by the
   name while the member's own storage is full (`StorageUsage.Full`; the list
   reads every member's in one query, `membersStorageFull`). Hover or tap says
-  "Their storage is full. They can't upload files, except work they hand in."
+  "Their storage is full. They can't upload files, except work they submit."
   (Q722, submissions charged to no one since Epo 2026-11-25;
   [backend-storage-quota.md](backend-storage-quota.md)).
   It shows to class staff, owner and editor members alike (Q720), on the
@@ -1651,7 +1651,7 @@ extension.
   and Classroom show a hand-in's grade): the member's page has the total and
   percent, then Feedback, the comment staff wrote on its one question in
   Grading (there is no separate feedback field), then Your answers with Open
-  on each file (its signed link; "No files handed in." when there are none)
+  on each file (its signed link; "No files submitted." when there are none)
   and the Question paper with Open (the viewer
   in Preview's dialog) and Download; no question row and no outcome chips.
   While grades are held back it shows the two file sections alone. Staff
@@ -1786,19 +1786,19 @@ with whatever was uploaded, none included, which then counts as handed in.
 
 **Handing in files** (Epo 2026-11-08, migration 0162, mocks C2, S3, T2): the
 same switch on an Unmarked assignment (C2: Files below Due and Assign to, then
-the switch) turns Mark as done into Hand in, which the Assignments list and To do
+the switch) turns Mark as done into Submit, which the Assignments list and To do
 then leave to the page (no quick tick). The member's page gets Your work,
 with Add files while it is open; each file is their own standalone upload with
 `handInId` (`files.hand_in_assignment_id`, in `submission_position` order),
-stored with no parse and never read or marked. Hand in needs a file, waits
-while one uploads (as Submit does), and ticks the assignment
-(`assignment_done`), the meta line then saying Handed in on its date. Hand in
-asks first ("Hand in your work?", the file count, "You can't change it after
+stored with no parse and never read or marked. Submit needs a file, waits
+while one uploads (as a quiz's Submit does), and ticks the assignment
+(`assignment_done`), the meta line then saying Submitted on its date. Submit
+asks first ("Submit your work?", the file count, "You can't change it after
 this.") and is final (Epo 2026-11-25): there is no Undo, and Your work then has
 no Add files and no file menus. Hand-in files are charged to no one and take at
 most 10 files, 10 MB each and 30 MB in all, the same on every plan (a paper's
 bounds), checked again after images compress. The report's chip reads
-"N of M handed in". **Grading** (`tab=grading`, `GradingTab.tsx`, mock A after
+"N of M submitted". **Grading** (`tab=grading`, `GradingTab.tsx`, mock A after
 Google Classroom's grading tool) is the one members tab of an Assignment taking
 files (Epo 2026-11-25: its separate Responses list showed the same, so it went;
 a link to `tab=responses` lands here), named Responses when it is not graded,
@@ -1891,8 +1891,11 @@ own head (the member's name, the score at the right). Under the head a line
 stands where the report has its tabs. Files, a file quiz's Question paper and
 the member's Your work are one block (`FileCards` in `AssignmentFiles.tsx`):
 the Files page's cards or rows with its list and grid toggle; a submitted file
-opens in place, with a ⋮ holding Open and, while the work takes changes,
-Remove; the question paper's ⋮ holds Open and Download. A file quiz's comment
+opens in place on a click of its row or card, and while the work takes changes
+has a trash button where a ⋮ would be, no menu (Epo 2026-11-26; a running
+upload's list the same); the question paper's ⋮ holds Open and Download. The
+member's action reads Submit, its confirm "Submit your work?" (Epo 2026-11-26,
+was Hand in); the statuses still read Handed in. A file quiz's comment
 sits under the numbers with no Feedback label. Submitted files have no
 thumbnail (stored with no ingest), so their cards show the file's kind; staff's
 Grading keeps its rows. A comment written inside a submitted file shows only
@@ -2218,13 +2221,31 @@ live in Google Tasks, outside it); Canvas lets a student add a planner note, whi
 Capy has no counterpart for. What a class gave out still hides while the
 workspace is personal.
 
-A class's Dashboard To do section stays with nothing in it (Epo 2026-11-10:
-always show, and nothing is hidden that he did not ask to hide): its heading and
-the To do page's "Nothing to do", with no button, since members get what staff
-give out and staff's is mostly approving marks (as Canvas's instructor To Do and
+A class's Dashboard To do section is its members' (`TodoSection`) and stays with
+nothing in it (Epo 2026-11-10: always show, and nothing is hidden that he did
+not ask to hide): its heading and the To do page's "Nothing to do", with no
+button, since members get what staff give out (as Canvas's instructor To Do and
 Google Classroom's To review create nothing). A workspace with no files shows it
 too, above its empty state. Staff's Assignments page (`ListAssignments`) lists
 assignments only.
+
+Its owner and editors get **To grade** there instead (Epo 2026-11-26, mock
+JUgZAmfV9KSiZb4JV8ZqLn A, `ToGradeSection`): one row per assignment with
+something waiting on staff, open or closed, on the Assignments page's table
+(`Th`, `Td`) and narrow rows (`ListRow`), the row itself opening its Grading
+tab. Columns: the assignment (a quiz by its chip), Pending, Submitted ("5 of
+18") and Due (the date alone, "20 Nov 2026", closed or not). Pending joins what
+waits: AI marks to approve (`toApprove - notGraded` under `ai_approve`),
+answers to mark (the rest of `toApprove`), submissions to grade (`toGrade`: a
+graded Assignment's submissions, done by tick or upload, with no grade) and
+Grades not released (`toRelease`: Manual grades held, every submission graded,
+and it has closed or everyone it went to submitted; Claude's reading of when
+release is due). It reads `GET /api/workspaces/{id}/assignments?pending=true`
+(`AssignmentListParams.Pending`, `pendingSQL` then `Assignment.Pending`), which
+To do's stream event refreshes. With nothing waiting it says Nothing to grade.
+The account To do keeps answers waiting and adds submissions to grade on the
+same row ("Grade submissions on Osmosis lab write-up", "2 submissions to
+grade"); grades to release stay off it.
 
 A class holds at most 500 assignments, 100 of them open
 (`row_caps.go`, 409 `assignment_limit` and `assignment_open_limit`, shown in the

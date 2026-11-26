@@ -16,7 +16,11 @@ export const isPlainTask = (a: Assignment) =>
  * not. `approvedOff` holds the answers ticked off until more come in. */
 export function todoRows(items: Assignment[]) {
   const mine = items.filter((a) => a.mine && !a.draft && !a.closedAt);
-  const waiting = items.filter((a) => (a.manage?.toApprove ?? 0) > 0);
+  // Answers to mark, or a graded Assignment's submissions to grade (Epo
+  // 2026-11-26).
+  const waiting = items.filter(
+    (a) => (a.manage?.toApprove ?? 0) > 0 || (a.manage?.toGrade ?? 0) > 0
+  );
   return {
     approvedOff: waiting.filter((a) => a.manage?.approvalsCheckedOff),
     done: mine.filter(isTicked),

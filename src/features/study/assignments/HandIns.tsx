@@ -15,7 +15,7 @@ import type {
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
-import { Menu } from '@/components/ui/Menu';
+import { IconButton } from '@/components/ui/IconButton';
 import { userToast } from '@/components/ui/userToast';
 import { formatPoints } from '@/features/quizzes/grade';
 import { m } from '@/i18n';
@@ -108,9 +108,10 @@ export function YourWork({
 }
 
 /** A submission's files as `FileCards` (Epo 2026-11-25, mock
- * NgtaKfyZp9yk2uh9Ysxhhi): each opens in place, with a ⋮ holding Open and,
- * while the work takes changes, Remove. They have no thumbnails: they are
- * stored with no ingest, so the card shows the file's kind. */
+ * NgtaKfyZp9yk2uh9Ysxhhi): each opens in place on a click, and while the work
+ * takes changes has a trash button, no ⋮ (Epo 2026-11-26). They have no
+ * thumbnails: they are stored with no ingest, so the card shows the file's
+ * kind. */
 export function paperFileCards(
   files: readonly PaperFile[],
   onOpen: (file: PaperFile) => void,
@@ -119,20 +120,6 @@ export function paperFileCards(
   return files.map((file) => ({
     icon: iconOf(file),
     key: file.id,
-    menu: removal && [
-      {
-        icon: 'navigationForward',
-        label: m.assignment_open(),
-        onClick: () => onOpen(file),
-      },
-      {
-        danger: true,
-        disabled: removal.removing,
-        icon: 'trash',
-        label: m.assignment_hand_in_remove(),
-        onClick: () => removal.onRemove(file),
-      },
-    ],
     name: file.name,
     // Staff marked it, shown once its member sees the grade (S1, Epo
     // 2026-11-25: no count, no names); its marks show only inside it.
@@ -142,6 +129,10 @@ export function paperFileCards(
       </span>
     ),
     onOpen: () => onOpen(file),
+    remove: removal && {
+      disabled: removal.removing,
+      onRemove: () => removal.onRemove(file),
+    },
     thumbnail: { fileKind: file.kind as FileKind },
   }));
 }
@@ -194,25 +185,37 @@ export function SubmissionFileList({
         <li
           className={cn(
             'flex min-h-10 items-center gap-2',
-            !results && 'border-divider border-b'
+            !results && 'border-divider border-b hover:bg-surface-hover-bg'
           )}
           key={file.id}
         >
-          <FileIcon className="size-4 shrink-0" name={iconOf(file)} />
           {results ? (
-            <span className="min-w-0 flex-1 truncate font-semibold">
-              {file.name}
-            </span>
+            <>
+              <FileIcon className="size-4 shrink-0" name={iconOf(file)} />
+              <span className="min-w-0 flex-1 truncate font-semibold">
+                {file.name}
+              </span>
+              <span className="t-meta shrink-0 text-fg-muted">
+                {meta(file)}
+              </span>
+            </>
           ) : (
+            // The whole row opens it, as the Files block's rows (Epo
+            // 2026-11-26).
             <button
-              className="min-w-0 flex-1 truncate text-left font-semibold outline-none focus-visible:ring-2 focus-visible:ring-action"
+              className="flex min-h-10 min-w-0 flex-1 items-center gap-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
               onClick={() => onOpen(file)}
               type="button"
             >
-              {file.name}
+              <FileIcon className="size-4 shrink-0" name={iconOf(file)} />
+              <span className="min-w-0 flex-1 truncate font-semibold">
+                {file.name}
+              </span>
+              <span className="t-meta shrink-0 text-fg-muted">
+                {meta(file)}
+              </span>
             </button>
           )}
-          <span className="t-meta shrink-0 text-fg-muted">{meta(file)}</span>
           {results && (
             <Button
               aria-label={m.assignment_open_named({ name: file.name })}
@@ -224,21 +227,14 @@ export function SubmissionFileList({
             </Button>
           )}
           {onRemove && (
-            <Menu
-              items={[
-                {
-                  icon: 'navigationForward',
-                  label: m.assignment_open(),
-                  onClick: () => onOpen(file),
-                },
-                {
-                  danger: true,
-                  disabled: removing,
-                  icon: 'trash',
-                  label: m.assignment_hand_in_remove(),
-                  onClick: () => onRemove(file),
-                },
-              ]}
+            <IconButton
+              disabled={removing}
+              icon="trash"
+              label={m.assignment_hand_in_remove()}
+              onClick={() => onRemove(file)}
+              size="md"
+              tooltip
+              variant="danger-light"
             />
           )}
         </li>

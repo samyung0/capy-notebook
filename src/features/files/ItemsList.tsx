@@ -1,7 +1,5 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { useMediaQuery } from 'usehooks-ts';
 import {
   useDeleteEditorAsset,
   useDeleteOwnedFile,
@@ -41,6 +39,7 @@ import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { EmbedItem } from '@/features/files/EmbedItem';
 import { canDeleteFile, FileItem } from '@/features/files/FileItem';
 import { fileKindLabel } from '@/features/files/fileKindLabel';
+import { useHeaderAction } from '@/features/files/headerAction';
 import {
   clearOnBlank,
   SelectionAction,
@@ -150,7 +149,6 @@ export function ItemsList({
   onViewChange: (view: ListView) => void;
   onBusyChange: (busy: boolean) => void;
 }) {
-  const phone = !useMediaQuery('(min-width: 640px)');
   const sorts: SortOption<ItemListSort>[] = [
     { icon: 'clock', label: m.files_sort_newest(), value: 'added' },
     { icon: 'pencil', label: m.files_sort_name(), value: 'name' },
@@ -258,13 +256,13 @@ export function ItemsList({
       {m.action_add_file()}
     </Button>
   );
-  const actionsInHeader = phone && !!headerSlot;
+  const header = useHeaderAction(headerSlot, actions);
 
   return (
     <>
-      {actionsInHeader && createPortal(actions, headerSlot)}
+      {header.portal}
       <ListToolbar
-        action={actionsInHeader ? undefined : actions}
+        action={header.toolbarAction}
         filters={[
           {
             defaultValue: 'mine',

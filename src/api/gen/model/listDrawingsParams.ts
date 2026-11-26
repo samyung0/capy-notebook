@@ -7,6 +7,14 @@
 
 export type ListDrawingsParams = {
 /**
+ * Comma-separated workspace ids of the drawings' quizzes
+ */
+workspaces?: string;
+/**
+ * Comma-separated locations: workspace, standalone
+ */
+location?: string;
+/**
  * @minimum 1
  * @maximum 100
  */

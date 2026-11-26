@@ -12,8 +12,8 @@ import { type TodoTableSection, todoRows, todoSections } from './todoRows';
 
 /** One class's To do, as the To do page's table (Epo 2026-11-12): a box on
  * each row, the row opening its details. It is the Dashboard's To do section
- * (boards H1, H2, H2b; Epo 2026-11-03). A member's holds what is assigned to them;
- * staff's holds answers to approve. Nothing is added here (Epo 2026-11-21:
+ * (boards H1, H2, H2b; Epo 2026-11-03) for members: what is assigned to them.
+ * Staff get To grade there instead (ToGradeSection, Epo 2026-11-26). Nothing is added here (Epo 2026-11-21:
  * no tasks for oneself; staff give work out from the Assignments page). In the
  * section, with rows selected, Mark as done (or Mark as not done for done
  * rows) shows. Done rows leave until Show done brings them back, muted. With
@@ -21,10 +21,8 @@ import { type TodoTableSection, todoRows, todoSections } from './todoRows';
  * nothing is hidden that he did not ask to hide). Its rows load as skeletons,
  * and a failed read says so with Retry. */
 export function TodoSection({
-  manages,
   workspace,
 }: {
-  manages: boolean;
   workspace: Pick<Workspace, 'iconId' | 'id' | 'name'>;
 }) {
   // To do's own list (the nav's): what this class holds for the viewer, as
@@ -40,7 +38,7 @@ export function TodoSection({
   const todoWorkspace: TodoWorkspace = {
     iconId: workspace.iconId,
     items,
-    manages,
+    manages: false,
     name: workspace.name,
     workspaceId: workspace.id,
   };

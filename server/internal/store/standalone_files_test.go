@@ -107,12 +107,18 @@ func TestStandaloneFileTrashLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, err := s.ListTrash(ctx, owner, "", 50, "")
+	page, err := s.ListTrash(ctx, owner, "", ListFilter{}, 50, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(page.Items) != 1 || page.Items[0].ID != file.ID || page.Items[0].WorkspaceID != "" || !page.Items[0].CanRestore {
 		t.Fatalf("owner trash = %+v", page.Items)
+	}
+	// The Files page's Trash filters: a standalone file is kept by its kind
+	// and by Standalone.
+	kept, err := s.ListTrash(ctx, owner, "", ListFilter{Kinds: []string{string(file.Kind)}, Locations: []string{"standalone"}}, 50, "")
+	if err != nil || len(kept.Items) != 1 {
+		t.Fatalf("filtered trash = %+v, err %v", kept.Items, err)
 	}
 	episode := trashed.Effect.TrashEpisodeID
 	if _, err := s.RestoreTrashed(ctx, owner, agenttools.KindSourceFile, file.ID, episode, AgentOperation{}); err != nil {

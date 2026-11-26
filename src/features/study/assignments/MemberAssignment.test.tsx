@@ -8,7 +8,14 @@ getLocale();
 const { document, window } = parseHTML(
   '<!doctype html><html><body><div id="root"></div></body></html>'
 );
-Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
+// The work rows' tooltips (trash) check their anchor is an Element.
+Object.assign(globalThis, {
+  document,
+  Element: window.Element,
+  HTMLElement: window.HTMLElement,
+  IS_REACT_ACT_ENVIRONMENT: true,
+  window,
+});
 
 const start = vi.hoisted(() => vi.fn());
 const navigate = vi.hoisted(() => vi.fn());

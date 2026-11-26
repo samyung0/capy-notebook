@@ -152,14 +152,15 @@ func assignmentError(err error) error {
 const assignmentPage = 50
 
 type assignmentListInput struct {
-	ID     string `path:"id"`
-	Closed bool   `query:"closed" doc:"Keep the closed ones"`
-	Done   bool   `query:"done" doc:"Keep the ones the caller has done"`
-	Topic  string `query:"topic" doc:"Comma-separated topic ids: only those on one of them"`
-	Kind   string `query:"kind" enum:"marked,unmarked" doc:"Only graded quizzes (marked) or only assignments (unmarked); none keeps both"`
-	Sort   string `query:"sort" enum:"title,kind,topic,posted,due" doc:"A column to order by, open ones still first; none is the page's own order"`
-	Dir    string `query:"dir" enum:"asc,desc" default:"asc"`
-	Cursor string `query:"cursor" doc:"Opaque cursor from the previous page"`
+	ID      string `path:"id"`
+	Pending bool   `query:"pending" doc:"Staff: only what waits on them, open or closed: answers to mark, submissions to grade, grades to release"`
+	Closed  bool   `query:"closed" doc:"Keep the closed ones"`
+	Done    bool   `query:"done" doc:"Keep the ones the caller has done"`
+	Topic   string `query:"topic" doc:"Comma-separated topic ids: only those on one of them"`
+	Kind    string `query:"kind" enum:"marked,unmarked" doc:"Only graded quizzes (marked) or only assignments (unmarked); none keeps both"`
+	Sort    string `query:"sort" enum:"title,kind,topic,posted,due" doc:"A column to order by, open ones still first; none is the page's own order"`
+	Dir     string `query:"dir" enum:"asc,desc" default:"asc"`
+	Cursor  string `query:"cursor" doc:"Opaque cursor from the previous page"`
 }
 
 func (a *api) listAssignments(ctx context.Context, in *assignmentListInput) (*assignmentListOutput, error) {
@@ -172,7 +173,7 @@ func (a *api) listAssignments(ctx context.Context, in *assignmentListInput) (*as
 		offset = n
 	}
 	res, err := a.s.ListAssignments(ctx, userID(ctx), in.ID, time.Now(), store.AssignmentListParams{
-		Closed: in.Closed, Done: in.Done, TopicIDs: commaValues(in.Topic), Kind: in.Kind,
+		Pending: in.Pending, Closed: in.Closed, Done: in.Done, TopicIDs: commaValues(in.Topic), Kind: in.Kind,
 		Sort: in.Sort, Ascending: in.Dir == "asc", Offset: offset, Limit: assignmentPage,
 	})
 	if err != nil {

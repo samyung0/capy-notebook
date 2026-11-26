@@ -144,7 +144,7 @@ function Unmarked({ assignment }: { assignment: Assignment }) {
   // handed in or done, and a graded one's grade once given and shown.
   const stats: Stat[] = [
     {
-      label: handIn ? m.assignment_col_handed_in() : m.assignment_done(),
+      label: handIn ? m.assignment_col_submitted_at() : m.assignment_done(),
       value: mine?.doneAt ? dayLabel(mine.doneAt) : '–',
     },
   ];

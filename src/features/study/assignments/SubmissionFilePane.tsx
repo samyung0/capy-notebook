@@ -132,9 +132,11 @@ export function SubmissionFilePane({
                 >
                   {/* Staff mark it with the Files page's PDF tools (Epo
                   2026-11-25, mock B6H1Z7o4byVFBVyCRSUK3B T1); the server
-                  says whether they may (Graded off reads only, T3). */}
+                  says whether they may (Graded off reads only, T3). Its
+                  member gets the marks layer only once there are marks to
+                  read (Feedback given): no empty Marks bar before. */}
                   <PdfView
-                    annotationFile={file}
+                    annotationFile={marking || file.marked ? file : undefined}
                     onRetry={() => void refetch()}
                     url={pdfUrl}
                   />

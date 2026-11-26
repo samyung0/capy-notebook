@@ -185,7 +185,7 @@ func (a *api) internalListTrash(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, store.ErrNotFound)
 		return
 	}
-	page, err := a.s.ListTrash(ctx, userID, workspaceID, 100, "")
+	page, err := a.s.ListTrash(ctx, userID, workspaceID, store.ListFilter{}, 100, "")
 	if err != nil {
 		a.fail(w, err)
 		return

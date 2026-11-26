@@ -27,7 +27,12 @@ import {
   TodoRemoveDialog,
   waitingText,
 } from './TodoDialog';
-import { assignmentFileIcon, WorkChip } from './todoParts';
+import {
+  assignmentFileIcon,
+  gradesOnly,
+  submissionsText,
+  WorkChip,
+} from './todoParts';
 import { isPlainTask, type TodoRow, type TodoTableSection } from './todoRows';
 
 const keyOf = (row: TodoRow) =>
@@ -53,7 +58,9 @@ function Details({ doneTab, row }: { doneTab: boolean; row: TodoRow }) {
   let text: string | null = null;
   let tone: 'warn' | 'ok' | undefined;
   if (row.approval) {
-    text = waitingText(a.manage?.toApprove ?? 0);
+    text = gradesOnly(a)
+      ? submissionsText(a.manage?.toGrade ?? 0)
+      : waitingText(a.manage?.toApprove ?? 0);
     tone = 'warn';
   } else if (done && (!isPlainTask(a) || a.mine?.mark !== undefined)) {
     // A graded Assignment ticked off reads its grade too (Epo 2026-11-14).
@@ -61,9 +68,9 @@ function Details({ doneTab, row }: { doneTab: boolean; row: TodoRow }) {
     tone = a.mine?.mark === undefined ? undefined : 'ok';
   } else if (doneTab && !done) {
     text =
-      a.kind === 'marked' ? m.todo_not_handed_in() : m.assignment_not_done();
+      a.kind === 'marked' ? m.todo_not_submitted() : m.assignment_not_done();
   } else if (!isPlainTask(a) && a.mine?.checkedOff) {
-    text = m.todo_not_handed_in();
+    text = m.todo_not_submitted();
     tone = 'warn';
   } else if (a.mine?.runningAttemptId) {
     text = m.todo_in_progress();
@@ -120,11 +127,19 @@ function DueCell({ a, doneTab }: { a: Assignment; doneTab: boolean }) {
 
 function RowTitle({ row }: { row: TodoRow }) {
   const { a } = row;
-  const chip = <WorkChip title={a.title} />;
+  // A quiz is named by its chip; an Assignment by its title.
+  const chip =
+    a.kind === 'marked' ? (
+      <WorkChip title={a.title} />
+    ) : (
+      <span className="min-w-0 truncate">{a.title}</span>
+    );
   if (row.approval)
     return (
       <>
-        <span className="shrink-0">{m.dashboard_approve_on()}</span>
+        <span className="shrink-0">
+          {gradesOnly(a) ? m.todo_grade_on() : m.dashboard_approve_on()}
+        </span>
         {chip}
       </>
     );

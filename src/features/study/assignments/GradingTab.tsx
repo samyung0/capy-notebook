@@ -106,7 +106,7 @@ export function GradingTab({
         )}
         <div className="grid flex-1 place-items-center p-6">
           <p className="text-center text-fg-muted">
-            {m.assignment_nothing_handed_in({ name: row.name })}
+            {m.assignment_nothing_submitted({ name: row.name })}
           </p>
         </div>
       </div>
@@ -218,7 +218,7 @@ function Count({
     <div className="flex items-center justify-between gap-2 md:pr-2">
       <p className="t-meta pt-3 pb-1.5 font-semibold text-fg-muted md:px-4">
         {assignment.points === undefined
-          ? m.assignment_handed_in_of({
+          ? m.assignment_submitted_of({
               done: members.filter((row) => row.submittedAt).length,
               total,
             })
@@ -248,7 +248,7 @@ function RowLabel({
       ? [dayLabel(row.submittedAt), files.length > 0 && workSummary(files)]
           .filter(Boolean)
           .join(' · ')
-      : m.assignment_not_handed_in()
+      : m.assignment_not_submitted()
     : row.submittedAt
       ? m.assignment_done_on({ date: dayLabel(row.submittedAt) })
       : m.assignment_not_done();
@@ -288,14 +288,16 @@ function Details({
   const files = member.files ?? [];
   return (
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-4 gap-y-2">
-      <dt className="text-fg-muted text-sm">{m.assignment_col_handed_in()}</dt>
+      <dt className="text-fg-muted text-sm">
+        {m.assignment_col_submitted_at()}
+      </dt>
       <dd className="flex min-h-7 flex-wrap items-center gap-2">
         {member.submittedAt ? (
           dayLabel(member.submittedAt)
         ) : (
           <span className="text-fg-muted">
             {allowUploads
-              ? m.assignment_not_handed_in()
+              ? m.assignment_not_submitted()
               : m.assignment_not_done()}
           </span>
         )}

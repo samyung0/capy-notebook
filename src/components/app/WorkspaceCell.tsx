@@ -8,10 +8,12 @@ import { iconUrl } from '@/lib/icon-catalog';
  * icon. `lost`: the viewer no longer has access but still pays for the item
  * (uploader pays): the name shows red behind an error icon. */
 export function WorkspaceCell({
+  className,
   iconId,
   lost = false,
   name,
 }: {
+  className?: string;
   iconId?: string;
   lost?: boolean;
   name: string;
@@ -20,7 +22,8 @@ export function WorkspaceCell({
     <div
       className={cn(
         'flex min-w-0 items-center gap-2.5',
-        lost && 'text-tint-error-fg'
+        lost && 'text-tint-error-fg',
+        className
       )}
       title={lost ? m.files_lost_access() : undefined}
     >

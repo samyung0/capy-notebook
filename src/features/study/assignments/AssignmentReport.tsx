@@ -714,7 +714,7 @@ function AssignmentStats({
       label: marked
         ? m.assignment_col_submitted()
         : assignment.allowUploads
-          ? m.assignment_col_handed_in()
+          ? m.assignment_col_submitted_at()
           : m.assignment_done(),
       value: m.assignment_stat_of({
         done: manage?.done ?? 0,

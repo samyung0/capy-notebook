@@ -31,9 +31,9 @@ test('a member hands in a paper: two files, one removed, submitted', async ({
     .getByRole('region', { name: m.assignment_your_answers() })
     .getByRole('listitem');
   await expect(files).toHaveCount(2, { timeout: 15_000 });
-  await files.first().getByRole('button', { name: m.a11y_open_menu() }).click();
-  await page
-    .getByRole('menuitem', { name: m.assignment_hand_in_remove() })
+  await files
+    .first()
+    .getByRole('button', { name: m.assignment_hand_in_remove() })
     .click();
   await expect(files).toHaveCount(1);
   // Every question reads on its own, with nowhere to type.
