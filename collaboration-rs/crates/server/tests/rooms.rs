@@ -20496,7 +20496,7 @@ async fn a_boards_fold_sends_the_projection_of_its_new_base() {
 }
 
 /// A board whose base was stored before its projection was (migration
-/// 0196, `base_projection` null) projects by a replay of its base and rows
+/// 0200, `base_projection` null) projects by a replay of its base and rows
 /// under the board work permit, as before: an image erased since the base
 /// is left out, which the projection between folds would still name. Fails
 /// if a null projection is read as an empty one.
@@ -20816,7 +20816,7 @@ async fn an_on_demand_projection_of_a_board_answers_once_go_holds_the_stored_ver
 }
 
 /// A board whose base's projection is not its base's is replayed (review
-/// of the fold projection, finding 1): a server older than 0196 that folds
+/// of the fold projection, finding 1): a server older than 0200 that folds
 /// after a rollback rewrites the base and leaves the projection. Here an
 /// image is folded into the base at an unload and the base's projection is
 /// set back to the seed's; on the next open the projection after a stroke's

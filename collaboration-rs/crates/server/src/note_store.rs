@@ -1530,7 +1530,7 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Stored>, S
     // folded, and a store appends the stored version plus one, so the rows
     // left start right after it, or there are none and it is the stored
     // version. One that does not match is not this base's (a fold by a
-    // server older than 0196, after a rollback, rewrote the base and the
+    // server older than 0200, after a rollback, rewrote the base and the
     // rows and left it): the board is replayed, as with none.
     let expected = first.map_or(version, |seq| seq - 1);
     let base_projection: Option<Value> =
@@ -1983,7 +1983,7 @@ mod tests {
     }
 
     /// A base's projection that is not this base's is replayed (review of
-    /// the fold projection, finding 1): a server older than 0196 that folds
+    /// the fold projection, finding 1): a server older than 0200 that folds
     /// after a rollback rewrites the base and the rows and leaves the
     /// projection, which would leave out an image drawn meanwhile. Its
     /// version must be the one just before the first row left, or the

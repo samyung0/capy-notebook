@@ -6695,7 +6695,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       replays the board into a whole document under the board work permit
       (`note_store::fold`); it runs `Model::projection` on that document and stores the
       result beside the new base, in `material_yjs_documents.base_projection` (migration
-      0196), in the fold's transaction, at the version of the last row it folded. A
+      0200), in the fold's transaction, at the version of the last row it folded. A
       canvas's seed is stored with its projection at version 1, which names no image.
       Every board projection (idle, cadence, on demand, the early one above, after a
       fold, the unload's after its fold, the pending scan) is the projection between
@@ -6711,7 +6711,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       the first row left, or the stored version when none is left (a store
       appends the stored version plus one, so a board's rows have no gaps, and
       a fold deletes the ones it took). One that is not (a fold by a server
-      older than 0196, after a rollback, rewrites the base and the rows and
+      older than 0200, after a rollback, rewrites the base and the rows and
       leaves it) is logged (`board base projection stale`) and the board is
       replayed, as with none, until its next fold writes the column. It is
       complete: an image live now was live at the fold, so its list names it, or was
@@ -6729,7 +6729,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       (`projection::Slots`: the read and the send together, the room's, the
       unload's and the pending scan's alike), each reading after the last one's
       answer: a superset read before a fold committed is sent before the exact list
-      read after it. A base stored before 0196 (`base_projection` null) projects by
+      read after it. A base stored before 0200 (`base_projection` null) projects by
       the full replay under the permit, kept to the canvas's assets the same way,
       at every projection until its next fold writes the column. On a board of 3.2 MB with a 256 KiB tail
       of 712 rows, the replay peaked at 11.2 MiB of heap beside the base and rows it

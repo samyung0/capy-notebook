@@ -392,7 +392,7 @@ workspace or not (who holds it:
   `base_indexes`, migration 0195: ids and place hashes only, written at the
   seed and each fold, about 0.6 MB beside a 6,000-stroke, 4.7 MiB pen
   board) are not charged, nor is its base's projection (`base_projection`,
-  migration 0196: the `canvas_board` block naming its images). The seeded
+  migration 0200: the `canvas_board` block naming its images). The seeded
   board is charged
   once its room first seeds it, at its first open (migration 0184, Epo
   2026-11-20): a canvas is made with no Yjs row, and its room seeds the
