@@ -198,18 +198,24 @@ pub async fn project(
 }
 
 /// Projects a material from its durable rows: a room loaded nowhere here,
-/// the cadence, and every quiz projection (a quiz projects from both its
-/// documents, read together at one version).
+/// the cadence, every board projection but a fold's, and every quiz
+/// projection (a quiz projects from both its documents, read together at
+/// one version).
 pub async fn project_durable(app: &Shared, material_id: &str) -> Result<i64, String> {
-    let Some(durable) = note_store::durable(&app.db, material_id)
+    let durable = match note_store::durable(&app.db, material_id)
         .await
         .map_err(|error| error.to_string())?
-    else {
-        return Err("material not found".into());
+    {
+        Some(note_store::Stored::Board(board)) => {
+            return project_between_folds(app, material_id, board).await;
+        }
+        Some(note_store::Stored::Replay(durable)) => durable,
+        None => return Err("material not found".into()),
     };
     let version = durable.version;
-    // A board's replay waits for the board work limit (`work.rs`), after the
-    // read, so no connection is held while it waits.
+    // A board's replay (a base stored before its projection was) waits for
+    // the board work limit (`work.rs`), after the read, so no connection is
+    // held while it waits.
     let permit = match Model::of(&durable.kind) {
         Model::Board => Some(
             app.board_work
@@ -252,6 +258,26 @@ pub async fn project_durable(app: &Shared, material_id: &str) -> Result<i64, Str
         return Err(UNREADABLE_QUIZ.into());
     };
     project(app, material_id, version, &content, asset_ids).await?;
+    Ok(version)
+}
+
+/// A board between folds (Epo 2026-11-26): the projection its last fold
+/// stored with its base, its images joined by the asset ids the rows since
+/// write (`model::board_projection_since`), at the stored version. No board
+/// work permit, no document, no read of the base.
+async fn project_between_folds(
+    app: &Shared,
+    material_id: &str,
+    board: note_store::BoardRows,
+) -> Result<i64, String> {
+    let version = board.version;
+    let content = tokio::task::spawn_blocking(move || {
+        crate::model::board_projection_since(board.base_projection, &board.rows, version)
+            .map(envelope)
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    project(app, material_id, version, &content, None).await?;
     Ok(version)
 }
 

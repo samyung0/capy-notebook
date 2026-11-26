@@ -9,6 +9,7 @@ use notes::catalog::CANVAS_BOARD_MAX;
 use notes::limits::{LimitCode, Metrics};
 use serde_json::{Value, json};
 use yrs::block::ItemContent;
+use yrs::updates::decoder::Decode;
 use yrs::{Any, Map, Out, ReadTxn, StateVector, Transact};
 
 /// The one root a board's editors write: BlockSuite's map of blocks by id.
@@ -260,17 +261,77 @@ fn board_images<T: ReadTxn>(txn: &T) -> Vec<String> {
 
 /// A canvas's one content block at stored version `version`.
 fn board_block<T: ReadTxn>(txn: &T, version: i64) -> Value {
-    let images: Vec<Value> = board_images(txn)
-        .into_iter()
-        .map(|id| json!({ "assetId": id }))
-        .collect();
     json!({
         "type": "canvas_board",
         "id": "board",
         "children": [{ "text": "" }],
         "version": version,
-        "images": images,
+        "images": images_value(board_images(txn)),
     })
+}
+
+/// A `canvas_board` block's `images`.
+fn images_value(ids: impl IntoIterator<Item = String>) -> Value {
+    ids.into_iter().map(|id| json!({ "assetId": id })).collect()
+}
+
+/// A board's projection between folds (Epo 2026-11-26): the projection its
+/// last fold, or its seed, stored with its base (`base_projection`, a fold's
+/// [Model::projection] of the document it built), at stored version
+/// `version`, its `images` joined by every asset id the rows since write
+/// ([any_asset_id]), each once, in byte order as [board_images] lists them.
+/// Nothing else changes between folds: the fold is the one place a board's
+/// document becomes content, so a fuller projection (all of a board's JSON,
+/// for AI support) would come from there too, and a caller needing it
+/// current would ask for a fold or a one-off replay.
+///
+/// Complete: every image the board holds now was live at the fold, so the
+/// fold's list names it, or was written since, so a row holds its id. Yjs
+/// never brings a deleted item back: an Undo, a paste or a copy writes new
+/// items, which a row holds. A block map's lookup reads a value its row
+/// wrote whole, except a string a hand-made client wrote under the key as
+/// text (`ItemContent::String`) and a later deletion split, which the
+/// editor never writes (its maps write `ItemContent::Any`); that client can
+/// remove the image anyway.
+///
+/// What it gives up: an image deleted since the fold stays named, and its
+/// asset charged, until a projection after the next fold. Extras are
+/// harmless: Go matches the ids against the canvas's own assets alone.
+pub fn board_projection_since(
+    mut base: Value,
+    rows: &[Vec<u8>],
+    version: i64,
+) -> Result<Value, String> {
+    let block = base
+        .as_array_mut()
+        .and_then(|value| {
+            value
+                .iter_mut()
+                .find(|block| block["type"] == "canvas_board")
+        })
+        .ok_or("a board's base projection holds no canvas_board block")?;
+    let mut ids = std::collections::BTreeSet::new();
+    for image in block["images"]
+        .as_array()
+        .ok_or("a board's base projection lists no images")?
+    {
+        let id = image["assetId"]
+            .as_str()
+            .ok_or("a board's base projection lists an image without its asset id")?;
+        ids.insert(id.to_owned());
+    }
+    for row in rows {
+        let update = yrs::Update::decode_v1(row).map_err(|error| error.to_string())?;
+        any_asset_id(&update, |id| {
+            if !ids.contains(id) {
+                ids.insert(id.to_owned());
+            }
+            false
+        });
+    }
+    block["images"] = images_value(ids);
+    block["version"] = json!(version);
+    Ok(base)
 }
 
 /// Whether `found` takes one of the strings a struct of `update` holds that
@@ -1085,6 +1146,21 @@ mod tests {
         ydoc::apply(doc, ydoc::decode(update).unwrap()).unwrap();
     }
 
+    /// A projection's asset ids, in its order.
+    fn images(value: &serde_json::Value) -> Vec<&str> {
+        value[0]["images"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|image| image["assetId"].as_str().unwrap())
+            .collect()
+    }
+
+    /// The fold's projection of `doc` at `version`, as stored with the base.
+    fn folded(doc: &yrs::Doc, version: i64) -> serde_json::Value {
+        serde_json::Value::Array(Model::Board.projection(&doc.transact(), version).unwrap())
+    }
+
     /// Image `id` given asset `asset`: an overwrite of its `prop:sourceId`.
     fn renamed(doc: &yrs::Doc, id: &str, asset: &str) {
         let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
@@ -1093,6 +1169,49 @@ mod tests {
             panic!("no block {id}");
         };
         image.insert(&mut txn, "prop:sourceId", asset);
+    }
+
+    /// Between folds a board projects from its base's projection and the
+    /// rows since (Epo 2026-11-26): an image added in a row is named, so is
+    /// the asset an image drawn before is given, and one deleted since the
+    /// fold stays named until the next fold's projection drops it; a name
+    /// that is no asset id is never named, and `version` is the stored
+    /// version asked for. Fails if an id a row writes is left out for Go to
+    /// prune.
+    #[test]
+    fn between_folds_a_board_names_every_asset_its_rows_write() {
+        let (room, _) = board();
+        let writer = tab(&room, 11);
+        applied(
+            &room,
+            &update(&writer, |doc| {
+                add_block(doc, "i1", "affine:image", &[("prop:sourceId", "asset_a")]);
+            }),
+        );
+        let base = folded(&room, 2);
+        assert_eq!(images(&base), ["asset_a"]);
+        let rows = [
+            update(&writer, |doc| {
+                add_block(doc, "i2", "affine:image", &[("prop:sourceId", "asset_b")]);
+            }),
+            update(&writer, |doc| renamed(doc, "i1", "asset_c")),
+            update(&writer, |doc| {
+                let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
+                blocks.remove(&mut doc.transact_mut(), "i2");
+            }),
+            update(&writer, |doc| {
+                add_block(doc, "i3", "affine:image", &[("prop:sourceId", "not an id")]);
+            }),
+        ];
+        let since = super::board_projection_since(base, &rows, 6).unwrap();
+        assert_eq!(images(&since), ["asset_a", "asset_b", "asset_c"]);
+        assert_eq!(since[0]["version"], 6);
+        assert_eq!(since[0]["type"], "canvas_board");
+        // The next fold names what the board holds.
+        for row in &rows {
+            applied(&room, row);
+        }
+        assert_eq!(images(&folded(&room, 6)), ["asset_c"]);
     }
 
     /// An image given another asset is an overwrite of its `prop:sourceId`:
@@ -1115,6 +1234,38 @@ mod tests {
             block, yrs::UpdateBlock::Item(item) if item.parent_sub().is_none()
         )));
         assert!(super::names_asset(&overwrite));
+    }
+
+    /// Undo brings an erased image back as new structs, which a row holds:
+    /// between folds the image is named again, though the fold before named
+    /// it no more, and the update asks for the early projection.
+    #[test]
+    fn an_image_brought_back_by_undo_is_named() {
+        let (room, _) = board();
+        let writer = tab(&room, 11);
+        applied(
+            &room,
+            &update(&writer, |doc| {
+                add_block(doc, "i1", "affine:image", &[("prop:sourceId", "asset_a")]);
+            }),
+        );
+        let blocks = writer.get_or_insert_map(super::BOARD_ROOT);
+        let mut undo = yrs::undo::UndoManager::<()>::with_options(Default::default());
+        undo.expand_scope(&writer, &blocks);
+        applied(
+            &room,
+            &update(&writer, |_| {
+                blocks.remove(&mut writer.transact_mut(), "i1");
+            }),
+        );
+        let base = folded(&room, 3);
+        assert!(images(&base).is_empty());
+        let back = update(&writer, |_| assert!(undo.undo_blocking()));
+        assert!(super::names_asset(&Update::decode_v1(&back).unwrap()));
+        let since = super::board_projection_since(base, std::slice::from_ref(&back), 4).unwrap();
+        assert_eq!(images(&since), ["asset_a"]);
+        applied(&room, &back);
+        assert_eq!(images(&folded(&room, 4)), ["asset_a"]);
     }
 
     /// An update of one GC struct, which carries no bytes: `len` clocks of

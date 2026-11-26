@@ -20287,6 +20287,38 @@ impl Client {
     }
 }
 
+/// The board projection rides on the fold (Epo 2026-11-26): between folds
+/// a board projects from the projection its base was stored with and the
+/// rows since, with no board work permit and no replay, so an image drawn
+/// while another board's load holds the permit (3 s, the debug hook
+/// `capy-it-hold-work`) is named within that hold. Fails if the projection
+/// waits for the permit.
+#[tokio::test]
+async fn a_board_projects_between_folds_while_another_boards_load_holds_the_work() {
+    let Some(env) = env() else { return };
+    let (api, kept) = projections().await;
+    let (server, logs) = start_logged_at(&env, Some(&api), &[]).await;
+    let (user, material, room) = canvas(&env).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    writer.until(6).await.expect("its step 2's ack");
+    let mut held = hold_board_work(&env, server.port, &logs, 1).await;
+    writer
+        .draw("i1", "affine:image", &[("prop:sourceId", "asset_1")])
+        .await;
+    writer.until(6).await.expect("ack");
+    persisted(&mut writer, "r1").await;
+    let (projected, _) = writer.stateless("projection-updated").await;
+    let gauges = board_work(server.port, |(held, _)| held == 1).await;
+    assert_eq!(gauges.0, 1, "the other board still holds the permit");
+    let version = projected["yjsVersion"].as_i64().expect("a version");
+    let sent = kept.at(&material, version).await.expect("a projection");
+    assert_eq!(
+        sent["content"]["value"][0]["images"],
+        serde_json::json!([{ "assetId": "asset_1" }])
+    );
+    board_synced(&mut held).await;
+}
+
 /// A board's fold stores the projection of the document it folded beside
 /// its new base and sends it, at the version of the last row it folded: an
 /// image drawn and then erased is named between folds, and no longer once a
@@ -20336,6 +20368,45 @@ async fn a_boards_fold_sends_the_projection_of_its_new_base() {
         .expect("document")
         .get(0);
     assert_eq!(stored, Some(serde_json::json!([block])));
+}
+
+/// A board whose base was stored before its projection was (migration
+/// 0196, `base_projection` null) projects by a replay of its base and rows
+/// under the board work permit, as before: an image erased since the base
+/// is left out, which the projection between folds would still name. Fails
+/// if a null projection is read as an empty one.
+#[tokio::test]
+async fn a_board_stored_without_its_projection_projects_by_a_replay() {
+    let Some(env) = env() else { return };
+    let (api, kept) = projections().await;
+    let server = start_configured(&env, Some(&api), &[]).await;
+    let (user, material, room) = canvas(&env).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    db(&env)
+        .await
+        .execute(
+            "UPDATE material_yjs_documents SET base_projection=NULL WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("no projection");
+    writer
+        .draw("i1", "affine:image", &[("prop:sourceId", "asset_1")])
+        .await;
+    writer.until(6).await.expect("ack");
+    persisted(&mut writer, "r1").await;
+    writer.stateless("projection-updated").await;
+    writer.erase("i1").await;
+    writer
+        .draw("i2", "affine:image", &[("prop:sourceId", "asset_2")])
+        .await;
+    persisted(&mut writer, "r2").await;
+    let version = stored_version(&env, &material).await;
+    let sent = kept.at(&material, version).await.expect("a projection");
+    assert_eq!(
+        sent["content"]["value"][0]["images"],
+        serde_json::json!([{ "assetId": "asset_2" }])
+    );
 }
 
 /// Contract section 7: no agent tool, command or detailed read reaches a

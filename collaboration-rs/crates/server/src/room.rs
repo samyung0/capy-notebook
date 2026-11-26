@@ -7026,8 +7026,8 @@ impl Room {
     }
 
     async fn start_projection(&mut self) {
-        // A board projects from its durable rows, under the board work
-        // permit (`projection::project_durable`): it holds no document.
+        // A board projects from its durable rows (`projection::project_durable`):
+        // it holds no document.
         let doc = self.document();
         let Kindly::Note(note) = &mut self.kind else {
             return;

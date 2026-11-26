@@ -1445,9 +1445,28 @@ pub struct Durable {
     pub keys: Option<(Vec<u8>, Vec<Vec<u8>>)>,
 }
 
-/// The base and the whole log of a material, for a projection or an edit of
-/// a room not loaded here. `None` when the material has no Yjs row.
-pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, StoreError> {
+/// A board's projection between folds, read without its base: the
+/// projection stored with the base, the rows since, and the stored version
+/// they reach (`model::board_projection_since`).
+pub struct BoardRows {
+    pub version: i64,
+    pub base_projection: Value,
+    pub rows: Vec<Vec<u8>>,
+}
+
+/// What a projection reads of a material's durable state.
+pub enum Stored {
+    /// A board whose base was stored with its projection.
+    Board(BoardRows),
+    /// Every other material, and a board whose base was stored before its
+    /// projection was (`base_projection` null), which a replay projects.
+    Replay(Durable),
+}
+
+/// What a projection from the durable rows reads: a board's base projection
+/// and log, or else the base and the whole log. `None` when the material
+/// has no Yjs row.
+pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Stored>, StoreError> {
     let mut pooled = Pooled::new(pool.get().await?);
     let (client, largest) = pooled.parts();
     // One snapshot: a fold committing between the base and the rows would
@@ -1458,9 +1477,12 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, 
         .read_only(true)
         .start()
         .await?;
+    // A board with its base's projection never reads its base.
     let found = tx
         .query(
-            "SELECT d.room_schema, d.stored_version, d.state, m.kind
+            "SELECT d.stored_version, m.kind, d.base_projection,
+                    CASE WHEN m.kind='canvas' AND d.base_projection IS NOT NULL
+                         THEN NULL ELSE d.state END AS state
              FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
              WHERE d.material_id=$1",
             &[&material_id],
@@ -1470,8 +1492,6 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, 
         return Ok(None);
     };
     let version: i64 = row.get("stored_version");
-    let base: Vec<u8> = row.get("state");
-    largest.note(base.len());
     let kind: String = row.get("kind");
     let log: Vec<Vec<u8>> = rows(&tx, material_id, Some(version))
         .await?
@@ -1479,6 +1499,16 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, 
         .map(|(_, update)| update)
         .collect();
     largest.note(longest(&log));
+    if let (Model::Board, Some(base_projection)) = (Model::of(&kind), row.get("base_projection")) {
+        tx.commit().await?;
+        return Ok(Some(Stored::Board(BoardRows {
+            version,
+            base_projection,
+            rows: log,
+        })));
+    }
+    let base: Vec<u8> = row.get("state");
+    largest.note(base.len());
     let keys = if kind == "quiz" {
         let found = tx
             .query(
@@ -1502,13 +1532,13 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, 
         None
     };
     tx.commit().await?;
-    Ok(Some(Durable {
+    Ok(Some(Stored::Replay(Durable {
         version,
         base,
         rows: log,
         kind,
         keys,
-    }))
+    })))
 }
 
 #[cfg(test)]
@@ -1780,6 +1810,96 @@ mod tests {
         let note = it_note(&pool, "no indexes").await;
         let loaded = load(&pool, &note, 1, Doc::Content).await.unwrap();
         assert!(loaded.indexes.is_none());
+    }
+
+    /// The board projection rides on the fold (Epo 2026-11-26): a board's
+    /// seed is stored with its projection at version 1, naming no image,
+    /// and each fold stores the projection of the document it folded at the
+    /// version of its last row and returns it to send; between folds a
+    /// projection reads that projection and the rows since, never the base,
+    /// and a board stored without one reads its base for a replay. Against
+    /// the rooms tests' Postgres. Fails if the seed or a fold leaves the
+    /// projection out or stores another document's.
+    #[tokio::test]
+    async fn a_boards_base_is_stored_with_its_projection() {
+        let Some(pool) = it_pool() else { return };
+        let block = serde_json::json!({
+            "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
+            "version": 0, "images": [],
+        });
+        let board = it_material(&pool, "canvas", block).await;
+        let loaded = load(&pool, &board, 1, Doc::Content).await.unwrap();
+        let stored = |pool: &Pool| {
+            let (pool, board) = (pool.clone(), board.clone());
+            async move {
+                pool.get()
+                    .await
+                    .unwrap()
+                    .query_one(
+                        "SELECT base_projection FROM material_yjs_documents WHERE material_id=$1",
+                        &[&board],
+                    )
+                    .await
+                    .unwrap()
+                    .get::<_, Option<Value>>(0)
+            }
+        };
+        let seed = serde_json::json!([{
+            "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
+            "version": 1, "images": [],
+        }]);
+        assert_eq!(stored(&pool).await, Some(seed.clone()));
+        // An image drawn by another client, stored as a row.
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(&doc, &loaded.base, &loaded.rows).unwrap();
+        let writer = yrs::Doc::with_options(ydoc::doc_options(7));
+        ydoc::replay(&writer, &state(&doc), &[] as &[&[u8]]).unwrap();
+        let before = writer.transact().state_vector();
+        let blocks = writer.get_or_insert_map("blocks");
+        {
+            let mut txn = writer.transact_mut();
+            let image = yrs::Map::insert(&blocks, &mut txn, "i1", yrs::MapPrelim::default());
+            yrs::Map::insert(&image, &mut txn, "prop:sourceId", "asset_a");
+        }
+        let row = writer.transact().encode_state_as_update_v1(&before);
+        let none = sessions::Unsaved::default();
+        let version = append(&pool, &board, 1, Doc::Content, &row, &[], &none, &[])
+            .await
+            .unwrap();
+        let Some(Stored::Board(between)) = durable(&pool, &board).await.unwrap() else {
+            panic!("a board with its projection reads it");
+        };
+        assert_eq!(
+            (between.version, between.base_projection, between.rows),
+            (version, seed, vec![row])
+        );
+        let folded = fold(&pool, &board, 1, Doc::Content, None, None, None)
+            .await
+            .unwrap()
+            .unwrap();
+        let projection = serde_json::json!([{
+            "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
+            "version": version, "images": [{ "assetId": "asset_a" }],
+        }]);
+        assert_eq!(stored(&pool).await, Some(projection.clone()));
+        assert_eq!(
+            folded.projection,
+            Some((version, crate::projection::envelope(projection)))
+        );
+        // A base stored before its projection was is read for a replay.
+        pool.get()
+            .await
+            .unwrap()
+            .execute(
+                "UPDATE material_yjs_documents SET base_projection=NULL WHERE material_id=$1",
+                &[&board],
+            )
+            .await
+            .unwrap();
+        let Some(Stored::Replay(replay)) = durable(&pool, &board).await.unwrap() else {
+            panic!("a board without its projection is replayed");
+        };
+        assert_eq!(replay.base, stored_indexes_match(&pool, &board).await.0);
     }
 
     /// `text` typed at the start of `doc`'s first block by `client`: the
