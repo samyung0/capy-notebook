@@ -6667,9 +6667,49 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       every projection, so the content changes and the charge is recomputed. Go
       writes the block through `ProjectMaterialContent` with no canvas branch, and
       its asset pruner keeps the images named and trashes the canvas's others. An
-      update that writes a `prop:sourceId` makes the room project after its next
-      store (`names_asset`, `project_soon`), so an image added, pasted or brought back
-      by Undo, whose asset Go had trashed, is served again within seconds.
+      update holding any string shaped like an asset id makes the room project after
+      its next store (`names_asset`, `project_soon`), so an image added, pasted,
+      brought back by Undo or given another asset, whose asset Go had trashed, is
+      served again within seconds. Every struct counts, not only one keyed
+      `prop:sourceId`: an overwrite of a key carries its origin and no key. Most
+      stores that add something now project right after them; the projection between
+      folds is cheap.
+    - **The projection rides on the fold (Epo 2026-11-26).** Every board fold already
+      replays the board into a whole document under the board work permit
+      (`note_store::fold`); it runs `Model::projection` on that document and stores the
+      result beside the new base, in `material_yjs_documents.base_projection` (migration
+      0196), in the fold's transaction, at the version of the last row it folded. Once
+      the fold commits it sends that content to Go at that version: the threshold fold
+      after its board swap is queued (the room's projection then reaches that version,
+      `RoomCmd::FoldProjected`), the unload fold before anything else. A canvas's seed
+      is stored with its projection at version 1, which names no image. Every other
+      board projection (idle, cadence, on demand, the early one above, the pending scan,
+      an unload with nothing to fold) is the projection between folds
+      (`model::board_projection_since`, `projection::project_durable`): the stored
+      `base_projection` with its `images` joined by every string in the rows since that
+      passes the asset id check, each once in byte order, at the stored version. It
+      reads the version, `base_projection` and the rows in one snapshot, never the
+      base, takes no permit and builds no document. It is complete: an image live now
+      was live at the fold, so its list names it, or was written since, so a row holds
+      its id; Yjs never brings a deleted item back (Undo, a paste and a copy write new
+      structs). It gives up exactness: an image deleted since the last fold stays
+      named, and its asset charged, until a projection after the next fold (at 256 KiB
+      or 1,000 rows of log, and at every unload). Go takes a fold's projection only if
+      it has not projected that version yet; when the projection between folds got
+      there first, the next projection at a newer version, built on the new base,
+      drops the image. Extras are harmless: Go matches ids against the canvas's own
+      assets alone. A base stored before 0196 (`base_projection` null) projects by the
+      full replay under the permit, as before, until its next fold writes the column.
+      On a board of 3.2 MB with a 256 KiB tail of 712 rows, the replay peaked at 11.2 MiB
+      of heap beside the base and rows it read, in 82 ms, and the projection between folds
+      at 19 KiB, in 2.4 ms (debug build, `board.rs` test allocator).
+    - **Full JSON later.** Boards are expected to need a full JSON projection, as notes
+      have, for AI support. It would plug in at the fold, the one place a board's
+      document becomes content: the fold computes it from the document it builds anyway
+      and stores it with the base as it stores `base_projection` now. Between folds only
+      `images` and `version` move, so nothing about storage or the projection flow
+      changes; a caller that needs the board's JSON current asks for a fold, or a
+      one-off replay, when it needs it.
     - **Presence (Epo 2026-11-18, "just the same presence events like others").** A
       board's state is a note's event with board fields (`Fields::Board` in
       `presence.rs`, `boardPresence.ts`): `p` the pointer as `[x, y]` in whole board

@@ -387,7 +387,9 @@ workspace or not (who holds it:
   (`base_state_vector` and `base_delete_set`, migration 0193, and
   `base_indexes`, migration 0195: ids and place hashes only, written at the
   seed and each fold, about 0.6 MB beside a 6,000-stroke, 4.7 MiB pen
-  board) are not charged. The seeded board is charged
+  board) are not charged, nor is its base's projection (`base_projection`,
+  migration 0196: the `canvas_board` block naming its images). The seeded
+  board is charged
   once its room first seeds it, at its first open (migration 0184, Epo
   2026-11-20): a canvas is made with no Yjs row, and its room seeds the
   `material_yjs_documents` row on the first open (`load` → `bootstrap` in
@@ -446,10 +448,17 @@ workspace or not (who holds it:
   `lockEditorAssetScopeTx`). The room's projection names the assets the board
   holds in the material's `canvas_board` block, and the pruner trashes an
   image asset no projection names (60 s grace, purged a day later) and
-  restores one named again. A board update that writes an asset id makes the
-  room project after its next store instead of at the idle cadence, so an
-  image deleted and brought back by Undo is served to the others again within
-  seconds. The canvas routes list every ready image asset of the canvas, a
+  restores one named again. Between folds the projection names what the last
+  fold's base held and every asset id written since (Epo 2026-11-26, the
+  projection rides on the fold;
+  [plate-editor](frontend/plate-editor.md#the-boards-tools)), so an image
+  deleted since the last fold stays named, and charged to its uploader, until
+  a projection after the next fold (at 256 KiB or 1,000 rows of log, and at
+  every unload): the fold's own, when Go has not projected its version yet,
+  else the next one at a newer version. A board update that writes a string
+  shaped like an asset id makes the room project after its next store instead
+  of at the idle cadence, so an image deleted and brought back by Undo is
+  served to the others again within seconds. The canvas routes list every ready image asset of the canvas, a
   trashed one included (`ownImageAssetIds`, `CanvasImageAssets`). A full
   storage refuses the upload as it refuses any editor asset. An editor keeps
   paying for its images on a canvas it can no longer open until it deletes
