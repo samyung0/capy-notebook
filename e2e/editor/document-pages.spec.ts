@@ -197,7 +197,8 @@ test('PDF marks draw at once, select and move, take comments and persist', async
     .click();
   const comments = button(m.pdf_comments({ count: '1' }));
   await expect(comments).toHaveAttribute('aria-pressed', 'true');
-  const card = page.getByRole('button', { name: /Membrane width/ });
+  // A card shows its comment as text; collapsed, an icon names it instead.
+  const card = page.locator('button[data-mark]', { hasText: 'Membrane width' });
   await expect(card).toBeVisible();
   await comments.click();
   await expect(card).toHaveCount(0);
@@ -277,13 +278,15 @@ test('PDF marks draw at once, select and move, take comments and persist', async
     page.getByRole('dialog').getByText('Membrane width')
   ).toBeVisible();
   await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
 
   // A placed note moves with Select; a click opens its comment.
   const commentBox = page.getByRole('textbox', { name: m.editor_comment() });
   await button(m.pdf_note()).click();
   const narrow = await pdfPage.boundingBox();
   if (!narrow) throw new Error('PDF page has no bounds');
-  await page.mouse.click(narrow.x + 60, narrow.y + 60);
+  // A blank spot below the marks drawn so far.
+  await page.mouse.click(narrow.x + 60, narrow.y + 330);
   await commentBox.fill('Ribosomes');
   await page
     .getByRole('button', { exact: true, name: m.action_save() })
@@ -298,7 +301,10 @@ test('PDF marks draw at once, select and move, take comments and persist', async
     .poll(async () => (await note.boundingBox())?.x ?? 0)
     .toBeGreaterThan(from.x + 30);
   await expect(commentBox).toHaveCount(0);
-  await note.click();
+  // Marks sit under the text layer; the page finds them where they are.
+  const moved = await note.boundingBox();
+  if (!moved) throw new Error('The note has no bounds');
+  await page.mouse.click(moved.x + moved.width / 2, moved.y + moved.height / 2);
   await expect(commentBox).toHaveValue('Ribosomes');
 });
 
@@ -527,7 +533,9 @@ test('a chat citation opens the PDF, scrolls its box to the middle, then flashes
   expect(Math.abs(again.centerOffset)).toBeLessThan(4);
 });
 
-test('workspace links remember each file and material mode independently', async ({
+// Notes open at their reader's highest mode with no switch, so only files
+// remember one (Epo 2026-11-24 took the PDF's switch too).
+test("workspace links remember each file's mode independently", async ({
   page,
 }) => {
   test.setTimeout(90_000);
@@ -535,42 +543,39 @@ test('workspace links remember each file and material mode independently', async
   await showPanelView(page, m.workspace_tab_files());
   const origin = await page.evaluate(() => performance.timeOrigin);
   const tree = page.locator('[data-workspace-file-tree]');
-  const material = tree.getByRole('link', {
-    exact: true,
-    name: 'Editor matrix note',
-  });
   const file = tree.getByRole('link', {
     exact: true,
     name: 'Organelles cheatsheet.md',
   });
+  const other = tree.getByRole('link', {
+    exact: true,
+    name: 'Cell cycle notes.md',
+  });
   const mode = page
     .getByTestId('content-header')
     .getByRole('button', { name: m.material_mode() });
-  await expect(material).toHaveAttribute(
-    'href',
-    '/workspaces/ws_bio?material=mat_e2e_editor',
-    { timeout: 30_000 }
-  );
-  await material.click();
-  await expect(mode).toHaveAttribute('aria-pressed', 'false');
-  await mode.click();
-  await expect(page).toHaveURL(/mode=edit/);
+  // Each toggle shows once its file, its links and the viewer chunk load,
+  // the reads one after another through the mock's 1 s latency.
   await file.click();
-  // The file's toggle shows once the file, its links and the viewer chunk
-  // load, the two reads one after another through the mock's 1 s latency.
   await expect(mode).toHaveAttribute('aria-pressed', 'false', {
     timeout: 30_000,
   });
   await mode.click();
   await expect(page).toHaveURL(/mode=edit/);
-  await material.click();
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
+  await other.click();
+  await expect(mode).toHaveAttribute('aria-pressed', 'false', {
+    timeout: 30_000,
+  });
+  await file.click();
+  await expect(mode).toHaveAttribute('aria-pressed', 'true', {
+    timeout: 30_000,
+  });
   await mode.click();
   await expect(page).toHaveURL(/mode=view/);
-  await file.click();
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
-  await material.click();
-  await expect(mode).toHaveAttribute('aria-pressed', 'false');
+  await other.click();
+  await expect(mode).toHaveAttribute('aria-pressed', 'false', {
+    timeout: 30_000,
+  });
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(origin);
 
   const currentURL = page.url();
@@ -596,45 +601,36 @@ test('Files page and recent links use saved modes without reloading the app', as
   page,
 }) => {
   test.setTimeout(90_000);
-  await page.addInitScript(() => {
-    for (const key of [
-      'file.f_2',
-      'material.mat_pagination_1',
-      'material.mat_e2e_editor',
-    ]) {
-      localStorage.setItem(`capy.document.mode.${key}`, 'edit');
-    }
-  });
-  await page.goto('/files');
+  await page.addInitScript(() =>
+    localStorage.setItem('capy.document.mode.file.f_2', 'edit')
+  );
+  await page.goto('/workspaces');
   const origin = await page.evaluate(() => performance.timeOrigin);
   const mode = page
     .getByTestId('content-header')
     .getByRole('button', { name: m.material_mode() });
-  await openItem(page, 'Study journal 001');
+  // The markdown samples are newer than f_2 and fill the first Files page.
+  await makeNewest(page, { files: ['f_2'] });
+  await page.getByRole('link', { exact: true, name: m.nav_files() }).click();
+  await openItem(page, 'Organelles cheatsheet.md');
   await expect(mode).toHaveAttribute('aria-pressed', 'true', {
     timeout: 30_000,
   });
-  await makeNewest(page, { files: ['f_2'], materials: ['mat_e2e_editor'] });
-  await page.getByRole('link', { exact: true, name: m.nav_files() }).click();
-  await openItem(page, 'Organelles cheatsheet.md');
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
   // Workspaces, the workspace's card, then its Dashboard's Recent files.
-  const openFromDashboard = async (name: RegExp) => {
-    await page
-      .getByRole('link', { exact: true, name: m.nav_workspaces() })
-      .click();
-    await page
-      .getByRole('link', { name: /Biology 101/ })
-      .first()
-      .click();
-    await page.getByRole('link', { name }).first().click();
-  };
-  await openFromDashboard(/Organelles cheatsheet.md/);
+  await page
+    .getByRole('link', { exact: true, name: m.nav_workspaces() })
+    .click();
+  await page
+    .getByRole('link', { name: /Biology 101/ })
+    .first()
+    .click();
+  await page
+    .getByRole('link', { name: /Organelles cheatsheet.md/ })
+    .first()
+    .click();
   await expect(page).toHaveURL('/workspaces/ws_bio?file=f_2');
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
-  // The workspace rail's Workspaces goes back to the list.
-  await openFromDashboard(/Editor matrix note/);
-  await expect(page).toHaveURL('/workspaces/ws_bio?material=mat_e2e_editor');
-  await expect(mode).toHaveAttribute('aria-pressed', 'true');
+  await expect(mode).toHaveAttribute('aria-pressed', 'true', {
+    timeout: 30_000,
+  });
   expect(await page.evaluate(() => performance.timeOrigin)).toBe(origin);
 });

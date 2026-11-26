@@ -1770,7 +1770,10 @@ with whatever was uploaded, none included, which then counts as handed in.
 - A submitted paper's files stay as handed in for good (Epo 2026-11-25: no
   Delete, as staff may grade any time after the due date) and
   show only on the assignment's own page: charged to no one, they left the
-  Files page (Epo 2026-11-25). A graded quiz from a file skips the read, so its paper is
+  Files page (Epo 2026-11-25). The member's results list them under Your
+  work (`PaperWork` in `AttemptResults.tsx`), a quiz answered on paper as
+  well as a graded quiz from a file, each opening in the submission dialog;
+  staff read them in Grading. A graded quiz from a file skips the read, so its paper is
   stored with no ingest (`unread` at finalize). As a member leaves
   the class, their read papers with nothing waiting and their hand-ins go, as
   their marked drawings do (`dropLeaverSubmissionsTx`, finding 11).

@@ -170,6 +170,9 @@ function HiddenResults({
             ))}
           </ol>
         )}
+        {!assignment.paperFile && attempt.paperFiles.length > 0 && (
+          <PaperWork attempt={attempt} staff={false} />
+        )}
       </div>
     </PracticeFrame>
   );
@@ -331,7 +334,6 @@ function PaperQuizFiles({
   attempt: AssignmentAttempt;
   staff: boolean;
 }) {
-  const [viewing, setViewing] = useState<PaperFile | null>(null);
   const [reading, setReading] = useState(false);
   const paper = questionPaperOf(assignment) ?? null;
   const { data: paperFile } = useFile(paper?.fileId ?? null, {
@@ -379,17 +381,7 @@ function PaperQuizFiles({
       )}
     </FileCards>
   );
-  const work = (
-    <FileCards
-      files={paperFileCards(attempt.paperFiles, setViewing)}
-      title={staff ? m.assignment_answers() : m.assignment_your_work()}
-    >
-      {attempt.paperFiles.length === 0 && (
-        // Submitted with none, or deleted from Files after.
-        <p className="t-meta mt-2 text-fg-muted">{m.assignment_paper_none()}</p>
-      )}
-    </FileCards>
-  );
+  const work = <PaperWork attempt={attempt} staff={staff} />;
   return (
     <>
       {staff ? work : questionPaper}
@@ -403,10 +395,36 @@ function PaperQuizFiles({
           <QuestionPaperView file={paper} named />
         </PreviewDialog>
       )}
+    </>
+  );
+}
+
+/** The files a paper attempt submitted, each opening in the submission
+ * dialog: staff mark them, the member reads them. Submitted work shows on the
+ * assignment's page only (Epo 2026-11-25), so a paper's member reads it here. */
+function PaperWork({
+  attempt,
+  staff,
+}: {
+  attempt: AssignmentAttempt;
+  staff: boolean;
+}) {
+  const [viewing, setViewing] = useState<PaperFile | null>(null);
+  return (
+    <>
+      <FileCards
+        files={paperFileCards(attempt.paperFiles, setViewing)}
+        title={staff ? m.assignment_answers() : m.assignment_your_work()}
+      >
+        {attempt.paperFiles.length === 0 && (
+          <p className="t-meta mt-2 text-fg-muted">
+            {m.assignment_paper_none()}
+          </p>
+        )}
+      </FileCards>
       {viewing && (
         <SubmissionFileDialog
           file={viewing}
-          // A graded quiz: its staff mark every upload; its member reads them.
           marking={staff}
           of={{ attemptId: attempt.id }}
           onClose={() => setViewing(null)}
@@ -658,6 +676,10 @@ function MarkedResults({
               </li>
             ))}
           </ol>
+        )}
+        {/* Staff read a paper's pages in Grading's answers. */}
+        {!paperQuiz && !staff && attempt.paperFiles.length > 0 && (
+          <PaperWork attempt={attempt} staff={false} />
         )}
       </div>
     </PracticeFrame>

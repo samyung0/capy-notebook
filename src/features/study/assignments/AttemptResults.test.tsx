@@ -53,6 +53,7 @@ const attempt = {
   correct: 0,
   gradesHidden: true,
   mark: 0,
+  paperFiles: [],
   questions: [
     {
       id: 'q1',

@@ -312,11 +312,12 @@ test('PDF annotation load toast shows before the PDF loads', async ({
   await expect(canvas).toHaveCount(0);
   releasePdf!();
   await expect(canvas).toBeVisible();
+  // The toast is the one alert: no strip on the PDF repeats it.
   await expect(
     page.getByRole('alert').filter({
       hasText: m.pdf_annotations_failed(),
     })
-  ).toHaveCount(0);
+  ).toHaveCount(1);
   await expect(
     page.getByRole('button', { exact: true, name: m.pdf_pen() })
   ).toBeDisabled();

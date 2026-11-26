@@ -369,7 +369,7 @@ export const workspaces: Workspace[] = [
     name: 'Physics 11',
     privacy: 'private',
     role: 'viewer',
-    sharePath: '/w/ws_phys.Qp7Lm2Xv9RtK4sWn',
+    sharePath: '/w/ws_phys.-XadX8O1bAWPyfY1',
     shareRole: 'viewer',
     tags: [],
     topicCount: 0,

@@ -153,10 +153,13 @@ test.describe('assignments', () => {
       .getByRole('button', { name: m.assignment_submit() })
       .last()
       .click();
-    // The closed part is marked; the open part waits for the owner.
-    await expect(viewerPage.getByText('1 / 1')).toBeVisible();
+    // The open part waits for the owner, so there is no mark yet: it is
+    // being graded (Epo 2026-11-25).
     await expect(
       viewerPage.getByRole('heading', { name: m.assignment_submitted() })
+    ).toBeVisible();
+    await expect(
+      viewerPage.getByText(m.assignment_being_graded())
     ).toBeVisible();
 
     const report = await (

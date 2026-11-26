@@ -26,10 +26,10 @@ async function asScenario(page: Page, scenario: string | null, url: string) {
 }
 
 // The board train's gates found no spec from a member's upload through Submit
-// to staff: two pages handed in show in Approve's whole paper, and once marked
-// and closed the paper lists in the member's Files. Fails if
+// to staff: two pages submitted show in Approve's whole paper, and once marked
+// and closed the paper lists on the member's assignment page. Fails if
 // Submit stops carrying the paper with the attempt.
-test("a paper of two pages reaches Approve and the member's Files", async ({
+test("a paper of two pages reaches Approve and the member's assignment page", async ({
   page,
 }) => {
   test.slow();
@@ -105,13 +105,17 @@ test("a paper of two pages reaches Approve and the member's Files", async ({
     });
   }, attemptId);
 
-  // Both files are in the member's Files list, and one opens the attempt it
-  // was handed in with (a click selects an item there; a double click opens).
-  await asScenario(page, 'workspace-member', '/files');
-  const papers = page.getByRole('button', {
-    name: m.files_select_item({ name: 'flat.png' }),
+  // Submitted work stays on the assignment's page only (Epo 2026-11-25):
+  // the member's Your work there lists both files.
+  await asScenario(
+    page,
+    'workspace-member',
+    '/workspaces/ws_bio/assignments?assignment=as_upload'
+  );
+  const work = page.locator('section').filter({
+    has: page.getByRole('heading', { name: m.assignment_your_work() }),
   });
-  await expect(papers).toHaveCount(2, { timeout: 30_000 });
-  await papers.first().dblclick();
-  await expect(page).toHaveURL(new RegExp(`/quizzes/attempts/${attemptId}$`));
+  await expect(
+    work.getByRole('button', { exact: true, name: 'flat.png' })
+  ).toHaveCount(2, { timeout: 30_000 });
 });
