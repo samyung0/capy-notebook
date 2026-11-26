@@ -137,7 +137,7 @@ pub enum RoomCmd {
     /// (r2 N7).
     LiveIds(oneshot::Sender<HashSet<u64>>),
     /// A projection finished.
-    Projected(i64, Result<(), String>),
+    Projected(Result<projection::Checked, String>),
     /// Store now (if anything is unsaved) and answer once it is durable.
     Persist(oneshot::Sender<Result<(), String>>),
     /// Persist, then project, and answer with the projected version.
@@ -166,9 +166,6 @@ pub enum RoomCmd {
     /// A board's fold finished: what it folded, or none when it failed or
     /// found nothing to fold.
     BoardFolded(board::Fold, Option<Box<BoardFold>>),
-    /// A board fold's projection was sent, at the version it folded through
-    /// (`note_store::Folded::projection`).
-    FoldProjected(i64, Result<(), String>),
     /// The source handoff: a channel goes read-only, every channel back to
     /// its token's access, channels close (none named: all of them).
     SetReadOnly(u64),
@@ -711,6 +708,14 @@ struct Note {
     /// A board took an update naming an asset (`model::names_asset`): it
     /// projects after its next store, whatever the cadence.
     project_soon: bool,
+    /// A board's editor assets as its last projection read them
+    /// (`projection::Checked`), which `model::names_asset` checks updates
+    /// against; none until one has.
+    board_assets: Option<HashSet<String>>,
+    /// A board's fold committed since its last projection began: its base's
+    /// projection changed, so it projects again, at a version projected
+    /// already too.
+    recheck: bool,
     project_waiters: Vec<oneshot::Sender<Result<i64, String>>>,
     log_bytes: i64,
     log_rows: i64,
@@ -1366,6 +1371,8 @@ async fn load(app: &Shared, name: &RoomName, actor: &str) -> Result<Loaded, Load
                 projecting: false,
                 projected_at: Instant::now(),
                 project_soon: false,
+                board_assets: None,
+                recheck: false,
                 project_waiters: Vec::new(),
                 log_bytes,
                 log_rows,
@@ -1933,7 +1940,7 @@ impl Room {
                     .collect();
                 let _ = reply.send(live);
             }
-            RoomCmd::Projected(version, result) => self.projected(version, result),
+            RoomCmd::Projected(result) => self.projected(result),
             RoomCmd::Persist(reply) => {
                 if !self.store.dirty
                     && !self.store.running
@@ -2027,7 +2034,6 @@ impl Room {
                 }
             }
             RoomCmd::BoardFolded(fold, folded) => self.board_folded(fold, folded),
-            RoomCmd::FoldProjected(version, result) => self.fold_projected(version, result),
             RoomCmd::SetReadOnly(channel) => {
                 if let Some(member) = self
                     .members
@@ -3247,7 +3253,7 @@ impl Room {
             // The fold gives the permit back before it returns, so none is
             // held while `Folded` waits for room in the room's queue.
             let permit = board_permit(&app, model, WorkKind::Fold, &material_id).await;
-            let mut folded = note_store::fold(
+            let folded = note_store::fold(
                 &app.db,
                 &material_id,
                 schema,
@@ -3265,7 +3271,6 @@ impl Room {
                 );
                 None
             });
-            let projection = folded.as_mut().and_then(|f| f.projection.take());
             let done = match (fold, folded) {
                 // `note_store::fold` returns a board's base and indexes, or
                 // fails.
@@ -3289,15 +3294,6 @@ impl Room {
                 (None, None) => RoomCmd::Folded(None, None),
             };
             let _ = handle.tx.send(done).await;
-            // A board's fold projects its new base, after the swap is queued
-            // (project() records and reports its own failure).
-            if let Some((version, content)) = projection {
-                let result = projection::project(&app, &material_id, version, &content, None).await;
-                let _ = handle
-                    .tx
-                    .send(RoomCmd::FoldProjected(version, result))
-                    .await;
-            }
         });
     }
 
@@ -3306,7 +3302,10 @@ impl Room {
     /// since it began staying in the tail, off the async workers. The size
     /// bound takes the base's exact bytes with what it does not hold
     /// ([BoardGrowth]). A fold that failed (the task reported why) or found
-    /// nothing gives its rows back to the tail ([Board::fold_failed]).
+    /// nothing gives its rows back to the tail ([Board::fold_failed]). One
+    /// that committed has the room project again ([Room::project_on_cadence]):
+    /// that projection reads the base's new projection, the exact images,
+    /// in the material's slot after any read before the commit was sent.
     ///
     /// The new base deletes no live marker, so nothing is written again: a
     /// fold reads the rows through the version this room took as stored
@@ -3340,6 +3339,9 @@ impl Room {
             base,
             indexes,
         } = *folded;
+        // The fold committed its base's projection, which the next
+        // projection reads.
+        note.recheck = true;
         note.log_rows -= rows;
         note.log_bytes -= log_bytes;
         note.base_bytes = base_bytes;
@@ -3368,17 +3370,7 @@ impl Room {
             }
         }
         unlog_bytes(&self.app, log_bytes.max(0) as u64);
-    }
-
-    /// A board fold's projection was sent ([Room::maybe_fold]): sent, the
-    /// room's projection reaches its version, so the idle projection does
-    /// not send that version again. It neither ends a running projection
-    /// nor answers an on-demand one, which asks for the stored version.
-    fn fold_projected(&mut self, version: i64, result: Result<(), String>) {
-        if let (Kindly::Note(note), Ok(())) = (&mut self.kind, result) {
-            note.projected_version = note.projected_version.max(version);
-            note.projected_at = Instant::now();
-        }
+        self.project_on_cadence();
     }
 
     /// The open room collects its own document (Q401) at the window and held
@@ -4729,7 +4721,11 @@ impl Room {
             return Err(self.foreign_update_refused(context, client, bytes.len()));
         }
         let written = client_ids::written(&state, &update);
-        let names_asset = crate::model::names_asset(&update);
+        let assets = match &self.kind {
+            Kindly::Note(note) => note.board_assets.as_ref(),
+            Kindly::Source(_) => None,
+        };
+        let names_asset = crate::model::names_asset(&update, assets);
         match board.read(bytes, &update) {
             Ok(board::Read::New(fresh)) => Ok((fresh, written, names_asset)),
             Ok(board::Read::Held) => {
@@ -6978,21 +6974,24 @@ impl Room {
 
     /// After a store: a note whose edits have not paused long enough for the
     /// idle projection projects anyway once `projection_cadence` passed since
-    /// its last projection, and a board that took an asset's name at once
-    /// (Go trashes an asset no projection names, so an image deleted and
-    /// brought back by Undo is not served until one names it again). The
-    /// live document may already hold newer edits, so this projects the
-    /// durable state from the store.
+    /// its last projection. A board projects at once when it took an asset's
+    /// name (Go trashes an asset no projection names, so an image deleted and
+    /// brought back by Undo is not served until one names it again), and
+    /// after its fold committed, at a version projected already too, so the
+    /// base's new projection, the board's exact images, reaches Go. The live
+    /// document may already hold newer edits, so this projects the durable
+    /// state from the store. A board's projection reaches Go only when its
+    /// images differ from Go's (`projection::project_durable`).
     fn project_on_cadence(&mut self) {
         let handle = self.own_handle();
         let cadence = self.app.config.projection_cadence;
         let Kindly::Note(note) = &mut self.kind else {
             return;
         };
-        if note.projecting
-            || note.stored_version <= note.projected_version
-            || (note.projected_at.elapsed() < cadence && !note.project_soon)
-        {
+        let due = note.recheck
+            || (note.stored_version > note.projected_version
+                && (note.project_soon || note.projected_at.elapsed() >= cadence));
+        if note.projecting || !due {
             return;
         }
         let Some(handle) = handle else {
@@ -7000,17 +6999,11 @@ impl Room {
         };
         note.projecting = true;
         note.project_soon = false;
-        let (app, material_id, version) = (
-            self.app.clone(),
-            note.material_id.clone(),
-            note.stored_version,
-        );
+        note.recheck = false;
+        let (app, material_id) = (self.app.clone(), note.material_id.clone());
         tokio::spawn(async move {
-            let projected = match projection::project_durable(&app, &material_id).await {
-                Ok(projected) => RoomCmd::Projected(projected, Ok(())),
-                Err(error) => RoomCmd::Projected(version, Err(error)),
-            };
-            let _ = handle.tx.send(projected).await;
+            let checked = projection::project_durable(&app, &material_id, false).await;
+            let _ = handle.tx.send(RoomCmd::Projected(checked)).await;
         });
     }
 
@@ -7052,15 +7045,15 @@ impl Room {
         let doc = match doc {
             Some(doc) if !note.model.quiz() => doc,
             _ => {
+                // A board's projection reads its base's projection anew.
+                note.project_soon = false;
+                note.recheck = false;
                 let Some(handle) = self.own_handle() else {
                     return;
                 };
                 tokio::spawn(async move {
-                    let projected = match projection::project_durable(&app, &material_id).await {
-                        Ok(projected) => RoomCmd::Projected(projected, Ok(())),
-                        Err(error) => RoomCmd::Projected(version, Err(error)),
-                    };
-                    let _ = handle.tx.send(projected).await;
+                    let checked = projection::project_durable(&app, &material_id, false).await;
+                    let _ = handle.tx.send(RoomCmd::Projected(checked)).await;
                 });
                 return;
             }
@@ -7083,24 +7076,37 @@ impl Room {
                 }
                 Err(error) => Err(error),
             };
-            let _ = handle.tx.send(RoomCmd::Projected(version, result)).await;
+            let checked = result.map(|()| projection::Checked::sent(version));
+            let _ = handle.tx.send(RoomCmd::Projected(checked)).await;
         });
     }
 
-    fn projected(&mut self, version: i64, result: Result<(), String>) {
+    /// A projection finished: the room's projection reaches its version,
+    /// sent or checked (a board's that found Go's images unchanged sends
+    /// nothing), and a board keeps the assets it read. Only a sent one tells
+    /// the tabs. A board asked meanwhile to project again (its fold
+    /// committed, an update named an asset) does.
+    fn projected(&mut self, result: Result<projection::Checked, String>) {
         let Kindly::Note(note) = &mut self.kind else {
             return;
         };
         note.projecting = false;
-        match &result {
-            Ok(()) => {
+        match result {
+            Ok(checked) => {
+                let version = checked.version;
                 note.projected_version = note.projected_version.max(version);
                 note.projected_at = Instant::now();
-                let payload = json!({ "materialId": note.material_id, "type": "projection-updated", "yjsVersion": version });
+                if let Some(assets) = checked.assets {
+                    note.board_assets = Some(assets);
+                }
                 for waiter in note.project_waiters.drain(..) {
                     let _ = waiter.send(Ok(version));
                 }
-                self.broadcast_stateless(&payload.to_string());
+                if checked.sent {
+                    let payload = json!({ "materialId": note.material_id, "type": "projection-updated", "yjsVersion": version });
+                    self.broadcast_stateless(&payload.to_string());
+                }
+                self.project_on_cadence();
             }
             Err(error) => {
                 for waiter in note.project_waiters.drain(..) {
@@ -7175,8 +7181,7 @@ impl Room {
             return;
         };
         let app = self.app.clone();
-        // None for a board, which projects its fold, or from its durable
-        // rows.
+        // None for a board, which projects from its durable rows.
         let doc = self.document();
         let (model, doc_kind) = (note.model, note.doc);
         let (material_id, schema, stored, projected) = (
@@ -7205,8 +7210,7 @@ impl Room {
                     );
                 }
             };
-            // The log folds while the room is empty (DESIGN.md 3.5); a
-            // board's fold returns the projection of its new base.
+            // The log folds while the room is empty (DESIGN.md 3.5).
             let folding = async {
                 if !session_rows.rows.is_empty()
                     && let Err(error) =
@@ -7220,34 +7224,26 @@ impl Room {
                 }
                 let holds = one_process(&app, &material_id, holds).await;
                 let permit = board_permit(&app, model, WorkKind::UnloadFold, &material_id).await;
-                match note_store::fold(&app.db, &material_id, schema, doc_kind, None, holds, permit)
-                    .await
+                if let Err(error) =
+                    note_store::fold(&app.db, &material_id, schema, doc_kind, None, holds, permit)
+                        .await
                 {
-                    Ok(folded) => folded.and_then(|folded| folded.projection),
-                    Err(error) => {
-                        observe::capture(
-                            &error.to_string(),
-                            None,
-                            &[("room", &material_id), ("stage", "fold")],
-                        );
-                        None
-                    }
+                    observe::capture(
+                        &error.to_string(),
+                        None,
+                        &[("room", &material_id), ("stage", "fold")],
+                    );
                 }
             };
             if model == crate::model::Model::Board {
-                // A board folds first and projects what the fold built, or,
-                // with no fold, from its base's projection and rows: no
-                // replay runs beside the fold's.
-                let result = match folding.await {
-                    Some((version, content)) => {
-                        projection::project(&app, &material_id, version, &content, None).await
-                    }
-                    None if stored > projected => projection::project_durable(&app, &material_id)
-                        .await
-                        .map(|_| ()),
-                    None => Ok(()),
-                };
-                if let Err(error) = result {
+                // A board folds first, then projects from the projection its
+                // base was stored with and the rows since, in the material's
+                // slot after any projection the room left running: no replay
+                // runs beside the fold's. It reaches Go when its images
+                // changed or Go's version lags (`projection::project_durable`),
+                // which keeps the canvas's charge to its board at unload.
+                folding.await;
+                if let Err(error) = projection::project_durable(&app, &material_id, true).await {
                     failed(error);
                 }
             } else {
@@ -7260,7 +7256,7 @@ impl Room {
                                 projection::project_doc(&app, &material_id, stored, doc, model)
                                     .await
                             }
-                            _ => projection::project_durable(&app, &material_id)
+                            _ => projection::project_durable(&app, &material_id, true)
                                 .await
                                 .map(|_| ()),
                         }

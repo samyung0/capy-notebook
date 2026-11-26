@@ -1566,7 +1566,10 @@ async fn material_stored(
             }
             receipt["effect"]["projectionPending"] = json!(false);
             if let Some(handle) = app.rooms.get(room) {
-                let _ = handle.tx.send(RoomCmd::Projected(version, Ok(()))).await;
+                let _ = handle
+                    .tx
+                    .send(RoomCmd::Projected(Ok(projection::Checked::sent(version))))
+                    .await;
             }
         }
         // Logged at info already: no failure (Q778 A).
@@ -2478,7 +2481,10 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
     let content = json!({ "schemaVersion": 1, "value": computed.value });
     projection::project(app, &material_id, version, &content, computed.asset_ids).await?;
     if let Some(handle) = app.rooms.get(&room) {
-        let _ = handle.tx.send(RoomCmd::Projected(version, Ok(()))).await;
+        let _ = handle
+            .tx
+            .send(RoomCmd::Projected(Ok(projection::Checked::sent(version))))
+            .await;
     }
     Ok(())
 }

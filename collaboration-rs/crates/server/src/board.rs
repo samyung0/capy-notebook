@@ -2598,9 +2598,13 @@ mod tests {
     }
 
     /// The names images take in [image_edit]: a few assets, so images share
-    /// one and erasing one leaves another naming it, and a name that is no
-    /// asset id.
+    /// one and erasing one leaves another naming it, one that is another
+    /// canvas's asset (`asset_3`, pasted) and a name that is no asset id.
     const ASSETS: [&str; 5] = ["asset_0", "asset_1", "asset_2", "asset_3", "not an id"];
+
+    /// The canvas's own editor assets among [ASSETS], one in its hidden trash
+    /// or not: the editor assets a projection reads.
+    const CANVAS_ASSETS: [&str; 3] = ["asset_0", "asset_1", "asset_2"];
 
     /// An edit as [edit] makes one, or as often an image's: one added under
     /// an id [edit] leaves alone, given another asset (an overwrite of its
@@ -2639,12 +2643,7 @@ mod tests {
 
     /// A projection's asset ids.
     fn image_ids(value: &[serde_json::Value]) -> std::collections::BTreeSet<String> {
-        value[0]["images"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|image| image["assetId"].as_str().unwrap().to_owned())
-            .collect()
+        crate::model::image_ids(&value[0]["images"]).unwrap()
     }
 
     /// The board projection rides on the fold (Epo 2026-11-26). Across a
@@ -2652,12 +2651,13 @@ mod tests {
     /// assets and erase them, heard out of order, at every store the
     /// projection between folds (`model::board_projection_since`: the last
     /// fold's projection, as `note_store::fold` builds it from the document
-    /// it folded, with the asset ids of the rows since) names every image a
-    /// full replay of the stored board names; right after a fold that left
-    /// no rows the two are equal. Folds that rows outlast (stored while the
-    /// fold ran) and a reload of the room come between, and some stores still
-    /// name an image erased since the fold. Fails if an image the board holds
-    /// is left out for Go to prune.
+    /// it folded, with the asset ids of the rows since, kept to the canvas's
+    /// own assets) names every image of the canvas's assets a full replay of
+    /// the stored board names, and nothing else; right after a fold that
+    /// left no rows the two are equal. Folds that rows outlast (stored while
+    /// the fold ran) and a reload of the room come between, and some stores
+    /// still name an image erased since the fold. Fails if an image the
+    /// board holds is left out for Go to prune.
     #[test]
     fn between_folds_the_projection_names_every_image_the_board_holds() {
         let updates = session_of(4, 600, 23, image_edit);
@@ -2668,17 +2668,30 @@ mod tests {
             let mut version = 1;
             let mut base = serde_json::Value::Array(projection(&room.stored(), version).unwrap());
             let (mut erased, mut named) = (0, 0);
+            let canvas: std::collections::HashSet<String> =
+                CANVAS_ASSETS.iter().map(|id| id.to_string()).collect();
             let mut check = |room: &Room, base: &serde_json::Value, version: i64| {
-                let since = crate::model::board_projection_since(base.clone(), &room.rows, version)
-                    .unwrap();
+                let (value, since) = crate::model::board_projection_since(
+                    base.clone(),
+                    &room.rows,
+                    version,
+                    &canvas,
+                )
+                .unwrap();
+                assert_eq!(image_ids(value.as_array().unwrap()), since, "{order}");
                 let replayed = projection(&room.stored(), version).unwrap();
-                let (since, replayed) =
-                    (image_ids(since.as_array().unwrap()), image_ids(&replayed));
+                let replayed: std::collections::BTreeSet<String> = image_ids(&replayed)
+                    .into_iter()
+                    .filter(|id| canvas.contains(id))
+                    .collect();
                 assert!(
                     since.is_superset(&replayed),
                     "{order}: {since:?} lacks some of {replayed:?}"
                 );
-                assert!(!since.contains("not an id"), "{order}");
+                assert!(
+                    since.iter().all(|id| canvas.contains(id)),
+                    "{order}: {since:?}"
+                );
                 // An image erased or given another asset since the fold.
                 erased += usize::from(
                     since

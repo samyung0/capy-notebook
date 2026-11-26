@@ -3,7 +3,7 @@
 //! `material_yjs_updates`. Every write takes the material's advisory lock, as
 //! the Node server's `persistence.ts` does.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 use std::sync::{Arc, LazyLock, Mutex};
 
 use deadpool_postgres::{Pool, Transaction};
@@ -832,10 +832,6 @@ pub struct Folded {
     /// A board's new base, at its length, and the indexes stored with it,
     /// for the board room's swap (`board::Board::folded`).
     pub board: Option<(Vec<u8>, Indexes)>,
-    /// A board's projection stored with its new base: the version of the
-    /// last row folded and the content to send Go at it, once the fold
-    /// committed (`projection::project`).
-    pub projection: Option<(i64, Value)>,
 }
 
 /// A board's new base as its fold built it: its indexes, as built and as
@@ -897,10 +893,10 @@ const IT_FOLDED_LATER: &str = "capy-it-folded-later";
 /// the folded document is stored as a later window candidate. A collection
 /// the guard refuses, or that panics, folds uncollected and is reported once
 /// per material (human/ 2026-10-24); the next fold collects again. A board's
-/// new base is stored with its indexes (`board::Indexes::stored`) and
-/// returned with them (`Folded::board`), and with its projection at the
-/// version of the last row folded, which the caller sends Go once this
-/// returns (`Folded::projection`). A board's fold brings its board
+/// new base is stored with its indexes (`board::Indexes::stored`) and its
+/// projection at the version of the last row folded (`base_projection`,
+/// which every board projection after it reads), and returned with its
+/// indexes (`Folded::board`). A board's fold brings its board
 /// work `permit` (`work.rs`), taken before the material's lock, and gives it
 /// back once the new base is stored and the replay freed.
 #[allow(clippy::too_many_arguments)]
@@ -1102,7 +1098,7 @@ pub async fn fold(
             ],
         )
         .await?;
-        Some((indexes, projection))
+        Some(indexes)
     } else {
         largest.note(state.len());
         tx.execute(
@@ -1137,14 +1133,11 @@ pub async fn fold(
     // whose drop asks for a trim; a board's new base is the board room's
     // next base.
     drop(pooled);
-    let (board, projection) = match indexes {
-        Some((indexes, projection)) => (
-            Some((state, indexes)),
-            Some((last, crate::projection::envelope(projection))),
-        ),
+    let board = match indexes {
+        Some(indexes) => Some((state, indexes)),
         None => {
             drop(state);
-            (None, None)
+            None
         }
     };
     drop(permit);
@@ -1160,7 +1153,6 @@ pub async fn fold(
         base_bytes: after_bytes,
         collected,
         board,
-        projection,
     }))
 }
 
@@ -1443,15 +1435,29 @@ pub struct Durable {
     pub rows: Vec<Vec<u8>>,
     pub kind: String,
     pub keys: Option<(Vec<u8>, Vec<Vec<u8>>)>,
+    /// A canvas's: what Go holds and the canvas's assets.
+    pub held: Option<Held>,
 }
 
 /// A board's projection between folds, read without its base: the
 /// projection stored with the base, the rows since, and the stored version
-/// they reach (`model::board_projection_since`).
+/// they reach (`model::board_projection_since`), with what Go holds.
 pub struct BoardRows {
     pub version: i64,
     pub base_projection: Value,
     pub rows: Vec<Vec<u8>>,
+    pub held: Held,
+}
+
+/// What a board projection compares against, read in its snapshot: Go's
+/// projected version and the images its stored `canvas_board` block names,
+/// and every editor asset of the canvas, pending or ready, in its hidden
+/// trash or not (a purged one is gone), which its images are matched
+/// against.
+pub struct Held {
+    pub projected_version: i64,
+    pub images: BTreeSet<String>,
+    pub assets: HashSet<String>,
 }
 
 /// What a projection reads of a material's durable state.
@@ -1480,9 +1486,10 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Stored>, S
     // A board with its base's projection never reads its base.
     let found = tx
         .query(
-            "SELECT d.stored_version, m.kind, d.base_projection,
+            "SELECT d.stored_version, d.projected_version, m.kind, d.base_projection,
                     CASE WHEN m.kind='canvas' AND d.base_projection IS NOT NULL
-                         THEN NULL ELSE d.state END AS state
+                         THEN NULL ELSE d.state END AS state,
+                    CASE WHEN m.kind='canvas' THEN m.content->'value'->0->'images' END AS images
              FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
              WHERE d.material_id=$1",
             &[&material_id],
@@ -1499,14 +1506,41 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Stored>, S
         .map(|(_, update)| update)
         .collect();
     largest.note(longest(&log));
-    if let (Model::Board, Some(base_projection)) = (Model::of(&kind), row.get("base_projection")) {
-        tx.commit().await?;
-        return Ok(Some(Stored::Board(BoardRows {
-            version,
-            base_projection,
-            rows: log,
-        })));
-    }
+    let held = match Model::of(&kind) {
+        Model::Board => {
+            // `editor_assets_material_idx` (material_id, status).
+            let assets = tx
+                .query(
+                    "SELECT id FROM editor_assets WHERE material_id=$1",
+                    &[&material_id],
+                )
+                .await?
+                .iter()
+                .map(|asset| asset.get("id"))
+                .collect();
+            // A canvas's content is its one `canvas_board` block; null fails.
+            let images: Value = row.get::<_, Option<Value>>("images").unwrap_or_default();
+            Some(Held {
+                projected_version: row.get("projected_version"),
+                images: crate::model::image_ids(&images).map_err(StoreError::Other)?,
+                assets,
+            })
+        }
+        _ => None,
+    };
+    let base_projection: Option<Value> = row.get("base_projection");
+    let held = match (held, base_projection) {
+        (Some(held), Some(base_projection)) => {
+            tx.commit().await?;
+            return Ok(Some(Stored::Board(BoardRows {
+                version,
+                base_projection,
+                rows: log,
+                held,
+            })));
+        }
+        (held, _) => held,
+    };
     let base: Vec<u8> = row.get("state");
     largest.note(base.len());
     let keys = if kind == "quiz" {
@@ -1538,6 +1572,7 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Stored>, S
         rows: log,
         kind,
         keys,
+        held,
     })))
 }
 
@@ -1815,11 +1850,12 @@ mod tests {
     /// The board projection rides on the fold (Epo 2026-11-26): a board's
     /// seed is stored with its projection at version 1, naming no image,
     /// and each fold stores the projection of the document it folded at the
-    /// version of its last row and returns it to send; between folds a
-    /// projection reads that projection and the rows since, never the base,
-    /// and a board stored without one reads its base for a replay. Against
-    /// the rooms tests' Postgres. Fails if the seed or a fold leaves the
-    /// projection out or stores another document's.
+    /// version of its last row; between folds a projection reads that
+    /// projection and the rows since, never the base, with Go's projected
+    /// version and images and every editor asset of the canvas, one in its
+    /// hidden trash too, and a board stored without one reads its base for a
+    /// replay. Against the rooms tests' Postgres. Fails if the seed or a
+    /// fold leaves the projection out or stores another document's.
     #[tokio::test]
     async fn a_boards_base_is_stored_with_its_projection() {
         let Some(pool) = it_pool() else { return };
@@ -1828,6 +1864,22 @@ mod tests {
             "version": 0, "images": [],
         });
         let board = it_material(&pool, "canvas", block).await;
+        let (asset, trashed) = (format!("asset_{board}"), format!("trashed_{board}"));
+        pool.get()
+            .await
+            .unwrap()
+            .execute(
+                "INSERT INTO editor_assets (id, material_id, user_id, created_by, name, purpose,
+                     object_path, content_type, size_bytes, status, completed_at, trashed_at)
+                 SELECT a.id, m.id, m.created_by, m.created_by, 'asset', 'image',
+                     'editor-assets/it/' || a.id, 'image/png', 10, 'ready', now(), a.trashed_at
+                 FROM materials m,
+                     (VALUES ($2, NULL::timestamptz), ($3, now())) AS a(id, trashed_at)
+                 WHERE m.id=$1",
+                &[&board, &asset, &trashed],
+            )
+            .await
+            .unwrap();
         let loaded = load(&pool, &board, 1, Doc::Content).await.unwrap();
         let stored = |pool: &Pool| {
             let (pool, board) = (pool.clone(), board.clone());
@@ -1859,7 +1911,7 @@ mod tests {
         {
             let mut txn = writer.transact_mut();
             let image = yrs::Map::insert(&blocks, &mut txn, "i1", yrs::MapPrelim::default());
-            yrs::Map::insert(&image, &mut txn, "prop:sourceId", "asset_a");
+            yrs::Map::insert(&image, &mut txn, "prop:sourceId", asset.as_str());
         }
         let row = writer.transact().encode_state_as_update_v1(&before);
         let none = sessions::Unsaved::default();
@@ -1873,19 +1925,18 @@ mod tests {
             (between.version, between.base_projection, between.rows),
             (version, seed, vec![row])
         );
-        let folded = fold(&pool, &board, 1, Doc::Content, None, None, None)
+        let held = between.held;
+        assert_eq!((held.projected_version, held.images), (1, BTreeSet::new()));
+        assert_eq!(held.assets, HashSet::from([asset.clone(), trashed]));
+        fold(&pool, &board, 1, Doc::Content, None, None, None)
             .await
             .unwrap()
             .unwrap();
         let projection = serde_json::json!([{
             "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
-            "version": version, "images": [{ "assetId": "asset_a" }],
+            "version": version, "images": [{ "assetId": asset }],
         }]);
-        assert_eq!(stored(&pool).await, Some(projection.clone()));
-        assert_eq!(
-            folded.projection,
-            Some((version, crate::projection::envelope(projection)))
-        );
+        assert_eq!(stored(&pool).await, Some(projection));
         // A base stored before its projection was is read for a replay.
         pool.get()
             .await

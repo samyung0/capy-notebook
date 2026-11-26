@@ -20133,19 +20133,58 @@ async fn a_tab_behind_a_boards_base_rejoins_under_the_board_work() {
 }
 
 /// A stand-in for the Go API's projection route: the bodies it was sent,
-/// each with its material. The server's pending scan posts other tests'
-/// materials here too (they share the database).
-#[derive(Clone, Default)]
-struct Projections(std::sync::Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>>);
+/// each with its material, and for a canvas the test owns ([Projections::own])
+/// what Go writes (`ProjectMaterialContent`): its block as the content and
+/// the version projected, unless Go projected a newer one, answering once
+/// written. A board's room compares its images with that block, so it sends
+/// nothing again until they change. The server's pending scan posts other
+/// tests' materials here too (they share the database); they are kept but
+/// not written.
+#[derive(Clone)]
+struct Projections {
+    bodies: std::sync::Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>>,
+    owned: std::sync::Arc<std::sync::Mutex<std::collections::HashSet<String>>>,
+    db: std::sync::Arc<tokio_postgres::Client>,
+}
 
 impl Projections {
     /// The last body sent for `material`.
     fn last(&self, material: &str) -> Option<serde_json::Value> {
-        let kept = self.0.lock().expect("bodies");
+        let kept = self.bodies.lock().expect("bodies");
         kept.iter()
             .rev()
             .find(|(id, _)| id == material)
             .map(|(_, body)| body.clone())
+    }
+
+    /// The bodies sent for `material`, in order.
+    fn of(&self, material: &str) -> Vec<serde_json::Value> {
+        let kept = self.bodies.lock().expect("bodies");
+        kept.iter()
+            .filter(|(id, _)| id == material)
+            .map(|(_, body)| body.clone())
+            .collect()
+    }
+
+    /// The first `count` bodies sent for `material`, waiting up to 10 s for
+    /// them.
+    async fn first(&self, material: &str, count: usize) -> Vec<serde_json::Value> {
+        for _ in 0..100 {
+            let sent = self.of(material);
+            if sent.len() >= count {
+                return sent;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        panic!("{count} projections of {material}: {:?}", self.of(material));
+    }
+
+    /// Writes `material`'s projections as Go does.
+    fn own(&self, material: &str) {
+        self.owned
+            .lock()
+            .expect("owned")
+            .insert(material.to_owned());
     }
 }
 
@@ -20154,17 +20193,37 @@ async fn projection_posted(
     axum::extract::Path(material): axum::extract::Path<String>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> axum::http::StatusCode {
-    kept.0.lock().expect("bodies").push((material, body));
+    let owned = kept.owned.lock().expect("owned").contains(&material);
+    if owned {
+        // A canvas's projection at the version projected already replaces
+        // the block too.
+        let version = body["yjsVersion"].as_i64().expect("a version");
+        kept.db
+            .execute(
+                "WITH projected AS (
+                     UPDATE material_yjs_documents SET projected_version=$3
+                     WHERE material_id=$1 AND projected_version <= $3 RETURNING material_id)
+                 UPDATE materials m SET content=$2 FROM projected p WHERE m.id=p.material_id",
+                &[&material, &body["content"], &version],
+            )
+            .await
+            .expect("projected");
+    }
+    kept.bodies.lock().expect("bodies").push((material, body));
     axum::http::StatusCode::OK
 }
 
 /// The stand-in projection route, listening: its URL and what it keeps.
-async fn projections() -> (String, Projections) {
+async fn projections(env: &Env) -> (String, Projections) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("listen");
     let url = format!("http://{}", listener.local_addr().expect("address"));
-    let kept = Projections::default();
+    let kept = Projections {
+        bodies: Default::default(),
+        owned: Default::default(),
+        db: std::sync::Arc::new(db(env).await),
+    };
     let app = axum::Router::new()
         .route(
             "/internal/collaboration/materials/{id}/projection",
@@ -20175,39 +20234,61 @@ async fn projections() -> (String, Projections) {
     (url, kept)
 }
 
+/// The images a projection's block names.
+fn projected_images(body: &serde_json::Value) -> serde_json::Value {
+    body["content"]["value"][0]["images"].clone()
+}
+
+/// `ids` as a block's `images`.
+fn images_of(ids: &[&str]) -> serde_json::Value {
+    ids.iter()
+        .map(|id| serde_json::json!({ "assetId": id }))
+        .collect()
+}
+
+/// A canvas owned by a fresh user with image assets of its own, one per
+/// name in `names` (`{name}_{material}`, sorted as `names`); returns (user,
+/// material, room, assets).
+async fn canvas_with_assets(env: &Env, names: &[&str]) -> (String, String, String, Vec<String>) {
+    let (user, material, room) = canvas(env).await;
+    let client = db(env).await;
+    let mut assets = Vec::new();
+    for name in names {
+        let asset = format!("{name}_{material}");
+        image_asset(&client, &user, &asset, &material).await;
+        assets.push(asset);
+    }
+    (user, material, room, assets)
+}
+
 /// What a board room sends Go at a projection (contract section 3): the
 /// canvas's one `canvas_board` block, its `version` the stored version
 /// projected (`yjsVersion`), and the assets its blocks name, whatever their
 /// flavour (board review 3.5), each once and in byte order, with no
-/// `assetIds` beside the content. Between folds, as here, it names every
-/// string shaped like an asset id the rows since wrote (Epo 2026-11-26), a
-/// note's text too, which Go matches against the canvas's own assets alone.
-/// Fails if the content does not change with each projection, or an asset a
-/// block names is left out for Go to prune.
+/// `assetIds` beside the content. Between folds, as here, it names the ids
+/// the rows since wrote that are the canvas's own editor assets (Epo
+/// 2026-11-26): a string shaped like one in a note's text and an asset of
+/// another canvas are left out. Fails if an asset a block names is left out
+/// for Go to prune, or another string is named.
 #[tokio::test]
 async fn a_board_projects_its_block_with_the_version_and_sorted_images() {
     let Some(env) = env() else { return };
-    let (api, kept) = projections().await;
-    let server = start_configured(
-        &env,
-        Some(&api),
-        &[("COLLABORATION_PROJECTION_IDLE_MS", "300")],
-    )
-    .await;
-    let (user, material, room) = canvas(&env).await;
+    let (api, kept) = projections(&env).await;
+    let server = start_configured(&env, Some(&api), &[]).await;
+    let (user, material, room, assets) = canvas_with_assets(&env, &["a", "b", "later"]).await;
+    kept.own(&material);
+    let (.., others) = canvas_with_assets(&env, &["elsewhere"]).await;
+    let [a, b, later] = [&assets[0], &assets[1], &assets[2]];
+    let (text, elsewhere) = (format!("text_{material}"), &others[0]);
     let mut writer = Client::at_board(server.port, &room, &user).await;
     let drawn = writer.edited(|doc| {
-        draw_block(doc, "i1", "affine:image", &[("prop:sourceId", "asset_b")]);
-        draw_block(doc, "i2", "affine:image", &[("prop:sourceId", "asset_a")]);
-        draw_block(doc, "i3", "affine:image", &[("prop:sourceId", "asset_b")]);
+        draw_block(doc, "i1", "affine:image", &[("prop:sourceId", b)]);
+        draw_block(doc, "i2", "affine:image", &[("prop:sourceId", a)]);
+        draw_block(doc, "i3", "affine:image", &[("prop:sourceId", b)]);
         draw_block(doc, "i4", "affine:image", &[("prop:sourceId", "not an id")]);
-        draw_block(doc, "n1", "affine:note", &[("prop:text", "asset_text")]);
-        draw_block(
-            doc,
-            "f1",
-            "affine:later",
-            &[("prop:sourceId", "asset_later")],
-        );
+        draw_block(doc, "i5", "affine:image", &[("prop:sourceId", elsewhere)]);
+        draw_block(doc, "n1", "affine:note", &[("prop:text", &text)]);
+        draw_block(doc, "f1", "affine:later", &[("prop:sourceId", later)]);
     });
     writer.send(5, &sync(2, &drawn)).await;
     writer.until(6).await.expect("ack");
@@ -20222,10 +20303,7 @@ async fn a_board_projects_its_block_with_the_version_and_sorted_images() {
             "content": { "schemaVersion": 1, "value": [{
                 "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
                 "version": version,
-                "images": [
-                    { "assetId": "asset_a" }, { "assetId": "asset_b" },
-                    { "assetId": "asset_later" }, { "assetId": "asset_text" },
-                ],
+                "images": images_of(&[a, b, later]),
             }] },
         }))
     );
@@ -20239,12 +20317,13 @@ async fn a_board_projects_its_block_with_the_version_and_sorted_images() {
 #[tokio::test]
 async fn a_board_that_names_an_asset_projects_after_its_store() {
     let Some(env) = env() else { return };
-    let (api, kept) = projections().await;
+    let (api, kept) = projections(&env).await;
     let server = start_configured(&env, Some(&api), &[]).await;
-    let (user, material, room) = canvas(&env).await;
+    let (user, material, room, assets) = canvas_with_assets(&env, &["a"]).await;
+    kept.own(&material);
     let mut writer = Client::at_board(server.port, &room, &user).await;
     writer
-        .draw("i1", "affine:image", &[("prop:sourceId", "asset_1")])
+        .draw("i1", "affine:image", &[("prop:sourceId", &assets[0])])
         .await;
     writer.until(6).await.expect("ack");
     persisted(&mut writer, "r1").await;
@@ -20252,10 +20331,7 @@ async fn a_board_that_names_an_asset_projects_after_its_store() {
     let version = projected["yjsVersion"].as_i64().expect("a version");
     assert_eq!(version, stored_version(&env, &material).await);
     let sent = kept.last(&material).expect("a projection");
-    assert_eq!(
-        sent["content"]["value"][0]["images"],
-        serde_json::json!([{ "assetId": "asset_1" }])
-    );
+    assert_eq!(projected_images(&sent), images_of(&[&assets[0]]));
 }
 
 impl Projections {
@@ -20263,7 +20339,7 @@ impl Projections {
     async fn at(&self, material: &str, version: i64) -> Option<serde_json::Value> {
         for _ in 0..100 {
             let found = self
-                .0
+                .bodies
                 .lock()
                 .expect("bodies")
                 .iter()
@@ -20288,6 +20364,14 @@ impl Client {
         });
         self.send(5, &sync(2, &update)).await;
     }
+
+    /// Sends `update` as a step 2 and waits for its acknowledgement and for
+    /// the store of checkpoint `id`.
+    async fn stored(&mut self, update: &[u8], id: &str) {
+        self.send(5, &sync(2, update)).await;
+        self.until(6).await.expect("ack");
+        persisted(self, id).await;
+    }
 }
 
 /// The board projection rides on the fold (Epo 2026-11-26): between folds
@@ -20299,14 +20383,15 @@ impl Client {
 #[tokio::test]
 async fn a_board_projects_between_folds_while_another_boards_load_holds_the_work() {
     let Some(env) = env() else { return };
-    let (api, kept) = projections().await;
+    let (api, kept) = projections(&env).await;
     let (server, logs) = start_logged_at(&env, Some(&api), &[]).await;
-    let (user, material, room) = canvas(&env).await;
+    let (user, material, room, assets) = canvas_with_assets(&env, &["a"]).await;
+    kept.own(&material);
     let mut writer = Client::at_board(server.port, &room, &user).await;
     writer.until(6).await.expect("its step 2's ack");
     let mut held = hold_board_work(&env, server.port, &logs, 1).await;
     writer
-        .draw("i1", "affine:image", &[("prop:sourceId", "asset_1")])
+        .draw("i1", "affine:image", &[("prop:sourceId", &assets[0])])
         .await;
     writer.until(6).await.expect("ack");
     persisted(&mut writer, "r1").await;
@@ -20315,38 +20400,33 @@ async fn a_board_projects_between_folds_while_another_boards_load_holds_the_work
     assert_eq!(gauges.0, 1, "the other board still holds the permit");
     let version = projected["yjsVersion"].as_i64().expect("a version");
     let sent = kept.at(&material, version).await.expect("a projection");
-    assert_eq!(
-        sent["content"]["value"][0]["images"],
-        serde_json::json!([{ "assetId": "asset_1" }])
-    );
+    assert_eq!(projected_images(&sent), images_of(&[&assets[0]]));
     board_synced(&mut held).await;
 }
 
 /// A board's fold stores the projection of the document it folded beside
-/// its new base and sends it, at the version of the last row it folded: an
-/// image drawn and then erased is named between folds, and no longer once a
-/// fold (here at its second row, `COLLABORATION_FOLD_MAX_ROWS` 2) took both
-/// rows. Fails if the fold sends nothing, or the base's projection is not
-/// the folded board's.
+/// its new base, at the version of the last row it folded, and the room
+/// projects once it committed: an image drawn and then erased is named
+/// between folds, and no longer once a fold (here at its second row,
+/// `COLLABORATION_FOLD_MAX_ROWS` 2) took both rows. Fails if the fold's
+/// list is not sent, or the base's projection is not the folded board's.
 #[tokio::test]
 async fn a_boards_fold_sends_the_projection_of_its_new_base() {
     let Some(env) = env() else { return };
-    let (api, kept) = projections().await;
+    let (api, kept) = projections(&env).await;
     let server = start_configured(&env, Some(&api), &[("COLLABORATION_FOLD_MAX_ROWS", "2")]).await;
-    let (user, material, room) = canvas(&env).await;
+    let (user, material, room, assets) = canvas_with_assets(&env, &["a"]).await;
+    kept.own(&material);
     let mut writer = Client::at_board(server.port, &room, &user).await;
     writer
-        .draw("i1", "affine:image", &[("prop:sourceId", "asset_1")])
+        .draw("i1", "affine:image", &[("prop:sourceId", &assets[0])])
         .await;
     writer.until(6).await.expect("ack");
     persisted(&mut writer, "r1").await;
     let (projected, _) = writer.stateless("projection-updated").await;
     let drawn = projected["yjsVersion"].as_i64().expect("a version");
     let sent = kept.at(&material, drawn).await.expect("a projection");
-    assert_eq!(
-        sent["content"]["value"][0]["images"],
-        serde_json::json!([{ "assetId": "asset_1" }])
-    );
+    assert_eq!(projected_images(&sent), images_of(&[&assets[0]]));
     writer.erase("i1").await;
     writer.until(6).await.expect("ack");
     persisted(&mut writer, "r2").await;
@@ -20381,9 +20461,10 @@ async fn a_boards_fold_sends_the_projection_of_its_new_base() {
 #[tokio::test]
 async fn a_board_stored_without_its_projection_projects_by_a_replay() {
     let Some(env) = env() else { return };
-    let (api, kept) = projections().await;
+    let (api, kept) = projections(&env).await;
     let server = start_configured(&env, Some(&api), &[]).await;
-    let (user, material, room) = canvas(&env).await;
+    let (user, material, room, assets) = canvas_with_assets(&env, &["a", "b"]).await;
+    kept.own(&material);
     let mut writer = Client::at_board(server.port, &room, &user).await;
     db(&env)
         .await
@@ -20394,22 +20475,249 @@ async fn a_board_stored_without_its_projection_projects_by_a_replay() {
         .await
         .expect("no projection");
     writer
-        .draw("i1", "affine:image", &[("prop:sourceId", "asset_1")])
+        .draw("i1", "affine:image", &[("prop:sourceId", &assets[0])])
         .await;
     writer.until(6).await.expect("ack");
     persisted(&mut writer, "r1").await;
     writer.stateless("projection-updated").await;
     writer.erase("i1").await;
     writer
-        .draw("i2", "affine:image", &[("prop:sourceId", "asset_2")])
+        .draw("i2", "affine:image", &[("prop:sourceId", &assets[1])])
         .await;
     persisted(&mut writer, "r2").await;
     let version = stored_version(&env, &material).await;
     let sent = kept.at(&material, version).await.expect("a projection");
+    assert_eq!(projected_images(&sent), images_of(&[&assets[1]]));
+}
+
+/// Draws a stroke `id` and types `text` into a note's text on a board, as
+/// a person drawing and typing does: ids and text shaped like asset ids.
+fn stroke_and_type(doc: &Doc, id: &str, text: &str) {
+    use yrs::Map as _;
+    draw_block(doc, id, "affine:brush", &[("prop:color", "black")]);
+    let blocks = doc.get_or_insert_map("blocks");
+    let mut txn = doc.transact_mut();
+    let note = match blocks.get(&txn, "typed") {
+        Some(yrs::Out::YMap(note)) => note,
+        _ => blocks.insert(&mut txn, "typed", yrs::MapPrelim::default()),
+    };
+    let typed = match note.get(&txn, "prop:text") {
+        Some(yrs::Out::YText(typed)) => typed,
+        _ => note.insert(&mut txn, "prop:text", yrs::TextPrelim::new("")),
+    };
+    let end = typed.len(&txn);
+    typed.insert(&mut txn, end, text);
+}
+
+/// A board reaches Go only when its images change (Epo 2026-11-26): strokes
+/// drawn and text typed, stored over and over, checked at the cadence
+/// (500 ms here) and after each fold (every third row), send nothing while
+/// the room is open; the idle projection takes the same check. The unload
+/// sends once, since Go's projected version lags the stored one, so the
+/// canvas's charge follows its board. Fails if a store, the cadence or a
+/// fold sends a board whose images did not change.
+#[tokio::test]
+async fn strokes_and_typing_never_reach_go() {
+    let Some(env) = env() else { return };
+    let (api, kept) = projections(&env).await;
+    let server = start_configured(
+        &env,
+        Some(&api),
+        &[
+            ("COLLABORATION_PROJECTION_CADENCE_MS", "500"),
+            ("COLLABORATION_FOLD_MAX_ROWS", "3"),
+        ],
+    )
+    .await;
+    let (user, material, room, _) = canvas_with_assets(&env, &["a"]).await;
+    kept.own(&material);
+    {
+        let mut writer = Client::at_board(server.port, &room, &user).await;
+        for n in 0..9 {
+            let update = writer.edited(|doc| stroke_and_type(doc, &format!("s{n}"), "hello"));
+            writer.stored(&update, &format!("r{n}")).await;
+            // Past the cadence for the next store.
+            tokio::time::sleep(Duration::from_millis(600)).await;
+        }
+        let folded: i64 = db(&env)
+            .await
+            .query_one(
+                "SELECT (base_projection->0->>'version')::bigint FROM material_yjs_documents
+                 WHERE material_id=$1",
+                &[&material],
+            )
+            .await
+            .expect("document")
+            .get(0);
+        assert!(folded > 1, "no fold ran");
+        assert_eq!(kept.of(&material), Vec::<serde_json::Value>::new());
+    }
+    unloaded(server.port).await;
+    let version = stored_version(&env, &material).await;
+    let sent = kept.at(&material, version).await.expect("the unload's");
+    assert_eq!(projected_images(&sent), images_of(&[]));
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    assert_eq!(kept.of(&material).len(), 1, "{:?}", kept.of(&material));
+}
+
+/// A board reaches Go once per change of its images (Epo 2026-11-26): an
+/// image added, given another asset (both named between folds), and, after
+/// a fold dropped it (the projection after the fold sends that once),
+/// brought back by Undo each send one projection, and strokes between them
+/// none. Fails if a change is sent twice or not at all.
+#[tokio::test]
+async fn each_change_of_a_boards_images_reaches_go_once() {
+    use yrs::Map as _;
+    let Some(env) = env() else { return };
+    let (api, kept) = projections(&env).await;
+    let server = start_configured(&env, Some(&api), &[("COLLABORATION_FOLD_MAX_ROWS", "4")]).await;
+    let (user, material, room, assets) = canvas_with_assets(&env, &["a", "b"]).await;
+    kept.own(&material);
+    let [a, b] = [assets[0].as_str(), assets[1].as_str()];
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    let added = writer.edited(|doc| draw_block(doc, "i1", "affine:image", &[("prop:sourceId", a)]));
+    writer.stored(&added, "r1").await;
+    kept.first(&material, 1).await;
+    let stroke = writer.edited(|doc| stroke_and_type(doc, "s1", "hello"));
+    writer.stored(&stroke, "r2").await;
+    let renamed = writer.edited(|doc| {
+        let blocks = doc.get_or_insert_map("blocks");
+        let mut txn = doc.transact_mut();
+        let Some(yrs::Out::YMap(image)) = blocks.get(&txn, "i1") else {
+            panic!("no image");
+        };
+        image.insert(&mut txn, "prop:sourceId", b);
+    });
+    writer.stored(&renamed, "r3").await;
+    kept.first(&material, 2).await;
+    // The fourth row folds: the projection after it drops the image.
+    let blocks = writer.doc.get_or_insert_map("blocks");
+    let mut undo = yrs::undo::UndoManager::<()>::with_options(Default::default());
+    undo.expand_scope(&writer.doc, &blocks);
+    let erased = writer.edited(|doc| {
+        doc.get_or_insert_map("blocks")
+            .remove(&mut doc.transact_mut(), "i1");
+    });
+    writer.stored(&erased, "r4").await;
+    assert!(log_folded(&env, &material).await, "the fourth row folds");
+    kept.first(&material, 3).await;
+    let back = writer.edited(|_| assert!(undo.undo_blocking()));
+    writer.stored(&back, "r5").await;
+    kept.first(&material, 4).await;
+    let stroke = writer.edited(|doc| stroke_and_type(doc, "s2", "world"));
+    writer.stored(&stroke, "r6").await;
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let sent: Vec<serde_json::Value> = kept.of(&material).iter().map(projected_images).collect();
     assert_eq!(
-        sent["content"]["value"][0]["images"],
-        serde_json::json!([{ "assetId": "asset_2" }])
+        sent,
+        [
+            images_of(&[a]),
+            images_of(&[a, b]),
+            images_of(&[]),
+            images_of(&[b]),
+        ]
     );
+}
+
+/// The order of a board's projections (Epo 2026-11-26): an image erased in
+/// the store that adds another is still named between folds, so the
+/// projection after that store sends both; the unload's fold builds the
+/// exact list at the same version, and its projection, read once the fold
+/// committed and sent after the one the room sent, replaces it there (Go
+/// takes a canvas's projection at the version projected already when it
+/// differs). Fails if the exact list is not sent, or not last.
+#[tokio::test]
+async fn an_unloads_exact_list_replaces_the_superset_sent_at_its_version() {
+    let Some(env) = env() else { return };
+    let (api, kept) = projections(&env).await;
+    let server = start_configured(&env, Some(&api), &[]).await;
+    let (user, material, room, assets) = canvas_with_assets(&env, &["a", "b"]).await;
+    kept.own(&material);
+    let [a, b] = [assets[0].as_str(), assets[1].as_str()];
+    let version = {
+        let mut writer = Client::at_board(server.port, &room, &user).await;
+        let added =
+            writer.edited(|doc| draw_block(doc, "i1", "affine:image", &[("prop:sourceId", a)]));
+        writer.stored(&added, "r1").await;
+        kept.first(&material, 1).await;
+        let swapped = writer.edited(|doc| {
+            use yrs::Map as _;
+            doc.get_or_insert_map("blocks")
+                .remove(&mut doc.transact_mut(), "i1");
+            draw_block(doc, "i2", "affine:image", &[("prop:sourceId", b)]);
+        });
+        writer.stored(&swapped, "r2").await;
+        let sent = kept.first(&material, 2).await;
+        assert_eq!(projected_images(&sent[1]), images_of(&[a, b]));
+        let version = stored_version(&env, &material).await;
+        assert_eq!(sent[1]["yjsVersion"], version);
+        version
+    };
+    unloaded(server.port).await;
+    let sent = kept.first(&material, 3).await;
+    assert_eq!(sent.len(), 3, "{sent:?}");
+    assert_eq!(sent[2]["yjsVersion"], version);
+    assert_eq!(projected_images(&sent[2]), images_of(&[b]));
+    let content: serde_json::Value = db(&env)
+        .await
+        .query_one("SELECT content FROM materials WHERE id=$1", &[&material])
+        .await
+        .expect("material")
+        .get(0);
+    assert_eq!(content["value"][0]["images"], images_of(&[b]));
+}
+
+/// Go trashes an image asset no projection names and restores one named
+/// again (`pruneMaterialAssetsTx`). An image erased from a board stays named
+/// until the projection after the next fold (here at the second row), which
+/// trashes its asset (completed over a minute ago); its Undo names the
+/// asset, which the room's assets as read still hold, trashed, and the
+/// projection after its store restores it. Against the API. Fails if the
+/// Undo leaves the asset trashed.
+#[tokio::test]
+async fn a_trashed_asset_a_board_names_again_is_restored() {
+    let Some(env) = env() else { return };
+    if env.api.is_none() {
+        return;
+    }
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_FOLD_MAX_ROWS", "2")],
+    )
+    .await;
+    let (user, _, room, assets) = canvas_with_assets(&env, &["restored"]).await;
+    let asset = assets[0].as_str();
+    let client = db(&env).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    let added =
+        writer.edited(|doc| draw_block(doc, "i1", "affine:image", &[("prop:sourceId", asset)]));
+    writer.stored(&added, "r1").await;
+    writer.stateless("projection-updated").await;
+    let blocks = writer.doc.get_or_insert_map("blocks");
+    let mut undo = yrs::undo::UndoManager::<()>::with_options(Default::default());
+    undo.expand_scope(&writer.doc, &blocks);
+    let erased = writer.edited(|doc| {
+        use yrs::Map as _;
+        doc.get_or_insert_map("blocks")
+            .remove(&mut doc.transact_mut(), "i1");
+    });
+    writer.stored(&erased, "r2").await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while !asset_trashed(&client, asset).await {
+        assert!(tokio::time::Instant::now() < deadline, "the asset stayed");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let back = writer.edited(|_| assert!(undo.undo_blocking()));
+    writer.stored(&back, "r3").await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(20);
+    while asset_trashed(&client, asset).await {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the asset stayed trashed"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
 }
 
 /// Contract section 7: no agent tool, command or detailed read reaches a
