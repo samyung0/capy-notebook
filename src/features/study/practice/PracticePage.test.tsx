@@ -138,17 +138,14 @@ it('lets the owner of a personal workspace practise, add and edit', () => {
 });
 
 // Epo 2026-11-11: Study's pages each have their own place on the rail; its
-// order since Epo 2026-11-24.
+// order since Epo 2026-11-24, Files below Canvas since Epo 2026-11-26.
 it('gives each of the four people their rail', () => {
   const rail = (kind: 'class' | 'personal', role: 'owner' | 'viewer') =>
     workspaceSections({ kind, role }).map((section) => section.label);
   const dashboard = m.workspace_section_dashboard();
   const canvas = m.workspace_section_canvas();
-  const after = [
-    m.workspace_tab_study(),
-    m.workspace_tab_files(),
-    m.workspace_section_agent(),
-  ];
+  const files = m.workspace_tab_files();
+  const after = [m.workspace_tab_study(), m.workspace_section_agent()];
   const members = m.study_panel_members();
   // A class's staff give out assignments and manage the members; their Study
   // is every member's marks, Practice a tab of Study for everyone (Epo
@@ -156,6 +153,7 @@ it('gives each of the four people their rail', () => {
   expect(rail('class', 'owner')).toEqual([
     dashboard,
     canvas,
+    files,
     m.study_panel_assignments(),
     ...after,
     members,
@@ -166,16 +164,17 @@ it('gives each of the four people their rail', () => {
   expect(rail('class', 'viewer')).toEqual([
     dashboard,
     canvas,
+    files,
     m.study_panel_assignments(),
     ...after,
     members,
   ]);
   for (const own of [rail('personal', 'owner'), rail('personal', 'viewer')])
-    expect(own).toEqual([dashboard, canvas, ...after, members]);
+    expect(own).toEqual([dashboard, canvas, files, ...after, members]);
   // A link or public visitor is no member: no Members, and no canvas.
   expect(
     workspaceSections({ kind: 'personal', role: '' as never }).map(
       (section) => section.label
     )
-  ).toEqual([dashboard, ...after]);
+  ).toEqual([dashboard, files, ...after]);
 });
