@@ -166,6 +166,9 @@ pub enum RoomCmd {
     /// A board's fold finished: what it folded, or none when it failed or
     /// found nothing to fold.
     BoardFolded(board::Fold, Option<Box<BoardFold>>),
+    /// A board fold's projection was sent, at the version it folded through
+    /// (`note_store::Folded::projection`).
+    FoldProjected(i64, Result<(), String>),
     /// The source handoff: a channel goes read-only, every channel back to
     /// its token's access, channels close (none named: all of them).
     SetReadOnly(u64),
@@ -2024,6 +2027,7 @@ impl Room {
                 }
             }
             RoomCmd::BoardFolded(fold, folded) => self.board_folded(fold, folded),
+            RoomCmd::FoldProjected(version, result) => self.fold_projected(version, result),
             RoomCmd::SetReadOnly(channel) => {
                 if let Some(member) = self
                     .members
@@ -3243,7 +3247,7 @@ impl Room {
             // The fold gives the permit back before it returns, so none is
             // held while `Folded` waits for room in the room's queue.
             let permit = board_permit(&app, model, WorkKind::Fold, &material_id).await;
-            let folded = note_store::fold(
+            let mut folded = note_store::fold(
                 &app.db,
                 &material_id,
                 schema,
@@ -3261,6 +3265,7 @@ impl Room {
                 );
                 None
             });
+            let projection = folded.as_mut().and_then(|f| f.projection.take());
             let done = match (fold, folded) {
                 // `note_store::fold` returns a board's base and indexes, or
                 // fails.
@@ -3284,6 +3289,15 @@ impl Room {
                 (None, None) => RoomCmd::Folded(None, None),
             };
             let _ = handle.tx.send(done).await;
+            // A board's fold projects its new base, after the swap is queued
+            // (project() records and reports its own failure).
+            if let Some((version, content)) = projection {
+                let result = projection::project(&app, &material_id, version, &content, None).await;
+                let _ = handle
+                    .tx
+                    .send(RoomCmd::FoldProjected(version, result))
+                    .await;
+            }
         });
     }
 
@@ -3354,6 +3368,17 @@ impl Room {
             }
         }
         unlog_bytes(&self.app, log_bytes.max(0) as u64);
+    }
+
+    /// A board fold's projection was sent ([Room::maybe_fold]): sent, the
+    /// room's projection reaches its version, so the idle projection does
+    /// not send that version again. It neither ends a running projection
+    /// nor answers an on-demand one, which asks for the stored version.
+    fn fold_projected(&mut self, version: i64, result: Result<(), String>) {
+        if let (Kindly::Note(note), Ok(())) = (&mut self.kind, result) {
+            note.projected_version = note.projected_version.max(version);
+            note.projected_at = Instant::now();
+        }
     }
 
     /// The open room collects its own document (Q401) at the window and held
@@ -7150,7 +7175,8 @@ impl Room {
             return;
         };
         let app = self.app.clone();
-        // None for a board, which projects from its durable rows.
+        // None for a board, which projects its fold, or from its durable
+        // rows.
         let doc = self.document();
         let (model, doc_kind) = (note.model, note.doc);
         let (material_id, schema, stored, projected) = (
@@ -7169,21 +7195,9 @@ impl Room {
                 crate::trim::after_unload();
                 return;
             }
-            // The projection reads the unloaded document, the fold the rows:
-            // neither waits for the other.
-            let projecting = async {
-                if stored > projected
-                    && let Err(error) = match doc {
-                        Some(doc) if !model.quiz() => {
-                            projection::project_doc(&app, &material_id, stored, doc, model).await
-                        }
-                        _ => projection::project_durable(&app, &material_id)
-                            .await
-                            .map(|_| ()),
-                    }
-                    // Logged at info already: no failure.
-                    && error != projection::IN_TRASH
-                {
+            let failed = |error: String| {
+                // Logged at info already: no failure.
+                if error != projection::IN_TRASH {
                     log(
                         Level::Warn,
                         "unload projection failed",
@@ -7191,7 +7205,8 @@ impl Room {
                     );
                 }
             };
-            // The log folds while the room is empty (DESIGN.md 3.5).
+            // The log folds while the room is empty (DESIGN.md 3.5); a
+            // board's fold returns the projection of its new base.
             let folding = async {
                 if !session_rows.rows.is_empty()
                     && let Err(error) =
@@ -7205,18 +7220,56 @@ impl Room {
                 }
                 let holds = one_process(&app, &material_id, holds).await;
                 let permit = board_permit(&app, model, WorkKind::UnloadFold, &material_id).await;
-                if let Err(error) =
-                    note_store::fold(&app.db, &material_id, schema, doc_kind, None, holds, permit)
-                        .await
+                match note_store::fold(&app.db, &material_id, schema, doc_kind, None, holds, permit)
+                    .await
                 {
-                    observe::capture(
-                        &error.to_string(),
-                        None,
-                        &[("room", &material_id), ("stage", "fold")],
-                    );
+                    Ok(folded) => folded.and_then(|folded| folded.projection),
+                    Err(error) => {
+                        observe::capture(
+                            &error.to_string(),
+                            None,
+                            &[("room", &material_id), ("stage", "fold")],
+                        );
+                        None
+                    }
                 }
             };
-            tokio::join!(projecting, folding);
+            if model == crate::model::Model::Board {
+                // A board folds first and projects what the fold built, or,
+                // with no fold, from its base's projection and rows: no
+                // replay runs beside the fold's.
+                let result = match folding.await {
+                    Some((version, content)) => {
+                        projection::project(&app, &material_id, version, &content, None).await
+                    }
+                    None if stored > projected => projection::project_durable(&app, &material_id)
+                        .await
+                        .map(|_| ()),
+                    None => Ok(()),
+                };
+                if let Err(error) = result {
+                    failed(error);
+                }
+            } else {
+                // The projection reads the unloaded document, the fold the
+                // rows: neither waits for the other.
+                let projecting = async {
+                    if stored > projected
+                        && let Err(error) = match doc {
+                            Some(doc) if !model.quiz() => {
+                                projection::project_doc(&app, &material_id, stored, doc, model)
+                                    .await
+                            }
+                            _ => projection::project_durable(&app, &material_id)
+                                .await
+                                .map(|_| ()),
+                        }
+                    {
+                        failed(error);
+                    }
+                };
+                tokio::join!(projecting, folding);
+            }
             // What the room, its fold and its projection freed goes back.
             crate::trim::after_unload();
         });

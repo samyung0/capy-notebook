@@ -20255,6 +20255,89 @@ async fn a_board_that_names_an_asset_projects_after_its_store() {
     );
 }
 
+impl Projections {
+    /// The body sent for `material` at `version`, waiting up to 10 s for it.
+    async fn at(&self, material: &str, version: i64) -> Option<serde_json::Value> {
+        for _ in 0..100 {
+            let found = self
+                .0
+                .lock()
+                .expect("bodies")
+                .iter()
+                .find(|(id, body)| id == material && body["yjsVersion"] == version)
+                .map(|(_, body)| body.clone());
+            if found.is_some() {
+                return found;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        None
+    }
+}
+
+impl Client {
+    /// Erases block `id` and sends it.
+    async fn erase(&mut self, id: &str) {
+        use yrs::Map as _;
+        let update = self.edited(|doc| {
+            doc.get_or_insert_map("blocks")
+                .remove(&mut doc.transact_mut(), id);
+        });
+        self.send(5, &sync(2, &update)).await;
+    }
+}
+
+/// A board's fold stores the projection of the document it folded beside
+/// its new base and sends it, at the version of the last row it folded: an
+/// image drawn and then erased is named between folds, and no longer once a
+/// fold (here at its second row, `COLLABORATION_FOLD_MAX_ROWS` 2) took both
+/// rows. Fails if the fold sends nothing, or the base's projection is not
+/// the folded board's.
+#[tokio::test]
+async fn a_boards_fold_sends_the_projection_of_its_new_base() {
+    let Some(env) = env() else { return };
+    let (api, kept) = projections().await;
+    let server = start_configured(&env, Some(&api), &[("COLLABORATION_FOLD_MAX_ROWS", "2")]).await;
+    let (user, material, room) = canvas(&env).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    writer
+        .draw("i1", "affine:image", &[("prop:sourceId", "asset_1")])
+        .await;
+    writer.until(6).await.expect("ack");
+    persisted(&mut writer, "r1").await;
+    let (projected, _) = writer.stateless("projection-updated").await;
+    let drawn = projected["yjsVersion"].as_i64().expect("a version");
+    let sent = kept.at(&material, drawn).await.expect("a projection");
+    assert_eq!(
+        sent["content"]["value"][0]["images"],
+        serde_json::json!([{ "assetId": "asset_1" }])
+    );
+    writer.erase("i1").await;
+    writer.until(6).await.expect("ack");
+    persisted(&mut writer, "r2").await;
+    assert!(log_folded(&env, &material).await, "the second row folds");
+    let erased = stored_version(&env, &material).await;
+    let block = serde_json::json!({
+        "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
+        "version": erased, "images": [],
+    });
+    let sent = kept
+        .at(&material, erased)
+        .await
+        .expect("the fold's projection");
+    assert_eq!(sent["content"]["value"], serde_json::json!([block]));
+    let stored: Option<serde_json::Value> = db(&env)
+        .await
+        .query_one(
+            "SELECT base_projection FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("document")
+        .get(0);
+    assert_eq!(stored, Some(serde_json::json!([block])));
+}
+
 /// Contract section 7: no agent tool, command or detailed read reaches a
 /// canvas. An edit, an inspection and the replace-block command are refused
 /// for good (409 `unsupported_operation`: a 503 would tell Go its authority

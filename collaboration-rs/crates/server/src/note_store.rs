@@ -178,27 +178,33 @@ pub(crate) async fn bootstrap(
     largest.note(keys.as_ref().map_or(0, Vec::len));
     let schema = i32::try_from(schema)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
-    // A board's seed (a few hundred bytes) is stored with its indexes.
-    let (state_vector, delete_set, indexes) = match model {
+    // A board's seed (a few hundred bytes) is stored with its indexes and
+    // its projection at version 1, which names no image.
+    let (state_vector, delete_set, indexes, projection) = match model {
         Model::Board => {
             let seed = ydoc::scratch_doc();
             ydoc::replay(&seed, &state, &[] as &[&[u8]])
                 .map_err(|error| StoreError::Other(error.to_string()))?;
-            let stored = Indexes::of_doc(&seed.transact()).stored();
+            let txn = seed.transact();
+            let stored = Indexes::of_doc(&txn).stored();
+            let projection = Model::Board
+                .projection(&txn, 1)
+                .map_err(StoreError::Other)?;
             (
                 Some(stored.state_vector),
                 Some(stored.delete_set),
                 Some(stored.rest),
+                Some(Value::Array(projection)),
             )
         }
-        _ => (None, None, None),
+        _ => (None, None, None, None),
     };
     let inserted = tx
         .execute(
             "INSERT INTO material_yjs_documents
                (material_id, room_schema, state, stored_version, projected_version, projected_at,
-                base_state_vector, base_delete_set, base_indexes)
-             VALUES ($1,$2,$3,1,1,now(),$4,$5,$6)
+                base_state_vector, base_delete_set, base_indexes, base_projection)
+             VALUES ($1,$2,$3,1,1,now(),$4,$5,$6,$7)
              ON CONFLICT (material_id) DO NOTHING",
             &[
                 &material_id,
@@ -207,6 +213,7 @@ pub(crate) async fn bootstrap(
                 &state_vector,
                 &delete_set,
                 &indexes,
+                &projection,
             ],
         )
         .await?;
@@ -825,6 +832,18 @@ pub struct Folded {
     /// A board's new base, at its length, and the indexes stored with it,
     /// for the board room's swap (`board::Board::folded`).
     pub board: Option<(Vec<u8>, Indexes)>,
+    /// A board's projection stored with its new base: the version of the
+    /// last row folded and the content to send Go at it, once the fold
+    /// committed (`projection::project`).
+    pub projection: Option<(i64, Value)>,
+}
+
+/// A board's new base as its fold built it: its indexes, as built and as
+/// stored, and its projection (`Model::projection` at the fold's version).
+struct BoardBase {
+    indexes: Indexes,
+    stored: StoredIndexes,
+    projection: Vec<Value>,
 }
 
 /// What a fold's collection must keep (`ydoc::gc`), from the room's
@@ -879,7 +898,9 @@ const IT_FOLDED_LATER: &str = "capy-it-folded-later";
 /// the guard refuses, or that panics, folds uncollected and is reported once
 /// per material (human/ 2026-10-24); the next fold collects again. A board's
 /// new base is stored with its indexes (`board::Indexes::stored`) and
-/// returned with them (`Folded::board`). A board's fold brings its board
+/// returned with them (`Folded::board`), and with its projection at the
+/// version of the last row folded, which the caller sends Go once this
+/// returns (`Folded::projection`). A board's fold brings its board
 /// work `permit` (`work.rs`), taken before the material's lock, and gives it
 /// back once the new base is stored and the replay freed.
 #[allow(clippy::too_many_arguments)]
@@ -968,16 +989,16 @@ pub async fn fold(
     let board = model == Model::Board;
     // The state, the folded document as a window candidate, the window and
     // held set of a collection, why the guard refused one, the units it
-    // discarded, and a board's base indexes, as built and as stored.
+    // discarded, and a board's base indexes and projection.
     type Built = (
         Vec<u8>,
         Option<Window>,
         Option<(Window, IdSet)>,
         Option<String>,
         u64,
-        Option<(Indexes, StoredIndexes)>,
+        Option<BoardBase>,
     );
-    let (state, window, collected, refused, discarded, indexes) =
+    let (state, window, collected, refused, discarded, board_base) =
         tokio::task::spawn_blocking(move || -> Result<Built, StoreError> {
             let scratch = ydoc::scratch_doc();
             let updates: Vec<Vec<u8>> = rows.into_iter().map(|(_, row)| row).collect();
@@ -987,13 +1008,24 @@ pub async fn fold(
             let txn = scratch.transact();
             model.assert_roots(&txn).map_err(StoreError::Invalid)?;
             // A board keeps no sessions, so it never collects: its base is
-            // the whole scratch document, whose indexes go with it.
+            // the whole scratch document, whose indexes and projection go
+            // with it. The fold is where a board's document becomes content:
+            // between folds only its images and version move
+            // (`model::board_projection_since`).
             let Some(holds) = holds else {
-                let indexes = board.then(|| {
-                    let indexes = Indexes::of_doc(&txn);
-                    let stored = indexes.stored();
-                    (indexes, stored)
-                });
+                let indexes = board
+                    .then(|| {
+                        let indexes = Indexes::of_doc(&txn);
+                        let stored = indexes.stored();
+                        let projection = model.projection(&txn, last)?;
+                        Ok(BoardBase {
+                            indexes,
+                            stored,
+                            projection,
+                        })
+                    })
+                    .transpose()
+                    .map_err(StoreError::Other)?;
                 drop(txn);
                 let mut state = whole(&scratch);
                 // A board's base is its room's until the next fold, so it is
@@ -1041,16 +1073,22 @@ pub async fn fold(
         .map_err(|error| StoreError::Other(error.to_string()))??;
     let after_bytes = state.len() as i64;
     let indexes = if board {
-        let Some((indexes, stored)) = indexes else {
+        let Some(BoardBase {
+            indexes,
+            stored,
+            projection,
+        }) = board_base
+        else {
             return Err(StoreError::Other(
                 "a board's fold built no base indexes".into(),
             ));
         };
         largest.note(state.len() + stored_len(&stored));
+        let projection = Value::Array(projection);
         tx.execute(
             "UPDATE material_yjs_documents
              SET state=$2, log_bytes=log_bytes-$3, log_rows=log_rows-$4,
-                 base_state_vector=$5, base_delete_set=$6, base_indexes=$7
+                 base_state_vector=$5, base_delete_set=$6, base_indexes=$7, base_projection=$8
              WHERE material_id=$1",
             &[
                 &material_id,
@@ -1060,10 +1098,11 @@ pub async fn fold(
                 &stored.state_vector,
                 &stored.delete_set,
                 &stored.rest,
+                &projection,
             ],
         )
         .await?;
-        Some(indexes)
+        Some((indexes, projection))
     } else {
         largest.note(state.len());
         tx.execute(
@@ -1098,11 +1137,14 @@ pub async fn fold(
     // whose drop asks for a trim; a board's new base is the board room's
     // next base.
     drop(pooled);
-    let board = match indexes {
-        Some(indexes) => Some((state, indexes)),
+    let (board, projection) = match indexes {
+        Some((indexes, projection)) => (
+            Some((state, indexes)),
+            Some((last, crate::projection::envelope(projection))),
+        ),
         None => {
             drop(state);
-            None
+            (None, None)
         }
     };
     drop(permit);
@@ -1118,6 +1160,7 @@ pub async fn fold(
         base_bytes: after_bytes,
         collected,
         board,
+        projection,
     }))
 }
 

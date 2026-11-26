@@ -67,14 +67,19 @@ const UNREADABLE_QUIZ: &str = "the quiz holds a block this version cannot read";
 /// Trash is no failure (Q778 A).
 pub const IN_TRASH: &str = "the material is in Trash";
 
+/// The Plate envelope of a projection's value, as `materials.content` holds
+/// it.
+pub fn envelope(value: impl Into<Value>) -> Value {
+    json!({ "schemaVersion": 1, "value": value.into() })
+}
+
 /// The Plate envelope of a document holding the stored `version`, off the
 /// room's thread.
 pub async fn content_of(doc: Doc, model: Model, version: i64) -> Result<Value, String> {
     tokio::task::spawn_blocking(move || {
         use yrs::Transact;
         let txn = doc.transact();
-        let value = model.projection(&txn, version)?;
-        Ok(json!({ "schemaVersion": 1, "value": value }))
+        Ok(envelope(model.projection(&txn, version)?))
     })
     .await
     .map_err(|error| error.to_string())?
@@ -282,10 +287,7 @@ fn projected(durable: &note_store::Durable) -> Result<Option<Projected>, String>
             None,
         ),
     };
-    Ok(Some((
-        json!({ "schemaVersion": 1, "value": value }),
-        asset_ids,
-    )))
+    Ok(Some((envelope(value), asset_ids)))
 }
 
 /// The safety net for projections no room made (a crash before its idle or
