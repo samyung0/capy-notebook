@@ -500,6 +500,53 @@ func TestACanvasProjectionWritesItsBlockAndPrunesItsImages(t *testing.T) {
 	}
 }
 
+// A canvas projection at the version Go already projected replaces the
+// stored block when it names other images (the exact list after a fold
+// replacing the superset sent before it) and prunes by it; the same block
+// again changes nothing.
+func TestACanvasProjectionAtTheSameVersionReplacesADifferentBlock(t *testing.T) {
+	f := newCanvasFixture(t, "canvas-same-version")
+	ctx := context.Background()
+	canvas := f.canvas(t, f.editor, true)
+	kept := readyAsset(t, f.s, canvas.ID, f.editor, "image")
+	dropped := readyAsset(t, f.s, canvas.ID, f.editor, "image")
+	if _, err := f.s.pool.Exec(ctx, `UPDATE editor_assets SET completed_at=now() - interval '2 minutes'
+		WHERE material_id=$1`, canvas.ID); err != nil {
+		t.Fatal(err)
+	}
+	storeBoard(t, f.s, canvas.ID, 300, 0, 4)
+	superset, err := f.s.ProjectMaterialContent(ctx, canvas.ID, boardProjection(t, 4, kept, dropped), 4, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	exact, err := f.s.ProjectMaterialContent(ctx, canvas.ID, boardProjection(t, 4, kept), 4, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, err := f.s.GetMaterial(ctx, canvas.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := materialdoc.ReadCanvasBoard(stored.Content)
+	if err != nil || !slices.Equal(board.ImageAssetIDs, []string{kept}) || exact.Revision != superset.Revision+1 {
+		t.Fatalf("the block = %+v, %v at revision %d after %d", board, err, exact.Revision, superset.Revision)
+	}
+	var trashed bool
+	if err := f.s.pool.QueryRow(ctx, `SELECT trashed_at IS NOT NULL FROM editor_assets WHERE id=$1`,
+		dropped).Scan(&trashed); err != nil || !trashed {
+		t.Fatalf("the image the exact list dropped is trashed: %v, %v", trashed, err)
+	}
+
+	again, err := f.s.ProjectMaterialContent(ctx, canvas.ID, boardProjection(t, 4, kept), 4, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.Revision != exact.Revision {
+		t.Fatalf("the same block again moved the revision to %d from %d", again.Revision, exact.Revision)
+	}
+}
+
 // A canvas is charged its content JSON plus the Yjs bytes its room has stored,
 // as of its last projection, to its creator: the storage counter follows it
 // and Billing shows it under Canvas.
