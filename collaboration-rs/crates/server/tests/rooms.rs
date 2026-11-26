@@ -20179,8 +20179,11 @@ async fn projections() -> (String, Projections) {
 /// canvas's one `canvas_board` block, its `version` the stored version
 /// projected (`yjsVersion`), and the assets its blocks name, whatever their
 /// flavour (board review 3.5), each once and in byte order, with no
-/// `assetIds` beside the content. Fails if the content does not change with
-/// each projection, or an asset a block names is left out for Go to prune.
+/// `assetIds` beside the content. Between folds, as here, it names every
+/// string shaped like an asset id the rows since wrote (Epo 2026-11-26), a
+/// note's text too, which Go matches against the canvas's own assets alone.
+/// Fails if the content does not change with each projection, or an asset a
+/// block names is left out for Go to prune.
 #[tokio::test]
 async fn a_board_projects_its_block_with_the_version_and_sorted_images() {
     let Some(env) = env() else { return };
@@ -20221,7 +20224,7 @@ async fn a_board_projects_its_block_with_the_version_and_sorted_images() {
                 "version": version,
                 "images": [
                     { "assetId": "asset_a" }, { "assetId": "asset_b" },
-                    { "assetId": "asset_later" },
+                    { "assetId": "asset_later" }, { "assetId": "asset_text" },
                 ],
             }] },
         }))
