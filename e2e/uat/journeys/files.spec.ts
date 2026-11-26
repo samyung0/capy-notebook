@@ -267,49 +267,59 @@ test('digital PDF: reader annotations are private and source bytes stay unchange
       .status,
     404
   );
+  // Marks are written in one PATCH of saves and removals, their ids made by
+  // the client (PDF marks round 1, Epo 2026-11-24).
   const annotations = `/api/files/${fileId}/annotations`;
+  const sourceIdentity = `revision:${before.revision}`;
   const mark = {
     color: '#facc15',
+    comment: '',
     kind: 'rectangle',
     page: 1,
     rects: [{ height: 60, width: 300, x: 80, y: 80 }],
-    sourceIdentity: `revision:${before.revision}`,
+    size: 0,
+    strokes: [],
+    text: '',
+    width: 2,
   };
-  const ownerMark = object(
-    await api(run.owner, annotations, 'POST', mark, 201)
-  );
-  const viewerMark = object(
-    await api(viewer, annotations, 'POST', { ...mark, color: '#60a5fa' }, 201)
-  );
-  await run.record('annotation', string(ownerMark.id), {
+  const markId = () => `ann_${randomUUID().replaceAll('-', '')}`;
+  const ownerMark = { ...mark, id: markId() };
+  const viewerMark = { ...mark, color: '#60a5fa', id: markId() };
+  const save = (actor: typeof viewer, changes: object) =>
+    api(
+      actor,
+      annotations,
+      'PATCH',
+      { remove: [], save: [], sourceIdentity, ...changes },
+      204
+    );
+  await save(run.owner, { save: [ownerMark] });
+  await save(viewer, { save: [viewerMark] });
+  await run.record('annotation', ownerMark.id, {
     actorId: run.owner.id,
     fileId,
   });
-  await run.record('annotation', string(viewerMark.id), {
+  await run.record('annotation', viewerMark.id, {
     actorId: viewer.id,
     fileId,
   });
-  const ownerMarks = await api(run.owner, annotations);
-  const viewerMarks = await api(viewer, annotations);
-  assert(Array.isArray(ownerMarks) && Array.isArray(viewerMarks));
-  assert.deepEqual(
-    ownerMarks.map((value) => object(value).id),
-    [ownerMark.id]
-  );
-  assert.deepEqual(
-    viewerMarks.map((value) => object(value).id),
-    [viewerMark.id]
-  );
-  assert.equal(
-    (await viewer.request(`${annotations}/${ownerMark.id}`, 'DELETE')).status,
-    404
-  );
+  // Each reader lists only their own marks.
+  const ids = async (actor: typeof viewer) => {
+    const { marks } = object(await api(actor, annotations));
+    assert(Array.isArray(marks));
+    return marks.map((value) => object(value).id);
+  };
+  assert.deepEqual(await ids(run.owner), [ownerMark.id]);
+  assert.deepEqual(await ids(viewer), [viewerMark.id]);
+  // A removal names only the remover's own marks: the owner's stays.
+  await save(viewer, { remove: [ownerMark.id] });
+  assert.deepEqual(await ids(run.owner), [ownerMark.id]);
   const stored = await run.query(
     'SELECT author_id,source_identity,kind,rects FROM pdf_annotations WHERE file_id=%s ORDER BY author_id',
     [fileId]
   );
   assert.equal(stored.length, 2);
-  assert(stored.every((row) => row.source_identity === mark.sourceIdentity));
+  assert(stored.every((row) => row.source_identity === sourceIdentity));
   assert.equal((await fileRow(run, fileId)).revision, before.revision);
   assert.equal(
     (await run.blob(string(before.blob_path))).sha256,
