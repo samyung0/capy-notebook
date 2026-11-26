@@ -6678,12 +6678,19 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       the pending scan also send whenever Go's projected version lags the stored
       one, images changed or not, as every projection did before, so Go
       recomputes the canvas's charge (the board's stored bytes) as often as it
-      did and the pending scan does not find the board again. A store alone, or a
-      fold, never sends unchanged images: strokes and typing write no asset's id,
-      so they ask for no projection at a store, and reach Go only at the idle
-      projection, the cadence or the unload. An asset made since the room's last
-      read is named by the next projection that runs (the idle one at the
-      latest); none prunes it before, as each reads the assets anew.
+      did and the pending scan does not find the board again. An idle or
+      on-demand projection that comes while another runs is kept for after it,
+      since the running one may send nothing, and an on-demand caller is
+      answered only once Go holds the stored version that projection read. A
+      store alone, or a fold, never sends unchanged images. Once the room has
+      read the canvas's assets (its first projection after a load does),
+      strokes and typing write none of them, so they ask for no projection at a
+      store; before that, the id-shaped strings they write ask for one, which
+      finds the images unchanged and sends nothing. Either way they reach Go
+      only at the idle projection, the cadence or the unload. An asset made
+      since the room's last read is named by the next projection that runs
+      (the idle one at the latest); none prunes it before, as each reads the
+      assets anew.
     - **The projection rides on the fold (Epo 2026-11-26).** Every board fold already
       replays the board into a whole document under the board work permit
       (`note_store::fold`); it runs `Model::projection` on that document and stores the
@@ -6699,7 +6706,14 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       rows, Go's projected version and stored images, and the canvas's assets (every
       `editor_assets` row of the material, pending or ready, in the hidden trash or
       not; a purged one is gone; one query on `editor_assets_material_idx`) in one
-      snapshot, never the base, takes no permit and builds no document. It is
+      snapshot, never the base, takes no permit and builds no document. The
+      stored projection must be its base's: its `version` the one just before
+      the first row left, or the stored version when none is left (a store
+      appends the stored version plus one, so a board's rows have no gaps, and
+      a fold deletes the ones it took). One that is not (a fold by a server
+      older than 0196, after a rollback, rewrites the base and the rows and
+      leaves it) is logged (`board base projection stale`) and the board is
+      replayed, as with none, until its next fold writes the column. It is
       complete: an image live now was live at the fold, so its list names it, or was
       written since, so a row holds its id; Yjs never brings a deleted item back
       (Undo, a paste and a copy write new structs). Keeping to the canvas's assets
@@ -6717,7 +6731,7 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       answer: a superset read before a fold committed is sent before the exact list
       read after it. A base stored before 0196 (`base_projection` null) projects by
       the full replay under the permit, kept to the canvas's assets the same way,
-      until its next fold writes the column. On a board of 3.2 MB with a 256 KiB tail
+      at every projection until its next fold writes the column. On a board of 3.2 MB with a 256 KiB tail
       of 712 rows, the replay peaked at 11.2 MiB of heap beside the base and rows it
       read, in 82 ms, and the projection between folds at 19 KiB, in 2.4 ms (debug
       build, `board.rs` test allocator).
