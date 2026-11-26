@@ -8,6 +8,7 @@
 use notes::catalog::CANVAS_BOARD_MAX;
 use notes::limits::{LimitCode, Metrics};
 use serde_json::{Value, json};
+use yrs::block::ItemContent;
 use yrs::{Any, Map, Out, ReadTxn, StateVector, Transact};
 
 /// The one root a board's editors write: BlockSuite's map of blocks by id.
@@ -272,15 +273,36 @@ fn board_block<T: ReadTxn>(txn: &T, version: i64) -> Value {
     })
 }
 
-/// Whether `update` writes a board block's asset id: an image added, pasted
-/// or brought back by Undo, whose asset Go trashed when a projection no
-/// longer named it. The room then projects after its next store, not at the
-/// idle projection, so the image is served again within seconds.
-pub fn names_asset(update: &yrs::Update) -> bool {
+/// Whether `found` takes one of the strings a struct of `update` holds that
+/// pass [asset_id_ok], called with each until it does: every value of the
+/// kinds a block map's lookup reads as a string (`ItemContent::get_last` of
+/// yrs: a plain value, an embed, a JSON value as its text, a text chunk).
+fn any_asset_id(update: &yrs::Update, mut found: impl FnMut(&str) -> bool) -> bool {
+    let mut take = |id: &str| asset_id_ok(id) && found(id);
     update.blocks().any(|block| {
-        matches!(block, yrs::UpdateBlock::Item(item)
-            if item.parent_sub().is_some_and(|key| &**key == SOURCE_ID))
+        let yrs::UpdateBlock::Item(item) = block else {
+            return false;
+        };
+        match item.content() {
+            ItemContent::Any(values) => values
+                .iter()
+                .any(|value| matches!(value, Any::String(id) if take(id))),
+            ItemContent::Embed(Any::String(id)) => take(id),
+            ItemContent::JSON(values) => values.iter().any(|id| take(id)),
+            ItemContent::String(id) => take(id.as_str()),
+            _ => false,
+        }
     })
+}
+
+/// Whether `update` writes a string shaped like an asset id ([asset_id_ok]),
+/// as an image added, pasted, brought back by Undo or given another asset
+/// does: Go trashed the asset when a projection no longer named it. The room
+/// then projects after its next store, not at the idle projection, so the
+/// image is served again within seconds. Any new struct counts, not only one
+/// keyed `prop:sourceId`: an overwrite carries its origin and no key.
+pub fn names_asset(update: &yrs::Update) -> bool {
+    any_asset_id(update, |_| true)
 }
 
 /// A document's whole state in bytes, as a board's cap counts it.
@@ -1055,6 +1077,44 @@ mod tests {
             blocks.remove(&mut txn, "i2");
         });
         assert!(!super::names_asset(&Update::decode_v1(&moved).unwrap()));
+    }
+
+    /// `update` applied to `doc`, as a room's store or a fold's replay takes
+    /// it.
+    fn applied(doc: &yrs::Doc, update: &[u8]) {
+        ydoc::apply(doc, ydoc::decode(update).unwrap()).unwrap();
+    }
+
+    /// Image `id` given asset `asset`: an overwrite of its `prop:sourceId`.
+    fn renamed(doc: &yrs::Doc, id: &str, asset: &str) {
+        let blocks = doc.get_or_insert_map(super::BOARD_ROOT);
+        let mut txn = doc.transact_mut();
+        let Some(yrs::Out::YMap(image)) = blocks.get(&txn, id) else {
+            panic!("no block {id}");
+        };
+        image.insert(&mut txn, "prop:sourceId", asset);
+    }
+
+    /// An image given another asset is an overwrite of its `prop:sourceId`:
+    /// the new value's struct carries its origin and no key, so a check for
+    /// the key missed it. Any struct holding an asset-shaped string asks for
+    /// the early projection. Fails with the key check.
+    #[test]
+    fn an_image_given_another_asset_asks_for_the_early_projection() {
+        let (room, _) = board();
+        let writer = tab(&room, 11);
+        applied(
+            &room,
+            &update(&writer, |doc| {
+                add_block(doc, "i1", "affine:image", &[("prop:sourceId", "asset_a")]);
+            }),
+        );
+        let overwrite =
+            Update::decode_v1(&update(&writer, |doc| renamed(doc, "i1", "asset_b"))).unwrap();
+        assert!(overwrite.blocks().all(|block| matches!(
+            block, yrs::UpdateBlock::Item(item) if item.parent_sub().is_none()
+        )));
+        assert!(super::names_asset(&overwrite));
     }
 
     /// An update of one GC struct, which carries no bytes: `len` clocks of
