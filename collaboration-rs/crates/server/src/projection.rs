@@ -4,8 +4,8 @@
 //! reported once per run of failures (2026-09-13), but not its refusal of a
 //! material in Trash (Q778 A).
 
-use std::collections::HashMap;
-use std::sync::Mutex;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::{Value, json};
@@ -59,6 +59,82 @@ impl Refused {
     }
 }
 
+/// One durable projection of a material at a time in this process, its read
+/// and its send together (Epo 2026-11-26): each reads after the last one's
+/// answer, so Go takes a board's projections in the order their snapshots
+/// were read, and one read before a fold committed (a superset of the
+/// board's images) is sent before the exact one read after it, which Go
+/// takes at the same version too. The room's checks, its unload and the
+/// pending scan all project a board through [project_durable].
+#[derive(Default)]
+pub struct Slots(Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>);
+
+impl Slots {
+    /// Waits for `material`'s slot.
+    #[allow(clippy::unwrap_used)]
+    async fn take<'a>(&'a self, material: &'a str) -> Slot<'a> {
+        let lock = self
+            .0
+            .lock()
+            .unwrap()
+            .entry(material.to_owned())
+            .or_default()
+            .clone();
+        Slot {
+            held: Some(lock.lock_owned().await),
+            slots: self,
+            material,
+        }
+    }
+}
+
+/// A material's slot in [Slots], given back when it drops; the entry goes
+/// with the last holder or waiter.
+struct Slot<'a> {
+    held: Option<tokio::sync::OwnedMutexGuard<()>>,
+    slots: &'a Slots,
+    material: &'a str,
+}
+
+impl Drop for Slot<'_> {
+    #[allow(clippy::unwrap_used)]
+    fn drop(&mut self) {
+        let mut slots = self.slots.0.lock().unwrap();
+        drop(self.held.take());
+        // The map's reference alone: nobody waits.
+        if slots
+            .get(self.material)
+            .is_some_and(|lock| Arc::strong_count(lock) == 1)
+        {
+            slots.remove(self.material);
+        }
+    }
+}
+
+/// What a projection did: the version Go's projection reaches after it (the
+/// stored version it sent, or for a board it did not send, the one Go held
+/// already), whether it reached Go, whether Go holds the stored version it
+/// read, and for a canvas its editor assets as read (`note_store::Held`),
+/// which the room's [crate::model::names_asset] checks updates against.
+pub struct Checked {
+    pub version: i64,
+    pub sent: bool,
+    pub current: bool,
+    pub assets: Option<HashSet<String>>,
+}
+
+impl Checked {
+    /// A projection sent at `version`.
+    pub fn sent(version: i64) -> Self {
+        Self {
+            version,
+            sent: true,
+            current: true,
+            assets: None,
+        }
+    }
+}
+
 /// Why a quiz's projection is refused.
 const UNREADABLE_QUIZ: &str = "the quiz holds a block this version cannot read";
 
@@ -67,14 +143,19 @@ const UNREADABLE_QUIZ: &str = "the quiz holds a block this version cannot read";
 /// Trash is no failure (Q778 A).
 pub const IN_TRASH: &str = "the material is in Trash";
 
+/// The Plate envelope of a projection's value, as `materials.content` holds
+/// it.
+pub fn envelope(value: impl Into<Value>) -> Value {
+    json!({ "schemaVersion": 1, "value": value.into() })
+}
+
 /// The Plate envelope of a document holding the stored `version`, off the
 /// room's thread.
 pub async fn content_of(doc: Doc, model: Model, version: i64) -> Result<Value, String> {
     tokio::task::spawn_blocking(move || {
         use yrs::Transact;
         let txn = doc.transact();
-        let value = model.projection(&txn, version)?;
-        Ok(json!({ "schemaVersion": 1, "value": value }))
+        Ok(envelope(model.projection(&txn, version)?))
     })
     .await
     .map_err(|error| error.to_string())?
@@ -193,32 +274,125 @@ pub async fn project(
 }
 
 /// Projects a material from its durable rows: a room loaded nowhere here,
-/// the cadence, and every quiz projection (a quiz projects from both its
-/// documents, read together at one version).
-pub async fn project_durable(app: &Shared, material_id: &str) -> Result<i64, String> {
-    let Some(durable) = note_store::durable(&app.db, material_id)
+/// the cadence, every board projection, and every quiz projection (a quiz
+/// projects from both its documents, read together at one version), in
+/// the material's slot ([Slots]). A board reaches Go when its images differ
+/// from what Go holds, at once (Epo 2026-11-26), or, with `catch_up` (the
+/// idle projection, the cadence, an on-demand one, the unload and the
+/// pending scan), when Go's projected version lags the stored one, as every
+/// projection did before: that send moves the watermark the pending scan
+/// reads and the canvas's charge, which Go recomputes on a content write.
+/// A store alone, or a fold, sends only changed images.
+pub async fn project_durable(
+    app: &Shared,
+    material_id: &str,
+    catch_up: bool,
+) -> Result<Checked, String> {
+    let _slot = app.projection_slots.take(material_id).await;
+    let board = match note_store::durable(&app.db, material_id)
         .await
         .map_err(|error| error.to_string())?
-    else {
-        return Err("material not found".into());
+    {
+        Some(note_store::Stored::Board(board)) => board,
+        Some(note_store::Stored::Replay(durable)) => match durable.held {
+            Some(_) => replay_board(app, material_id, durable).await?,
+            None => return project_replay(app, material_id, durable).await,
+        },
+        None => return Err("material not found".into()),
     };
+    project_board(app, material_id, board, catch_up).await
+}
+
+/// A board whose base was stored before its projection was
+/// (`base_projection` null): its replay's projection stands in for the
+/// base's, with no rows since. The replay waits for the board work limit
+/// (`work.rs`), after the read, so no connection is held while it waits.
+async fn replay_board(
+    app: &Shared,
+    material_id: &str,
+    mut durable: note_store::Durable,
+) -> Result<note_store::BoardRows, String> {
+    let held = durable
+        .held
+        .take()
+        .ok_or("a board's read holds no canvas")?;
     let version = durable.version;
-    // A board's replay waits for the board work limit (`work.rs`), after the
-    // read, so no connection is held while it waits.
-    let permit = match Model::of(&durable.kind) {
-        Model::Board => Some(
-            app.board_work
-                .acquire(WorkKind::Projection, material_id)
-                .await,
-        ),
-        _ => None,
-    };
+    let permit = app
+        .board_work
+        .acquire(WorkKind::Projection, material_id)
+        .await;
     // The rows and their replay go before the permit, whose drop asks for
     // a trim.
+    let base_projection = tokio::task::spawn_blocking(move || {
+        use yrs::Transact;
+        let doc = ydoc::scratch_doc();
+        let projection = ydoc::replay(&doc, &durable.base, &durable.rows)
+            .map_err(|error| error.to_string())
+            .and_then(|()| Model::Board.projection(&doc.transact(), version));
+        drop((doc, durable, permit));
+        projection
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    Ok(note_store::BoardRows {
+        version,
+        base_projection: Value::Array(base_projection),
+        rows: Vec::new(),
+        held,
+    })
+}
+
+/// A board (Epo 2026-11-26): the projection its last fold stored with its
+/// base, its images joined by the asset ids the rows since write and kept to
+/// the canvas's assets (`model::board_projection_since`), at the stored
+/// version, sent when [project_durable] says. No board work permit, no
+/// document, no read of the base.
+async fn project_board(
+    app: &Shared,
+    material_id: &str,
+    board: note_store::BoardRows,
+    catch_up: bool,
+) -> Result<Checked, String> {
+    let note_store::BoardRows {
+        version,
+        base_projection,
+        rows,
+        held,
+    } = board;
+    let assets = held.assets;
+    let (value, images, assets) = tokio::task::spawn_blocking(move || {
+        crate::model::board_projection_since(base_projection, &rows, version, &assets)
+            .map(|(value, images)| (value, images, assets))
+    })
+    .await
+    .map_err(|error| error.to_string())??;
+    let sent = images != held.images || (catch_up && held.projected_version < version);
+    if sent {
+        project(app, material_id, version, &envelope(value), None).await?;
+    }
+    Ok(Checked {
+        version: if sent {
+            version
+        } else {
+            held.projected_version
+        },
+        sent,
+        current: sent || held.projected_version >= version,
+        assets: Some(assets),
+    })
+}
+
+/// Every other material from its base and whole log.
+async fn project_replay(
+    app: &Shared,
+    material_id: &str,
+    durable: note_store::Durable,
+) -> Result<Checked, String> {
+    let version = durable.version;
+    // The rows and their replay go before the projection is sent.
     let projected = tokio::task::spawn_blocking(move || {
         let projected = projected(&durable);
         drop(durable);
-        drop(permit);
         projected
     })
     .await
@@ -247,7 +421,7 @@ pub async fn project_durable(app: &Shared, material_id: &str) -> Result<i64, Str
         return Err(UNREADABLE_QUIZ.into());
     };
     project(app, material_id, version, &content, asset_ids).await?;
-    Ok(version)
+    Ok(Checked::sent(version))
 }
 
 /// A projection's content, with a quiz's editor assets.
@@ -282,10 +456,7 @@ fn projected(durable: &note_store::Durable) -> Result<Option<Projected>, String>
             None,
         ),
     };
-    Ok(Some((
-        json!({ "schemaVersion": 1, "value": value }),
-        asset_ids,
-    )))
+    Ok(Some((envelope(value), asset_ids)))
 }
 
 /// The safety net for projections no room made (a crash before its idle or
@@ -325,7 +496,7 @@ pub async fn run_pending(app: Shared) {
                 continue;
             }
             // project() records and reports its own failure.
-            let _ = project_durable(&app, &material_id).await;
+            let _ = project_durable(&app, &material_id, true).await;
         }
     }
 }
@@ -351,31 +522,7 @@ mod tests {
     use serde_json::json;
 
     use super::{Refused, projected};
-    use crate::model::Model;
     use crate::note_store::Durable;
-
-    /// What a canvas's projection sends Go: its one `canvas_board` block,
-    /// `version` the stored version projected, and no asset list beside it
-    /// (Go reads the assets from the block).
-    #[test]
-    fn a_canvas_projects_its_board_block_at_the_stored_version() {
-        let durable = Durable {
-            version: 7,
-            base: Model::Board.state_from_value(&[]),
-            rows: Vec::new(),
-            kind: "canvas".into(),
-            keys: None,
-        };
-        let (content, asset_ids) = projected(&durable).unwrap().unwrap();
-        assert_eq!(
-            content,
-            json!({ "schemaVersion": 1, "value": [{
-                "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
-                "version": 7, "images": [],
-            }] })
-        );
-        assert_eq!(asset_ids, None);
-    }
 
     /// A quiz holding a block this version cannot read projects to nothing
     /// (the projection would drop the block), and its refusal is held per
@@ -403,6 +550,7 @@ mod tests {
                 rows: Vec::new(),
                 kind: "quiz".into(),
                 keys: Some((keys, Vec::new())),
+                held: None,
             }
         };
         assert!(

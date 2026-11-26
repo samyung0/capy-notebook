@@ -4781,3 +4781,18 @@ WHERE d.material_id = m.id AND m.kind = 'canvas' AND d.base_indexes IS NULL;
 
 Until the deploy the live-document room still opens them; from the deploy to
 the delete they fail their load.
+
+## Board base projection (migration 0200)
+
+[`0200_board_base_projection.sql`](../server/migrations/0200_board_base_projection.sql)
+(the board projection rides on the fold, Epo 2026-11-26) adds
+`base_projection jsonb` to `material_yjs_documents`: the `canvas_board`
+block a projection of the board's base sends Go, naming the base's images.
+As with 0193 and 0195, it must be applied before the new collaboration
+server starts, which writes it at every canvas's first seed and every board
+fold (a canvas's first open and each board fold fail without it); the
+deploy's own order does this. It is nullable, null for every other kind and
+for a board stored before 0200 and not folded since. Such a board projects
+by a full replay under the board work permit, as before, until its next fold
+(at the latest its next unload) writes the column, so the migration
+backfills nothing, refuses nothing and needs no hand step.

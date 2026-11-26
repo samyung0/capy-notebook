@@ -2475,6 +2475,16 @@ mod tests {
     /// drags, typing into a block another tab deleted) and depend on each
     /// other. Every update in the order it was sent.
     fn session(tabs: u64, edits: usize, seed: u64) -> Vec<Vec<u8>> {
+        session_of(tabs, edits, seed, edit)
+    }
+
+    /// [session] with each edit made by `edit`.
+    fn session_of(
+        tabs: u64,
+        edits: usize,
+        seed: u64,
+        edit: fn(&Tab, &mut Rng, usize) -> Vec<u8>,
+    ) -> Vec<Vec<u8>> {
         let first = first_state();
         let mut tabs: Vec<Tab> = (0..tabs).map(|n| tab(11 + n)).collect();
         for tab in &tabs {
@@ -2584,6 +2594,154 @@ mod tests {
                 assert!(!pending(doc), "{order}: {who} holds pending structs");
                 assert!(held(doc) == board, "{order}: {who} holds another board");
             }
+        }
+    }
+
+    /// The names images take in [image_edit]: a few assets, so images share
+    /// one and erasing one leaves another naming it, one that is another
+    /// canvas's asset (`asset_3`, pasted) and a name that is no asset id.
+    const ASSETS: [&str; 5] = ["asset_0", "asset_1", "asset_2", "asset_3", "not an id"];
+
+    /// The canvas's own editor assets among [ASSETS], one in its hidden trash
+    /// or not: the editor assets a projection reads.
+    const CANVAS_ASSETS: [&str; 3] = ["asset_0", "asset_1", "asset_2"];
+
+    /// An edit as [edit] makes one, or as often an image's: one added under
+    /// an id [edit] leaves alone, given another asset (an overwrite of its
+    /// `prop:sourceId`) or erased.
+    fn image_edit(tab: &Tab, rng: &mut Rng, n: usize) -> Vec<u8> {
+        let client = tab.doc.client_id();
+        let kind = rng.below(6);
+        if kind > 2 {
+            return edit(tab, rng, n);
+        }
+        edited(tab, |txn, blocks| {
+            let mut ids: Vec<String> = blocks
+                .keys(txn)
+                .filter(|id| id.starts_with("img"))
+                .map(str::to_owned)
+                .collect();
+            ids.sort();
+            let asset = ASSETS[rng.below(ASSETS.len())];
+            match kind {
+                1 if !ids.is_empty() => {
+                    let id = &ids[rng.below(ids.len())];
+                    block(txn, blocks, id).insert(txn, "prop:sourceId", asset);
+                }
+                2 if !ids.is_empty() => {
+                    blocks.remove(txn, &ids[rng.below(ids.len())]);
+                }
+                _ => {
+                    let image =
+                        blocks.insert(txn, format!("img{client}-{n}"), MapPrelim::default());
+                    image.insert(txn, "sys:flavour", "affine:image");
+                    image.insert(txn, "prop:sourceId", asset);
+                }
+            }
+        })
+    }
+
+    /// A projection's asset ids.
+    fn image_ids(value: &[serde_json::Value]) -> std::collections::BTreeSet<String> {
+        crate::model::image_ids(&value[0]["images"]).unwrap()
+    }
+
+    /// The board projection rides on the fold (Epo 2026-11-26). Across a
+    /// session of four tabs that draw, type, add images, give them other
+    /// assets and erase them, heard out of order, at every store the
+    /// projection between folds (`model::board_projection_since`: the last
+    /// fold's projection, as `note_store::fold` builds it from the document
+    /// it folded, with the asset ids of the rows since, kept to the canvas's
+    /// own assets) names every image of the canvas's assets a full replay of
+    /// the stored board names, and nothing else; right after a fold that
+    /// left no rows the two are equal. Folds that rows outlast (stored while
+    /// the fold ran) and a reload of the room come between, and some stores
+    /// still name an image erased since the fold. Fails if an image the
+    /// board holds is left out for Go to prune.
+    #[test]
+    fn between_folds_the_projection_names_every_image_the_board_holds() {
+        let updates = session_of(4, 600, 23, image_edit);
+        let projection =
+            |doc: &Doc, version: i64| Model::Board.projection(&doc.transact(), version);
+        for (order, delivery) in orders(&updates).into_iter().take(2) {
+            let mut room = Room::new();
+            let mut version = 1;
+            let mut base = serde_json::Value::Array(projection(&room.stored(), version).unwrap());
+            let (mut erased, mut named) = (0, 0);
+            let canvas: std::collections::HashSet<String> =
+                CANVAS_ASSETS.iter().map(|id| id.to_string()).collect();
+            let mut check = |room: &Room, base: &serde_json::Value, version: i64| {
+                let (value, since) = crate::model::board_projection_since(
+                    base.clone(),
+                    &room.rows,
+                    version,
+                    &canvas,
+                )
+                .unwrap();
+                assert_eq!(image_ids(value.as_array().unwrap()), since, "{order}");
+                let replayed = projection(&room.stored(), version).unwrap();
+                let replayed: std::collections::BTreeSet<String> = image_ids(&replayed)
+                    .into_iter()
+                    .filter(|id| canvas.contains(id))
+                    .collect();
+                assert!(
+                    since.is_superset(&replayed),
+                    "{order}: {since:?} lacks some of {replayed:?}"
+                );
+                assert!(
+                    since.iter().all(|id| canvas.contains(id)),
+                    "{order}: {since:?}"
+                );
+                // An image erased or given another asset since the fold.
+                erased += usize::from(
+                    since
+                        .difference(&replayed)
+                        .any(|id| id.starts_with("asset_")),
+                );
+                named += replayed.len();
+                since == replayed
+            };
+            let (mut folding, mut reloaded) = (None, false);
+            for (at, sent) in delivery.iter().enumerate() {
+                room.deliver(sent);
+                if at % 20 == 9 {
+                    room.store();
+                    version += 1;
+                    check(&room, &base, version);
+                }
+                if at % 160 == 79 {
+                    // A fold that rows stored while it ran outlast.
+                    folding = Some((room.begin_fold(), version));
+                }
+                if at % 160 == 119
+                    && let Some(((fold, through), folded)) = folding.take()
+                {
+                    room.end_fold(fold, through);
+                    base = serde_json::Value::Array(
+                        projection(&replica(&[&room.stored_base]), folded).unwrap(),
+                    );
+                    check(&room, &base, version);
+                }
+                // The room's next life, between folds.
+                if at >= delivery.len() / 2 && folding.is_none() && !reloaded {
+                    room = room.reload();
+                    reloaded = true;
+                }
+            }
+            assert!(reloaded, "{order}");
+            if let Some(((fold, through), _)) = folding {
+                room.end_fold(fold, through);
+            }
+            room.store();
+            room.fold();
+            version += 1;
+            base = serde_json::Value::Array(projection(&room.stored(), version).unwrap());
+            assert!(room.rows.is_empty());
+            assert!(
+                check(&room, &base, version),
+                "{order}: unequal right after a fold"
+            );
+            assert!(erased > 0 && named > 0, "{order}: {erased} {named}");
         }
     }
 
