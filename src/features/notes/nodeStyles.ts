@@ -2,7 +2,7 @@
  * components (nodeComponents.tsx) and the static preview components
  * (materials/staticNodeComponents.tsx) consume these so the two surfaces
  * cannot drift apart visually. */
-import type { TElement, TText } from 'platejs';
+import type { TElement } from 'platejs';
 import type { CSSProperties } from 'react';
 import { isIndent, isStyleValue } from '@/features/materials/document';
 
@@ -19,28 +19,32 @@ export const HEADING_CLASS: Record<string, string> = {
   h6: 'mt-4 mb-px py-[3px] text-base leading-[1.3] font-semibold text-fg',
 };
 
-/** Plate draws a text mark (color, background, font size and family) into a
- * style only for a value the document check takes (`isStyleValue`). Shared by
- * the editor and static plugins. */
-export const STYLE_MARK_NODE_PROPS = {
-  query: ({
-    nodeKey,
-    nodeProps,
-  }: {
-    nodeKey?: string;
-    nodeProps: { text?: TText };
-  }) => nodeKey !== undefined && isStyleValue(nodeProps.text?.[nodeKey]),
-};
+/** Plate draws a text mark (color, background, font family) into a style only
+ * for a value the document check takes (`isStyleValue`). The check runs in the
+ * style transform, once Plate found the mark on the leaf: as a `query` it ran
+ * first, with a plugin context built for it, for every text and leaf. Shared
+ * by the editor and static plugins. */
+export const styleMarkNodeProps = (
+  styleKey: 'backgroundColor' | 'color' | 'fontFamily'
+) => ({
+  transformStyle: ({ nodeValue }: { nodeValue?: unknown }) =>
+    (isStyleValue(nodeValue)
+      ? { [styleKey]: nodeValue }
+      : {}) as unknown as CSSStyleDeclaration,
+});
 
 /** Font size marks written in px render through `note-fs` like headings;
- * other units (pasted HTML) render as written. Shared by the editor and static
- * plugins. */
+ * other units (pasted HTML) render as written; a value the document check
+ * refuses, not at all (see styleMarkNodeProps). Shared by the editor and
+ * static plugins. */
 export const FONT_SIZE_NODE_PROPS = {
-  ...STYLE_MARK_NODE_PROPS,
   nodeKey: 'fontSize',
   transformClassName: ({ nodeValue }: { nodeValue?: unknown }) =>
-    pxFontSize(nodeValue) == null ? undefined : 'note-fs',
+    isStyleValue(nodeValue) && pxFontSize(nodeValue) != null
+      ? 'note-fs'
+      : undefined,
   transformStyle: ({ nodeValue }: { nodeValue?: unknown }) => {
+    if (!isStyleValue(nodeValue)) return {} as CSSStyleDeclaration;
     const px = pxFontSize(nodeValue);
     return (px == null
       ? { fontSize: nodeValue }

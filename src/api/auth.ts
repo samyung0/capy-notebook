@@ -1,9 +1,12 @@
 import { traceHeaders } from '@/lib/trace';
 
-/** Whether MSW mocks are active (no Clerk / no Bearer token). */
+/** Whether MSW mocks are active (no Clerk / no Bearer token): in development
+ * unless VITE_USE_MSW=false, and in a production build only with the MSW
+ * benches' switch (VITE_BENCH_MSW), which deploys pin off (vite.config.ts). */
 export const USE_MSW =
-  import.meta.env.VITE_USE_MSW !== 'false' &&
-  import.meta.env.MODE === 'development';
+  import.meta.env.VITE_BENCH_MSW === 'true' ||
+  (import.meta.env.VITE_USE_MSW !== 'false' &&
+    import.meta.env.MODE === 'development');
 
 type TokenGetter = () => Promise<string | null>;
 

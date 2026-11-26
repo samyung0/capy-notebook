@@ -127,6 +127,7 @@ pub async fn run(app: Shared) {
             Level::Info,
             "collab_health",
             json!({
+                "board_work": app.board_work.take_stats(),
                 "connections": app.stats.connections.load(Ordering::Relaxed),
                 "rooms": app.rooms.len(),
                 "awareness_per_s": rate(app.stats.awareness.swap(0, Ordering::Relaxed)),
@@ -177,6 +178,11 @@ pub async fn metrics(app: &Shared) -> String {
             stats.timeouts.load(Ordering::Relaxed),
             stats.seat_refusals.load(Ordering::Relaxed),
             stats.oldest_closed.load(Ordering::Relaxed),
+        )
+        + &format!(
+            "capy_collaboration_board_work_held {}\ncapy_collaboration_board_work_queue {}\n",
+            app.board_work.held(),
+            app.board_work.queue(),
         )
 }
 

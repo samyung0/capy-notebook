@@ -7,6 +7,7 @@ import { BrushTool } from './brush-tool';
 import { effects } from './effects';
 import { EraserTool } from './eraser-tool';
 import { HighlighterTool } from './highlighter-tool';
+import { BrushInteraction, HighlighterInteraction } from './interaction';
 import {
   BrushDomRendererExtension,
   BrushElementRendererExtension,
@@ -38,6 +39,9 @@ export class BrushViewExtension extends ViewExtensionProvider {
     context.register(BrushDomRendererExtension);
     context.register(HighlighterElementRendererExtension);
     context.register(HighlighterDomRendererExtension);
+    // Capy (local change 81): a resize keeps a stroke's points local.
+    context.register(BrushInteraction);
+    context.register(HighlighterInteraction);
 
     context.register(brushToolbarExtension);
     context.register(highlighterToolbarExtension);

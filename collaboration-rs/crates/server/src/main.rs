@@ -8,6 +8,7 @@ compile_error!("the collaboration server needs panic = \"unwind\": rooms catch u
 mod access;
 mod app;
 mod auth;
+mod board;
 mod children;
 mod client_ids;
 mod config;
@@ -31,6 +32,8 @@ mod seats;
 mod sessions;
 mod socket;
 mod source_rooms;
+mod trim;
+mod work;
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -237,6 +240,7 @@ async fn serve(config: Config) -> Result<(), String> {
         markdown,
         quiz_bounds: Default::default(),
         group_slots: Default::default(),
+        board_work: crate::work::WorkLimit::new(crate::work::BOARD_WORK, crate::trim::after_unload),
     });
     let rooms: Arc<dyn sources::Rooms> = Arc::new(source_rooms::ServerRooms {
         app: Arc::downgrade(&app),

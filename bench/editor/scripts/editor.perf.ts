@@ -32,16 +32,46 @@ const KEY_DELAY_MS = 40;
 
 /**
  * Budgets are regression tripwires, not UX targets. They assume the default
- * PERF_CPU=4 throttle and the Vite DEV build (unminified, React dev mode,
- * StrictMode double-render), which inflates absolute numbers well beyond
- * production. Values are ~2x the numbers observed at recalibration (Aug 2026,
- * after the per-keystroke work described below was cut); if one trips, run
- * `typingProfile.perf.ts` under the same throttle before touching it — the
- * attached `worstLoafs` script attribution and that profile's watched frames
- * usually name the offender between them.
+ * PERF_CPU=4 throttle. Since 2026-11-24 the harness measures a production
+ * build with MSW in the page (Vite's production mode, minified, React
+ * production mode; Epo, "Yes, move it" and "Yes, production mode"), and the
+ * numbers below were recalibrated on it on 2026-11-24 (Epo, "approve for
+ * now") by the steps below. If one trips, run `typingProfile.perf.ts`
+ * under the same throttle before touching it — the attached `worstLoafs`
+ * script attribution and that profile's watched frames usually name the
+ * offender between them.
  *
- * Observed at recalibration against the ~2MB / 7.4k-node load-test note (dev
- * build, unthrottled opens, cpu x4 elsewhere):
+ * Recalibrating on the production build (last done 2026-11-24, on 5b054df3a):
+ * 1. The Windows Editor dispatches the Performance workflow three times on one
+ *    commit, with only the editor suite (office, canvas, stress and
+ *    share_pages unticked). The Mac never dispatches it.
+ * 2. Each run's `perf-snapshot` artifact (`build: "production"`) holds its
+ *    cases and its runner (`cpuModel`). Check the runs against each other
+ *    first; a run far off the other two is left out and another dispatched.
+ * 3. The opens (`large.interactiveOpenMs`, `large.readOnlyOpenMs`) are taken
+ *    on the slowest CPU model in the runs (AMD EPYC 7763 so far), as
+ *    bench:canvas's open was (Epo's "Yes, slower runner": opens differ 40-60%
+ *    across the pool, and a budget from the faster runners fails on it):
+ *    1.3x the median of that runner's runs once three exist, and 1.3x its one
+ *    run until then (with two, the slower), from `open-large-document`'s
+ *    `interactive.openMs` and `readOnly.openMs`. Later dispatches that draw
+ *    it replace the figure with the median once there are three.
+ * 4. The inputs are 1.3x the median of all three runs, whatever runner:
+ *    `typing-large-document`'s `typing.p95SlowKeyEventMs`,
+ *    `typing.blockingPerKeystrokeMs` and `saveCycle.loafTotalBlockingMs`, and
+ *    `scroll-large-document`'s `longestFrameMs`; its `avgFps` budget is the
+ *    median divided by 1.3 (higher is better). `typing-small-document`'s
+ *    `p95SlowKeyEventMs` takes 1.5x (event durations come in 8 ms steps, so
+ *    1.3x sits one step above the median), and its `blockingPerKeystrokeMs`
+ *    keeps the 10 ms floor while 1.3x its median is under it.
+ * 5. Round as bench:canvas's `budgetOf` does: up to 5 ms below a second and
+ *    50 ms above; FPS down to a whole frame.
+ * 6. Replace each number below with its budget and a comment naming its three
+ *    runs (ids, runner, values) and median, as `MEDIANS` in board.canvas.ts
+ *    does, and update openwiki/editor-perf.md.
+ *
+ * Observed at the dev build's recalibration against the ~2MB / 7.4k-node
+ * load-test note (Aug 2026; unthrottled opens, cpu x4 elsewhere):
  * - opening it: ~16s interactive (11s blocking), ~2s read-only (0.2s blocking).
  *   Open is now the worst number here and the one left to attack.
  * - small doc typing: INP ~130ms, ~2.5ms blocking per keystroke
@@ -59,36 +89,47 @@ const KEY_DELAY_MS = 40;
  * is why scrolling moved with it.
  */
 const BUDGET = {
-  // Ceilings sit at ~1.3x the median of three ubuntu-24.04 runs on 2026-09-03
-  // (mixed AMD EPYC 9V74 / Intel Xeon pool, CPU x4). They are the only perf
-  // gate and only a human lowers them. See openwiki/editor-perf.md.
+  // 1.3x the medians of three Performance runs of the production build on
+  // 5b054df3a, 2026-11-24 (CPU x4), opens from the slower runner (steps above).
+  // Run values are listed as 45330694331 / 45330707441 (AMD EPYC 7763) /
+  // 45330721726 (AMD EPYC 9V45). The opens were set again on the fixed
+  // measure (below). They are the only perf gate and only a human lowers them.
+  // See openwiki/editor-perf.md.
   large: {
-    // Wall-clock from navigation to a synced, editable Plate instance. Measured
-    // unthrottled: this path is already tens of seconds without any slowdown.
-    interactiveOpenMs: 20_000, // median 15,165
-    // Rebaselined 2026-10-04 to ~1.3x the median of six runs on 37fa7e53
-    // (3,118; it was 1,952 on 2026-09-03). The growth is the workspace page's
-    // startup imports, not the read-only render; trimming them back under
-    // 2,600 is tracked in openwiki/editor-perf.md.
-    readOnlyOpenMs: 4050,
+    // Both opens end once the frame first showing the note's first block is
+    // rendered (`waitForNote`, 2026-11-24,
+    // bench/editor/reports/2026-11-24-editable-open-breakdown.md); the old
+    // measure stopped read-only on the left panel's title and waited
+    // interactive on a MathLive field. Set on that measure (Epo 2026-11-24,
+    // "Set them now") from three runs on 276d1de7e, listed as 45362191070
+    // (Intel Xeon 6975P-C) / 45362210464 / 45362227226 (AMD EPYC 9V74), by
+    // step 3: none drew the EPYC 7763, so 1.3x the slower run of the slowest
+    // runner present, the 9V74. The first runs that draw the 7763 replace
+    // them.
+    // Wall-clock from navigation to a synced, editable Plate instance showing
+    // the note. Measured unthrottled. 4,701 / 4,963 / 5,010.
+    interactiveOpenMs: 6550,
+    // 3,573 / 3,719 / 3,824.
+    readOnlyOpenMs: 5000,
     // Debounce, Yjs commit, the acknowledgement's state updates, and the
     // projection invalidation. Nothing here may touch the document tree, so
     // this budget is the tripwire for a regression that reconnects the save
-    // path to the editor's render.
-    saveCycleBlockingMs: 475, // median 362
-    typingBlockingPerKeystrokeMs: 275, // median 209
-    typingP95KeyEventMs: 395, // median 304
+    // path to the editor's render. Median 115 (118 / 115 / 64).
+    saveCycleBlockingMs: 150,
+    typingBlockingPerKeystrokeMs: 5, // median 1.2 (1.2 / 1.5 / 0.3)
+    typingP95KeyEventMs: 95, // median 72 (72 / 72 / 64)
   },
   scroll: {
-    avgFps: 38, // median 50.2, higher is better
-    longestFrameMs: 370, // median 283
+    avgFps: 40, // median 52.7 (52.7 / 50.3 / 53.4), higher is better
+    longestFrameMs: 130, // median 100 (83 / 100 / 117)
   },
   small: {
-    // GHA measures 0ms; the floor exists so a local run has something to hit.
+    // GHA measures 0ms (0 / 0 / 0); the floor exists so a local run has
+    // something to hit.
     typingBlockingPerKeystrokeMs: 10,
-    // Event durations come in 8ms steps, so 1.3x (73) would sit one step above
-    // the median and fail on the next step; held at 1.5x (median 56).
-    typingP95KeyEventMs: 84,
+    // Event durations come in 8ms steps, so 1.3x (45) would allow only one
+    // step above the median; held at 1.5x (median 32: 32 / 32 / 32).
+    typingP95KeyEventMs: 50,
   },
 };
 
@@ -157,6 +198,57 @@ interface OpenResult {
   openMs: number;
 }
 
+/** A note's block in either surface; the first is the note's first block. */
+const BLOCK = '[data-slate-node="element"]';
+/** The note's editable (Plate's). MathLive's fields are contenteditable too,
+ * in the read-only document and in the paint the editor takes over from
+ * (hidden, and its DOM removed when idle). */
+const EDITABLE = '[data-slate-editor="true"][contenteditable="true"]';
+
+/**
+ * Until the note itself is on screen: the frame that first shows its first
+ * block, in the read-only document (`material-preview`) or, once the room is
+ * live, in the editable, has been rendered (style, layout and paint). Checked
+ * every animation frame in the page (`raf` polling); a task posted from that
+ * frame's callback runs once its rendering is done. So an open ends there:
+ * not on a locator's next retry (up to 0.5 s later), not on the note's title
+ * in the left panel (on screen behind the gate), and not after a text scan of
+ * the whole editable (26k elements on the near-limit note, ~0.33 s a scan).
+ */
+async function waitForNote(page: Page, note: PerfNote, choice: OpenChoice) {
+  await page.waitForFunction(
+    ({ block, editable, readOnly, text }) => {
+      let first: Element | null | undefined;
+      if (readOnly) {
+        first = document.querySelector(
+          `[data-testid="material-preview"] ${block}`
+        );
+      } else {
+        const state = document
+          .querySelector('[data-testid="editor-save-state"]')
+          ?.getAttribute('data-save-state');
+        if (state === 'synced' || state === 'syncing' || state === 'saved')
+          first = document.querySelector(editable)?.querySelector(block);
+      }
+      if (
+        !(
+          first?.textContent?.includes(text) &&
+          first.checkVisibility({ visibilityProperty: true })
+        )
+      )
+        return false;
+      return new Promise<boolean>((done) => setTimeout(() => done(true), 0));
+    },
+    {
+      block: BLOCK,
+      editable: EDITABLE,
+      readOnly: choice === 'readOnly',
+      text: note.readyText,
+    },
+    { polling: 'raf', timeout: 120_000 }
+  );
+}
+
 /**
  * Navigate straight to a note and answer the heavy-document interstitial.
  * Whether the gate appears is asserted rather than tolerated: the perf fixture
@@ -176,7 +268,7 @@ async function openNote(
 
   const openAnyway = page.getByTestId('heavy-material-open');
   const openReadOnly = page.getByTestId('heavy-material-read-only');
-  const editor = page.locator('[contenteditable="true"]').first();
+  const editor = page.locator(EDITABLE).first();
 
   if (gated) {
     await expect(openAnyway, 'heavy-document interstitial').toBeVisible({
@@ -185,26 +277,30 @@ async function openNote(
     await (choice === 'readOnly' ? openReadOnly : openAnyway).click();
   }
 
+  await waitForNote(page, note, choice);
+  const openMs = Date.now() - startedAt;
+
+  // What the wait saw, as assertions with their own messages.
   if (choice === 'readOnly') {
     await expect(
-      page.getByRole('main').getByText(note.readyText).first()
-    ).toBeVisible({ timeout: 120_000 });
+      page.getByTestId('material-preview').locator(BLOCK).first()
+    ).toContainText(note.readyText);
+    // Any Plate editor, read-only ones too: slate-react's always carries
+    // contenteditable, the static document (`data-slate-editor` as well)
+    // never does.
     await expect(
-      editor,
-      'read-only never mounts an editable surface'
+      page.locator('[data-slate-editor="true"][contenteditable]'),
+      'read-only never mounts an editor'
     ).toHaveCount(0);
   } else {
-    await expect(editor).toBeVisible({ timeout: 120_000 });
-    await expect(editor.getByText(note.readyText).first()).toBeVisible({
-      timeout: 120_000,
-    });
     await expectLive(page);
+    await expect(editor).toBeVisible();
+    await expect(editor.locator(BLOCK).first()).toContainText(note.readyText);
     if (!gated) {
       await expect(openAnyway, 'small note must not be gated').toHaveCount(0);
     }
   }
 
-  const openMs = Date.now() - startedAt;
   // Let initial render and decoration effects settle so they do not pollute
   // the measurement window.
   await page.waitForTimeout(1500);

@@ -31,7 +31,11 @@ import {
 } from '@/features/quizzes/liveQuiz';
 import { m } from '@/i18n';
 import { markUpdateAvailable } from '@/lib/appRelease';
-import { BOARD_OFFLINE_MARGIN, MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
+import {
+  BOARD_OFFLINE_MARGIN,
+  BOARD_SIZE_SHOWN,
+  MATERIAL_DOCUMENT_LIMITS,
+} from '@/lib/const';
 import { type DraftRef, mergedRows } from '@/lib/draftStore';
 import {
   applyDrafts,
@@ -57,6 +61,7 @@ import {
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { dropDeviceCopies } from '@/lib/sourceCache';
 import { copyOf, hiddenEdits } from './boardHidden';
+import { collectedSize } from './collectedSize';
 import {
   type CopyLabel,
   dropDeletedCopies,
@@ -276,11 +281,11 @@ export interface ItemRoomOptions {
    * state is set on it. */
   awareness?: boolean;
   /** A canvas's board, its state capped at `max` bytes (CANVAS_BOARD_MAX,
-   * Epo 2026-11-18). The room keeps the board's size from its receipts
-   * (`size`), and offline work stops at the space left as at the 4 MiB this
-   * device may hold. A turn to read-only that discards unsaved edits opens a
-   * fresh room on what was saved: the board shows the document, which still
-   * holds them. */
+   * Epo 2026-11-18). A room that may write keeps the board's size from its
+   * own measure of the document (`size`), and offline work stops at the
+   * space left as at the 4 MiB this device may hold. A turn to read-only
+   * that discards unsaved edits opens a fresh room on what was saved: the
+   * board shows the document, which still holds them. */
   board?: { max: number };
   /** A quiz's keys document instead of the material's own. */
   document?: 'keys';
@@ -318,6 +323,12 @@ const restoredMeanwhile = (error: unknown) =>
 
 /** About how long a first token's 409 waits before asking again. */
 const START_AGAIN_MS = 1000;
+
+/** The least board size anything acts on: the menu shows the size from
+ * `BOARD_SIZE_SHOWN` of the cap, and the board takes only removals from the
+ * cap less `BOARD_OFFLINE_MARGIN` (`drawingBoard.ts`). */
+const boardActsFrom = (max: number) =>
+  Math.min(max * BOARD_SIZE_SHOWN, max - BOARD_OFFLINE_MARGIN);
 
 export class ItemRoom {
   /** The document the page shows and edits, for the room's whole life. */
@@ -451,9 +462,19 @@ export class ItemRoom {
   private overLimit = false;
   /** Offline, a board's work reached the space its cap leaves. */
   private boardFull = false;
-  /** A board's size: the room's measure at its last receipt (or this tab's
-   * own encode before one) and the bytes of every update applied since. */
+  /** A board's size: this tab's own measure (`measure`: what a collected
+   * copy of its document holds, or the length of the device copy it opened
+   * from) and the bytes of every update applied since, an upper bound since
+   * deletions only lower it. A tab that may not write measures nothing. */
   private measured: { base: number; since: number } | null = null;
+  /** A deletion was applied since that measure: the size may be high by what
+   * it freed. */
+  private deletedSince = false;
+  /** A receipt's encode waits for the tab to be idle (one at a time). */
+  private measuring = false;
+  /** The next crossing of the full line books an idle encode: once, until a
+   * receipt or a press (`pressed`) arms it again. */
+  private measuresAtLine = true;
   private readonly sizeListeners = new Set<() => void>();
   /** Says saving is delayed once a receipt waits too long (`delayed`). */
   private readonly delay = new SaveDelayClock(NOTE_SAVE_DELAY_MS, () =>
@@ -552,8 +573,6 @@ export class ItemRoom {
     };
   }
 
-  /** `ItemRoomOptions.board`: the board's size against its cap, null until
-   * the room measured it. Outside the snapshot, as it moves with each update. */
   get undo(): Y.UndoManager {
     if (!this.undoManager) throw new Error('a board room keeps no undo');
     return this.undoManager;
@@ -565,6 +584,13 @@ export class ItemRoom {
     return this.undoTarget;
   }
 
+  /** `ItemRoomOptions.board`: the board's size against its cap, null until
+   * this tab measured it (`measured`); outside the snapshot, as it moves
+   * with each update. Deletions since the last measure may leave it high:
+   * the board checks it before acting on it (`checkSize`), and a store's
+   * receipt asks for a measure (`remeasureSoon`). The room's receipts carry
+   * its own bound, which never comes down for a deletion between its exact
+   * measures, and never set it. */
   readonly size = () => {
     const { board } = this.options;
     if (!(board && this.measured)) return null;
@@ -581,45 +607,139 @@ export class ItemRoom {
     };
   };
 
-  private readonly grew = (update: Uint8Array) => {
-    if (!this.measured) return;
-    this.measured.since += update.byteLength;
+  /** Before the board acts on its size (a refusal of an add, the gate on a
+   * tool, its menu opening, `boardFull.ts`): one encode when deletions were
+   * applied since the last measure, the measured size reaching the board
+   * before this returns (`subscribeSize` is synchronous). */
+  readonly checkSize = () => {
+    if (!(this.measured && this.deletedSince)) return;
+    this.measure();
+    this.sized();
+  };
+
+  /** A press on the board (`boardFull.ts`): its next crossing of the full
+   * line books an idle encode again. */
+  readonly pressed = () => {
+    this.measuresAtLine = true;
+  };
+
+  private readonly grew = (
+    update: Uint8Array,
+    _origin: unknown,
+    _doc: Y.Doc,
+    transaction: Y.Transaction
+  ) => {
+    const { board } = this.options;
+    const { measured } = this;
+    if (!(board && measured)) return;
+    const before = measured.base + measured.since;
+    measured.since += update.byteLength;
+    const deletes = transaction.deleteSet.clients.size > 0;
+    if (deletes) this.deletedSince = true;
+    // Offline, a board's work stops at the space its cap leaves (Epo
+    // 2026-11-18, client-limits A), so its backlog fits when it is back. An
+    // update that deletes nothing (a stroke, typing in a note, Undo of a
+    // removal, a card) stops it when it leaves the size past that line. One
+    // that deletes (a removal, a move, a replacement) never stops it for the
+    // line alone: whenever the size counted is past the cap, the board is
+    // measured, and it stops only when the measured size is past the line and a
+    // repeat of that update could take it over the cap. A move's update is
+    // several times what it adds (a select-all drag of thousands of elements
+    // sends more than the margin), so the line holds a board with room left.
+    // BlockSuite writes an element's place once per drag, at its end, and
+    // once per arrow-key nudge; Yjs merges a key's consecutive overwrites, so
+    // 1,000 drags of one element add 35 B, but a selection moved together
+    // adds about 10 B per element per drag (1,000 drags of ten add 100 KB).
+    // Many moves of a large selection can so fill a board, which stops at
+    // its cap; it measures once per (cap - measured size) bytes of updates.
+    // A size high from deletions since the last measure is encoded first, at
+    // once (offline, at those updates alone: an accepted cost, repeated often
+    // only when large selections keep moving within a few KB of the cap), so
+    // a board removals freed takes adds until the next such update. A single
+    // update larger than the room left still goes past the line, as one
+    // large add always could.
+    const line = board.max - BOARD_OFFLINE_MARGIN;
+    const after = measured.base + measured.since;
+    if (
+      this.snapshot.offline &&
+      !this.boardFull &&
+      after > (deletes ? board.max : line)
+    ) {
+      if (this.deletedSince) this.measure();
+      const size = this.size();
+      if (
+        size &&
+        size.bytes > line &&
+        (!deletes || size.bytes + update.byteLength > board.max)
+      ) {
+        this.boardFull = true;
+        this.showOffline();
+      }
+    }
+    // A size crossing the full line with deletions since the last measure
+    // (a long stroke rewrites its points every 20, a deletion each) is
+    // measured once the tab is idle, so the next press's gate finds it
+    // measured rather than measuring inside the press. Once per stroke: a
+    // stroke's rewrites cross again after each measure, so the next crossing waits
+    // for a receipt or a press, and a press soon after a long stroke may
+    // still find the size high and encode.
+    if (
+      this.measuresAtLine &&
+      this.deletedSince &&
+      before < line &&
+      after >= line
+    ) {
+      this.measuresAtLine = false;
+      this.remeasureSoon();
+    }
     this.sized();
   };
 
   private sized() {
     for (const listener of this.sizeListeners) listener();
-    // Offline, a board's work stops at the space its cap leaves (Epo
-    // 2026-11-18, client-limits A): a lone person's backlog always fits.
-    const size = this.size();
-    if (
-      size &&
-      this.snapshot.offline &&
-      !this.boardFull &&
-      size.bytes + BOARD_OFFLINE_MARGIN > size.max
-    ) {
-      this.boardFull = true;
-      this.showOffline();
-    }
   }
 
-  /** A board's first measure, before any receipt: one encode once the tab is
-   * idle (about 40 ms at 4 MiB on an M1). `provisional`: the size it holds
-   * until then (a copy's), so the removals-only gate holds meanwhile. */
-  private measure(provisional?: number) {
-    if (!this.options.board) return;
-    if (provisional !== undefined) {
-      this.measured = { base: provisional, since: 0 };
-      this.sized();
-    } else if (this.measured) return;
-    const measuring = this.measured;
+  /** Every measure of the board (the first sync's, a receipt's or a
+   * crossing's idle one, `checkSize`'s and the offline stop's), by a tab
+   * that may write: what a collected copy of its document holds
+   * (`collectedSize`; an encode, about 40 ms at 4 MiB on an M1, and a walk of
+   * its deleted items). Not the encode's length: the board's undo history
+   * keeps what it deleted in this document, while the room's state is
+   * collected, so a cleared board would still read full. An encode below
+   * where anything acts on the size is taken as it is, with no walk (it is
+   * an upper bound too): most boards, and most first syncs. */
+  private measure() {
+    const { board } = this.options;
+    if (!board || this.snapshot.access === 'read') return;
+    this.measured = {
+      base: collectedSize(this.doc, boardActsFrom(board.max)),
+      since: 0,
+    };
+    this.deletedSince = false;
+  }
+
+  /** At a store's receipt (the room's stores come at most every 2 s of
+   * quiet or 10 s of editing) and as the size crosses the full line, one
+   * encode once the tab is idle, when
+   * deletions were applied since the last measure and the size is where
+   * something acts on it (the lower of the menu's line and the cap less the
+   * margin): moves, each overwriting a key (a drag's end, an arrow-key
+   * nudge), cost one encode per store, not one each. The size stays live
+   * meanwhile. */
+  private remeasureSoon() {
+    const size = this.size();
+    if (
+      !size ||
+      !this.deletedSince ||
+      this.measuring ||
+      size.bytes < boardActsFrom(size.max)
+    )
+      return;
+    this.measuring = true;
     const run = () => {
-      // A receipt's measure came first.
-      if (this.destroyed || this.measured !== measuring) return;
-      this.measured = {
-        base: Y.encodeStateAsUpdate(this.doc).byteLength,
-        since: 0,
-      };
+      this.measuring = false;
+      if (this.destroyed || !this.deletedSince) return;
+      this.measure();
       this.sized();
     };
     if (typeof requestIdleCallback === 'function')
@@ -857,6 +977,13 @@ export class ItemRoom {
           this.boardFull = false;
           this.reconnector.connected();
           this.delay.connected();
+          // A board with no device copy to size it is measured once here,
+          // before it takes a first edit (it does once synced), so its
+          // removals-only gate holds from that edit. At once rather than when
+          // idle: a stroke drawn meanwhile on a full board would go out, be
+          // refused by the room and be kept to copy.
+          const first = !!this.options.board && !this.measured;
+          if (first) this.measure();
           this.set({
             early: false,
             offline: null,
@@ -866,8 +993,8 @@ export class ItemRoom {
             synced: true,
             unreachable: false,
           });
+          if (first) this.sized();
           this.settleRename();
-          this.measure();
           this.requestReceipt();
           // A first sync after DRAFT_SEND_WAIT_MS still takes the held
           // steps (Q360).
@@ -1609,8 +1736,16 @@ export class ItemRoom {
       return false;
     this.room = seed.room;
     // Its size is the copy's at once, so the removals-only gate holds from
-    // the first edit (review b1 finding 10); the waiting rows add theirs.
-    this.measure(seed.row.size);
+    // the first edit (review b1 finding 10); the waiting rows add theirs. The
+    // copy is this device's encode of its document, holding what the writing
+    // tab's undo history kept of its deletions, which the document here
+    // collected as the copy was read: deletions are pending, so the first
+    // check measures (a cleared board's copy reads full until then).
+    if (this.options.board) {
+      this.measured = { base: seed.row.size, since: 0 };
+      this.deletedSince = true;
+      this.sized();
+    }
     const history = new Set(this.doc.store.clients.keys());
     const update = current.length ? mergedRows(current) : null;
     // What the copy and every row hold, read off the rows without applying
@@ -1745,6 +1880,7 @@ export class ItemRoom {
     if (this.stale || this.destroyed) return;
     this.reconnector.slowed();
     if (this.snapshot.offline) this.recorder?.connected();
+    this.boardFull = false;
     this.set({
       offline: null,
       slowed: true,
@@ -1787,13 +1923,10 @@ export class ItemRoom {
         this.set({ listsVersion: this.snapshot.listsVersion + 1 });
         return;
       case 'checkpoint-persisted': {
-        // A board's size, as the room measured it at this store.
-        const bytes = (event.metrics as { contentBytes?: unknown } | undefined)
-          ?.contentBytes;
-        if (this.options.board && typeof bytes === 'number') {
-          this.measured = { base: bytes, since: 0 };
-          this.sized();
-        }
+        // A board's deletions since its last measure are measured at the
+        // pace of the room's stores.
+        this.measuresAtLine = true;
+        this.remeasureSoon();
         const ids = Array.isArray(event.checkpointIds)
           ? (event.checkpointIds as string[])
           : [];

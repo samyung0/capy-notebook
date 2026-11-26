@@ -151,9 +151,11 @@ test("PPTX's View tab presents in the frame and has Capy open the presenter wind
   const opened = page.waitForEvent('popup');
   await ribbonCommand(page, 'view.presenterView').click();
   const notes = await opened;
-  await expect(
-    notes.getByRole('main', { name: 'Presenter view' })
-  ).toBeVisible();
+  // The notes window loads the runtime's page before it hands itself over
+  // to the show, which takes seconds on CI's dev server.
+  await expect(notes.getByRole('main', { name: 'Presenter view' })).toBeVisible(
+    { timeout: 30_000 }
+  );
 });
 
 test('a phone keeps one row under the tabs, Undo and Redo in the tab strip', async ({

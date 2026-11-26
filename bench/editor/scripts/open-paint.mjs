@@ -1,13 +1,17 @@
 // How long a note takes to show and to turn editable, on a production build
 // with MSW (see bench/README.md):
 //
-//   NODE_ENV=production VITE_USE_MSW=true VITE_LOAD_TEST_SEED=true \
-//     VITE_CLERK_PUBLISHABLE_KEY= \
-//     node --max-old-space-size=4096 node_modules/vite/bin/vite.js build \
-//     --mode development --outDir /tmp/open-paint-dist
-//   node node_modules/vite/bin/vite.js preview --mode development \
-//     --outDir /tmp/open-paint-dist --port 4620 --strictPort &
+//   mkdir -p /tmp/empty-env && (
+//     export CAPY_ENV_DIR=/tmp/empty-env NODE_ENV=production VITE_BENCH_MSW=true
+//     VITE_LOAD_TEST_SEED=true VITE_CLERK_PUBLISHABLE_KEY= \
+//       node --max-old-space-size=4096 node_modules/vite/bin/vite.js build \
+//       --outDir /tmp/open-paint-dist || exit
+//     node node_modules/vite/bin/vite.js preview \
+//       --outDir /tmp/open-paint-dist --port 4620 --strictPort &
+//   )
 //   OPEN_PAINT_URL=http://localhost:4620 node bench/editor/scripts/open-paint.mjs
+//
+// The subshell keeps NODE_ENV and the bench switch out of your own shell.
 //
 // Per note and path, the median of OPEN_PAINT_RUNS (3): click or navigation to
 // the note's text on screen (`paintMs`), to an editable editor showing it

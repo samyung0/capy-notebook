@@ -397,6 +397,57 @@ fn overlapping_structs_of_one_client_are_malformed() {
     );
 }
 
+/// An item under an item of its own update that holds no type (`"x"` typed
+/// after the room's text, then `true` at a key under that `"x"`): yrs
+/// integrates the text, then fails on the item (`InvalidParent`), and a
+/// document it was applied to keeps the text of an update its room
+/// refused. Malformed: the inspection refuses it before any apply. An item
+/// under a map of its own update, as an editor writes a new block's keys,
+/// is taken.
+#[test]
+fn an_item_under_its_own_updates_text_is_malformed() {
+    use yrs::encoding::write::Write;
+    let room = doc(1);
+    room.get_or_insert_text("t")
+        .insert(&mut room.transact_mut(), 0, "hello");
+    let mut bytes: Vec<u8> = Vec::new();
+    bytes.write_var(1u32);
+    bytes.write_var(2u32);
+    bytes.write_var(77u64);
+    bytes.write_var(0u32);
+    bytes.write_u8(0x80 | 4);
+    bytes.write_var(1u64);
+    bytes.write_var(4u32);
+    bytes.write_string("x");
+    // A key, then one `true`, under struct 0 by its id.
+    bytes.write_u8(0x20 | 8);
+    bytes.write_var(0u32);
+    bytes.write_var(77u64);
+    bytes.write_var(0u32);
+    bytes.write_string("k");
+    bytes.write_var(1u32);
+    bytes.write_u8(120);
+    bytes.write_var(0u32);
+    let inspected = inspect_update(&room.transact(), &decode(&bytes).unwrap());
+    assert!(
+        matches!(inspected, Err(UpdateError::Decode(_))),
+        "{inspected:?}"
+    );
+    let applied = doc(3);
+    sync(&room, &applied);
+    assert!(apply(&applied, decode(&bytes).unwrap()).is_err());
+    let text = applied.get_or_insert_text("t");
+    assert_eq!(text.get_string(&applied.transact()), "hellox");
+    let client = doc(2);
+    let blocks = client.get_or_insert_map("blocks");
+    let written = delta(&client, |txn| {
+        blocks
+            .insert(txn, "b", MapPrelim::default())
+            .insert(txn, "k", true);
+    });
+    assert!(inspect_update(&room.transact(), &decode(&written).unwrap()).is_ok());
+}
+
 /// Updates of `count` concurrent writers each typing at the same place of a
 /// room's text, merged into one.
 fn concurrent_at_one_spot(room: &Doc, first_client: u64, count: u64) -> Vec<u8> {
@@ -1172,9 +1223,9 @@ fn a_split_costs_the_piece_it_copies_and_walks() {
 }
 
 /// A keystroke in the middle of a long text splits it once. Where splits
-/// count it is applied directly while the split is cheap, and tried on a copy
-/// off the async workers once it costs more than a small edit's share
-/// ([SMALL_SPLITS]); where they do not it stays a small edit.
+/// count ([inspect_bounded]) it is tried on a copy once it costs more than a
+/// small edit's share ([SMALL_SPLITS]); where they do not it stays a small
+/// edit, applied inline.
 #[test]
 fn a_costly_split_is_not_a_small_edit_where_splits_count() {
     let keystroke = |units: usize| {
@@ -1192,12 +1243,12 @@ fn a_costly_split_is_not_a_small_edit_where_splits_count() {
             .is_some();
         let uncounted = inspect(&txn, &incoming).unwrap().trial.is_some();
         (
-            (tried, applies_inline_bounded(&txn, &incoming, bytes.len())),
+            tried,
             (uncounted, applies_inline(&txn, &incoming, bytes.len())),
         )
     };
-    assert_eq!(keystroke(100_000), ((false, true), (false, true)));
-    assert_eq!(keystroke(3_000_000), ((true, false), (false, true)));
+    assert_eq!(keystroke(100_000), (false, (false, true)));
+    assert_eq!(keystroke(3_000_000), (true, (false, true)));
 }
 
 /// Runs `check` on a thread with the 2 MiB stack a server task has.
@@ -1407,11 +1458,6 @@ fn a_bounded_inspection_tells_content_deleted_unnamed() {
         let taken = counting(&room, bytes).unwrap();
         assert!(taken.unnamed && taken.trial.is_some() && !taken.unheld);
         let incoming = decode(bytes).unwrap();
-        assert!(!applies_inline_bounded(
-            &room.transact(),
-            &Incoming::new(&incoming),
-            bytes.len()
-        ));
         // Any other room reads no such thing.
         assert!(!inspect_update(&room.transact(), &incoming).unwrap().unnamed);
     }

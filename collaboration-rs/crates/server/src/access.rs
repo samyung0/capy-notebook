@@ -3,6 +3,8 @@
 //! owner at its storage limit. `frozen_sql` and `full_sql` mirror Go's
 //! `over_quota_frozen` and `StorageUsage.Full` (`TestCollaborationFrozenSQLMatchesGo`).
 
+use std::sync::LazyLock;
+
 use deadpool_postgres::GenericClient;
 
 use crate::auth::Access;
@@ -211,32 +213,14 @@ pub async fn live_access<C: GenericClient>(
     Ok(live)
 }
 
-/// The actor's role on the material, refused only when they hold none. An
-/// embedded item (a note's quiz or set) is reachable exactly as its note is
-/// (Go `materialEffectiveAccess`).
-pub async fn live_role<C: GenericClient>(
-    client: &C,
-    material_id: &str,
-    actor: &str,
-) -> Result<LiveAccess, AccessError> {
-    let parent = client
-        .query(
-            "SELECT parent_material_id FROM materials WHERE id=$1 AND trashed_at IS NULL",
-            &[&material_id],
-        )
-        .await?;
-    let Some(row) = parent.first() else {
-        return Err(AccessError::NotFound("material not found".into()));
-    };
-    let parent: Option<String> = row.get("parent_material_id");
-    let material_id = parent.as_deref().unwrap_or(material_id);
-    // `owner` is the lifecycle owner (the workspace owner, or a standalone
-    // material's owner); `payer` is owner_user_id, the account the material is
-    // charged to (uploader pays): its frozen, locked or full state makes the
-    // material read-only (Go's canEditMaterial). `hidden` is the owner's flag,
-    // or a graded quiz's own quiz (`assignment_id`), held for good from everyone
-    // who does not edit the workspace (Go's materialHiddenSQL).
-    let sql = format!(
+/// `owner` is the lifecycle owner (the workspace owner, or a standalone
+/// material's owner); `payer` is owner_user_id, the account the material is
+/// charged to (uploader pays): its frozen, locked or full state makes the
+/// material read-only (Go's canEditMaterial). `hidden` is the owner's flag,
+/// or a graded quiz's own quiz (`assignment_id`), held for good from everyone
+/// who does not edit the workspace (Go's materialHiddenSQL).
+static LIVE_ROLE_SQL: LazyLock<String> = LazyLock::new(|| {
+    format!(
         "SELECT m.owner_user_id, m.privacy, m.workspace_id,
            m.kind, m.canvas_shared, m.canvas_workspace_id,
            CASE WHEN canvas_owner.id IS NULL THEN ''
@@ -276,8 +260,33 @@ pub async fn live_role<C: GenericClient>(
         frozen_sql("payer", "payer_storage"),
         full_sql("payer", "payer_storage"),
         frozen_sql("actor", "actor_storage"),
-    );
-    let rows = client.query(&sql, &[&material_id, &actor]).await?;
+    )
+});
+
+/// The actor's role on the material, refused only when they hold none. An
+/// embedded item (a note's quiz or set) is reachable exactly as its note is
+/// (Go `materialEffectiveAccess`). Both statements are prepared once per
+/// pooled connection: the role query joins 11 tables, and planning it on
+/// every writer recheck cost Postgres about 2 ms a call (2026-11-24 capacity
+/// run).
+pub async fn live_role<C: GenericClient>(
+    client: &C,
+    material_id: &str,
+    actor: &str,
+) -> Result<LiveAccess, AccessError> {
+    let parent = client
+        .prepare_cached(
+            "SELECT parent_material_id FROM materials WHERE id=$1 AND trashed_at IS NULL",
+        )
+        .await?;
+    let parent = client.query(&parent, &[&material_id]).await?;
+    let Some(row) = parent.first() else {
+        return Err(AccessError::NotFound("material not found".into()));
+    };
+    let parent: Option<String> = row.get("parent_material_id");
+    let material_id = parent.as_deref().unwrap_or(material_id);
+    let role = client.prepare_cached(&LIVE_ROLE_SQL).await?;
+    let rows = client.query(&role, &[&material_id, &actor]).await?;
     let Some(row) = rows.first() else {
         return Err(AccessError::NotFound("material not found".into()));
     };
@@ -364,18 +373,16 @@ pub async fn assert_access<C: GenericClient>(
     Ok(live)
 }
 
-/// The advisory lock that serializes a material's Yjs writes.
+/// The advisory lock that serializes a material's Yjs writes (every store,
+/// so prepared once per pooled connection, as the statements below).
 pub async fn lock_material<C: GenericClient>(
     client: &C,
     material_id: &str,
 ) -> Result<(), tokio_postgres::Error> {
-    client
-        .execute(
-            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-            &[&material_id],
-        )
-        .await
-        .map(|_| ())
+    let lock = client
+        .prepare_cached("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .await?;
+    client.execute(&lock, &[&material_id]).await.map(|_| ())
 }
 
 /// `lockCollaborationBoundary`: Go's mutation order (workspace, ordered
@@ -387,11 +394,11 @@ pub async fn lock_boundary<C: GenericClient>(
     bystanders: &[String],
 ) -> Result<(), AccessError> {
     let placement = client
-        .query(
+        .prepare_cached(
             "SELECT owner_user_id, workspace_id, kind FROM materials WHERE id=$1 AND trashed_at IS NULL",
-            &[&material_id],
         )
         .await?;
+    let placement = client.query(&placement, &[&material_id]).await?;
     let Some(expected) = placement.first() else {
         return Err(AccessError::NotFound("material not found".into()));
     };
@@ -401,11 +408,9 @@ pub async fn lock_boundary<C: GenericClient>(
     let mut owner = payer.clone();
     if let Some(workspace) = &workspace {
         let found = client
-            .query(
-                "SELECT user_id FROM workspaces WHERE id=$1 FOR SHARE",
-                &[workspace],
-            )
+            .prepare_cached("SELECT user_id FROM workspaces WHERE id=$1 FOR SHARE")
             .await?;
+        let found = client.query(&found, &[workspace]).await?;
         let Some(found) = found.first() else {
             return Err(AccessError::NotFound("material not found".into()));
         };
@@ -424,17 +429,17 @@ pub async fn lock_boundary<C: GenericClient>(
     required.push(payer.clone());
     required.sort();
     required.dedup();
-    let rows = client
-        .query(
+    let accounts = client
+        .prepare_cached(
             "SELECT u.id, (u.deleted_at IS NOT NULL OR u.deletion_requested_at IS NOT NULL
                OR u.suspended_at IS NOT NULL) AS locked
              FROM users u
              WHERE u.id=ANY($1::text[])
                OR (u.id=ANY($2::text[]) AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL)
              ORDER BY u.id FOR SHARE OF u",
-            &[&required, &bystanders],
         )
         .await?;
+    let rows = client.query(&accounts, &[&required, &bystanders]).await?;
     let found = rows
         .iter()
         .filter(|row| required.contains(&row.get::<_, String>("id")))
@@ -462,11 +467,11 @@ pub async fn lock_boundary<C: GenericClient>(
         }));
     }
     let locked = client
-        .query(
+        .prepare_cached(
             "SELECT owner_user_id, workspace_id, kind FROM materials WHERE id=$1 AND trashed_at IS NULL FOR SHARE",
-            &[&material_id],
         )
         .await?;
+    let locked = client.query(&locked, &[&material_id]).await?;
     let Some(locked) = locked.first() else {
         return Err(AccessError::NotFound("material not found".into()));
     };

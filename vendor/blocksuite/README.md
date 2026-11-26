@@ -1080,6 +1080,166 @@ Outside this directory, for BlockSuite:
     `e2e/editor/drawing-board.spec.ts` ("a teacher's area moves by its label")
     redoes with it on CI's Linux.
 
+79. A pen or highlighter stroke's points are one binary value of Float32s
+    (`affine/model` `elements/brush/brush.ts` and `elements/highlighter/highlighter.ts`,
+    `affine/gfx/brush` `brush-tool.ts` and `highlighter-tool.ts`, `affine/blocks/surface`
+    `surface-transformer.ts`, `framework/std` `gfx/model/surface/decorators/convert.ts`
+    and `gfx/model/surface/surface-model.ts`, marked `Capy (local change 79)`; Epo
+    2026-11-24,
+    `bench/collaboration/reports/2026-11-24-binary-pen-points.md`). Upstream stored
+    `[[x, y, pressure?], ...]`, a Yjs value per number, which made a pen board's live
+    document about twelve times its saved size. The format and its one codec are
+    Capy's `src/features/blocksuite/strokePoints.ts` (a 4-byte header naming 2 or 3
+    values a point, then little-endian Float32s), which these files import as
+    `@/features/blocksuite/strokePoints`.
+    - `points` reads as the stored `Uint8Array` (relative to `xywh`, as before) and is
+      set as drawn, `number[][]` in board units: `@convert` encodes it, and the
+      `xywh` and `lineWidth` derives decode, move and set the points again.
+      `convert` takes a set type apart from the stored one (`I`) for this.
+    - `serialize()` gives the points back as drawn (relative), so a copy, a paste,
+      Duplicate and an Alt-drag clone set them through `@convert` as a peer's JSON
+      clipboard does.
+    - `includesPoint` reads the bytes in place (`strokeNearPoint`), the pointer turned
+      back about the box's centre, which also ends upstream's read past the end of a
+      one-point stroke; `getLineIntersections` decodes only for a line that crosses
+      the box, as the eraser asks every stroke on every move; `commands` and
+      `getNearestPoint` decode.
+    - The tools count the drawn points for their pop gap.
+    - The surface transformer writes a binary value into a snapshot as
+      `{ 'affine:surface:bytes': true, bytes }`, so a JSON snapshot keeps it.
+    - A peer's write to an existing element's keys is read again by the editor's
+      say (local change 62's `ElementReadableIdentifier`), and an element it can no
+      longer read becomes a placeholder then and there (`_readAgain`), as on load:
+      upstream only read an element as it was added, so a peer overwriting a
+      stroke's points with a number array made its model throw on every frame,
+      and the canvas drew nothing more for anyone in the room.
+    A stroke whose bytes break the format, or that has none, is refused by the
+    board's rules (`boardRules.ts`), drawn as a placeholder on a canvas and refusing
+    a question's board, and `strokeView` throws for any value that isn't stored
+    points. Pinned by `strokePoints.test.ts` and the stroke cases of
+    `boardRules.corpus.test.ts`. In dev, run `vite --force` after editing
+    `strokePoints.ts`: Vite pre-bundles the vendored models with their copy of it,
+    and a stale bundle and the app's rules would read the format apart.
+
+80. A dragged connector keeps its ends and label this tab's until the drag ends
+    (`affine/gfx/connector` `view/view.ts` `ConnectorElementView`, marked `Capy
+    (local change 80)`; found 2026-11-25 reviewing the full board's write gate).
+    Upstream's `onDragStart` stashed only `labelXYWH` and its `onDragEnd` stashed it
+    again instead of popping it, so the label stayed local after the drag, and
+    `moveTo`, which the drag calls on every frame, stored a free end's `source` or
+    `target` each time. Interleaved with the other connectors', those writes never
+    merge: a select-all drag of a board with free-ended connectors grew it by about
+    20 B a connector a frame. The drag now stashes `labelXYWH` and each free end
+    (`source`, `target` with no `id`) and pops them, each written once if it
+    changed. A bound end, which `moveTo` never changes, stays stored, so a peer's
+    re-attach or detach made mid-drag stands (the second guard review found the
+    first version writing the stale end back over it); an end a peer frees
+    mid-drag is stashed at the next frame, before `moveTo` places it, so the
+    frames after write nothing (third guard review). Pinned by "drags a
+    connector with its free ends and label this tab's" and "keeps a peer's
+    re-attach of a bound end" in `src/features/blocksuite/connectorLabel.test.ts`.
+
+81. A resized pen or highlighter stroke keeps its points this tab's until the
+    resize ends (`affine/gfx/brush` `interaction.ts`, registered in `view.ts`, marked
+    `Capy (local change 81)`; found 2026-11-25 with local change 80). BlockSuite's
+    default resize stashes only `xywh`, and a stroke's `xywh` derive rewrites its
+    `points` (local change 79), so a resize stored the points on every frame. The
+    stroke's resize handlers stash and pop `xywh` and `points`; the default
+    `onResizeMove` still sets the box. Pinned by "resizes a stroke with its points
+    this tab's" in `src/features/blocksuite/strokePoints.test.ts`.
+
+82. The element toolbar's actions and gestures that write several elements straight
+    to their models, or add one, ask the board first (`affine/shared`
+    `utils/board-writes.ts`, exported from `utils/index.ts`, called from
+    `affine/blocks/root` `edgeless/configs/toolbar/alignment.ts`, `misc.ts` and
+    `more.ts`, `affine/blocks/note` `configs/toolbar.ts`, `affine/gfx/mindmap`
+    `toolbar/config.ts` and `interactivity/mind-map-drag.ts`, marked `Capy (local
+    change 82)`; Epo 2026-11-25, the full board's write gate). The alignment
+    menu's pick moves a connector (`moveTo`) or a note (`updateBlock`) before the
+    board's `updateElement` sees the first element, a Lock of several moves them
+    between groups before its group's command, a reorder writes each `index`, a
+    note's Scale each note's box and scale and its Auto or Customized height each
+    note's box and collapse, an Unlock of several each element's lock (ungrouping
+    a group), and a mind map's Style and Layout every node's look and place
+    (up to about 125 B a node on a board whose clocks passed 10^5), all
+    through neither; a mind map's node
+    dragged off its map makes a new map (`createFromTree`), an add, and one
+    dropped into another map takes that map's style and lays both maps out
+    again, neither refused: refused there, part of the change was already
+    written.
+    `boardWrites.refuses(store, models, write)` now runs before any write
+    (`place`, `order`, `step`, `scale`, `height`, `unlock`, `style`, `layout`,
+    `merge` or `add`), and what it refuses writes nothing (a dragged node stays
+    in its map). A reorder says how it makes its keys: `order` to the front or
+    back, each past its siblings, `step` forward or backward, each between two
+    (fourth guard review: the app bounds how long each can grow).
+    A merge is asked once, at the drop, with both maps' counts together (third
+    guard review: the first version asked for the map it joins alone).
+    The app sets the answer per store (`src/features/blocksuite/boardFull.ts`
+    `gateToolbarWrites`); with none set, nothing is refused. Pinned by the
+    alignment menu's Align left, a Lock and an Unlock of several, Bring to Front,
+    Bring Forward (counted as `step` keys), a note's Scale and height, a mind
+    map's Style and Layout, a node dragged off its map and one dropped into
+    another in
+    `src/features/blocksuite/boardWrites.test.ts`, the menus' handlers taken from
+    their templates.
+
+83. The label of a connector hanging on an element in the middle of this tab's
+    gesture stays this tab's until the gesture ends (`affine/gfx/connector`
+    `connector-watcher.ts`, and `framework/std` `gfx/interactivity/manager.ts`'s
+    `activeInteractionOf`, exported from `gfx/interactivity/index.ts` and
+    `gfx/index.ts`, marked `Capy (local change 83)`; found 2026-11-25 with local
+    change 80). A drag, resize or turn shows the element's place from
+    BlockSuite's stash, and local change 63's watcher took each frame's change as
+    this tab's own and stored the label's new place every frame: a 60-frame drag
+    of a shape grew the board 799 B with one labelled connector on it, 2,607 B with
+    two and 13,050 B with ten (about 20 B a label a frame, on any board). Each
+    mounted board's `InteractivityManager` is kept by its store, and while one of
+    a connector's ends is among the elements of its `activeInteraction$` (a
+    node of a mind map whose root is among them too: a root's drag lays its map
+    out at every frame; the elements are kept in a `Set` once a gesture), the
+    label is stashed (`held`). The change that stores the end's place at the
+    gesture's end writes it, inside that change, so Undo takes them back
+    together; a label still held once the gesture ended (its ends stored
+    unchanged) is set back to its stored place and popped a microtask later,
+    writing nothing, so a peer's place stored meanwhile stands (third guard
+    review: the first version wrote the place this tab showed over it). The
+    same drags now write nothing over their frames and grow the board 37, 46 and
+    129 B. The first version took an end whose shown `xywh` differed from its
+    stored one as mid-gesture, and a note showing a size it measured (local
+    change 75) keeps its `xywh` stashed for as long as it shows it: the label of
+    a connector on it stayed local, and Undo took a move back without it (second
+    guard review). A connector's own drag keeps its label as local change 80
+    does. Pinned by "holds the labels hanging on a shape mid-gesture this tab's"
+    in `src/features/blocksuite/connectorLabel.test.ts` and "stores the label of a
+    connector hanging on a note that shows a measured size" in
+    `src/features/blocksuite/noteSize.test.ts`.
+
+84. The width slider picks a value at its press and as a drag changes it
+    (`affine/components` `slider/slider.ts`, marked `Capy (local change 84)`;
+    found 2026-11-25 with local change 82). It picked again at every pointer
+    move, the value unchanged too, and each pick rewrites every selected
+    element's width (a stroke's, a shape's or a connector's through the board's
+    `updateElement`, a card note's border through its style panel): a drag over a
+    selection stored each element's width at every pointer move. A press always
+    picks (the shown value is the most common of mixed widths, and a press on it
+    makes them all that width, as upstream), and a move picks only a value this
+    drag has not just picked. Pinned by "picks a width at the press and as a drag
+    changes it" in `src/features/blocksuite/boardWrites.test.ts`, through the
+    slider's own press.
+
+85. A connector's end dragged by its handle keeps the end and its label this
+    tab's until the pointer is up (`affine/gfx/connector`
+    `components/connector-handle.ts`, marked `Capy (local change 85)`; second
+    review of the full board's write gate, 2026-11-25). Upstream set the end at
+    every pointer move, and local change 63's watcher placed the label on the
+    new path each time: about 20 B a frame, never merged, on any board. The
+    press stashes the end and `labelXYWH` and the pointer's release, or its
+    cancel, pops both in one change before its `captureSync`, each written once
+    if it changed. Pinned
+    by "drags a connector's end by its handle with its label this tab's" in
+    `src/features/blocksuite/connectorLabel.test.ts`.
+
 Icons: `@blocksuite/icons/lit` is aliased in `vite.config.ts` to
 `src/features/blocksuite/blocksuiteIcons.ts`, which re-exports AFFiNE's set and
 replaces about ninety names with the app's Hugeicons, so the swap itself edits no

@@ -1320,6 +1320,65 @@ it('resends a group cut short by a dropped socket in its next step 2', async () 
   provider.destroy();
 });
 
+// Epo 2026-11-24 ("Add jitter"): a dropped socket opens again at a random
+// time up to 1 s (`reconnectDelay`), then up to 2 s after another failure.
+it('opens a dropped socket again after the jittered wait, which grows', async () => {
+  const { provider, socket } = await joined();
+  vi.useFakeTimers();
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0.999);
+  socket.close();
+  await vi.advanceTimersByTimeAsync(998);
+  expect(FakeSocket.instances.at(-1)).toBe(socket);
+  await vi.advanceTimersByTimeAsync(1);
+  const again = FakeSocket.instances.at(-1) as FakeSocket;
+  expect(again).not.toBe(socket);
+  again.close();
+  await vi.advanceTimersByTimeAsync(1997);
+  expect(FakeSocket.instances.at(-1)).toBe(again);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(FakeSocket.instances.at(-1)).not.toBe(again);
+  random.mockRestore();
+  provider.destroy();
+});
+
+// Epo 2026-11-24 ("Add jitter"): back online, the socket's backoff starts
+// over, so it opens within the first attempt's random 0–1 s, neither at once
+// (a network back for a whole school would bring every tab together) nor
+// after the longer wait its failures had grown to.
+it('opens within the first random wait once the browser is back online', async () => {
+  const page = new EventTarget();
+  vi.stubGlobal('window', page);
+  vi.useFakeTimers();
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0.999);
+  const socket = CollabSocket.create(
+    `wss://collab.test/${url++}`,
+    () => () => {}
+  );
+  const handler = {
+    onMessage() {},
+    onResume() {},
+    onSleep() {},
+    onSocketClose() {},
+    onSocketOpen() {},
+  };
+  const last = () => FakeSocket.instances.at(-1) as FakeSocket;
+  socket.attach(handler);
+  for (const wait of [999, 1998]) {
+    last().close();
+    await vi.advanceTimersByTimeAsync(wait);
+  }
+  // A third failure: its wait would be up to 4 s.
+  const dropped = last();
+  dropped.close();
+  page.dispatchEvent(new Event('online'));
+  await vi.advanceTimersByTimeAsync(998);
+  expect(last()).toBe(dropped);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(last()).not.toBe(dropped);
+  socket.detach(handler);
+  random.mockRestore();
+});
+
 // Review of 43fae032a round 2, finding 5: a group the room dropped as late
 // (an uplink too slow for one piece within its slack) is not sent again on
 // the same channel, where it would be late again with no end: its ACK

@@ -799,6 +799,56 @@ After a deploy that changes them, compare the container's memory
 (`docker stats --no-stream $(docker ps -qf name=collaboration)`) at idle
 and after a busy period with the numbers from before.
 
+Those settings return only a heap's top, so the collaboration server also
+gives memory back itself (Epo 2026-11-24). Measured on the production box
+with production's settings (the room-memory reports
+[2026-11-23-room-memory-prod](../bench/collaboration/reports/2026-11-23-room-memory-prod.md)
+and [2026-11-24-room-memory-prod-2](../bench/collaboration/reports/2026-11-24-room-memory-prod-2.md);
+the bench behind them is
+[2026-11-22-room-memory](../bench/collaboration/reports/2026-11-22-room-memory.md)):
+
+- **A trim after each unload** (`crates/server/src/trim.rs`). Once a room
+  unloaded and its projection and fold ended, or a discard moved its lineage,
+  glibc's `malloc_trim(0)` runs on a blocking thread, never a room's. glibc
+  holds each arena's lock while it trims it, and production runs two arenas
+  (`MALLOC_ARENA_MAX=2`), so a trim stalls allocations server-wide: trims run
+  one at a time and at least `TRIM_SPACING` (5 s, Epo 2026-11-24) apart, end
+  to start. Unloads during a trim or its spacing ask for
+  exactly one more, run once the spacing passed, so a burst of unloads costs
+  one trim per 5 s. The same request also follows each board's whole-board
+  work (`work.rs`: a load, a fold, a projection, an update's trial on the
+  board's replica or a joiner's answer behind its base, whose 25 to 90 MiB
+  peak otherwise stays resident on glibc),
+  spaced with the
+  unloads' trims. A trim that panics leaves later ones running. Each trim
+  logs one Info line, `memory trimmed`, with `ms`, `released`,
+  `rss_before_kib` and `rss_after_kib` (`VmRSS` of `/proc/self/status`, from
+  the kernel's counters: `smaps_rollup` walks every page under the mmap lock,
+  which allocations of 128 KiB or more wait on). A live-built 4 MiB board left
+  176 MiB above idle after its unload without it, 16 MiB with it; 8 boards
+  unloading together, 444 against 21 MiB. One trim took 5 to 31 ms, the first
+  of 8 at once up to 45 ms. It runs only on Linux with glibc, the image's: a
+  platform cfg, not a fallback, so macOS development never trims. It is the
+  server's one `unsafe` call, which is why the workspace denies `unsafe_code`
+  rather than forbidding it.
+- **A pooled database connection closes after a large message.** A
+  connection keeps its read, write and bind buffers at about twice the
+  largest message it carried (8 MiB each after a 4 MiB board), and the pool
+  (10 connections) never closes an idle one: up to an estimated 240 MiB at
+  the board cap, out of a trim's reach. A connection whose largest message
+  (a state or row read, a state written, a material's content JSON) was over
+  1 MiB (`LARGE_ROW_BYTES`, `crates/sources/src/pool.rs`) is closed instead of
+  going back, on every exit, refusals and errors included (`Pooled`'s `Drop`):
+  note loads, stores, folds and quiz projections, the agent's reads and
+  writes of a note, a source's stored rows, its fold, and a refresh
+  candidate's state. A refusal rolls its transaction back first; an error
+  with one open closes it mid-transaction, which Postgres logs as an
+  unexpected EOF. The next call opens a new connection (est. a few ms).
+
+After a deploy, `docker logs capy-collaboration-1 2>&1 | grep 'memory trimmed'`
+as root shows the trims; `rss_after_kib` after rooms unload should sit near
+the idle process's RSS.
+
 Open source rooms keep their original files, seeds and baselines on disk,
 not in memory (Epo 2026-10-17; the disk store in
 [office-files](frontend/office-files.md)). The folder is the image's
@@ -916,7 +966,7 @@ at most `COLLABORATION_JOINED_PER_USER` joined documents (22) and
 one more closes their oldest, counted in
 `capy_collaboration_oldest_closed_total`), also left unset, as are
 `COLLABORATION_PING_SECONDS` (30) and `COLLABORATION_SILENT_SECONDS` (60):
-every socket is pinged and one that sends no byte that long closes, freeing its places. A tab sends its own heartbeat every 20 s too (protocol 41, `HEARTBEAT_MS`), from a worker built from an inline blob (no file a deploy can take away) so a hidden tab's timer throttling does not slow it, and the server reads it even while a long send to the tab holds back the pings; the time the server spends sending counts for nothing. To check a hidden tab on UAT, leave a tab hidden for more than 5 minutes with a file open, then close it and read the collaboration server's logs (`docker logs capy-collaboration-1 2>&1 | grep 'socket heartbeats'` as root): each socket logs one Info line at close, `socket heartbeats`, with its `beats` and `longest_beat_gap_ms` (about 20,000 on time; a minute or more means its heartbeat was throttled; `null` under two beats), and no metric. `COLLABORATION_GROUP_SLACK_MS` (90,000, Epo 2026-11-23) is left unset too: an unfinished group of pieces is dropped once it waited that long past what the update allowance takes to carry its room's group cap, unless a message (or a draft piece's body) is still arriving for it, so a slow but live uplink lands any piece, or, while its first piece waits for its acknowledgement (which a long send to the tab can hold back), the tab's heartbeat came. The collaboration server refuses to start with `COLLABORATION_SILENT_SECONDS` or `COLLABORATION_GROUP_SLACK_MS` under two heartbeats (40 s, 40,000 ms). While the server takes a tab's frames during a long send to it, the socket's other work (token timers, closings, auth and join answers) waits for the send to end; the writer recheck (every 5 s on a writer's updates) still enforces access, so an expired token only stretches its grace. `COLLABORATION_SLOWEST_UPLINK_BYTES` (8,000 bytes a second, the slowest uplink a group must land on, Epo 2026-11-23) is left unset as well: a draft group waits for its next piece the slack plus one 2 MiB piece at that rate, a busy group keeps its place in its user's line one such piece longer, and a channel's group lives at most its room's group cap at that rate plus the slack, however long its socket keeps hearing bytes. Each user has at most one unfinished group at a time across rooms (Epo 2026-11-23), so what one user holds is bounded by one room's group cap, with no setting of its own. The address is the gateway limiter's
+every socket is pinged and one that sends no byte that long closes, freeing its places. A tab sends its own heartbeat every 20 s too (protocol 41, `HEARTBEAT_MS`), from a worker built from an inline blob (no file a deploy can take away) so a hidden tab's timer throttling does not slow it, and the server reads it even while a long send to the tab holds back the pings; the time the server spends sending counts for nothing. Measured 2026-11-24 in Chrome for Testing 151 on macOS with a local probe (no automation attached: Playwright keeps its pages focused and visible): in a tab behind another tab of its window, the page's own 20 s `setInterval` came at gaps of 52, 60 and 60 s once the tab had been hidden about 5 minutes, while a dedicated worker's 20 s ticks, and the page's message handler for them (where the heartbeat is sent), stayed at 20 s throughout, 25 ticks over 8.5 minutes. To check a hidden tab on UAT end to end, leave a tab hidden for more than 5 minutes with a file open, then close it and read the collaboration server's logs (`docker logs capy-collaboration-1 2>&1 | grep 'socket heartbeats'` as root): each socket logs one Info line at close, `socket heartbeats`, with its `beats` and `longest_beat_gap_ms` (about 20,000 on time; a minute or more means its heartbeat was throttled; `null` under two beats), and no metric. `COLLABORATION_GROUP_SLACK_MS` (90,000, Epo 2026-11-23) is left unset too: an unfinished group of pieces is dropped once it waited that long past what the update allowance takes to carry its room's group cap, unless a message (or a draft piece's body) is still arriving for it, so a slow but live uplink lands any piece, or, while its first piece waits for its acknowledgement (which a long send to the tab can hold back), the tab's heartbeat came. The collaboration server refuses to start with `COLLABORATION_SILENT_SECONDS` or `COLLABORATION_GROUP_SLACK_MS` under two heartbeats (40 s, 40,000 ms). While the server takes a tab's frames during a long send to it, the socket's other work (token timers, closings, auth and join answers) waits for the send to end; the room still refuses an update or stateless event whose token has expired, and the writer recheck (every 30 s on a writer's updates) still enforces access, so an expired token only stretches its grace. `COLLABORATION_SLOWEST_UPLINK_BYTES` (8,000 bytes a second, the slowest uplink a group must land on, Epo 2026-11-23) is left unset as well: a draft group waits for its next piece the slack plus one 2 MiB piece at that rate, a busy group keeps its place in its user's line one such piece longer, and a channel's group lives at most its room's group cap at that rate plus the slack, however long its socket keeps hearing bytes. Each user has at most one unfinished group at a time across rooms (Epo 2026-11-23), so what one user holds is bounded by one room's group cap, with no setting of its own. The address is the gateway limiter's
 (`CF-Connecting-IP`, else the first `X-Forwarded-For` entry, else the
 peer's; an IPv6 one by its /64), so the cap holds only while the origin is
 reachable through the Cloudflare tunnel alone, as it is for the gateway's
@@ -4670,3 +4720,64 @@ canvases the same way. As of 2026-11-18 the board room's integration tests
 (`collaboration-rs/crates/server/tests/rooms.rs`) have compiled but not run:
 they need Docker, which did not answer on the build machine. Their first run
 is CI, so wait for it before this deploy.
+
+## Board base indexes (migration 0193)
+
+[`0193_board_base_indexes.sql`](../server/migrations/0193_board_base_indexes.sql)
+(the bytes-room plan, step 1b, Epo 2026-11-24) adds `base_state_vector` and
+`base_delete_set` to `material_yjs_documents`, as 0181 to 0183 must be applied
+before the new collaboration server starts: it writes both columns at every
+canvas's first seed and every board fold, so against a database without them
+a canvas's first open and each board fold fail. The deploy's own order
+(collaboration stopped, then `migrate`, then the services) does this. The
+columns are nullable, null for every other kind and for a board seeded
+before 0193 and not folded since; the migration backfills nothing and refuses
+nothing.
+
+## Board base indexes, the rest (migration 0195)
+
+[`0195_board_base_indexes_rest.sql`](../server/migrations/0195_board_base_indexes_rest.sql)
+(the bytes-room plan, step 2, Epo 2026-11-24) adds `base_indexes` to
+`material_yjs_documents`: the rest of a board base's indexes (the origins
+the board room's flag rule reads, the place hashes, each type's depth and the
+clients that wrote contributor markers), one versioned binary value that
+`board::Indexes::stored` in
+[`board.rs`](../collaboration-rs/crates/server/src/board.rs) documents. As
+with 0193, it must be applied before the new collaboration server starts,
+which writes it with 0193's two columns at every canvas's first seed and
+every board fold (a canvas's first open and each board fold fail without
+it); the deploy's own order does this. It is nullable, null for every other
+kind and for a board seeded before 0195 and not folded since; the migration
+backfills nothing and refuses nothing.
+
+The board room on bytes (step 2's room tasks) loads a board from these three
+columns and never decodes its base, so a canvas whose row lacks any of them
+fails its load with "a board's base has no stored indexes" (Epo 2026-11-24:
+canvases saved before the stored indexes are deleted, not migrated). A damaged
+value fails it too, with "a board's stored indexes cannot be read": sets whose
+runs or clients are out of order, overlap or are empty, heads or firsts out of
+order, or a sequence's first that is not one of its heads. Flipped bytes inside
+a value that keep its order (a place hash, a depth) still read; there is no
+checksum. Before that server reaches UAT, the UAT canvases stored before it
+(each with a `material_yjs_documents` row and no `base_indexes`; one never
+opened has no row and seeds afresh) are deleted by hand, and only once Epo
+has said yes to it (the bytes-room plan's follow-ups). As for 0181, count
+them before the deploy and tell whoever drew them, then delete them right
+after it. Not before: the old server, running until the deploy, writes rows
+without `base_indexes`, so a canvas opened or created between the delete and
+the deploy would fail its load afterwards. The new server writes
+`base_indexes` at every first seed and every fold, so after the deploy the
+query matches exactly the canvases stored before it, and nothing adds more.
+The cascade releases each charge and queues each blob:
+
+```sql
+SELECT m.owner_user_id, count(*) FROM materials m
+JOIN material_yjs_documents d ON d.material_id = m.id
+WHERE m.kind = 'canvas' AND d.base_indexes IS NULL GROUP BY m.owner_user_id;
+
+DELETE FROM materials m USING material_yjs_documents d
+WHERE d.material_id = m.id AND m.kind = 'canvas' AND d.base_indexes IS NULL;
+```
+
+Until the deploy the live-document room still opens them; from the deploy to
+the delete they fail their load.

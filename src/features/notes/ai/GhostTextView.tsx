@@ -1,20 +1,46 @@
 import { CopilotPlugin } from '@platejs/ai/react';
-import { useEditorRef, useElement, usePluginOption } from 'platejs/react';
-import { useEffect } from 'react';
+import type { TElement } from 'platejs';
+import {
+  type PlateEditor,
+  useEditorPluginOption,
+  useEditorRef,
+  usePluginOption,
+} from 'platejs/react';
+import { type ReactNode, useEffect } from 'react';
 import { useMe } from '@/api/hooks';
 import { setGhostTextState } from './ghostText';
 
 /** Under every block; subscribes only to whether this block holds the
- * suggestion, so a changing suggestion re-renders one block, not the note. */
-export function GhostText() {
-  const element = useElement();
-  const isSuggested = usePluginOption(
+ * suggestion, so a changing suggestion re-renders one block, not the note.
+ * Reads through the editor and element it is given: `useElement` and
+ * `usePluginOption` would subscribe every block to the editor's and the
+ * element's stores as well. */
+function GhostText({
+  editor,
+  element,
+}: {
+  editor: PlateEditor;
+  element: TElement;
+}) {
+  const isSuggested = useEditorPluginOption(
+    editor,
     CopilotPlugin,
     'isSuggested',
     element.id as string
   );
   return isSuggested ? <SuggestionText /> : null;
 }
+
+/** CopilotPlugin's `belowNodes`, as Plate's (each element's children, then its
+ * ghost text), with the element's editor and element passed down. */
+export const ghostTextBelowNodes =
+  ({ editor, element }: { editor: PlateEditor; element: TElement }) =>
+  ({ children }: { children: ReactNode }) => (
+    <>
+      {children}
+      <GhostText editor={editor} element={element} />
+    </>
+  );
 
 function SuggestionText() {
   const suggestionText = usePluginOption(CopilotPlugin, 'suggestionText');

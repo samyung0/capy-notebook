@@ -131,6 +131,16 @@ async fn start_with(env: &Env, api: Option<&str>) -> Server {
     start_configured(env, api, &[]).await
 }
 
+/// The writer recheck scaled down from production's 30 s (debug builds only),
+/// for the tests that write past it, and how long they wait for it.
+const RECHECKED: &[(&str, &str)] = &[("COLLABORATION_IT_RECHECK_MS", "1000")];
+const PAST_RECHECK: Duration = Duration::from_millis(1100);
+
+/// `start` with the writer recheck scaled down ([RECHECKED]).
+async fn start_rechecked(env: &Env, api: Option<&str>) -> Server {
+    start_configured(env, api, RECHECKED).await
+}
+
 /// The server with `api` as its gateway and `extra` settings.
 async fn start_configured(env: &Env, api: Option<&str>, extra: &[(&str, &str)]) -> Server {
     let stdout = if std::env::var_os("CAPY_IT_LOGS").is_some() {
@@ -3278,6 +3288,62 @@ async fn a_suspended_owners_note_is_not_found_for_its_readers() {
     }
 }
 
+/// Security regression (migration 0194): suspending a workspace's owner
+/// discards the room of a note another member made there and pays for, as it
+/// does the owner's own, so its writer and its reader close at once and the
+/// reader's rejoin is not found. Fails if the owner's lock evicts only what
+/// the owner pays for, leaving the member's room open.
+#[tokio::test]
+async fn a_suspended_owners_workspace_closes_a_members_note_room() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, editor, owners_room) = shared_note(&env, "shared").await;
+    let owners_note = material_of(&owners_room);
+    let client = db(&env).await;
+    let reader = user(&env).await;
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role)
+             SELECT workspace_id, $2, 'viewer' FROM materials WHERE id=$1",
+            &[&owners_note, &reader],
+        )
+        .await
+        .expect("viewer");
+    let material = format!("m_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content)
+             SELECT $1, $2, workspace_id, 'IT', 'note', 'IT', content FROM materials WHERE id=$3",
+            &[&material, &editor, &owners_note],
+        )
+        .await
+        .expect("the member's note");
+    let room = format!("material:{material}:schema:1");
+    let mut writer = Client::open(server.port).await;
+    assert_eq!(
+        writer.joined(&room, &token(&room, &editor, "write")).await,
+        1
+    );
+    let read = token(&room, &reader, "read");
+    let mut watcher = Client::open(server.port).await;
+    assert_eq!(watcher.joined(&room, &read).await, 0);
+    client
+        .execute(
+            "UPDATE users SET suspended_at=now(), suspended_reason='it' WHERE id=$1",
+            &[&owner],
+        )
+        .await
+        .expect("suspend");
+    deliver_evictions(&env, &room).await;
+    for tab in [&mut writer, &mut watcher] {
+        tab.until(4).await.expect("closed");
+    }
+    assert_eq!(
+        refused_join(&mut watcher, &room, &read).await,
+        "collaboration-not-found"
+    );
+}
+
 /// Security regression (uploader-pays review M4, N4): an agent edit charges
 /// the note's payer (its creator), so it stops once only the payer is being
 /// deleted, the workspace owner and the actor staying healthy. Fails if the
@@ -6394,7 +6460,7 @@ async fn channels_close_quietly(socket: &mut Client, channels: u64) {
 #[tokio::test]
 async fn a_removed_persons_rooms_of_every_kind_on_one_socket_close_and_the_owner_keeps_typing() {
     let Some(env) = env() else { return };
-    let server = start(&env).await;
+    let server = start_rechecked(&env, env.api.as_deref()).await;
     let (owner, removed, note_room) = shared_note(&env, "note").await;
     let note = material_of(&note_room).to_owned();
     let quiz = quiz_material(&env, &owner, "private").await;
@@ -6542,7 +6608,7 @@ async fn a_removed_persons_rooms_of_every_kind_on_one_socket_close_and_the_owner
             assert!(tab.until(6).await.is_some(), "{mark} acknowledged");
             assert_no_notice(tab);
         }
-        tokio::time::sleep(Duration::from_millis(5100)).await;
+        tokio::time::sleep(PAST_RECHECK).await;
     }
     let tabs = [
         &mut note_tab,
@@ -7261,13 +7327,14 @@ async fn a_lowered_editor_stops_writing_and_a_rejoin_comes_back_read_only() {
 
 /// Security regression (Q634, review F3): a lowered editor's write stops even
 /// if the outbox never delivers: the writer's recheck reads the database every
-/// 5 s, and closes as the revoke would (4403, no strip, no incident). So what the
-/// lowering leaves is the edits of those 5 s, Epo's accepted window. Fails if an
-/// update past the recheck is admitted, or the close differs from the revoke's.
+/// 30 s (scaled down here), and closes as the revoke would (4403, no strip, no
+/// incident). So what the lowering leaves is at most the edits of that window.
+/// Fails if an update past the recheck is admitted, or the close differs from
+/// the revoke's.
 #[tokio::test]
 async fn a_lowered_editor_stops_writing_at_the_recheck_with_nothing_delivered() {
     let Some(env) = env() else { return };
-    let server = start(&env).await;
+    let server = start_rechecked(&env, env.api.as_deref()).await;
     let (owner, editor, room) = shared_note(&env, "hello").await;
     let mut olive = Client::open(server.port).await;
     olive.joined(&room, &token(&room, &owner, "write")).await;
@@ -7284,7 +7351,7 @@ async fn a_lowered_editor_stops_writing_at_the_recheck_with_nothing_delivered() 
         )
         .await
         .expect("lowered");
-    tokio::time::sleep(Duration::from_millis(5100)).await;
+    tokio::time::sleep(PAST_RECHECK).await;
     desk.type_text("?").await;
     closes_quietly(&mut desk).await;
     assert!(olive.settle(|c| c.block_text() == "hello!").await);
@@ -7299,7 +7366,7 @@ async fn a_lowered_editor_stops_writing_at_the_recheck_with_nothing_delivered() 
 #[tokio::test]
 async fn a_removed_person_typing_closes_with_4403_whichever_arrives_first() {
     let Some(env) = env() else { return };
-    let server = start(&env).await;
+    let server = start_rechecked(&env, env.api.as_deref()).await;
     let (owner, editor, room) = shared_note(&env, "hello").await;
     let third = member(&env, &room, "editor").await;
     let mut olive = synced(server.port, &room, &owner, "hello").await;
@@ -7314,7 +7381,7 @@ async fn a_removed_person_typing_closes_with_4403_whichever_arrives_first() {
 
     // The recheck first: nothing delivered yet.
     client.execute(removed, &[&editor]).await.expect("removed");
-    tokio::time::sleep(Duration::from_millis(5100)).await;
+    tokio::time::sleep(PAST_RECHECK).await;
     desk.type_text("?").await;
     closes_quietly(&mut desk).await;
 
@@ -7349,7 +7416,7 @@ async fn type_source(client: &mut Client, text: &str) {
 async fn a_source_writers_recheck_closes_a_lost_role_with_4403_and_keeps_the_strip() {
     let Some(env) = env() else { return };
     let gateway = gateway(&env).await;
-    let server = start_with(&env, Some(&gateway.url)).await;
+    let server = start_rechecked(&env, Some(&gateway.url)).await;
     let (owner, file) = text_file(&env, &gateway, "hello").await;
     let room = format!("source:{file}:epoch:1");
     let (lost, gone, frozen) = (user(&env).await, user(&env).await, user(&env).await);
@@ -7374,7 +7441,7 @@ async fn a_source_writers_recheck_closes_a_lost_role_with_4403_and_keeps_the_str
         (gone.clone(), 404, ""),
         (frozen.clone(), 403, "account_over_quota"),
     ]);
-    tokio::time::sleep(Duration::from_millis(5100)).await;
+    tokio::time::sleep(PAST_RECHECK).await;
 
     type_source(&mut lost_tab, "b").await;
     closes_quietly(&mut lost_tab).await;
@@ -7544,7 +7611,7 @@ async fn a_lowered_share_role_closes_the_visitors_it_took_editing_from() {
 #[tokio::test]
 async fn an_ownership_transfer_closes_nobody() {
     let Some(env) = env() else { return };
-    let server = start(&env).await;
+    let server = start_rechecked(&env, env.api.as_deref()).await;
     let (owner, editor, room) = shared_note(&env, "hello").await;
     let mut olive = synced(server.port, &room, &owner, "hello").await;
     let mut eddie = synced(server.port, &room, &editor, "hello").await;
@@ -7570,7 +7637,7 @@ async fn an_ownership_transfer_closes_nobody() {
     deliver_evictions(&env, &room).await;
     stays_connected(&mut olive).await;
     stays_connected(&mut eddie).await;
-    tokio::time::sleep(Duration::from_millis(5100)).await;
+    tokio::time::sleep(PAST_RECHECK).await;
     olive.type_text("!").await;
     olive.until(6).await.expect("the old owner's ack");
     eddie.type_text("?").await;
@@ -7586,7 +7653,7 @@ async fn an_ownership_transfer_closes_nobody() {
 async fn a_full_or_frozen_writer_is_a_bystander_of_a_revoke() {
     for frozen in [false, true] {
         let Some(env) = env() else { return };
-        let server = start(&env).await;
+        let server = start_rechecked(&env, env.api.as_deref()).await;
         let (owner, editor, room) = shared_note(&env, "hello").await;
         let mut olive = synced(server.port, &room, &owner, "hello").await;
         let mut desk = synced(server.port, &room, &editor, "hello").await;
@@ -7621,7 +7688,7 @@ async fn a_full_or_frozen_writer_is_a_bystander_of_a_revoke() {
         deliver_evictions(&env, &room).await;
         closes_quietly(&mut desk).await;
         stays_connected(&mut olive).await;
-        tokio::time::sleep(Duration::from_millis(5100)).await;
+        tokio::time::sleep(PAST_RECHECK).await;
         olive.type_text("?").await;
         let (notice, _) = olive.stateless("room-read-only").await;
         assert_eq!(notice["room"], room.as_str());
@@ -8203,7 +8270,7 @@ async fn a_revoke_retries_until_it_can_check_and_reaches_every_server() {
 #[tokio::test]
 async fn a_plan_lapse_turns_the_rooms_read_only_at_the_next_update() {
     let Some(env) = env() else { return };
-    let server = start(&env).await;
+    let server = start_rechecked(&env, env.api.as_deref()).await;
     let (owner, material) = note(&env, "hello").await;
     let room = format!("material:{material}:schema:1");
     let client = db(&env).await;
@@ -8274,7 +8341,7 @@ async fn a_plan_lapse_turns_the_rooms_read_only_at_the_next_update() {
     assert_eq!(lapse_queued, 0, "the lapse queued something");
     stays_connected(&mut desk).await;
 
-    tokio::time::sleep(Duration::from_millis(5100)).await;
+    tokio::time::sleep(PAST_RECHECK).await;
     desk.type_text("?").await;
     let (notice, _) = desk.stateless("room-read-only").await;
     assert_eq!(notice["room"], room.as_str());
@@ -18793,10 +18860,15 @@ async fn a_pptx_undo_gets_the_peers_edits_back_through_the_relay() {
 const BOARD_FIRST_STATE: &[u8] = include_bytes!("../fixtures/board-first-state.bin");
 
 /// A canvas as Go's `CreateCanvas` makes one, with no Yjs row: `user`'s,
-/// drawn in `workspace` (none: on the account's Canvas page). Returns its
-/// material and room.
-async fn canvas_of(env: &Env, user: &str, workspace: Option<&str>) -> (String, String) {
-    let material = format!("m_it_{}", uuid_like());
+/// drawn in `workspace` (none: on the account's Canvas page), its material
+/// id starting with `prefix`. Returns its material and room.
+async fn canvas_of(
+    env: &Env,
+    user: &str,
+    workspace: Option<&str>,
+    prefix: &str,
+) -> (String, String) {
+    let material = format!("{prefix}_{}", uuid_like());
     let content = serde_json::json!({
         "schemaVersion": 1,
         "value": [{
@@ -18819,8 +18891,13 @@ async fn canvas_of(env: &Env, user: &str, workspace: Option<&str>) -> (String, S
 
 /// A fresh user's own canvas; returns (user, material, room).
 async fn canvas(env: &Env) -> (String, String, String) {
+    canvas_named(env, "m_it").await
+}
+
+/// A fresh user's own canvas whose material id starts with `prefix`.
+async fn canvas_named(env: &Env, prefix: &str) -> (String, String, String) {
     let user = user(env).await;
-    let (material, room) = canvas_of(env, &user, None).await;
+    let (material, room) = canvas_of(env, &user, None, prefix).await;
     (user, material, room)
 }
 
@@ -18858,7 +18935,7 @@ async fn workspace_canvas(env: &Env) -> WorkspaceCanvas {
         )
         .await
         .expect("members");
-    let (material, room) = canvas_of(env, &creator, Some(&workspace)).await;
+    let (material, room) = canvas_of(env, &creator, Some(&workspace), "m_it").await;
     WorkspaceCanvas {
         owner,
         creator,
@@ -18993,6 +19070,309 @@ async fn a_fresh_canvas_loads_to_the_first_state() {
         .expect("the board's row");
     assert_eq!(row.get::<_, Vec<u8>>(0), BOARD_FIRST_STATE);
     assert_eq!((row.get::<_, i64>(1), row.get::<_, i64>(2)), (1, 1));
+}
+
+/// The board work limit's gauges on `/metrics`, (held, queue), once
+/// `check` holds for them or 2 s passed.
+async fn board_work(port: u16, check: impl Fn((u64, u64)) -> bool) -> (u64, u64) {
+    let mut gauges = (u64::MAX, u64::MAX);
+    for _ in 0..40 {
+        let metrics = metrics_text(port).await;
+        let gauge = |name: &str| {
+            metrics
+                .lines()
+                .find_map(|line| line.strip_prefix(name)?.strip_prefix(' ')?.parse().ok())
+                .expect("board work gauge")
+        };
+        gauges = (
+            gauge("capy_collaboration_board_work_held"),
+            gauge("capy_collaboration_board_work_queue"),
+        );
+        if check(gauges) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    gauges
+}
+
+/// A board joined whose load keeps the board work permit 3 s (the debug
+/// hook `capy-it-hold-work`), once the server logged its `count`-th hold.
+async fn hold_board_work(env: &Env, port: u16, logs: &Logs, count: usize) -> Client {
+    let (holder, _, room) = canvas_named(env, "capy-it-hold-work").await;
+    let mut held = Client::open(port).await;
+    held.join(&room, &token(&room, &holder, "write")).await;
+    for _ in 0..100 {
+        if logs.count(&["it holds board work"]) >= count {
+            return held;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("no board held the work permit");
+}
+
+/// A board a join sent with [Client::join] went to, synced.
+async fn board_synced(board: &mut Client) {
+    assert_eq!(board.until(1).await.expect("joined")[0], 1);
+    let sv = board.doc.transact().state_vector().encode_v1();
+    board.send(5, &sync(0, &sv)).await;
+    assert!(board.settle(|c| c.board_blocks().len() >= 2).await);
+}
+
+/// `count` properties for a block, which make its update past a small edit
+/// (`ydoc::SMALL_EDIT` structs) when over 14: its admission is tried on a
+/// replica under the board work permit (`board::Check::Flagged`).
+fn many_props(count: usize) -> Vec<(String, String)> {
+    (0..count)
+        .map(|at| (format!("prop:p{at}"), "v".to_owned()))
+        .collect()
+}
+
+impl Client {
+    /// Draws a block whose update is flagged ([many_props]) and sends it.
+    async fn draw_flagged(&mut self, id: &str) {
+        let props = many_props(20);
+        let props: Vec<(&str, &str)> = props
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        self.draw(id, "affine:note", &props).await;
+    }
+}
+
+/// Bytes-room step 1 (Epo 2026-11-24): one whole-board operation at a time
+/// in the process. While a board's load holds the board work permit (a debug
+/// hook keeps it 3 s), a second board's load waits for it, and a note still
+/// loads and acknowledges an edit meanwhile; the second board loads once the
+/// permit is back. The pending projection scan may take the permit a moment
+/// too (boards other tests left unprojected), so a waiter more is allowed.
+/// Fails if two boards load side by side, or a note waits behind a board.
+#[tokio::test]
+async fn a_boards_load_waits_for_another_boards_while_a_note_answers() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (waiter, _, waiting_room) = canvas(&env).await;
+    let (writer, note) = note(&env, "still answered").await;
+    let mut held = hold_board_work(&env, server.port, &logs, 1).await;
+    let mut waiting = Client::open(server.port).await;
+    let asked = std::time::Instant::now();
+    waiting
+        .join(&waiting_room, &token(&waiting_room, &waiter, "write"))
+        .await;
+    let waits = |(held, waiting): (u64, u64)| held == 1 && waiting >= 1;
+    let gauges = board_work(server.port, waits).await;
+    assert!(waits(gauges), "the second board waits: {gauges:?}");
+
+    let note_room = format!("material:{note}:schema:1");
+    let mut tab = Client::open(server.port).await;
+    assert_eq!(
+        tab.joined(&note_room, &token(&note_room, &writer, "write"))
+            .await,
+        1
+    );
+    assert!(tab.settle(|c| c.block_text() == "still answered").await);
+    tab.type_text("!").await;
+    assert!(
+        tab.until(6).await.is_some(),
+        "the note's edit is acknowledged"
+    );
+    let gauges = board_work(server.port, waits).await;
+    assert!(waits(gauges), "the second board still waits: {gauges:?}");
+
+    // The second board's state comes once the 3 s hold is over, well past
+    // a load of its own.
+    board_synced(&mut waiting).await;
+    assert!(
+        asked.elapsed() >= Duration::from_secs(2),
+        "{:?}",
+        asked.elapsed()
+    );
+    board_synced(&mut held).await;
+    let gauges = board_work(server.port, |gauges| gauges == (0, 0)).await;
+    assert_eq!(gauges, (0, 0), "every permit given back");
+}
+
+/// Bytes-room step 2, the trial: a board update past a small edit (22 new
+/// structs) waits for the board work permit while another board's load
+/// holds it, and a note still loads and acknowledges an edit meanwhile; the
+/// flagged update is acknowledged once the permit is back. Fails if a
+/// board's trial runs beside other whole-board work, or a note waits behind
+/// it.
+#[tokio::test]
+async fn a_flagged_board_update_waits_for_the_board_work_while_a_note_answers() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (user, _, room) = canvas(&env).await;
+    let mut board = Client::at_board(server.port, &room, &user).await;
+    board.until(6).await.expect("its step 2's ack");
+    let (writer, note) = note(&env, "still answered").await;
+    let mut held = hold_board_work(&env, server.port, &logs, 1).await;
+    let sent = std::time::Instant::now();
+    board.draw_flagged("big").await;
+    let waits = |(held, waiting): (u64, u64)| held == 1 && waiting >= 1;
+    let gauges = board_work(server.port, waits).await;
+    assert!(waits(gauges), "the flagged update waits: {gauges:?}");
+
+    let note_room = format!("material:{note}:schema:1");
+    let mut tab = Client::open(server.port).await;
+    assert_eq!(
+        tab.joined(&note_room, &token(&note_room, &writer, "write"))
+            .await,
+        1
+    );
+    assert!(tab.settle(|c| c.block_text() == "still answered").await);
+    tab.type_text("!").await;
+    assert!(
+        tab.until(6).await.is_some(),
+        "the note's edit is acknowledged"
+    );
+    let gauges = board_work(server.port, waits).await;
+    assert!(waits(gauges), "the flagged update still waits: {gauges:?}");
+
+    assert_eq!(board.acked_count().await, 1);
+    assert!(
+        sent.elapsed() >= Duration::from_secs(2),
+        "{:?}",
+        sent.elapsed()
+    );
+    board_synced(&mut held).await;
+    let gauges = board_work(server.port, |gauges| gauges == (0, 0)).await;
+    assert_eq!(gauges, (0, 0), "every permit given back");
+}
+
+impl Client {
+    /// For each of the board blocks `ids`, the message (counted from here,
+    /// each applied as it comes) that first holds it; 5 s at most.
+    async fn first_seen(&mut self, ids: &[&str]) -> Vec<usize> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut seen: Vec<Option<usize>> = vec![None; ids.len()];
+        let mut index = 0;
+        while seen.iter().any(Option::is_none) {
+            let Ok(Some(Ok(Ws::Binary(bytes)))) =
+                tokio::time::timeout_at(deadline, self.ws.next()).await
+            else {
+                panic!("{ids:?} not all seen: {seen:?}");
+            };
+            let mut at = 0;
+            while at < bytes.len() {
+                let _channel = read_var(&bytes, &mut at);
+                let kind = bytes[at];
+                at += 1;
+                let len = read_var(&bytes, &mut at) as usize;
+                let payload = bytes[at..at + len].to_vec();
+                at += len;
+                index += 1;
+                if kind == 5 {
+                    self.on_sync(&payload).await;
+                } else {
+                    self.inbox.push(Msg { kind, payload });
+                }
+                let blocks = self.board_blocks();
+                for (id, seen) in ids.iter().zip(&mut seen) {
+                    if seen.is_none() && blocks.iter().any(|block| block == id) {
+                        *seen = Some(index);
+                    }
+                }
+            }
+        }
+        seen.into_iter().flatten().collect()
+    }
+}
+
+/// Bytes-room step 2, the trial: a flagged board update waiting for the
+/// board work permit holds back what its channel sends after it. A flagged
+/// update and then a small one on the same channel, each sent while another
+/// board's load holds the permit, are acknowledged only once the flagged one
+/// is admitted, and a peer hears the flagged one no later than the small
+/// one; the same for a group of pieces flagged only as a whole (its first
+/// piece is acknowledged once held, as for any group) and a small update
+/// after it. Fails if a small update overtakes the flagged one before it on
+/// its channel.
+#[tokio::test]
+async fn a_flagged_board_update_and_a_later_small_one_are_answered_in_order() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (user, _, room) = canvas(&env).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    writer.until(6).await.expect("its step 2's ack");
+    let mut peer = Client::at_board(server.port, &room, &user).await;
+
+    let _held = hold_board_work(&env, server.port, &logs, 1).await;
+    let sent = std::time::Instant::now();
+    writer.draw_flagged("big").await;
+    writer.draw("small", "affine:note", &[]).await;
+    let first = writer.acked_count().await;
+    assert!(
+        sent.elapsed() >= Duration::from_secs(2),
+        "the small update was acknowledged first: {:?}",
+        sent.elapsed()
+    );
+    assert_eq!(first + writer.acked_total(2 - first).await, 2);
+    let [big, small] = peer.first_seen(&["big", "small"]).await[..] else {
+        unreachable!()
+    };
+    assert!(big <= small, "the peer heard the small update first");
+
+    // 12 structs in each piece: the group's whole is past a small edit.
+    let props = many_props(10);
+    let half: Vec<(&str, &str)> = props
+        .iter()
+        .map(|(k, v)| (k.as_str(), v.as_str()))
+        .collect();
+    let one = writer.edited(|doc| draw_block(doc, "big1", "affine:note", &half));
+    let two = writer.edited(|doc| draw_block(doc, "big2", "affine:note", &half));
+    let _held = hold_board_work(&env, server.port, &logs, 2).await;
+    let sent = std::time::Instant::now();
+    writer.send_pieces(2, &[&one, &two]).await;
+    writer.draw("small2", "affine:note", &[]).await;
+    // The group's first piece is acknowledged once held, on its own, or with
+    // the rest when the room took the second piece first.
+    let mut acked = writer.acked_count().await;
+    if acked == 1 {
+        acked += writer.acked_count().await;
+    }
+    assert!(
+        sent.elapsed() >= Duration::from_secs(2),
+        "the small update was acknowledged first: {:?}",
+        sent.elapsed()
+    );
+    assert_eq!(acked + writer.acked_total(3 - acked).await, 3);
+    let [group, small] = peer.first_seen(&["big2", "small2"]).await[..] else {
+        unreachable!()
+    };
+    assert!(group <= small, "the peer heard the small update first");
+}
+
+/// Bytes-room step 2, the trial's recheck: a flagged board update whose token
+/// expires while it waits for the board work permit (another board's load
+/// holds it 3 s; the token is issued for 3, which in whole seconds lasts 2 to
+/// 3 and so ends inside the hold) is refused once the permit is free, and the
+/// board never holds it. Fails if the admission after the wait trusts the
+/// checks made before it.
+#[tokio::test]
+async fn a_flagged_board_update_whose_token_expires_while_it_waits_is_refused() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (user, _, room) = canvas(&env).await;
+    let mut board = Client::open(server.port).await;
+    board
+        .joined(&room, &token_for(&room, &user, "write", 3))
+        .await;
+    assert!(board.settle(|c| c.board_blocks().len() >= 2).await);
+    board.until(6).await.expect("its step 2's ack");
+    let mut held = hold_board_work(&env, server.port, &logs, 1).await;
+    board.draw_flagged("big").await;
+    let waits = |(held, waiting): (u64, u64)| held == 1 && waiting >= 1;
+    let gauges = board_work(server.port, waits).await;
+    assert!(waits(gauges), "the flagged update waits: {gauges:?}");
+    let closed = board.until(4).await.expect("closed at expiry");
+    assert!(String::from_utf8_lossy(&closed).contains("token expired"));
+
+    board_synced(&mut held).await;
+    let gauges = board_work(server.port, |gauges| gauges == (0, 0)).await;
+    assert_eq!(gauges, (0, 0), "every permit given back");
+    let fresh = Client::at_board(server.port, &room, &user).await;
+    assert_eq!(fresh.board_blocks(), ["page", "surface"]);
 }
 
 /// Two people draw on one shared canvas: each hears the other's block and
@@ -19319,6 +19699,437 @@ async fn a_board_stores_folds_unloads_and_reopens_the_same() {
     let reopened = Client::at_board(server.port, &room, &user).await;
     assert_eq!(reopened.board_blocks(), ["i1", "n1", "page", "surface"]);
     assert_eq!(board_json(&reopened.doc), drawn);
+}
+
+/// The board's stored base, as the last fold (or the first open) wrote it.
+async fn board_base(env: &Env, material: &str) -> Vec<u8> {
+    db(env)
+        .await
+        .query_one(
+            "SELECT state FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("base")
+        .get(0)
+}
+
+/// The live contributor markers a tab holds.
+fn live_markers(client: &Client) -> u32 {
+    use yrs::Map as _;
+    let txn = client.doc.transact();
+    txn.get_map(ydoc::CONTRIBUTORS_ROOT)
+        .map_or(0, |markers| markers.len(&txn))
+}
+
+/// Bytes-room step 2, the reader rule: two writers set the same block at
+/// once, and every replica deletes the loser though no update names it, so
+/// the board's delete-set index lacks that deletion until a fold. A reader
+/// that heard both sends its step 2 (its whole delete set, the loser in it)
+/// and is acknowledged, its channel staying open for the next edit. Fails
+/// if a reader's deletions within held clocks count as a change.
+#[tokio::test]
+async fn a_readers_step2_after_a_concurrent_overwrite_stays_open() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, _, room) = canvas(&env).await;
+    let mut a = Client::at_board(server.port, &room, &user).await;
+    let mut b = Client::at_board(server.port, &room, &user).await;
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(reader.joined(&room, &token(&room, &user, "read")).await, 0);
+    assert!(reader.settle(|c| c.board_blocks().len() == 2).await);
+    let one = a.edited(|doc| draw_block(doc, "same", "affine:note", &[("prop:by", "a")]));
+    let two = b.edited(|doc| draw_block(doc, "same", "affine:note", &[("prop:by", "b")]));
+    a.send(5, &sync(2, &one)).await;
+    b.send(5, &sync(2, &two)).await;
+    let writers = [
+        yrs::block::ClientID::new(a.id()),
+        yrs::block::ClientID::new(b.id()),
+    ];
+    let heard = |c: &Client| {
+        let held = c.doc.transact().state_vector();
+        writers.iter().all(|writer| held.get(writer) > 0)
+    };
+    assert!(reader.settle(heard).await);
+    let step2 = {
+        let txn = reader.doc.transact();
+        txn.encode_state_as_update_v1(&txn.state_vector())
+    };
+    let loser = Update::decode_v1(&step2)
+        .expect("step 2")
+        .delete_set()
+        .iter()
+        .any(|(client, _)| writers.contains(client));
+    assert!(loser, "the reader's step 2 names the loser");
+    reader.inbox.retain(|message| message.kind != 6);
+    reader.send(5, &sync(1, &step2)).await;
+    reader.until(6).await.expect("the step 2 acknowledged");
+    a.draw("after", "affine:note", &[]).await;
+    assert!(
+        reader
+            .settle(|c| c.board_blocks().contains(&"after".to_owned()))
+            .await
+    );
+    assert!(reader.inbox.iter().all(|message| message.kind != 4));
+}
+
+/// Bytes-room step 2, trimming: a writer's step 2 after a reconnect carries
+/// its whole delete set beside the block it drew offline; its peer hears
+/// only the new block, none of the deletions the board already holds.
+/// Fails if a step 2 is relayed as sent.
+#[tokio::test]
+async fn a_reconnects_step2_relays_only_what_is_new() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, _, room) = canvas(&env).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    let mut peer = Client::at_board(server.port, &room, &user).await;
+    writer.draw("gone", "affine:note", &[]).await;
+    writer.until(6).await.expect("ack");
+    let removed = writer.edited(|doc| {
+        use yrs::Map as _;
+        doc.get_or_insert_map("blocks")
+            .remove(&mut doc.transact_mut(), "gone");
+    });
+    writer.send(5, &sync(2, &removed)).await;
+    writer.until(6).await.expect("ack");
+    let id = yrs::block::ClientID::new(writer.id());
+    let deleted = |c: &Client| {
+        let state = c
+            .doc
+            .transact()
+            .encode_state_as_update_v1(&StateVector::default());
+        c.board_blocks() == ["page", "surface"]
+            && Update::decode_v1(&state)
+                .expect("state")
+                .delete_set()
+                .iter()
+                .any(|(client, _)| *client == id)
+    };
+    assert!(peer.settle(deleted).await);
+
+    // Gone with an edit unsent (a clean leave would expire its id).
+    writer.leave(true).await;
+    writer.edited(|doc| draw_block(doc, "new", "affine:note", &[]));
+    let before = peer.received.len();
+    assert_eq!(writer.joined(&room, &token(&room, &user, "write")).await, 1);
+    writer.until(6).await.expect("its step 2's ack");
+    assert!(
+        peer.settle(|c| c.board_blocks().contains(&"new".to_owned()))
+            .await
+    );
+    let relayed = &peer.received[before..];
+    let mut at = 0;
+    while at < relayed.len() {
+        let _channel = read_var(relayed, &mut at);
+        let kind = relayed[at];
+        at += 1;
+        let len = read_var(relayed, &mut at) as usize;
+        let payload = &relayed[at..at + len];
+        at += len;
+        if kind != 5 {
+            continue;
+        }
+        let mut inner = 0;
+        let sync_kind = read_var(payload, &mut inner);
+        let body_len = read_var(payload, &mut inner) as usize;
+        let update = Update::decode_v1(&payload[inner..inner + body_len]).expect("update");
+        assert_eq!(sync_kind, 2);
+        assert!(
+            update.delete_set().iter().all(|(client, _)| *client != id),
+            "a deletion the board held was relayed again"
+        );
+    }
+}
+
+/// Bytes-room step 2, the load: a board loads on the indexes stored beside
+/// its base and its rows, never decoding the base. With bytes no decoder
+/// reads in the stored base's place, a tab holding the whole board joins
+/// again, draws and stores. Fails if the load replays the base.
+#[tokio::test]
+async fn a_board_load_never_decodes_its_base() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material, room) = canvas(&env).await;
+    let mut tab = Client::at_board(server.port, &room, &user).await;
+    tab.draw("kept", "affine:note", &[]).await;
+    persisted(&mut tab, "kept").await;
+    // An unclean leave keeps its id the tab's for its return.
+    tab.leave(true).await;
+    wait_unloaded(server.port).await;
+    assert!(log_folded(&env, &material).await);
+    let base = board_base(&env, &material).await;
+    let unreadable = vec![0xff_u8; 64];
+    assert!(Update::decode_v1(&unreadable).is_err());
+    let client = db(&env).await;
+    let set_base = "UPDATE material_yjs_documents SET state=$2 WHERE material_id=$1";
+    client
+        .execute(set_base, &[&material, &unreadable])
+        .await
+        .expect("unreadable base");
+
+    assert_eq!(tab.joined(&room, &token(&room, &user, "write")).await, 1);
+    tab.draw("after", "affine:note", &[]).await;
+    persisted(&mut tab, "after").await;
+    assert_eq!(tab.board_blocks(), ["after", "kept", "page", "surface"]);
+    // The base back, so later projection scans read it.
+    tab.leave(false).await;
+    wait_unloaded(server.port).await;
+    client
+        .execute(set_base, &[&material, &base])
+        .await
+        .expect("base back");
+}
+
+/// Bytes-room step 2, the load: a board whose base has no indexes stored
+/// beside it (a canvas saved before them) fails its load with that reason,
+/// and its join is refused. Fails if the load falls back to decoding the
+/// base.
+#[tokio::test]
+async fn a_board_with_no_stored_indexes_fails_its_load() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged(&env).await;
+    let (user, material, room) = canvas(&env).await;
+    let mut tab = Client::at_board(server.port, &room, &user).await;
+    tab.leave(false).await;
+    wait_unloaded(server.port).await;
+    db(&env)
+        .await
+        .execute(
+            "UPDATE material_yjs_documents SET base_indexes=NULL WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("indexes gone");
+    let mut late = Client::open(server.port).await;
+    late.join(&room, &token(&room, &user, "write")).await;
+    late.until(2).await.expect("the join is refused");
+    assert!(logs.has(&["room_load", "no stored indexes"]).await);
+}
+
+/// Bytes-room step 2, the fold swap: every store begins a fold (one row is
+/// enough here), and each fold reads its rows 5 s after it began (debug
+/// builds: `capy-it-fold-later`), while two writers keep drawing and
+/// storing. The swapped-in base and the rows stored since hold every block:
+/// a tab joining after the swap, and the next room life after the unload
+/// fold, hold them all. Fails if a swap drops the rows stored after its
+/// fold began, or the new base misses one.
+#[tokio::test]
+async fn a_fold_while_writers_keep_writing_keeps_every_row() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_FOLD_MAX_ROWS", "1")],
+    )
+    .await;
+    let (user, material, room) = canvas_named(&env, "capy-it-fold-later").await;
+    let mut a = Client::at_board(server.port, &room, &user).await;
+    let mut b = Client::at_board(server.port, &room, &user).await;
+    let mut drawn = vec!["page".to_owned(), "surface".to_owned()];
+    for at in 0..16 {
+        let writer = if at % 2 == 0 { &mut a } else { &mut b };
+        let id = format!("n{at:02}");
+        writer.draw(&id, "affine:note", &[]).await;
+        persisted(writer, &id).await;
+        drawn.push(id);
+        tokio::time::sleep(Duration::from_millis(400)).await;
+    }
+    drawn.sort();
+    assert_ne!(
+        board_base(&env, &material).await,
+        BOARD_FIRST_STATE,
+        "a fold swapped in while the writers drew"
+    );
+    let mut joiner = Client::at_board(server.port, &room, &user).await;
+    assert!(joiner.settle(|c| c.board_blocks() == drawn).await);
+    assert!(a.settle(|c| c.board_blocks() == drawn).await);
+    assert_eq!(board_json(&joiner.doc), board_json(&a.doc));
+
+    for tab in [&mut a, &mut b, &mut joiner] {
+        tab.leave(false).await;
+    }
+    wait_unloaded(server.port).await;
+    assert!(log_folded(&env, &material).await);
+    let mut reopened = Client::at_board(server.port, &room, &user).await;
+    assert!(reopened.settle(|c| c.board_blocks() == drawn).await);
+}
+
+/// Waits until a store of `material` taken while its room's fold ran has
+/// committed and is held (the debug hook `capy-it-hold-stored` says so in
+/// Redis; bounded).
+async fn store_held(env: &Env, material: &str) {
+    let mut redis = redis_at(&env.redis).await;
+    let key = format!("capy-it-hold-stored:{material}:held");
+    for _ in 0..300 {
+        let held: Option<String> = redis::AsyncCommands::get(&mut redis, &key)
+            .await
+            .expect("the hold");
+        if held.is_some() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    panic!("no store of {material} was held");
+}
+
+/// Lets the held store of `material` tell its room it committed, and every
+/// later one at once.
+async fn store_released(env: &Env, material: &str) {
+    let mut redis = redis_at(&env.redis).await;
+    let key = format!("capy-it-hold-stored:{material}:release");
+    let _: () = redis::AsyncCommands::set_ex(&mut redis, key, 1, 600)
+        .await
+        .expect("the release");
+}
+
+/// Reads (applying syncs) until `check` holds, for up to 20 s.
+async fn settled_long(client: &mut Client, check: impl Fn(&Client) -> bool) -> bool {
+    for _ in 0..4 {
+        if client.settle(&check).await {
+            return true;
+        }
+    }
+    false
+}
+
+/// The loaded rooms' log bytes (`capy_collaboration_room_log_bytes`).
+async fn room_log_bytes(port: u16) -> u64 {
+    metrics_text(port)
+        .await
+        .lines()
+        .find_map(|line| line.strip_prefix("capy_collaboration_room_log_bytes "))
+        .and_then(|value| value.parse().ok())
+        .expect("room log bytes")
+}
+
+/// Bytes-room step 2, markers across a fold (review of 0d41ab8e1, finding
+/// B): every store begins a fold (one row is enough here) that reads its
+/// rows 5 s later (debug builds: `capy-it-fold-later`), through the version
+/// the room took as stored when it began, and a store taken while one runs
+/// commits but tells its room only once the test lets it
+/// (`capy-it-hold-stored`). The writer's second drawing goes in such a
+/// store: its row, committed, hides the live marker, and the fold swaps in
+/// its base without that row (the room's log bytes back to 0), so the base
+/// deletes no live marker and nothing is written again. A tab joining then
+/// holds the marker live, the marker map and the board as the writer does;
+/// once the store is let go its clear removes the marker on both. Fails if
+/// a fold reads a row whose store its room has not taken (a joiner holding
+/// the new base would skip the live marker).
+#[tokio::test]
+async fn a_joiner_after_a_fold_sees_live_markers() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[("COLLABORATION_FOLD_MAX_ROWS", "1")],
+    )
+    .await;
+    let prefix = "capy-it-fold-later-capy-it-hold-stored";
+    let (user, material, room) = canvas_named(&env, prefix).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    writer.draw("one", "affine:note", &[]).await;
+    persisted(&mut writer, "one").await;
+    assert!(writer.settle(|c| live_markers(c) == 0).await);
+    assert!(room_log_bytes(server.port).await > 0);
+    writer.draw("two", "affine:note", &[]).await;
+    assert!(writer.settle(|c| live_markers(c) == 1).await);
+    store_held(&env, &material).await;
+    let mut swapped = false;
+    for _ in 0..200 {
+        if room_log_bytes(server.port).await == 0 {
+            swapped = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(swapped, "the fold never swapped in");
+    let marked = writer.doc.transact().state_vector();
+    let mut joiner = Client::at_board(server.port, &room, &user).await;
+    assert!(
+        joiner
+            .settle(|c| c.board_blocks().contains(&"two".to_owned()))
+            .await
+    );
+    assert_eq!(live_markers(&joiner), 1);
+    use yrs::types::ToJson;
+    let markers = |client: &Client| {
+        client
+            .doc
+            .get_or_insert_map(ydoc::CONTRIBUTORS_ROOT)
+            .to_json(&client.doc.transact())
+    };
+    assert_eq!(markers(&joiner), markers(&writer));
+    assert_eq!(board_json(&joiner.doc), board_json(&writer.doc));
+    assert_eq!(joiner.doc.transact().state_vector(), marked);
+    store_released(&env, &material).await;
+    assert!(settled_long(&mut writer, |c| live_markers(c) == 0).await);
+    assert!(settled_long(&mut joiner, |c| live_markers(c) == 0).await);
+}
+
+/// Bytes-room step 2, a rejoin behind the base: a tab that left with the
+/// board before another writer's block was folded into the base holds part
+/// of it, so its answer diffs the whole base under the board work permit
+/// (`WorkKind::Rejoin`). While another board's load holds the permit (3 s,
+/// `capy-it-hold-work`) its join waits on `/metrics`, and once the permit
+/// is back it holds the whole board. Fails if a rejoin behind the base
+/// diffs it beside other whole-board work, or misses what the fold took in.
+#[tokio::test]
+async fn a_tab_behind_a_boards_base_rejoins_under_the_board_work() {
+    let Some(env) = env() else { return };
+    let (server, logs) = start_logged_with(&env, &[("COLLABORATION_FOLD_MAX_ROWS", "1")]).await;
+    let (user, material, room) = canvas(&env).await;
+    let mut behind = Client::at_board(server.port, &room, &user).await;
+    let mut writer = Client::at_board(server.port, &room, &user).await;
+    behind.draw("mine", "affine:note", &[]).await;
+    persisted(&mut behind, "mine").await;
+    // Gone with an edit unsent, so its id stays its own.
+    behind.leave(true).await;
+    writer.draw("theirs", "affine:note", &[]).await;
+    persisted(&mut writer, "theirs").await;
+    let mut folded = false;
+    for _ in 0..100 {
+        let base = Doc::new();
+        ydoc::replay(&base, &board_base(&env, &material).await, &[] as &[Vec<u8>])
+            .expect("the base");
+        let blocks = base.get_or_insert_map("blocks");
+        if yrs::Map::contains_key(&blocks, &base.transact(), "theirs") {
+            folded = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert!(folded, "no fold took the other block in");
+    assert!(!behind.board_blocks().contains(&"theirs".to_owned()));
+
+    let mut held = hold_board_work(&env, server.port, &logs, 1).await;
+    let asked = std::time::Instant::now();
+    behind.join(&room, &token(&room, &user, "write")).await;
+    assert_eq!(behind.until(1).await.expect("joined")[0], 1);
+    let sv = behind.doc.transact().state_vector().encode_v1();
+    behind.send(5, &sync(0, &sv)).await;
+    let waits = |(held, waiting): (u64, u64)| held == 1 && waiting >= 1;
+    let gauges = board_work(server.port, waits).await;
+    assert!(waits(gauges), "the rejoin waits: {gauges:?}");
+    assert!(
+        behind
+            .settle(|c| c.board_blocks().contains(&"theirs".to_owned()))
+            .await
+    );
+    assert!(
+        asked.elapsed() >= Duration::from_secs(2),
+        "{:?}",
+        asked.elapsed()
+    );
+    assert!(
+        writer
+            .settle(|c| c.board_blocks() == behind.board_blocks())
+            .await
+    );
+    assert_eq!(board_json(&behind.doc), board_json(&writer.doc));
+    board_synced(&mut held).await;
+    let gauges = board_work(server.port, |gauges| gauges == (0, 0)).await;
+    assert_eq!(gauges, (0, 0), "every permit given back");
 }
 
 /// A stand-in for the Go API's projection route: the bodies it was sent,

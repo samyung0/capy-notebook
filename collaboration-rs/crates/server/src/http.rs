@@ -300,7 +300,7 @@ async fn resolve_source_change(
         .sources
         .resolve(&input, move |room| {
             let app = rooms.clone();
-            Box::pin(async move { crate::edits::live_state(&app, &room).await })
+            Box::pin(async move { crate::edits::live_source(&app, &room).await })
         })
         .await
         .map(|asset| serde_json::to_value(asset).unwrap_or(Value::Null));
@@ -336,7 +336,7 @@ async fn source_changes(State(app): State<Shared>, headers: HeaderMap, body: Byt
             &input.file_ids,
             move |room| {
                 let app = rooms.clone();
-                Box::pin(async move { crate::edits::live_state(&app, &room).await })
+                Box::pin(async move { crate::edits::live_source(&app, &room).await })
             },
             sources::pending::OFFICE_CHANGES_BUDGET,
         )
@@ -776,6 +776,10 @@ pub(crate) mod tests {
             markdown: None,
             quiz_bounds: Default::default(),
             group_slots: Default::default(),
+            board_work: crate::work::WorkLimit::new(
+                crate::work::BOARD_WORK,
+                crate::trim::after_unload,
+            ),
         })
     }
 

@@ -54,7 +54,9 @@ yrs = { path = "../vendor/betteroffice/third_party/yrs" }
 tungstenite = { path = "third_party/tungstenite" }
 
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# Denied, not forbidden: the server's glibc `malloc_trim` call (`trim.rs`)
+# allows itself, its one FFI call (Epo 2026-11-24).
+unsafe_code = "deny"
 unused_must_use = "deny"
 
 [workspace.lints.clippy]

@@ -1418,7 +1418,7 @@ test('a pen stroke keeps its first points, and closing on its start leaves no do
   const { first, zoom } = (await page.evaluate(`{
     const gfx = document.querySelector('affine-edgeless-root').gfx;
     const brush = gfx.layer.canvasElements.find((element) => element.type === 'brush');
-    ({ first: brush.points.slice(0, 2), zoom: gfx.viewport.zoom });
+    ({ first: brush.serialize().points.slice(0, 2), zoom: gfx.viewport.zoom });
   }`)) as { first: number[][]; zoom: number };
   const [[x0, y0], [x1, y1]] = first;
   expect(Math.hypot(x1 - x0, y1 - y0) * zoom).toBeLessThan(2);

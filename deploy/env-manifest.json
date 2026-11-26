@@ -990,6 +990,10 @@
       "kind": "variable",
       "targets": ["workflow", "build"]
     },
+    "VITE_BENCH_MSW": {
+      "kind": "variable",
+      "targets": ["local"]
+    },
     "VITE_BENCH_ROUTES": {
       "kind": "variable",
       "targets": ["local"]

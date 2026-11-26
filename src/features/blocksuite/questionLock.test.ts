@@ -1,22 +1,28 @@
 import { NoteStoreExtension } from '@blocksuite/affine/blocks/note/store';
 import { ParagraphStoreExtension } from '@blocksuite/affine/blocks/paragraph/store';
 import { RootStoreExtension } from '@blocksuite/affine/blocks/root/store';
-import type { SurfaceBlockModel } from '@blocksuite/affine/blocks/surface';
+import {
+  DefaultTool,
+  type SurfaceBlockModel,
+} from '@blocksuite/affine/blocks/surface';
 import { SurfaceStoreExtension } from '@blocksuite/affine/blocks/surface/store';
 import { StoreExtensionManager } from '@blocksuite/affine/ext-loader';
 import { BrushStoreExtension } from '@blocksuite/affine/gfx/brush/store';
 import { ShapeStoreExtension } from '@blocksuite/affine/gfx/shape/store';
 import { Bound } from '@blocksuite/affine/global/gfx';
 import type { NoteBlockModel } from '@blocksuite/affine/model';
+import type { BlockStdScope } from '@blocksuite/affine/std';
+import type { GfxController } from '@blocksuite/affine/std/gfx';
 import { TestWorkspace } from '@blocksuite/affine/store/test';
-import { expect, it } from 'vitest';
+import { parseHTML } from 'linkedom';
+import { afterEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { anyOutside, moveArea, storedArea } from './boardArea';
 import { boardFirstState } from './boardFirstState';
 import { AREA_PROP, areaBox } from './boardGeometry';
 import { savedCopy } from './boardKeep';
 import { checkSavedBoard } from './boardLoad';
-import { holdsQuestion, questionCopy } from './questionLock';
+import { guardQuestion, holdsQuestion, questionCopy } from './questionLock';
 
 /* A Canvas part (Epo 2026-11-23): the answer area's place kept in the board, and
  * the student's copy of the teacher's board with every part of the question
@@ -138,4 +144,71 @@ it("keeps the question's parts locked through a save and a reopen, and the stude
     'affine:note'
   ) as NoteBlockModel[];
   expect(note.isLocked()).toBe(true);
+});
+
+/** A BlockSuite slot or Subject, as far as the guard listens to it. */
+function slot() {
+  const listeners: (() => void)[] = [];
+  return {
+    next: () => {
+      for (const listener of listeners) listener();
+    },
+    subscribe: (listener: () => void) => {
+      listeners.push(listener);
+      return { unsubscribe: () => undefined };
+    },
+  };
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+it('keeps the tip through a view update that moves nothing, and hides it once the board pans', () => {
+  const { document, Event } = parseHTML('<div></div>');
+  vi.stubGlobal('document', document);
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal('requestAnimationFrame', (frame: FrameRequestCallback) =>
+    frames.push(frame)
+  );
+  const viewport = {
+    centerX: 960,
+    centerY: 600,
+    height: 600,
+    toModelCoordFromClientCoord: ([x, y]: number[]) => [x, y],
+    viewportUpdated: slot(),
+    width: 800,
+    zoom: 0.5,
+  };
+  // Everything under the pointer is part of the question.
+  const gfx = {
+    getElementByPoint: () => ({ isLocked: () => true }),
+    selection: { selectedElements: [], slots: { updated: slot() } },
+    tool: { currentToolName$: { peek: () => DefaultTool.toolName } },
+    viewport,
+  } as unknown as GfxController;
+  const std = {
+    get: () => ({ handleElementSelection: () => true }),
+  } as unknown as BlockStdScope;
+  const board = document.createElement('div');
+  board.getBoundingClientRect = () => ({ left: 0, top: 0 }) as DOMRect;
+  guardQuestion(std, gfx, board, 'Part of the question');
+  const tip = board.querySelector('.capy-question-tip') as HTMLElement;
+
+  board.dispatchEvent(
+    Object.assign(new Event('pointermove'), {
+      buttons: 0,
+      clientX: 450,
+      clientY: 400,
+      pointerType: 'mouse',
+    })
+  );
+  for (const frame of frames.splice(0)) frame(0);
+  expect(tip.hidden).toBe(false);
+  // BlockSuite's refresh once a view change settles: the same view.
+  viewport.viewportUpdated.next();
+  expect(tip.hidden).toBe(false);
+  viewport.centerX += 120;
+  viewport.viewportUpdated.next();
+  expect(tip.hidden).toBe(true);
 });

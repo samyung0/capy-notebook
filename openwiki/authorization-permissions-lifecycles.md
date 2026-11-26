@@ -416,7 +416,7 @@ Important boundaries:
   recheck (`CheckSourceAccess`, one repeatable-read snapshot) and a note writer
   recheck read committed state. The save that persists the edits rechecks locked
   accounts (deleted, deletion pending, suspended) under the locks; roles, frozen
-  accounts and the storage limit are admission-only and rely on the 5 s writer
+  accounts and the storage limit are admission-only and rely on the 30 s writer
   recheck window (Q635; an agent edit with no room still has its actor's role
   checked by its save).
 
@@ -1042,8 +1042,16 @@ and [material editor checks](../server/internal/store/share.go#L209).
   limit) for both the owner and the actor, and Go's storage limit
   (`StorageUsage.Full`) for the owner. Frozen and the limit are enforced at
   admission only: authentication and the room token give `read`, and a
-  writer's access is rechecked on its updates at most every 5 s
-  (`recheck` in `collaboration-rs/crates/server/src/socket.rs`). A refused update
+  writer's access is rechecked on its updates at most every 30 s (`RECHECK`
+  and `recheck` in `collaboration-rs/crates/server/src/socket.rs`; Epo
+  2026-11-24, kept over pushing a lock when a payer reaches its limit). No
+  event announces frozen or the limit (saves, uploads, deletes and the clock
+  move them), so only this recheck catches them, and such a writer keeps
+  writing for up to 30 s, bounded by the per-user update allowance
+  (`rate.rs`: 2 MiB and 200 updates a second, a burst of 8 MiB and 10,000
+  updates, a timeout past it), the 8 MiB update cap (`ydoc::MAX_UPDATE_BYTES`)
+  and the per-file caps (a note's 2 MiB of JSON, 10,000 nodes and depth 16; a
+  source room's state cap). A refused update
   sends that writer a `room-read-only` stateless message and closes only its
   connection; a reconnect is refused with reason `collaboration-read-only`. A
   role lost by then is no read-only state: it closes as a revoke does (below).
@@ -1053,7 +1061,7 @@ and [material editor checks](../server/internal/store/share.go#L209).
   unsaved edits (notes and sources alike; network and other failures keep the
   source recovery path). The store (and a source checkpoint, which takes
   `sourceLockTx` without the content admission that `CheckSourceAccess` adds
-  for new edits) saves updates already admitted, so up to about 5 s of edits
+  for new edits) saves updates already admitted, so up to about 30 s of edits
   may persist; neither refuses or evicts a room because a contributor froze,
   lost their role or the owner reached its limit. Locked accounts still evict
   the whole room. The server also closes the connection
@@ -1157,16 +1165,18 @@ and [material editor checks](../server/internal/store/share.go#L209).
     in a source room), a lowered editor's write token as read-only
     (`collaboration-read-only`, not found in a source room); Go then mints a
     lowered editor a read token, a removed one nothing. An open channel stops at
-    the close, or, if the outbox has not delivered, at the 5 s recheck of a
+    the close, or, if the outbox has not delivered, at the 30 s recheck of a
     writer's next update, which closes it the same way, whichever comes first:
     4403, no notice, no `room-read-only`, no `DiscardUnsaved` incident
     (`AccessError::Revoked`). A source room's access check names a lost role with
     the code `role_lost` (`ErrSourceRoleLost`, a kind of not found), which only
     the recheck reads: a join still hears not found, so it never tells blocked
     from gone, and a file gone keeps its plain close. Frozen and the storage limit
-    keep the strip. Up to about 5 s of the person's last edits can survive, which
-    Epo accepted; the store does not refuse them, since that would discard the
-    room under everyone else (Q635). What the room has not admitted gets no such
+    keep the strip. The person's last edits until the close can survive (the
+    outbox's worker polls every second; at most the recheck's 30 s when it has
+    not delivered), which Epo accepted (2026-11-05, the 30 s on 2026-11-24);
+    the store does not refuse them, since that would discard the room under
+    everyone else (Q635). What the room has not admitted gets no such
     allowance: a draft send checks its token and role again once its body has
     arrived (`checked_and_stored` in `collaboration-rs/crates/server/src/drafts.rs`),
     and holds a body no longer than its token lives; an agent edit checks its
@@ -1859,9 +1869,11 @@ transfer's recipient. The caller gets a plain not found, never that
 account's lifecycle state or suspension reason; the caller's own lock and a
 frozen payer (view-only, no reason) still read as such. The collaboration
 server's internal checkpoint keeps the payer's lock, as it reaches no person. Becoming locked evicts
-the owner's note and source rooms with `discard` (`user_acl_eviction_trigger`,
-source rooms since migration 0090), so open viewers reconnect through that
-check. A member's unsynced edits in that owner's notes and files are dropped
+with `discard` the rooms of the materials the owner pays for, of every
+material in the workspaces they own (what other members made and pay for
+too, and canvases drawn there; migration 0194) and of their source files
+(migration 0090) (`user_acl_eviction_trigger`), so open viewers and writers
+reconnect through that check. A member's unsynced edits in that owner's notes and files are dropped
 on the 404, as for a deleted owner: the browser cannot tell it from a
 deletion. The owner keeps the locked-account answer of their own session, so
 their own drafts are kept. Copies other users already made belong to them and
@@ -2208,7 +2220,7 @@ over-quota errors use `account_over_quota`.
 No save-time gate exists for existing materials or source checkpoints; growth
 only appends size deltas. Instead an owner at or over its limit (active at
 100% or grace) makes its content view-only at admission (collaboration tokens,
-edit sessions, the 5 s writer recheck and REST content writes), and a frozen
+edit sessions, the 30 s writer recheck and REST content writes), and a frozen
 owner's content is read-only (see account lifecycle gates above).
 Byte measurement, counters, and material shape bounds are documented in
 [storage accounting](backend-storage-quota.md).

@@ -1,6 +1,7 @@
 import { type ServiceIdentifier } from '@blocksuite/global/di';
 import { DisposableGroup } from '@blocksuite/global/disposable';
 import { Bound, clamp, Point } from '@blocksuite/global/gfx';
+import type { Store } from '@blocksuite/store';
 import { signal } from '@preact/signals-core';
 import last from 'lodash-es/last.js';
 
@@ -56,6 +57,17 @@ export const InteractivityIdentifier = GfxExtensionIdentifier(
   'interactivity-manager'
 ) as ServiceIdentifier<InteractivityManager>;
 
+/* Capy (vendor/blocksuite/README.md, local change 83): each mounted board's
+ * manager by its store, for code that holds only the store (a surface
+ * middleware). */
+const managers = new WeakMap<Store, InteractivityManager>();
+
+/** The gesture this tab's board on `store` has under way (a drag, a resize, a
+ * turn) and the elements it moves; null when none or no board is mounted. */
+export function activeInteractionOf(store: Store) {
+  return managers.get(store)?.activeInteraction$ ?? null;
+}
+
 const DRAG_MOVE_RAF_THRESHOLD = 100;
 const DRAG_MOVE_HEAVY_COST_MS = 4;
 
@@ -82,6 +94,8 @@ export class InteractivityManager extends GfxExtension {
     this.interactExtensions.forEach(ext => {
       ext.mounted();
     });
+    // Capy (local change 83).
+    managers.set(this.std.store, this);
   }
 
   activeInteraction$ = signal<null | {
@@ -94,6 +108,8 @@ export class InteractivityManager extends GfxExtension {
     this.interactExtensions.forEach(ext => {
       ext.unmounted();
     });
+    // Capy (local change 83).
+    if (managers.get(this.std.store) === this) managers.delete(this.std.store);
   }
 
   get interactExtensions() {

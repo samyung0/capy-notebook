@@ -1493,7 +1493,12 @@ access and re-arms both timers. A channel that cannot answer is closed at
 expiry with code 4401. A room closed on an open
 socket (expiry, eviction, an access recheck, one person's access change) only emits the provider's `close`,
 never `disconnect`, so `roomReconnector` (`src/features/notes/roomConnection.ts`)
-reconnects at once with a fresh token and backs off while refusals repeat.
+rejoins with a fresh token after `reconnectDelay`
+(`src/features/collaboration/reconnectDelay.ts`, Epo 2026-11-24): a random
+wait up to a ceiling of 1 s, doubling to 30 s while refusals repeat ("full
+jitter"), so the clients one close cut off do not all join at once. The tab's
+socket waits the same way after a drop, and the browser's `online` event
+starts its backoff over: it opens within the first attempt's random 0–1 s.
 Authentication refusals carry reasons: `collaboration-read-only` drops to view
 under the read-only strip (it names no reason: a demoted viewer, a frozen
 account and a full owner all see it, and the account banner explains the
@@ -2027,9 +2032,15 @@ timers of a page hidden for 5 minutes once a minute (intensive wake-up
 throttling, which its documentation scopes to the page's `setTimeout` and
 `setInterval`), right at the silent window, and a hidden tab that keeps its
 socket (unsent edits, an Office or text file) is the one with a group to
-lose. A worker that cannot start or fails is reported to Sentry (an
-`Error` saying so; a load failure's event has no message) and no heartbeat
-goes; no page timer stands in. The bench's Node clients pass their own
+lose. Measured 2026-11-24 in Chrome for Testing 151 on macOS with a local
+probe: in a tab behind another tab of its window, the page's own 20 s
+`setInterval` came at gaps of 52, 60 and 60 s once the tab had been hidden
+about 5 minutes, while a dedicated worker's 20 s ticks, and the page's
+message handler for them (where the heartbeat is sent), stayed at 20 s
+throughout, 25 ticks over 8.5 minutes. No automation was attached, since
+Playwright keeps its pages focused and visible. A worker that cannot start
+or fails is reported to Sentry (an `Error` saying so; a load failure's
+event has no message) and no heartbeat goes; no page timer stands in. The bench's Node clients pass their own
 `setInterval` clock to `CollabSocket.create` (`nodeHeartbeat.ts`), a
 dependency the bench gives, not an app fallback. Each socket logs one Info
 line at close, `socket heartbeats`, with its `beats` and
@@ -2039,13 +2050,15 @@ logs (deployment-runbook). The server reads while it sends
 however long the send takes and however the kernels and proxies between
 buffer it; a client that sends nothing, not even a heartbeat, closes at the
 window during a send too. Meanwhile the socket's other work (token timers,
-closings, auth and join answers) waits for the send to end; the writer
-recheck, every 5 s on a writer's updates, still enforces access, so an
+closings, auth and join answers) waits for the send to end; the room still
+refuses an update or stateless event whose token has expired, and the writer
+recheck, every 30 s on a writer's updates, still enforces access, so an
 expired token only stretches its grace. The server refuses to start with
 `COLLABORATION_SILENT_SECONDS` or `COLLABORATION_GROUP_SLACK_MS` under two
 heartbeats (40 s, 40,000 ms; `config.rs`; a debug build takes
 `COLLABORATION_IT_HEARTBEAT_MS` for the 20 s, so the rooms tests scale their
-windows down, and a release build refuses it). So a
+windows down, and `COLLABORATION_IT_RECHECK_MS` for the writer recheck's 30 s;
+a release build refuses both). So a
 dead connection (a laptop that
 changed networks) frees its places through the normal close; the client takes
 that close (1001) like any drop and reconnects. A send has no total time limit,
@@ -2953,6 +2966,16 @@ design, option d), and the nudge's release file on 2026-10-17.
   `MIN_MATERIAL` to 43, so material tabs from before the format (protocol
   42) reload; `MIN_SOURCE` stays 42 and `OFFICE_PROTOCOL_VERSION` stays 15.
   Its deploy request names "client protocol 42 -> 43, material 41 -> 43".
+  Binary pen points (Epo 2026-11-24: a canvas stroke's points are one binary
+  value of Float32s, `strokePoints.ts`, vendored BlockSuite local change 79)
+  raised `CLIENT_PROTOCOL` to 44 and `MIN_MATERIAL` to 44: a tab from before
+  draws a stroke stored so as a placeholder, as its rules refuse bytes, and
+  writes number arrays a newer tab draws as one. No source room changed, so
+  `MIN_SOURCE` stays 42 and `OFFICE_PROTOCOL_VERSION` stays 15. Nothing reads
+  the number arrays any more and no production data holds them: UAT's canvases
+  are deleted by hand at the deploy (a saved drawing answer or drawn sample
+  with strokes from before is refused as it opens, as any misfit is). Its
+  deploy request names "client protocol 43 -> 44, material 43 -> 44".
 
 #### When to bump
 
@@ -3962,6 +3985,21 @@ is refused at admit, before it can cost the room time or memory
   steps and a 300-paragraph paste 0; copying that room takes 15 to 19 ms and
   admitting either update 32 to 46 ms. A class of 100 typing into one empty
   block at once is never refused (the earlier per-spot cap is dropped);
+- an item that names as its parent an item holding no type: yrs fails to
+  integrate it (`InvalidParent`; Yjs collects it) after the structs before it
+  went into the room's document. Under an item of the same update it is
+  refused by `ydoc::inspect` itself (it had been taken as a small edit and
+  left the room holding part of an update its writer was told was refused);
+  under one the room holds, the update is no small edit, and its trial fails
+  on the copy. Under a unit the room holds deleted or collected, yrs collects
+  the item, and the room stores its own document's delta, which holds it
+  collected, so the stored rows still replay in one transaction (a board,
+  which stores its writers' bytes, refuses an item under a value deleted
+  since its base on its own: `Board::parent_type`,
+  [the canvas's room](#the-boards-tools)). An admitted update whose live apply
+  still fails is reported to Sentry (stage `live_apply`, with the material and
+  its kind), since part of it may be in the room's document, which the room
+  keeps: discarding it would drop the other editors' unsaved changes;
 - in a note text, content other than strings, formats and element texts, and
   non-plain attribute, mark or marker values (invisible to the projection and
   the size metrics).
@@ -4346,7 +4384,9 @@ keeps the same contributor set. If an account lock races an already-applied in-m
 persistence rejects the whole snapshot and evicts the room; authorized clients
 then reload the last durable state rather than inheriting or later retrying the
 locked user's update. A lost role does not reject it: what the room admitted saves
-(Q635), so up to about 5 s of a removed person's last edits can survive.
+(Q635), so a removed person's last edits until the outbox's revoke closes
+them can survive, at most the 30 s writer recheck's worth when it has not
+delivered.
 
 None of this gates **opening** a document. Limits protect the collaboration
 service and the database on write; a document that already exists always opens.
@@ -5767,15 +5807,24 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   notes, text, connectors, stamps; picking one goes back to select), a paste,
   a drop, ⌘D and the element toolbar's Duplicate (both through
   `createElementsFromClipboardDataCommand`), an Alt-drag's copy, a mind map's
-  Tab or Enter child, a shape's auto-complete +, a double click's note, a piece
-  or picture from the toolbar or Misc, an image picked, and a new formula.
+  Tab or Enter child, a shape's auto-complete +, a double click on empty
+  canvas (its note, or with the note off at the cap a canvas text label; one
+  on an element edits it, and a board that takes no edits, offline past its
+  cap, says nothing), a piece or picture from the toolbar or Misc, a
+  link card and a quiz or set card (or a new one made for the board; one a
+  peer's filling refused while it was made still opens, kept in the
+  workspace's list), an image picked, and a new formula.
   Typing in what is already there and Undo are not stopped; the room refuses
   them past its cap and its copy-only recovery takes over. Below the margin it
-  all comes back. The gate coming on under the pen waits for the stroke to end,
-  then goes back to select without a toast (the row says why); picking an
-  adding tool while gated is what the toast is for. `setRoomSize` is called on
-  every update of the room, so it does nothing unless the row's text or the
-  gate changes.
+  all comes back. The gate coming on under the pen leaves it picked: its next
+  press on the board (`gatePresses`, the tool controller's hooks, which hear
+  only presses on the canvas, never the toolbar's) checks the size and, still
+  full, is refused with the toast and goes back to select, nothing of the
+  press reaching the pen (bytes room review 4, 2026-11-25: before, the board
+  went back to select silently as the gate came on, which encoded the board at
+  each crossing in every tab holding the pen while a peer moved things). `setRoomSize`
+  is called on every update of the room, so it does nothing unless the row's
+  text or the gate changes.
   A popover, menu or dialog of the page's that holds focus keeps it while the pointer
   crosses the board (local change 40): upstream the board took focus back on the
   pointer's first move, which closed the canvas picker.
@@ -5861,6 +5910,24 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
   reports pressure keeps it. A stroke at pressure 0.5 is exactly its width wide, as
   `boardPreview.ts` draws it (AFFiNE drew each width 1.41 times over). The highlighter starts
   at its third width, 18.
+  A stroke's points are stored as one binary value (local change 79, Epo 2026-11-24;
+  `strokePoints.ts`, the one codec): a 4-byte header naming 2 values a point (x, y) or 3
+  (with pressure), then the values as little-endian Float32s, relative to the stroke's
+  box as BlockSuite keeps them, so a stroke 10,000 units long keeps about a thousandth
+  of a unit anywhere on the board. Upstream's number arrays cost a Yjs value per number:
+  a 6,000-stroke pen board took 47 MiB of the server's yrs heap and 79 to 85 MiB in a
+  tab's Y.Doc (the document alone, its heap and ArrayBuffers, not the tab), now 28 and
+  35 MiB. Its state goes from +15% (whole points at exactly 100%) to about −40% (any
+  zoom a fit or pinch gives); Float32-exact points at exactly 100%, as Chrome gives
+  them, come to about −15 to −25%, and pen pressure is always Float32-exact
+  (`bench/collaboration/reports/2026-11-24-binary-pen-points.md`). The model's `points`
+  reads the bytes and is set as drawn (`number[][]`), and `serialize` gives them back
+  as drawn, for copies and pastes. The board's rules require a stroke's points and
+  take only bytes that hold the header, whole points and finite values; anything else,
+  the number arrays included, is a misfit (a placeholder on a canvas, a refused
+  question's board). A peer's later write to an element's keys is read the same way:
+  an element it leaves unreadable becomes a placeholder then and there (local change
+  79's `_readAgain`), so a stroke overwritten with number arrays can't stop the canvas.
 - **One thing held at a time** (local change 47, Epo 2026-11-12): every toolbar piece
   (shape pieces, Graphs, Formulas, Misc tiles) goes through BlockSuite's shared
   `EdgelessDraggableElementController`. Taking a piece puts down whatever else was held
@@ -6216,9 +6283,11 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
     loads.
   - `save()` returns `{ doc, bytes }`: the board copied into a fresh Yjs document, so no
     undo history (200 undo steps on a card were 606 KB live and a few KB saved). Stroke
-    points are rounded to whole pixels and every place (`xywh`) to a tenth, which leaves
-    60% of the bytes with no visible change (pressure stays: perfect-freehand draws the
-    line from it); highlighter strokes from the pen menu are rounded the same way. The
+    points are rounded to whole pixels and every place (`xywh`) to a tenth, with no
+    visible change (pressure stays: perfect-freehand draws the line from it);
+    highlighter strokes from the pen menu are rounded the same way. A place's text gets
+    shorter; a stroke's Float32s keep their size but gzip to 40% as the bucket keeps
+    them (2026-11-24, before binary points the rounding left 60% of the raw bytes). The
     answer flow refuses past `DRAWING_BOARD_MAX` on Done (400 KiB since
     2026-11-23, Epo's 250 KB before).
   - `saved` is checked before anything mounts (`boardLoad.ts`, by the board's rules in
@@ -6538,6 +6607,16 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
         Only a board counts splits; the other rooms inspect as before;
       - writes only the `blocks` root (`BOARD_ROOT`) besides the room's own
         contributor markers;
+      - puts each new item it names a parent for under a type, never under other
+        content (a value, a contributor marker, a value of the same update): yrs
+        fails to integrate such an item where Yjs collects it, so a board storing
+        one would never replay again (no fold, trial or projection). No editor
+        writes one. An item under a unit the stored base holds deleted is taken and
+        collected; one under a value deleted since the base is refused, since a
+        replay applies the base and its rows in one transaction, where that value
+        keeps its content. A block or other type deleted since the base is still
+        a parent, as it is in that replay: a stale tab's key set in a deleted
+        block is taken (`Board::read`, `Board::parent_type`);
       - keeps the state within `CANVAS_BOARD_MAX`, 4 MiB (Epo 2026-11-18), the largest
         sync message the server takes (`NOTE_MAX_SYNC_BYTES`). The validator keeps an
         upper bound of the state's bytes; while the bound plus the most the update
@@ -6812,17 +6891,211 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       their width as `--capy-board-chrome` (`useCanvasBoard`); a phone's picker
       fills the row (mock `StatusPhone`, 360 px included), a wider screen's shrinks
       into it. The status turns compact below 640 px, as a note's header.
-      The room keeps the board's size (`size`, `subscribeSize`): the room's own
-      measure in each receipt (`metrics.contentBytes`, the Yjs v1 encoding the server
-      caps), one encode of this tab's document when idle before the first, plus the
-      bytes of every update applied since; the page hands it to the board
-      (`setRoomSize`), whose menu ends with the size from 75% and, at the cap, "Only
-      edits that remove content will be saved." The server is the judge of what
-      removes content: an update whose state with it is no larger than without it (a
+      A tab that may write keeps the board's size (`size`, `subscribeSize`): its own
+      measure, or the length of the device copy it opened from, plus the bytes of
+      every update applied since, an upper bound since deletions only lower it.
+      The measure (`measure`, every one of them: the first sync's, the idle ones,
+      the checks and the offline stop's) is what a collected copy of the document
+      holds (`collectedSize.ts`), not the encode's length: the board's undo
+      history (BlockSuite's, a `Y.UndoManager`) keeps what its transactions
+      deleted, so the encode still holds a cleared board (200 deleted 2 KB
+      entries: 404 KB against 3.3 KB collected), while the room's state is
+      collected. It is the encode less what collecting each deleted item that
+      still holds its content would save (an item inside a deleted type becomes a
+      GC struct, any other keeps its header with its content shrunk to its
+      length), an upper bound since collected neighbours merge (1.6% over at half
+      of a 2.9 MB board erased); the walk adds 25-35 ms to the encode's 40 at
+      that size on an M1, and reads Yjs internals in that one file. An encode
+      below where anything acts on the size (the lower of the menu's 75% line
+      and the cap less the 64 KiB margin) stands with no walk, an upper bound
+      too: most boards and most first syncs skip it. A device copy
+      is that tab's encode, so a copy-opened board takes deletions as pending
+      and its first check measures. A board with no copy is measured once as it
+      first syncs, at once rather than when idle, so a full board takes only
+      removals from its first edit. The room's own bound in each receipt
+      (`metrics.contentBytes`: exact after a fold or a trial, otherwise that size
+      plus the most each update since can add, as the room never encodes the board
+      whole) never sets it, since it never comes down for a deletion between those
+      measures and misses what was appended during its store. With deletions
+      applied since the last measure (a transaction's delete set; a move
+      overwrites a key, written once per drag at its end and once per arrow-key
+      nudge; a long stroke rewrites its points every 20), the size is encoded again
+      once the tab is idle at the next store's receipt while it is at or past the
+      lower of the menu's 75% line (`BOARD_SIZE_SHOWN`) and the cap less the 64 KiB
+      margin, and as it crosses the full line, so the next press finds it exact:
+      moves cost one encode per store, never one each, however near a line. The
+      crossing's encode comes once per stroke (a stroke's rewrites cross again
+      after each measure) and is armed again by a receipt or a press on the
+      board, so a press right after a long stroke near the line may still
+      encode. Nothing acts on a size deletions may have left high: the page
+      hands the board its size with its check and its note of presses
+      (`setRoomSize(size, { check, pressed })`, kept per store in
+      `boardFull.ts`), and whatever refuses an add (`refusesAdds`: a tool
+      picked, a press on the board with a tool that adds, a paste, a drop, ⌘D, a
+      formula, a piece, a link or quiz card, a double click on empty canvas) and
+      the menu as it opens call the check first. A gesture writing several
+      elements on a full board goes only when the size plus 16 B for each value
+      it writes fits under the cap (`refusesWrites`, `BOARD_WRITE_BYTES`; Epo
+      2026-11-25): Yjs keeps a stub for each value overwritten, its clock
+      twice (in the new value's origin and in the deleted range), measured in
+      the room's collected state (`collectedSize`) at 12 B an element on a
+      fresh board, 14 B once its clocks passed 10^5 and 16 B past 2.1 × 10^6,
+      and a value written for the first time adds its key (about 20 B, two
+      values' worth: `NEW_KEY`). A value written longer than it was adds the
+      difference besides (the guard's fourth review: BlockSuite's
+      `Bound.serialize` writes 17 significant digits at any zoom but 1, so a
+      drag at zoom 0.73 of shapes placed on whole numbers grew each by 40 B,
+      its stub 14 of it), so each written value keeps room for the most it
+      can grow, the longest its format allows less what it stores now
+      (`Writes.grows`, `bytesOf`; one read a value, no encode; positions are
+      never rounded): a box 105 characters (`[x,y,w,h]`, each number at most
+      25 as JS writes it: a sign, `0.`, five zeros and 17 digits), a moved
+      one its `x` and `y` alone, 25 each (one that may get shorter, a
+      peer's longer numbers, by nothing: an arrow key sends each element's
+      move as an update of its own; a drag sets `moveDelta`, the snap
+      shifts its delta, an arrow key its `x` and `y`; a mind map's nodes,
+      laid out after a drag, and a note, whose measured size may go with its
+      move, keep the whole box's bound), a number 9
+      bytes (a float64 in lib0's `writeAny`: a rotation's angle, a text
+      label's font size, a plane's view corner, a note's scale and collapsed
+      height), a connector's free end its two numbers and a label's place its
+      four, a toolbar change's values their new bytes less their stored ones
+      (`anyBytes`, known before the write: a colour turned themed), new
+      indexes by how BlockSuite makes them (`Keys`; fractional-indexing's
+      key is at most one character longer than the longer of its two
+      neighbours, the board's longest L or one the write made; a key that
+      may get shorter counts as nothing): to the front or back each past the
+      last (its integer part plus one, its fraction dropped, so the longest
+      integer part I plus 1 + ⌊log₆₂ n⌋ at most, whatever fractions the
+      board's keys carry: after a long chain of steps a Bring to Front of 200
+      keeps 3,210 B where the whole keys' L + i kept 26,534), an ungroup's
+      bisected at once between two (`generateNKeysBetween`, L + ⌈log₂(n +
+      1)⌉), forward or backward each between two, either one it made, L + i
+      for the i-th (a chain does grow: 1,000 adjacent elements brought
+      forward top first reach 170 characters, and 200 grew a board by 5,371 B
+      where `end` keys keep 3,599). An ungroup inside another group writes
+      each element's id into that group's children too, a new key each, in
+      the same update (the emptied group goes in one of its own after; the
+      room judges each update alone, so a count covers each, not their sum):
+      a group of 50 between two others grew the board by 1,852 B in that
+      first update, counted at 2,785. A mind map node's place in its tree (an
+      index and its parent's id) is the map's one value, a few bytes within
+      the Style count its nodes keep; joining another map's tree it is a new
+      key there. A block's object value (a note's `edgeless` through its style panel) is
+      its own map, written whole: a new item for each value and each object
+      in it, an array a Y.Array with an item for each run of plain values
+      (Yjs packs them in one) and each map or array in it with its own (the
+      map it replaces is collected whole, so its old values cost nothing):
+      20 notes' empty styles given four values grew the board by 2,960 B,
+      counted at 3,680 (2,080 without the items), and an array of two
+      numbers and 12 maps in each 6,884 B, counted at 11,920 (3,920 with
+      the array as one item). A select-all
+      move of 1,000 shapes placed on whole numbers (boxes of 18 characters,
+      `[1234,567,100,100]`) keeps 59,000 B (16 B and 43 a shape; 16,000
+      before, against the 41,000 or so it adds at zoom 0.73), under the 64
+      KiB a full board has left at most; a Bring to Front of 1,000 elements
+      on 3-character keys keeps about 18,000 B, a Bring Forward of them
+      about 516,000 B, more than a full board ever has.
+      Back-to-back overwrites of one value by one tab merge (1,000 drags of one
+      shape add 35 B), but not where values alternate: several elements'
+      writes interleave, and so do one element's when it writes two or more
+      values (a connector's ends and label, a rotation's angle and place, a text
+      label's box and font size). Those never merge and no board fold collects
+      them, so a select-all drag of thousands of elements would pass the cap
+      and send the tab to its copy-only recovery. The count (`writesOf`) takes
+      every element the gesture reaches (what a selected group holds; every
+      node of a mind map one of them is in, since a node dragged moves its
+      whole map; the label of each labelled connector hanging on one, which the
+      moving tab places, local change 63) and every value it writes on each
+      (`valuesWritten`, at most: a connector 3, its free ends and label; a
+      rotation 2; a resize 2 on a text label or a stroke and 3 on a note, its
+      scale written the first time, or a plane, 4 on one that fitted (it
+      stops fitting, `fit` written only then); the alignment menu's place 5
+      on a note, its collapse and collapsed height written the first time, a
+      note's Scale 3 and its height 2; a note one more, the size it shows
+      stored first, local change 75; a mind map's Style 9 a node and its Layout
+      2, measured on BlockSuite's own layout at 117 B and 18 B a node at most
+      on a fresh board, 125 B and 20 B past 10^5, 133 B and 22 B past
+      2.1 × 10^6; a mind map's node dragged alone, which may land in another
+      branch and restyle, its whole map at the Style count; a group nothing of
+      its own). A toolbar change counts each value
+      it names on each element (`valuesUpdated`), a stroke's width its points
+      and box too, and a labelled connector's mode its label placed again. The
+      size as it stands is never
+      below the board's, so a write it fits goes unmeasured (a held arrow key
+      measures nothing); one that doesn't is measured first. Refused, it writes
+      nothing and shows the removals-only line; one element's gesture always
+      goes (its few values are written once, at its end), and a board under the
+      line checks nothing. It covers a drag, resize or rotation of a selection
+      (at the interactivity's `handleElementMove`, `handleElementResize` and
+      `handleElementRotate`, where the moving set is known: a press outside the
+      selection selects what is under it; BlockSuite's DefaultTool and
+      selection frame get the board's one `InteractivityManager` from the
+      std), an arrow key's nudge (stopped as the board captures it; a key typed
+      into a field on the board, `TYPING`, is the field's), the element
+      toolbar's changes (its `updateElement` calls on what the selection
+      writes, decided whole for the task; the width slider picks a value once a
+      drag, its press included, local change 84, so each width it picks is
+      one change), its alignment menu, a reorder, a note's Scale and Auto or
+      Customized height, a mind map's Style and Layout, and a Lock or an Unlock
+      of several, which write models straight and ask before any
+      (`boardWrites`, local change 82), and an arrange, a resize to one size
+      and an ungroup (their commands, `gateCommands`; an ungroup, and an Unlock
+      of a group, writes the index of each element the group holds directly,
+      and counts those). A group (a lock of several makes one) and a mind map's
+      node dragged off its map (which makes a new map; refused, the node stays
+      in its map) are adds, refused as one; a node dropped into another map
+      is asked once, at the drop, for both maps: the one it joins laid out
+      again, the one it leaves restyled whole at worst (Style one colours by
+      first-level branch), the moved nodes among them (refused, it stays in
+      its map). The board wires all of it in one place (`boardGates.ts`
+      `gateBoardWrites`). A gesture's values stay this tab's until it ends
+      (BlockSuite's stash), a dragged connector's free ends and label (local
+      change 80; a bound end stays stored, so a peer's re-attach mid-drag
+      stands, and one a peer frees mid-drag is stashed at the next frame), a
+      resized stroke's points (local change 81), the label of a
+      connector hanging on an element in this tab's gesture (local change 83:
+      the interactivity manager's `activeInteraction$` names the elements, kept
+      in a set once a gesture, a mind map's root its whole map; written inside
+      the change that ends the gesture, so Undo takes them back together, or
+      released after it at the stored place, writing nothing, so a peer's
+      place stored meanwhile stands; a 60-frame drag of a shape with two
+      labelled connectors on it grew the board 2,607 B before, 46 B after) and an end dragged by its
+      handle with its label (local change 85; a cancelled pointer ends it as
+      a release does) included. Left out: one
+      element's gesture of several values always goes, leaving a stub a value
+      each time. With
+      deletions since the last measure it encodes once and the exact size reaches
+      the board before it returns (`subscribeSize` is synchronous), so a board
+      that peers cleared takes an add with no receipt. A tab that may not write
+      measures nothing. The board's menu ends with the size from 75% and, at the
+      cap, "Only edits that remove content will be saved." The server is
+      the judge of what removes content: an update whose state with it is no larger than without it (a
       deletion) is always admitted, and a growing one at the cap is refused and kept
       for copying as above. Offline, a board's work stops under the offline-limit
-      strip once its size is within 64 KiB of the cap (the space left), or at 4 MiB
-      of unsent updates (its cap, not the note's 2 MiB), whichever comes first.
+      strip at the space its cap leaves (within 64 KiB of the cap; Epo
+      2026-11-18, client-limits A), so its backlog fits when it is back, or at 4
+      MiB of unsent updates (its cap, not the note's 2 MiB), whichever comes
+      first. An update that deletes nothing (a stroke, typing in a note, Undo of
+      a removal, a card: the gate checks only some of these) stops it when it
+      leaves the size past the line. One that deletes (a removal, a move, a
+      replacement) never stops it for the line alone: whenever the size counted
+      is past the cap (going offline with it there included), the board is
+      measured, and stops only when the exact size is past the line and a repeat
+      of that update could take it over the cap (exact size plus the update's
+      bytes). A move's update is several times what it adds (a select-all move
+      of thousands of elements sends more than the margin), so the line keeps a
+      board with room left going. A move of one element barely grows the board
+      (Yjs merges a key's consecutive overwrites: 1,000 drags add 35 B), but a
+      selection moved together adds about 10 B per element per drag (1,000 drags
+      of ten add 100 KB), so many moves of a large selection can fill a board,
+      which stops at its cap; it encodes once per (cap − exact size) bytes of
+      updates. With deletions since the last measure, either check encodes
+      first, at once (offline, at those updates alone: an accepted cost,
+      repeated often only when large selections keep moving within a few KB of
+      the cap), so a board removals freed takes adds until one takes it back
+      past the line. A single update larger than the room left
+      still overshoots, as one large add always could.
     - **Opened from the Trash.** A canvas in its maker's Trash opens from the Trash's
       link on its own canvas page (the account's, or its workspace's with
       `view=canvas`): `useCanvasPicker` asks `GET /api/canvases/{id}` for a `c` the

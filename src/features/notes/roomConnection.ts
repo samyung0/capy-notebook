@@ -3,6 +3,7 @@ import {
   isAccountForbiddenError,
   isApiError,
 } from '@/api/client';
+import { reconnectDelay } from '@/features/collaboration/reconnectDelay';
 import {
   COLLABORATION_FORBIDDEN_REASON,
   COLLABORATION_LATE_REASON,
@@ -106,8 +107,6 @@ export function sendCheckpointRequest(
   return true;
 }
 
-const RETRY_BASE_MS = 500;
-const RETRY_MAX_MS = 30_000;
 /** How long a room join, or a lost room connection, may keep failing before
  * the editor says it cannot save. */
 export const RECONNECT_GRACE_MS = 30_000;
@@ -121,7 +120,8 @@ interface ReconnectableProvider {
  * Keeps an editor's room connection alive. The server can close one room on
  * the tab's shared socket (token expiry, eviction, an access recheck); the
  * provider then only emits `close`, never `disconnect`. This rejoins on that
- * socket with a fresh token, and backs off while refusals keep coming.
+ * socket with a fresh token after `reconnectDelay`, which grows while
+ * refusals keep coming.
  */
 export function roomReconnector({
   provider,
@@ -161,11 +161,7 @@ export function roomReconnector({
     if (disposed || retry || !current) return;
     watch();
     current.disconnect();
-    // Jittered, so a room's clients do not all return at the same instant.
-    const delay =
-      Math.min(RETRY_MAX_MS, RETRY_BASE_MS * 2 ** attempts++) *
-      (0.5 + Math.random());
-    retry = setTimeout(() => rejoin(current), delay);
+    retry = setTimeout(() => rejoin(current), reconnectDelay(attempts++));
   };
   return {
     /** The provider's `close`. A socket close reconnects by itself. */

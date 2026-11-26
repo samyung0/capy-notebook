@@ -8,6 +8,7 @@ use std::sync::{Arc, LazyLock, Mutex};
 
 use deadpool_postgres::{Pool, Transaction};
 use serde_json::Value;
+use sources::pool::{Largest, Measured, Pooled};
 use ydoc::gc::Window;
 use yrs::block::ClientID;
 use yrs::updates::decoder::Decode;
@@ -15,6 +16,7 @@ use yrs::updates::encoder::Encode;
 use yrs::{IdSet, ReadTxn, StateVector, Transact};
 
 use crate::access::{self, AccessError};
+use crate::board::{Indexes, StoredIndexes};
 use crate::model::Model;
 use crate::observe::{self, Level, log};
 use crate::sessions;
@@ -118,6 +120,10 @@ pub struct Loaded {
     /// That window's delete set: every unit a collection discarded from this
     /// document is in it (empty: none yet; Q446).
     pub collected: IdSet,
+    /// A board base's indexes as stored beside it (`board::Board::load`);
+    /// none for every other document, and for a board saved before they
+    /// were stored, whose load fails.
+    pub indexes: Option<StoredIndexes>,
 }
 
 /// The Plate envelope of `materials.content`, refused unless canonical in shape.
@@ -131,11 +137,13 @@ pub(crate) fn envelope_value(content: &Value) -> Result<&Vec<Value>, StoreError>
 }
 
 /// First open, agent edit or command on a material without a Yjs row: seed
-/// the document from its projection under the lock the caller holds.
+/// the document from its projection under the lock the caller holds. The
+/// content read and the states written are noted on `largest`.
 pub(crate) async fn bootstrap(
     tx: &Transaction<'_>,
     material_id: &str,
     schema: i64,
+    largest: &Largest,
 ) -> Result<(), StoreError> {
     let rows = tx
         .query(
@@ -147,6 +155,8 @@ pub(crate) async fn bootstrap(
         // A trashed material keeps its content but nothing may open it.
         return Err(StoreError::Other("material not found".into()));
     };
+    let content: Measured<Value> = row.get("content");
+    largest.note(content.bytes);
     // A material without a Yjs row lives at schema 1 + trash_restores
     // (store.MaterialRoom). A token for an older room (minted before a trash
     // and restore, or before the cutover reset raised the floor) must not seed
@@ -154,25 +164,50 @@ pub(crate) async fn bootstrap(
     if schema < 1 + i64::from(row.get::<_, i32>("trash_restores")) {
         return Err(StoreError::Other("stale collaboration room schema".into()));
     }
-    let content: Value = row.get("content");
     let kind: String = row.get("kind");
-    let value = envelope_value(&content)?;
+    let value = envelope_value(&content.value)?;
+    let model = Model::of(&kind);
     // A quiz's two documents seed together from the stored questions.
     let (state, keys) = if kind == "quiz" {
         let (content, keys) = items::quiz::states_from_value(value, 0);
         (content, Some(keys))
     } else {
-        (Model::of(&kind).state_from_value(value), None)
+        (model.state_from_value(value), None)
     };
+    largest.note(state.len());
+    largest.note(keys.as_ref().map_or(0, Vec::len));
     let schema = i32::try_from(schema)
         .map_err(|_| StoreError::Other("invalid collaboration room schema".into()))?;
+    // A board's seed (a few hundred bytes) is stored with its indexes.
+    let (state_vector, delete_set, indexes) = match model {
+        Model::Board => {
+            let seed = ydoc::scratch_doc();
+            ydoc::replay(&seed, &state, &[] as &[&[u8]])
+                .map_err(|error| StoreError::Other(error.to_string()))?;
+            let stored = Indexes::of_doc(&seed.transact()).stored();
+            (
+                Some(stored.state_vector),
+                Some(stored.delete_set),
+                Some(stored.rest),
+            )
+        }
+        _ => (None, None, None),
+    };
     let inserted = tx
         .execute(
             "INSERT INTO material_yjs_documents
-               (material_id, room_schema, state, stored_version, projected_version, projected_at)
-             VALUES ($1,$2,$3,1,1,now())
+               (material_id, room_schema, state, stored_version, projected_version, projected_at,
+                base_state_vector, base_delete_set, base_indexes)
+             VALUES ($1,$2,$3,1,1,now(),$4,$5,$6)
              ON CONFLICT (material_id) DO NOTHING",
-            &[&material_id, &schema, &state],
+            &[
+                &material_id,
+                &schema,
+                &state,
+                &state_vector,
+                &delete_set,
+                &indexes,
+            ],
         )
         .await?;
     if let Some(keys) = keys
@@ -225,7 +260,8 @@ pub async fn load(
     schema: i64,
     doc: Doc,
 ) -> Result<Loaded, StoreError> {
-    let mut client = pool.get().await?;
+    let mut pooled = Pooled::new(pool.get().await?);
+    let (client, largest) = pooled.parts();
     let tx = client.transaction().await?;
     access::lock_material(&tx, material_id).await?;
     let select = match doc {
@@ -235,13 +271,16 @@ pub async fn load(
                     (SELECT w.delete_set FROM material_yjs_windows w
                      WHERE w.material_id=d.material_id AND w.document='content'
                        AND d.collected_window > 0 AND w.stored_version >= d.collected_window
-                     ORDER BY w.stored_version LIMIT 1) AS collected
+                     ORDER BY w.stored_version LIMIT 1) AS collected,
+                    d.base_state_vector, d.base_delete_set, d.base_indexes
              FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
              WHERE d.material_id=$1 FOR UPDATE OF d"
         }
         Doc::Keys => {
             "SELECT k.state, d.room_schema, d.stored_version, d.projected_version, k.log_bytes,
-                    d.collected_window, m.kind, NULL::bytea AS collected
+                    d.collected_window, m.kind, NULL::bytea AS collected,
+                    NULL::bytea AS base_state_vector, NULL::bytea AS base_delete_set,
+                    NULL::bytea AS base_indexes
              FROM material_yjs_keys k
              JOIN material_yjs_documents d ON d.material_id=k.material_id
              JOIN materials m ON m.id=k.material_id
@@ -250,31 +289,58 @@ pub async fn load(
     };
     let mut found = tx.query(select, &[&material_id]).await?;
     if found.is_empty() {
-        bootstrap(&tx, material_id, schema).await?;
+        bootstrap(&tx, material_id, schema, largest).await?;
         found = tx.query(select, &[&material_id]).await?;
     }
     let Some(row) = found.first() else {
         return Err(StoreError::Other("material not found".into()));
     };
+    let indexes = match (
+        row.get("base_state_vector"),
+        row.get("base_delete_set"),
+        row.get("base_indexes"),
+    ) {
+        (Some(state_vector), Some(delete_set), Some(rest)) => Some(StoredIndexes {
+            state_vector,
+            delete_set,
+            rest,
+        }),
+        _ => None,
+    };
+    largest.note(row.get::<_, &[u8]>("state").len() + indexes.as_ref().map_or(0, stored_len));
     if i64::from(row.get::<_, i32>("room_schema")) != schema {
+        let _ = tx.rollback().await;
         return Err(StoreError::Other("stale collaboration room schema".into()));
     }
+    let rows: Vec<Vec<u8>> = doc_rows(&tx, doc, material_id, None)
+        .await?
+        .into_iter()
+        .map(|(_, update)| update)
+        .collect();
+    largest.note(longest(&rows));
     let loaded = Loaded {
         base: row.get("state"),
-        rows: doc_rows(&tx, doc, material_id, None)
-            .await?
-            .into_iter()
-            .map(|(_, update)| update)
-            .collect(),
+        rows,
         stored_version: row.get("stored_version"),
         projected_version: row.get("projected_version"),
         log_bytes: row.get("log_bytes"),
         material_kind: row.get("kind"),
         window: row.get("collected_window"),
         collected: collected_deletes(row, doc)?,
+        indexes,
     };
     tx.commit().await?;
     Ok(loaded)
+}
+
+/// The bytes a base's stored indexes add to its row.
+fn stored_len(stored: &StoredIndexes) -> usize {
+    stored.state_vector.len() + stored.delete_set.len() + stored.rest.len()
+}
+
+/// The bytes of a document's longest row.
+pub(crate) fn longest(rows: &[Vec<u8>]) -> usize {
+    rows.iter().map(Vec::len).max().unwrap_or(0)
 }
 
 /// A content document's delete set of the window the latest collection
@@ -314,7 +380,8 @@ pub async fn append(
     if cfg!(debug_assertions) && material_id.contains(IT_STORE_LATER) {
         tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     }
-    let mut client = pool.get().await?;
+    let mut pooled = Pooled::new(pool.get().await?);
+    let (client, largest) = pooled.parts();
     let tx = client.transaction().await?;
     lock_operations(&tx, receipts.iter().map(|receipt| receipt.id.as_str())).await?;
     access::lock_material(&tx, material_id).await?;
@@ -325,19 +392,20 @@ pub async fn append(
     session_users.dedup();
     // Frozen, the storage limit and the role are enforced at admission, so
     // updates already admitted save even if their writer froze or lost the role
-    // since (up to about 5 s of them, Epo 2026-11-05): refusing them would
-    // discard the room under everyone else.
+    // since (Epo 2026-11-05; up to the writer recheck's 30 s of them, Epo
+    // 2026-11-24): refusing them would discard the room under everyone else.
     access::lock_boundary(&tx, material_id, actors, &session_users).await?;
+    // Every store's statements are prepared once per pooled connection.
     let current = tx
-        .query(
+        .prepare_cached(
             // No key update: a client id's first-write insert checks its key
             // against this row (FOR KEY SHARE) and may race the sessions'
             // write below, so a stronger lock would deadlock with it (review
             // r2 M1).
             "SELECT room_schema, stored_version FROM material_yjs_documents WHERE material_id=$1 FOR NO KEY UPDATE",
-            &[&material_id],
         )
         .await?;
+    let current = tx.query(&current, &[&material_id]).await?;
     let Some(current) = current.first() else {
         return Err(StoreError::Other("material not found".into()));
     };
@@ -345,6 +413,7 @@ pub async fn append(
         return Err(StoreError::Other("stale collaboration room schema".into()));
     }
     let version = current.get::<_, i64>("stored_version") + 1;
+    largest.note(row.len());
     append_row(&tx, doc, material_id, version, row).await?;
     save_sessions(&tx, material_id, sessions).await?;
     write_receipts(&tx, material_id, receipts).await?;
@@ -591,8 +660,9 @@ pub(crate) async fn save_sessions(
             changed.push(row.held_changed);
             held.push(row.held.as_deref());
         }
-        tx.execute(
-            "INSERT INTO material_yjs_client_ids
+        let upsert = tx
+            .prepare_cached(
+                "INSERT INTO material_yjs_client_ids
                (material_id, document, client_id, user_id, acked_version, seen_at, held)
              SELECT $1, 'content', r.client, r.user_id, r.version, r.seen, r.held
              FROM unnest($2::bigint[], $3::text[], $4::bigint[], $5::timestamptz[],
@@ -606,6 +676,10 @@ pub(crate) async fn save_sessions(
                                    AS c(client, changed) WHERE c.client=EXCLUDED.client_id)
                       THEN EXCLUDED.held ELSE material_yjs_client_ids.held END
              WHERE material_yjs_client_ids.user_id=EXCLUDED.user_id",
+            )
+            .await?;
+        tx.execute(
+            &upsert,
             &[
                 &material_id,
                 &clients,
@@ -698,37 +772,43 @@ pub(crate) async fn append_row(
     row: &[u8],
 ) -> Result<(), StoreError> {
     let (_, log) = doc.tables();
-    tx.execute(
-        &format!("INSERT INTO {log} (material_id, seq, update) VALUES ($1,$2,$3)"),
-        &[&material_id, &version, &row],
-    )
-    .await?;
+    // A store's statements, prepared once per pooled connection.
+    let insert = tx
+        .prepare_cached(&format!(
+            "INSERT INTO {log} (material_id, seq, update) VALUES ($1,$2,$3)"
+        ))
+        .await?;
+    tx.execute(&insert, &[&material_id, &version, &row]).await?;
     let bytes = row.len() as i64;
     match doc {
         Doc::Content => {
-            tx.execute(
-                "UPDATE material_yjs_documents
-                 SET stored_version=$2, log_bytes=log_bytes+$3, log_rows=log_rows+1,
-                     projection_error=NULL, updated_at=now()
-                 WHERE material_id=$1",
-                &[&material_id, &version, &bytes],
-            )
-            .await?;
+            let advance = tx
+                .prepare_cached(
+                    "UPDATE material_yjs_documents
+                     SET stored_version=$2, log_bytes=log_bytes+$3, log_rows=log_rows+1,
+                         projection_error=NULL, updated_at=now()
+                     WHERE material_id=$1",
+                )
+                .await?;
+            tx.execute(&advance, &[&material_id, &version, &bytes])
+                .await?;
         }
         Doc::Keys => {
-            tx.execute(
-                "UPDATE material_yjs_documents
-                 SET stored_version=$2, projection_error=NULL, updated_at=now()
-                 WHERE material_id=$1",
-                &[&material_id, &version],
-            )
-            .await?;
-            tx.execute(
-                "UPDATE material_yjs_keys SET log_bytes=log_bytes+$2, log_rows=log_rows+1
-                 WHERE material_id=$1",
-                &[&material_id, &bytes],
-            )
-            .await?;
+            let advance = tx
+                .prepare_cached(
+                    "UPDATE material_yjs_documents
+                     SET stored_version=$2, projection_error=NULL, updated_at=now()
+                     WHERE material_id=$1",
+                )
+                .await?;
+            tx.execute(&advance, &[&material_id, &version]).await?;
+            let counters = tx
+                .prepare_cached(
+                    "UPDATE material_yjs_keys SET log_bytes=log_bytes+$2, log_rows=log_rows+1
+                     WHERE material_id=$1",
+                )
+                .await?;
+            tx.execute(&counters, &[&material_id, &bytes]).await?;
         }
     }
     Ok(())
@@ -742,6 +822,9 @@ pub struct Folded {
     pub log_bytes: i64,
     pub base_bytes: i64,
     pub collected: Option<(Window, IdSet)>,
+    /// A board's new base, at its length, and the indexes stored with it,
+    /// for the board room's swap (`board::Board::folded`).
+    pub board: Option<(Vec<u8>, Indexes)>,
 }
 
 /// What a fold's collection must keep (`ydoc::gc`), from the room's
@@ -794,7 +877,12 @@ const IT_FOLDED_LATER: &str = "capy-it-folded-later";
 /// that window's version is kept as the latest (`collected_window`), and
 /// the folded document is stored as a later window candidate. A collection
 /// the guard refuses, or that panics, folds uncollected and is reported once
-/// per material (human/ 2026-10-24); the next fold collects again.
+/// per material (human/ 2026-10-24); the next fold collects again. A board's
+/// new base is stored with its indexes (`board::Indexes::stored`) and
+/// returned with them (`Folded::board`). A board's fold brings its board
+/// work `permit` (`work.rs`), taken before the material's lock, and gives it
+/// back once the new base is stored and the replay freed.
+#[allow(clippy::too_many_arguments)]
 pub async fn fold(
     pool: &Pool,
     material_id: &str,
@@ -802,11 +890,13 @@ pub async fn fold(
     doc: Doc,
     through: Option<i64>,
     holds: Option<Holds>,
+    permit: Option<crate::work::Permit>,
 ) -> Result<Option<Folded>, StoreError> {
     if cfg!(debug_assertions) && material_id.contains(IT_FOLD_LATER) {
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
-    let mut client = pool.get().await?;
+    let mut pooled = Pooled::new(pool.get().await?);
+    let (client, largest) = pooled.parts();
     let tx = client.transaction().await?;
     access::lock_material(&tx, material_id).await?;
     let (state_table, log) = doc.tables();
@@ -825,7 +915,9 @@ pub async fn fold(
     let Some(current) = current.first() else {
         return Ok(None);
     };
+    largest.note(current.get::<_, &[u8]>("state").len());
     if i64::from(current.get::<_, i32>("room_schema")) != schema {
+        let _ = tx.rollback().await;
         return Ok(None);
     }
     let base: Vec<u8> = current.get("state");
@@ -857,6 +949,9 @@ pub async fn fold(
         }
     }
     let rows = doc_rows(&tx, doc, material_id, through).await?;
+    for (_, row) in &rows {
+        largest.note(row.len());
+    }
     let Some(&(last, _)) = rows.last() else {
         // Nothing to fold; a dropped holds record still commits.
         tx.commit().await?;
@@ -870,26 +965,44 @@ pub async fn fold(
     let folded_bytes: i64 = rows.iter().map(|(_, row)| row.len() as i64).sum();
     let count = rows.len();
     let it_panic = cfg!(debug_assertions) && material_id.contains(IT_PANIC_COLLECTION);
+    let board = model == Model::Board;
     // The state, the folded document as a window candidate, the window and
-    // held set of a collection, why the guard refused one, and the units it
-    // discarded.
+    // held set of a collection, why the guard refused one, the units it
+    // discarded, and a board's base indexes, as built and as stored.
     type Built = (
         Vec<u8>,
         Option<Window>,
         Option<(Window, IdSet)>,
         Option<String>,
         u64,
+        Option<(Indexes, StoredIndexes)>,
     );
-    let (state, window, collected, refused, discarded) =
+    let (state, window, collected, refused, discarded, indexes) =
         tokio::task::spawn_blocking(move || -> Result<Built, StoreError> {
             let scratch = ydoc::scratch_doc();
             let updates: Vec<Vec<u8>> = rows.into_iter().map(|(_, row)| row).collect();
             ydoc::replay(&scratch, &base, &updates)
                 .map_err(|error| StoreError::Other(error.to_string()))?;
+            drop((base, updates));
             let txn = scratch.transact();
             model.assert_roots(&txn).map_err(StoreError::Invalid)?;
+            // A board keeps no sessions, so it never collects: its base is
+            // the whole scratch document, whose indexes go with it.
             let Some(holds) = holds else {
-                return Ok((whole(&scratch), None, None, None, 0));
+                let indexes = board.then(|| {
+                    let indexes = Indexes::of_doc(&txn);
+                    let stored = indexes.stored();
+                    (indexes, stored)
+                });
+                drop(txn);
+                let mut state = whole(&scratch);
+                // A board's base is its room's until the next fold, so it is
+                // kept at its length: the encoder doubled its buffer as it
+                // grew (an 8 MiB allocation for a 4.3 MB base).
+                if board {
+                    state.shrink_to_fit();
+                }
+                return Ok((state, None, None, None, 0, indexes));
             };
             let now = Window::of(&txn, last);
             drop(txn);
@@ -899,7 +1012,7 @@ pub async fn fold(
             }
             .filter(|_| alone);
             let Some(window) = window else {
-                return Ok((whole(&scratch), Some(now), None, None, 0));
+                return Ok((whole(&scratch), Some(now), None, None, 0, None));
             };
             let collected = guarded(|| {
                 if it_panic {
@@ -912,23 +1025,58 @@ pub async fn fold(
             Ok(match collected {
                 Ok(collected) => {
                     let at = (window.clone(), holds.held);
-                    (collected.state, Some(now), Some(at), None, collected.units)
+                    (
+                        collected.state,
+                        Some(now),
+                        Some(at),
+                        None,
+                        collected.units,
+                        None,
+                    )
                 }
-                Err(why) => (whole(&scratch), Some(now), None, Some(why), 0),
+                Err(why) => (whole(&scratch), Some(now), None, Some(why), 0, None),
             })
         })
         .await
         .map_err(|error| StoreError::Other(error.to_string()))??;
     let after_bytes = state.len() as i64;
-    tx.execute(
-        &format!(
-            "UPDATE {state_table}
-             SET state=$2, log_bytes=log_bytes-$3, log_rows=log_rows-$4
-             WHERE material_id=$1"
-        ),
-        &[&material_id, &state, &folded_bytes, &(count as i32)],
-    )
-    .await?;
+    let indexes = if board {
+        let Some((indexes, stored)) = indexes else {
+            return Err(StoreError::Other(
+                "a board's fold built no base indexes".into(),
+            ));
+        };
+        largest.note(state.len() + stored_len(&stored));
+        tx.execute(
+            "UPDATE material_yjs_documents
+             SET state=$2, log_bytes=log_bytes-$3, log_rows=log_rows-$4,
+                 base_state_vector=$5, base_delete_set=$6, base_indexes=$7
+             WHERE material_id=$1",
+            &[
+                &material_id,
+                &state,
+                &folded_bytes,
+                &(count as i32),
+                &stored.state_vector,
+                &stored.delete_set,
+                &stored.rest,
+            ],
+        )
+        .await?;
+        Some(indexes)
+    } else {
+        largest.note(state.len());
+        tx.execute(
+            &format!(
+                "UPDATE {state_table}
+                 SET state=$2, log_bytes=log_bytes-$3, log_rows=log_rows-$4
+                 WHERE material_id=$1"
+            ),
+            &[&material_id, &state, &folded_bytes, &(count as i32)],
+        )
+        .await?;
+        None
+    };
     tx.execute(
         &format!("DELETE FROM {log} WHERE material_id=$1 AND seq <= $2"),
         &[&material_id, &last],
@@ -946,6 +1094,18 @@ pub async fn fold(
         .await?;
     }
     tx.commit().await?;
+    // The connection's buffers and a note's new base go before the permit,
+    // whose drop asks for a trim; a board's new base is the board room's
+    // next base.
+    drop(pooled);
+    let board = match indexes {
+        Some(indexes) => Some((state, indexes)),
+        None => {
+            drop(state);
+            None
+        }
+    };
+    drop(permit);
     if let Some(why) = refused {
         report_refusal(material_id, doc, "fold", &why);
     }
@@ -957,6 +1117,7 @@ pub async fn fold(
         log_bytes: folded_bytes,
         base_bytes: after_bytes,
         collected,
+        board,
     }))
 }
 
@@ -1244,7 +1405,8 @@ pub struct Durable {
 /// The base and the whole log of a material, for a projection or an edit of
 /// a room not loaded here. `None` when the material has no Yjs row.
 pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, StoreError> {
-    let mut client = pool.get().await?;
+    let mut pooled = Pooled::new(pool.get().await?);
+    let (client, largest) = pooled.parts();
     // One snapshot: a fold committing between the base and the rows would
     // otherwise pair the old base with no rows.
     let tx = client
@@ -1266,12 +1428,14 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, 
     };
     let version: i64 = row.get("stored_version");
     let base: Vec<u8> = row.get("state");
+    largest.note(base.len());
     let kind: String = row.get("kind");
-    let log = rows(&tx, material_id, Some(version))
+    let log: Vec<Vec<u8>> = rows(&tx, material_id, Some(version))
         .await?
         .into_iter()
         .map(|(_, update)| update)
         .collect();
+    largest.note(longest(&log));
     let keys = if kind == "quiz" {
         let found = tx
             .query(
@@ -1279,17 +1443,18 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, 
                 &[&material_id],
             )
             .await?;
-        match found.first() {
-            Some(row) => Some((
-                row.get::<_, Vec<u8>>("state"),
-                doc_rows(&tx, Doc::Keys, material_id, Some(version))
-                    .await?
-                    .into_iter()
-                    .map(|(_, update)| update)
-                    .collect(),
-            )),
-            None => return Err(StoreError::Other("quiz keys document missing".into())),
-        }
+        let Some(row) = found.first() else {
+            return Err(StoreError::Other("quiz keys document missing".into()));
+        };
+        let state: Vec<u8> = row.get("state");
+        largest.note(state.len());
+        let rows: Vec<Vec<u8>> = doc_rows(&tx, Doc::Keys, material_id, Some(version))
+            .await?
+            .into_iter()
+            .map(|(_, update)| update)
+            .collect();
+        largest.note(longest(&rows));
+        Some((state, rows))
     } else {
         None
     };
@@ -1445,5 +1610,215 @@ mod tests {
             .map(|event| event.tags.get("file_id").map(String::as_str))
             .collect();
         assert_eq!(files, [Some("m_refused_once"), Some("m_refused_other")]);
+    }
+
+    /// The rooms tests' Postgres (`CAPY_IT_DATABASE_URL`, migrated): none
+    /// skips the test, unless `CAPY_IT_REQUIRED` is set (CI).
+    fn it_pool() -> Option<Pool> {
+        let Ok(url) = std::env::var("CAPY_IT_DATABASE_URL") else {
+            assert!(
+                std::env::var_os("CAPY_IT_REQUIRED").is_none(),
+                "CAPY_IT_REQUIRED is set but CAPY_IT_DATABASE_URL is not"
+            );
+            return None;
+        };
+        let config: tokio_postgres::Config = url.parse().unwrap();
+        let manager = deadpool_postgres::Manager::new(config, tokio_postgres::NoTls);
+        Some(Pool::builder(manager).max_size(10).build().unwrap())
+    }
+
+    /// A note of a fresh user's holding `text`, as the rooms tests make one.
+    async fn it_note(pool: &Pool, text: &str) -> String {
+        let value = serde_json::json!({"type": "p", "id": "b1", "children": [{"text": text}]});
+        it_material(pool, "note", value).await
+    }
+
+    /// A material of `kind` holding the one block `block`, of a fresh user's.
+    async fn it_material(pool: &Pool, kind: &str, block: Value) -> String {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let next = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let (user, material) = (
+            format!("u_it_{nanos:x}{next:x}"),
+            format!("m_it_{nanos:x}{next:x}"),
+        );
+        let content = serde_json::json!({ "schemaVersion": 1, "value": [block] });
+        let client = pool.get().await.unwrap();
+        client
+            .execute("INSERT INTO users (id, name) VALUES ($1, 'IT')", &[&user])
+            .await
+            .unwrap();
+        client
+            .execute(
+                "INSERT INTO materials (id, created_by, kind, title, content) VALUES ($1, $2, $3, 'IT', $4)",
+                &[&material, &user, &kind, &content],
+            )
+            .await
+            .unwrap();
+        material
+    }
+
+    /// A board's stored base and its stored indexes, checked against the
+    /// state: they read back as the indexes of the document the state
+    /// decodes to (`board::Indexes::of_doc`), its state vector and delete
+    /// set those the state itself names.
+    async fn stored_indexes_match(pool: &Pool, material_id: &str) -> (Vec<u8>, Indexes) {
+        let row = pool
+            .get()
+            .await
+            .unwrap()
+            .query_one(
+                "SELECT state, base_state_vector, base_delete_set, base_indexes
+                 FROM material_yjs_documents WHERE material_id=$1",
+                &[&material_id],
+            )
+            .await
+            .unwrap();
+        let state: Vec<u8> = row.get(0);
+        let indexes = StoredIndexes {
+            state_vector: row.get(1),
+            delete_set: row.get(2),
+            rest: row.get(3),
+        }
+        .decode()
+        .unwrap();
+        let update = yrs::Update::decode_v1(&state).unwrap();
+        assert_eq!(indexes.sv, update.state_vector());
+        assert_eq!(&indexes.deleted, update.delete_set());
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(&doc, &state, &[] as &[&[u8]]).unwrap();
+        assert_eq!(indexes, Indexes::of_doc(&doc.transact()));
+        (state, indexes)
+    }
+
+    /// Bytes-room steps 1b and 2: a board's base is stored with all its
+    /// indexes (the state vector and delete set, and the rest in
+    /// `base_indexes`), at its seed and after each fold, equal to those of
+    /// the document its state decodes to (the board room loads from them
+    /// without decoding the base); a load reads them and the fold returns
+    /// its new base with them. Against the rooms tests' Postgres. Fails if
+    /// the seed or a fold leaves one out or stores another document's.
+    #[tokio::test]
+    async fn a_boards_base_is_stored_with_its_indexes() {
+        let Some(pool) = it_pool() else { return };
+        let block = serde_json::json!({
+            "type": "canvas_board", "id": "board", "children": [{ "text": "" }],
+            "version": 0, "images": [],
+        });
+        let board = it_material(&pool, "canvas", block).await;
+        let loaded = load(&pool, &board, 1, Doc::Content).await.unwrap();
+        let (_, seeded) = stored_indexes_match(&pool, &board).await;
+        assert_eq!(loaded.indexes.unwrap().decode().unwrap(), seeded);
+        // A block drawn and erased by another client: the fold's base holds
+        // a deletion too.
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(&doc, &loaded.base, &loaded.rows).unwrap();
+        let writer = yrs::Doc::with_options(ydoc::doc_options(7));
+        ydoc::replay(&writer, &state(&doc), &[] as &[&[u8]]).unwrap();
+        let before = writer.transact().state_vector();
+        let blocks = writer.get_or_insert_map("blocks");
+        yrs::Map::insert(&blocks, &mut writer.transact_mut(), "b1", "drawn");
+        yrs::Map::remove(&blocks, &mut writer.transact_mut(), "b1");
+        let row = writer.transact().encode_state_as_update_v1(&before);
+        let none = sessions::Unsaved::default();
+        append(&pool, &board, 1, Doc::Content, &row, &[], &none, &[])
+            .await
+            .unwrap();
+        let folded = fold(&pool, &board, 1, Doc::Content, None, None, None)
+            .await
+            .unwrap()
+            .unwrap();
+        let (state, indexes) = stored_indexes_match(&pool, &board).await;
+        assert!(indexes.deleted.contains(&yrs::ID::new(ClientID::new(7), 0)));
+        assert_eq!(folded.board, Some((state, indexes)));
+        let note = it_note(&pool, "no indexes").await;
+        let loaded = load(&pool, &note, 1, Doc::Content).await.unwrap();
+        assert!(loaded.indexes.is_none());
+    }
+
+    /// `text` typed at the start of `doc`'s first block by `client`: the
+    /// row, applied to `doc` too.
+    fn typed(doc: &yrs::Doc, client: u64, text: &str) -> Vec<u8> {
+        let writer = yrs::Doc::with_options(ydoc::doc_options(client));
+        ydoc::replay(&writer, &state(doc), &[] as &[&[u8]]).unwrap();
+        let before = writer.transact().state_vector();
+        first_block(&writer).insert(&mut writer.transact_mut(), 0, text);
+        let row = writer.transact().encode_state_as_update_v1(&before);
+        doc.transact_mut()
+            .apply_update(yrs::Update::decode_v1(&row).unwrap())
+            .unwrap();
+        row
+    }
+
+    /// The pool's one idle connection, made if there is none.
+    async fn idle(pool: &Pool) -> deadpool_postgres::ObjectId {
+        let id = deadpool_postgres::Object::id(&pool.get().await.unwrap());
+        assert_eq!(pool.status().size, 1);
+        id
+    }
+
+    /// A pooled connection that carried a row over `LARGE_ROW_BYTES` (a
+    /// load, a store, a fold) is closed instead of going back to the pool,
+    /// while one that carried smaller rows goes back and serves the next
+    /// call, however many it read (each connection kept buffers twice its
+    /// largest message: `bench/collaboration/reports/2026-11-24-room-memory-prod-2.md`).
+    /// Against the rooms tests' Postgres, with a pool of
+    /// its own (one call at a time, so the pool holds the one connection or
+    /// none). Fails without the guard (the large calls leave the pool at
+    /// one), if every connection closes, or if the guard sums the rows.
+    #[tokio::test]
+    async fn a_connection_that_carried_a_large_row_leaves_the_pool() {
+        let Some(pool) = it_pool() else { return };
+        let small = it_note(&pool, "small").await;
+        let kept = idle(&pool).await;
+        let loaded = load(&pool, &small, 1, Doc::Content).await.unwrap();
+        assert_eq!(idle(&pool).await, kept, "a small load's connection");
+        // The stored document (Postgres reorders the content's keys, and the
+        // first state follows their order).
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(&doc, &loaded.base, &loaded.rows).unwrap();
+        let row = typed(&doc, 7, "x");
+        let none = sessions::Unsaved::default();
+        append(&pool, &small, 1, Doc::Content, &row, &[], &none, &[])
+            .await
+            .unwrap();
+        assert_eq!(idle(&pool).await, kept, "a small store's connection");
+        fold(&pool, &small, 1, Doc::Content, None, None, None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(idle(&pool).await, kept, "a small fold's connection");
+        // Rows over the limit together, none alone: the buffers follow the
+        // largest message, so the connection goes back.
+        let part = "p".repeat(sources::pool::LARGE_ROW_BYTES * 3 / 5);
+        for client in [9, 10] {
+            let row = typed(&doc, client, &part);
+            append(&pool, &small, 1, Doc::Content, &row, &[], &none, &[])
+                .await
+                .unwrap();
+        }
+        load(&pool, &small, 1, Doc::Content).await.unwrap();
+        assert_eq!(idle(&pool).await, kept, "a load of rows large together");
+
+        let large = "w".repeat(sources::pool::LARGE_ROW_BYTES + 1024);
+        let row = typed(&doc, 8, &large);
+        append(&pool, &small, 1, Doc::Content, &row, &[], &none, &[])
+            .await
+            .unwrap();
+        assert_eq!(pool.status().size, 0, "a large store's connection");
+        idle(&pool).await;
+        fold(&pool, &small, 1, Doc::Content, None, None, None)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(pool.status().size, 0, "a large fold's connection");
+        let big = it_note(&pool, &large).await;
+        idle(&pool).await;
+        let loaded = load(&pool, &big, 1, Doc::Content).await.unwrap();
+        assert!(loaded.base.len() > sources::pool::LARGE_ROW_BYTES);
+        assert_eq!(pool.status().size, 0, "a large load's connection");
     }
 }

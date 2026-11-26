@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 import { afterEach, beforeAll, beforeEach, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { ApiError } from '@/api/client';
+import { encodeStrokePoints } from '@/features/blocksuite/strokePoints';
+import { BOARD_OFFLINE_MARGIN } from '@/lib/const';
 import type { DraftMessage, DraftReply } from '@/lib/draftStore';
 import type { RoomProviderConfig } from './roomProvider';
 
@@ -331,10 +333,10 @@ function draw(doc: Y.Doc, id: string, x = 0) {
     id,
     index: 'a0',
     lineWidth: 4,
-    points: [
+    points: encodeStrokePoints([
       [0, 0],
       [10, 10],
-    ],
+    ]),
     rotate: 0,
     seed: 1,
     type: 'brush',
@@ -442,6 +444,65 @@ it('sizes an early board from its copy at once, and each early edit adds to it',
   expect(room.size()).toEqual({ bytes: copy.row.size, max: BOARD.max });
   draw(room.doc, 'b', 20);
   expect(room.size()?.bytes).toBeGreaterThan(copy.row.size);
+  room.destroy();
+});
+
+// Review 3 of the bytes room: a board opened from its device copy is sized
+// by the copy, so neither its open nor its sync encodes it; one opened with
+// no copy is encoded once, as it syncs.
+it('measures a board opened from its device copy never, and one without a copy once', async () => {
+  const id = canvas();
+  const { copy } = await drewAndLeft(id);
+  const measure = vi.spyOn(
+    ItemRoom.prototype as unknown as { measure: () => void },
+    'measure'
+  );
+  try {
+    const room = await open(id, copy);
+    await synced(room);
+    expect(measure).not.toHaveBeenCalled();
+    expect(room.size()?.bytes).toBeGreaterThanOrEqual(copy.row.size);
+    room.destroy();
+    const fresh = await open(id);
+    await synced(fresh);
+    expect(measure).toHaveBeenCalledOnce();
+    fresh.destroy();
+  } finally {
+    measure.mockRestore();
+  }
+});
+
+// The CI run of canvas-room-states.spec.ts: a tab's undo history keeps what
+// it cleared, so its device copy's encode still holds it, while the copy's
+// document here collected it as the copy was read. A board opened from that
+// copy takes deletions as pending: its first check measures, and the board
+// is not held full. Fails if the copy's length stands.
+it('frees a board opened from the device copy of a cleared board at its first check', async () => {
+  const id = canvas();
+  const cleared = new Y.Doc();
+  const blocks = cleared.getMap('blocks');
+  const history = new Y.UndoManager(blocks);
+  cleared.transact(() => {
+    for (let at = 0; at < 40; at++) blocks.set(`e${at}`, 'x'.repeat(2000));
+  });
+  cleared.transact(() => blocks.clear());
+  const copy = copyOf(id, cleared);
+  history.destroy();
+  const max = 100_000;
+  const line = max - BOARD_OFFLINE_MARGIN;
+  expect(copy.row.size).toBeGreaterThan(line);
+  token.failing = new TypeError('Failed to fetch');
+  const room = new ItemRoom(id, {
+    board: { max },
+    drafts: { actorId: 'u_mock', kind: 'canvas' },
+    onReplace: vi.fn(),
+    seed: copy,
+  });
+  await room.start();
+  await vi.waitUntil(() => room.getSnapshot().early);
+  expect(room.size()?.bytes).toBe(copy.row.size);
+  room.checkSize();
+  expect(room.size()?.bytes).toBeLessThan(line);
   room.destroy();
 });
 

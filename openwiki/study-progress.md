@@ -2134,7 +2134,7 @@ as given, a share above 1 in the Average and Overall, with no rescale.
 **What a class shares, on the invite page** (Epo 2026-11-19, 2026-11-25). Joining
 is by invitation alone, and the invite page tells what joining shares; opening a
 workspace opens no dialog (the one-time sharing notice of 2026-11-04 went, with its
-`sharing_notice_seen_at`, migration `0195_drop_sharing_notice.sql`). Before Accept the
+`sharing_notice_seen_at`, migration `0198_drop_sharing_notice.sql`). Before Accept the
 page reads the invite (`GET /api/workspace-invites/{token}`, for the invitee alone):
 the workspace's name as the heading under "You are invited to join", its owner as public
 pages show one (avatar left of the name), and for a class's viewer "By accepting this

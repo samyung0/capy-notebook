@@ -41,8 +41,8 @@ const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
  * route. A build without MSW never runs them, but Rollup loads every dynamic import,
  * dead code included, and loading the mocks emits their `?url` fixtures (Office files
  * up to 23 MB) into dist/, as the route would transform all of vendored BlockSuite: such
- * a build gets an empty module instead. The editor benches build with MSW on
- * (`--mode development`) and keep them. */
+ * a build gets an empty module instead. The MSW benches' builds (VITE_BENCH_MSW)
+ * keep them. */
 const MSW_ENTRIES =
   /\/mocks\/(browser|collaboration)$|\/dev\/MockScenarioPanel$|\/routes\/DevDrawingBoard$/;
 const BOARD_IMPORT = /'(@blocksuite\/affine\/[^']+)'/g;
@@ -69,8 +69,11 @@ function boardDeps() {
  * (VITE_BENCH_ROUTES, bench:canvas). */
 const BENCH_ROUTE = /\/routes\/DevDrawingBoard$/;
 
-// Every component reads deploy/.env; see deploy/.env.example.
-const ENV_DIR = path.resolve(import.meta.dirname, 'deploy');
+// Every component reads deploy/.env; see deploy/.env.example. The MSW benches
+// build with an empty directory instead (CAPY_ENV_DIR), so a developer's keys
+// (Sentry upload, telemetry) stay out of what they measure.
+const ENV_DIR =
+  process.env.CAPY_ENV_DIR ?? path.resolve(import.meta.dirname, 'deploy');
 const WATCH_DIRECTORIES = [
   'src',
   'public',
@@ -95,8 +98,36 @@ function preconnects(env: Record<string, string>) {
 
 export default defineConfig(({ command, isSsrBuild, mode }) => {
   const env = loadEnv(mode, ENV_DIR, '');
-  // Match src/main.tsx: MSW is on unless explicitly disabled.
-  const useMsw = env.VITE_USE_MSW !== 'false' && mode === 'development';
+  // The MSW benches' switch: their production builds run the mocks (Epo
+  // 2026-11-24, "Yes, production mode"). Every deploy pins it off
+  // (scripts/env/config.py) and names its environment in VITE_APP_ENV.
+  const benchMsw = env.VITE_BENCH_MSW === 'true';
+  if (benchMsw) {
+    if (env.VITE_APP_ENV === 'uat' || env.VITE_APP_ENV === 'production')
+      throw new Error(
+        `VITE_BENCH_MSW is the benches' switch; a ${env.VITE_APP_ENV} deploy never builds with it.`
+      );
+    // It never wins over another choice silently: dev mode has MSW already,
+    // and VITE_USE_MSW=false asked for the real gateway.
+    if (mode !== 'production' || env.VITE_USE_MSW === 'false')
+      throw new Error(
+        `VITE_BENCH_MSW builds in production mode without VITE_USE_MSW=false (mode ${mode}, VITE_USE_MSW ${env.VITE_USE_MSW ?? 'unset'}).`
+      );
+    // A bench build uploads no source maps and reports to no one.
+    const telemetry = [
+      'SENTRY_AUTH_TOKEN',
+      'VITE_SENTRY_DSN',
+      'VITE_POSTHOG_KEY',
+    ].filter((key) => env[key]);
+    if (telemetry.length)
+      throw new Error(
+        `VITE_BENCH_MSW builds without telemetry; unset ${telemetry.join(', ')}.`
+      );
+  }
+  // Match src/api/auth.ts: MSW is on in development unless explicitly disabled,
+  // and in a build only with the benches' switch.
+  const useMsw =
+    benchMsw || (env.VITE_USE_MSW !== 'false' && mode === 'development');
   // Match src/router.ts: the board's route in a build, for bench:canvas only.
   const benchRoutes = env.VITE_BENCH_ROUTES === 'true';
   // Caddy terminates local HTTPS; plain pnpm dev keeps the localhost lane.

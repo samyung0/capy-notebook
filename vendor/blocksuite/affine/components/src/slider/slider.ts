@@ -75,10 +75,18 @@ export class Slider extends WithDisposable(LitElement) {
       const cx = halfItemSize + (n / (count - 1)) * targetWidth;
       return x >= cx - offsetX && x < cx + offsetX;
     });
-    if (!selectedSize) return;
+    // Capy (local change 84): the press picks, and a move only a value this
+    // drag has not just picked. Upstream picked again at every move, the
+    // value unchanged too, and each pick rewrites every selected element's
+    // width.
+    if (!selectedSize || selectedSize === this._picked) return;
 
+    this._picked = selectedSize;
     this._onSelect(selectedSize);
   }
+
+  /** The value this drag last picked, none at its press (local change 84). */
+  private _picked: number | null = null;
 
   private readonly _getDragHandlePosition = (e: PointerEvent) => {
     const width = this.getBoundingClientRect().width;
@@ -88,6 +96,9 @@ export class Slider extends WithDisposable(LitElement) {
   private readonly _onPointerDown = (e: PointerEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    // Capy (local change 84): a press picks the shown value too (it is the
+    // most common of mixed widths).
+    this._picked = null;
     this._onPointerMove(e);
 
     const dispose = on(this, 'pointermove', this._onPointerMove);

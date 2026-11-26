@@ -70,7 +70,10 @@ impl Outbox {
     /// Queues a frame, or flags a reader too slow: one whose backlog passed
     /// max(4 MiB, the largest frame its rooms can send, as seen so far)
     /// before this frame (Epo 2026-10-08). A frame itself always fits, so a
-    /// joiner's whole-state answer goes out. Once one was dropped, every
+    /// joiner's whole-state answer goes out, and it leaves the backlog once
+    /// its writer takes it (`socket.rs`), not when the write ends: the
+    /// relays queued while a large answer is still being written (a board's,
+    /// larger than its state until a fold) fit. Once one was dropped, every
     /// later one is too.
     pub fn frame(&self, frame: Bytes) {
         if self.dropped.load(Ordering::Relaxed) {
@@ -94,7 +97,7 @@ impl Outbox {
         let _ = self.tx.send(Out::ChannelClosed(channel));
     }
 
-    /// The writer took `bytes` off the queue.
+    /// The writer took `bytes` off the queue, to write them.
     pub fn sent(&self, bytes: usize) {
         self.queued.fetch_sub(bytes, Ordering::Relaxed);
     }
@@ -317,6 +320,9 @@ pub struct App {
     pub quiz_bounds: QuizBounds,
     /// Each user's one unfinished group of pieces (`GroupSlots`).
     pub group_slots: GroupSlots,
+    /// Whole-board work at once (`work.rs`): canvas loads, folds, durable
+    /// projections and heavy-update trials.
+    pub board_work: crate::work::WorkLimit,
 }
 
 /// Each user's one unfinished group of pieces in this process, across rooms
@@ -919,6 +925,15 @@ mod outbox_tests {
         small.frame(Bytes::from(vec![0; 1]));
         small.frame(Bytes::from(vec![0; 1]));
         assert!(overflowed(&small));
+        // A frame the writer took leaves the backlog while it is written:
+        // the relays after a large answer fit.
+        let (answered, _rx) = Outbox::new(Arc::default());
+        answered.frame(Bytes::from(vec![0; 4_500_000]));
+        answered.sent(4_500_000);
+        for _ in 0..4 {
+            answered.frame(Bytes::from(vec![0; 1024 * 1024]));
+        }
+        assert!(!overflowed(&answered));
         // What the writer sent leaves the backlog.
         let (draining, _rx) = Outbox::new(Arc::default());
         for _ in 0..8 {

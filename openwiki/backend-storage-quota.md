@@ -289,7 +289,7 @@ A drawing part's answer (migration 0156) is its saved board, gzipped, and a
 marking image kept only while its part waits on the AI. The person attempting
 pays for a practice drawing (Epo 2026-11-06), through the
 `drawings_storage_after` deltas. An assignment's drawing is charged to no one
-(Epo 2026-11-25, "Yes, make them free", migration `0194_free_submissions.sql`):
+(Epo 2026-11-25, "Yes, make them free", migration `0197_free_submissions.sql`):
 it is kept as handed in for good, like a submission's files, so its member
 could never free its bytes. `drawings.assignment`, set from the attempt's kind
 at insert, makes `account_drawing_storage` skip it through every cascade, and
@@ -305,7 +305,7 @@ objects for the reaper.
   that admits a frozen account too (O4), so a member at the limit saves the
   drawing, charged to no one.
   Submissions are charged to no one (Epo 2026-11-25, migration
-  `0194_free_submissions.sql`): a paper's files (an assignment answered on
+  `0197_free_submissions.sql`): a paper's files (an assignment answered on
   paper, `files.attempt_id`) and a hand-in's files
   (`files.hand_in_assignment_id`, an unmarked assignment that takes files) are
   kept as handed in for good, so their member could never free those bytes.
@@ -320,7 +320,7 @@ objects for the reaper.
   Billing's breakdown leaves submissions out too. Staff's marks on a
   submission's file are rows in `pdf_annotations` and cost no storage; the
   PDF copy a Word submission is marked on (`files.marked_copy_path`, migration
-  `0196_submission_marked_copies.sql`, mock B6H1Z7o4byVFBVyCRSUK3B C1) is a
+  `0199_submission_marked_copies.sql`, mock B6H1Z7o4byVFBVyCRSUK3B C1) is a
   counted blob reference that no storage trigger charges, at most
   `fieldlimits.SubmissionCopyBytes` (30 MB, the whole submission's bound). A practice Check of a
   drawing asks `AssertStorageRoom` for its boards and images before the model
@@ -396,7 +396,11 @@ workspace or not (who holds it:
   content writes, so the charge is the board's stored bytes as of its last
   projection (each projection changes the content, since the block carries the
   stored version); a fold between projections is not charged again, and a
-  rename, a share or a trash charges nothing. The seeded board is charged
+  rename, a share or a trash charges nothing. The board's base indexes
+  (`base_state_vector` and `base_delete_set`, migration 0193, and
+  `base_indexes`, migration 0195: ids and place hashes only, written at the
+  seed and each fold, about 0.6 MB beside a 6,000-stroke, 4.7 MiB pen
+  board) are not charged. The seeded board is charged
   once its room first seeds it, at its first open (migration 0184, Epo
   2026-11-20): a canvas is made with no Yjs row, and its room seeds the
   `material_yjs_documents` row on the first open (`load` → `bootstrap` in
@@ -423,7 +427,20 @@ workspace or not (who holds it:
   2 MiB while it was provisional). It bounds the Yjs state, history included,
   not a saved copy, and the collaboration server enforces it at admission
   ([plate-editor](frontend/plate-editor.md#the-boards-tools), The canvas's
-  room). It equals the largest sync message the collaboration server takes
+  room). The room never encodes a board whole between folds: it holds a bound
+  of the state's bytes (at the load the base's length plus the most each row
+  can add, `board_growth`; exact after a fold or a trial; plus the most each
+  update since can add), which its receipts carry (`metrics.contentBytes`). An
+  update enters on the bound while the bound and the update's growth fit the
+  cap; past that, or flagged by the board's read, it is tried on a replica of
+  the board under the board work permit, and the state's exact size with it
+  decides: the cap is never passed, and an update that does not grow the
+  state (a deletion) always enters. Deletions leave the bound high until the
+  next trial or fold, so the browser keeps a size of its own (what a
+  collected copy of the writing tab's document holds, or its device copy's
+  length, plus every update since; `frontend/plate-editor.md`), which its menu shows
+  and its removals-only gate and offline stop read. The cap equals the
+  largest sync message the collaboration server takes
   (`NOTE_MAX_SYNC_BYTES`, 4 MiB; a compile-time assert keeps the cap from
   passing it). The embed catalog carries the number to the Rust catalog and
   the board catalog to the browser. A store never refuses a board for size.
@@ -585,10 +602,16 @@ view-only for everyone, the rest of the workspace staying editable:
   or spent.
 
 Enforcement is at admission only, like frozen: the collaboration service's
-5 s writer recheck (`full_sql` in `collaboration-rs/crates/server/src/access.rs`, mirrored
+30 s writer recheck (`RECHECK` in `collaboration-rs/crates/server/src/socket.rs`;
+`full_sql` in `collaboration-rs/crates/server/src/access.rs`, mirrored
 by `StorageUsage.Full`, both on the material's payer) closes every writer in
 the payer's rooms with `room-read-only` once it crosses the limit, and up to
-about 5 s of edits admitted before that may save. The open editor drops to view
+about 30 s of edits admitted before that may save. Nothing pushes the limit
+to the rooms (Epo 2026-11-24 kept the recheck over pushing a lock): usage
+moves with every save, upload and delete, and the plan limit with the clock.
+Those 30 s are bounded by each writer's update allowance (2 MiB and 200
+updates a second, an 8 MiB burst; `rate.rs`), the 8 MiB update cap and the
+file's own caps (above). The open editor drops to view
 mode under the read-only strip and discards its unsaved edits. When the payer
 or the actor is `over_quota_frozen` (or the payer is suspended or being
 deleted), the same admission points refuse with `account_over_quota` (see the
@@ -1466,9 +1489,10 @@ exact debounced snapshot, along with the workspace owner. Claimed markers are
 removed from the committed state; newer generations remain for the next save.
 A token minted before suspension or deletion cannot bypass that boundary, and
 one minted before a role removal or plan expiry is refused at admission (the
-join and the 5 s writer recheck), so up to about 5 s of what such a writer sent
-saves (Q634). A save refused for a lock evicts the room so the uncommitted
-update is not retained in memory. Before writing authoritative Yjs state, the
+join and the 30 s writer recheck; a role removal also closes them at the
+outbox's revoke), so up to about 30 s of what such a writer sent saves (Q634).
+A save refused for a lock evicts the room so the uncommitted update is not
+retained in memory. Before writing authoritative Yjs state, the
 collaboration server applies the same structural and material-kind contract as Go. Invalid
 Plate content cannot become a durable state that projection will reject. The
 server discards that in-memory room and reloads the last durable state instead

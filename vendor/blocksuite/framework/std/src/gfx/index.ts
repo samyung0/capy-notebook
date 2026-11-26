@@ -41,6 +41,8 @@ export type {
   SelectContext,
 } from './interactivity/index.js';
 export {
+  // Capy (vendor/blocksuite/README.md, local change 83).
+  activeInteractionOf,
   GfxViewEventManager,
   GfxViewInteractionExtension,
   InteractivityExtension,
