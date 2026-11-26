@@ -6662,14 +6662,86 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       `[A-Za-z0-9_-]`, whatever the block's flavour (so an image block of a newer
       editor keeps its asset), each id once, in byte order. The room sends Go the
       canvas's whole document, one `canvas_board` block with the constant id `board`,
-      `version` the stored version projected and `images: [{ assetId }]`, on the
-      note's cadence (30 s idle, every 5 minutes, on unload). `version` changes with
-      every projection, so the content changes and the charge is recomputed. Go
-      writes the block through `ProjectMaterialContent` with no canvas branch, and
-      its asset pruner keeps the images named and trashes the canvas's others. An
-      update that writes a `prop:sourceId` makes the room project after its next
-      store (`names_asset`, `project_soon`), so an image added, pasted or brought back
-      by Undo, whose asset Go had trashed, is served again within seconds.
+      `version` the stored version projected and `images: [{ assetId }]`. Go writes
+      the block through `ProjectMaterialContent`, and its asset pruner keeps the
+      images named and trashes the canvas's others. Each projection reads, in its
+      snapshot, Go's projected version and the images Go's stored block names
+      (Epo 2026-11-26). It sends at once when its images differ from Go's: right
+      after a store whose update writes one of the canvas's assets as the room's
+      last projection read them (before one has read them, any string shaped like
+      an asset id; `names_asset`, `project_soon`), so an image added, pasted,
+      brought back by Undo or given another asset, whose asset Go had trashed, is
+      served again within seconds, and right after a fold commits. Every struct
+      counts, not only one keyed `prop:sourceId`: an overwrite of a key carries
+      its origin and no key. The idle projection (30 s after edits stop), the
+      cadence (every 5 minutes while they go on), an on-demand one, the unload and
+      the pending scan also send whenever Go's projected version lags the stored
+      one, images changed or not, as every projection did before, so Go
+      recomputes the canvas's charge (the board's stored bytes) as often as it
+      did and the pending scan does not find the board again. An idle or
+      on-demand projection that comes while another runs is kept for after it,
+      since the running one may send nothing, and an on-demand caller is
+      answered only once Go holds the stored version that projection read. A
+      store alone, or a fold, never sends unchanged images. Once the room has
+      read the canvas's assets (its first projection after a load does),
+      strokes and typing write none of them, so they ask for no projection at a
+      store; before that, the id-shaped strings they write ask for one, which
+      finds the images unchanged and sends nothing. Either way they reach Go
+      only at the idle projection, the cadence or the unload. An asset made
+      since the room's last read is named by the next projection that runs
+      (the idle one at the latest); none prunes it before, as each reads the
+      assets anew.
+    - **The projection rides on the fold (Epo 2026-11-26).** Every board fold already
+      replays the board into a whole document under the board work permit
+      (`note_store::fold`); it runs `Model::projection` on that document and stores the
+      result beside the new base, in `material_yjs_documents.base_projection` (migration
+      0196), in the fold's transaction, at the version of the last row it folded. A
+      canvas's seed is stored with its projection at version 1, which names no image.
+      Every board projection (idle, cadence, on demand, the early one above, after a
+      fold, the unload's after its fold, the pending scan) is the projection between
+      folds (`model::board_projection_since`, `projection::project_durable`): the stored
+      `base_projection` with its `images` joined by every string in the rows since that
+      passes the asset id check, kept to the canvas's own editor assets, each once in
+      byte order, at the stored version. It reads the version, `base_projection`, the
+      rows, Go's projected version and stored images, and the canvas's assets (every
+      `editor_assets` row of the material, pending or ready, in the hidden trash or
+      not; a purged one is gone; one query on `editor_assets_material_idx`) in one
+      snapshot, never the base, takes no permit and builds no document. The
+      stored projection must be its base's: its `version` the one just before
+      the first row left, or the stored version when none is left (a store
+      appends the stored version plus one, so a board's rows have no gaps, and
+      a fold deletes the ones it took). One that is not (a fold by a server
+      older than 0196, after a rollback, rewrites the base and the rows and
+      leaves it) is logged (`board base projection stale`) and the board is
+      replayed, as with none, until its next fold writes the column. It is
+      complete: an image live now was live at the fold, so its list names it, or was
+      written since, so a row holds its id; Yjs never brings a deleted item back
+      (Undo, a paste and a copy write new structs). Keeping to the canvas's assets
+      drops only ids that are no asset of this canvas, and Go prunes this canvas's
+      assets alone. It gives up exactness: an image deleted since the last fold stays
+      named, and its asset charged, until the projection after the next fold (at
+      256 KiB or 1,000 rows of log, and at every unload). That one reads the exact
+      list once the fold committed: the room projects again when its fold commits,
+      at a version projected already too, and the unload projects after its fold.
+      Go takes a canvas's projection at the version it projected already when the
+      block differs (a note's or quiz's it skips). The order holds because a
+      material's durable projections run one at a time in the process
+      (`projection::Slots`: the read and the send together, the room's, the
+      unload's and the pending scan's alike), each reading after the last one's
+      answer: a superset read before a fold committed is sent before the exact list
+      read after it. A base stored before 0196 (`base_projection` null) projects by
+      the full replay under the permit, kept to the canvas's assets the same way,
+      at every projection until its next fold writes the column. On a board of 3.2 MB with a 256 KiB tail
+      of 712 rows, the replay peaked at 11.2 MiB of heap beside the base and rows it
+      read, in 82 ms, and the projection between folds at 19 KiB, in 2.4 ms (debug
+      build, `board.rs` test allocator).
+    - **Full JSON later.** Boards are expected to need a full JSON projection, as notes
+      have, for AI support. It would plug in at the fold, the one place a board's
+      document becomes content: the fold computes it from the document it builds anyway
+      and stores it with the base as it stores `base_projection` now. Between folds only
+      `images` and `version` move, so nothing about storage or the projection flow
+      changes; a caller that needs the board's JSON current asks for a fold, or a
+      one-off replay, when it needs it.
     - **Presence (Epo 2026-11-18, "just the same presence events like others").** A
       board's state is a note's event with board fields (`Fields::Board` in
       `presence.rs`, `boardPresence.ts`): `p` the pointer as `[x, y]` in whole board

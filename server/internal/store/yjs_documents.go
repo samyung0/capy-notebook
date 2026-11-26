@@ -86,10 +86,10 @@ func (s *Store) ProjectMaterialContent(
 		return ProjectedMaterial{}, err
 	}
 	var workspaceID *string
-	var payerID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id, owner_user_id
+	var payerID, kind string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id, owner_user_id, kind
 		FROM materials WHERE id=$1 AND trashed_at IS NULL`, materialID).
-		Scan(&workspaceID, &payerID); err != nil {
+		Scan(&workspaceID, &payerID, &kind); err != nil {
 		if isNoRows(err) {
 			return ProjectedMaterial{}, ErrNotFound
 		}
@@ -124,15 +124,21 @@ func (s *Store) ProjectMaterialContent(
 	if yjsVersion > storedVersion {
 		return ProjectedMaterial{}, ErrConflict
 	}
-	if yjsVersion <= projectedVersion {
+	// A canvas's projection at the version already projected still replaces
+	// the stored one when its content differs (Epo 2026-11-26): between folds
+	// the room sends a superset of the board's images, and the projection
+	// after a fold, at the same version when nothing was stored since, is the
+	// exact list. The room sends one material's projections one at a time,
+	// each read after the last one's answer, so the later is the newer.
+	if yjsVersion < projectedVersion || (yjsVersion == projectedVersion && kind != "canvas") {
 		return commitProjected(ctx, tx, materialID)
 	}
 
-	var kind, lockedOwnerID string
+	var lockedOwnerID string
 	var revision int64
-	if err := tx.QueryRow(ctx, `SELECT kind, revision, owner_user_id
+	if err := tx.QueryRow(ctx, `SELECT revision, owner_user_id
 		FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, materialID).
-		Scan(&kind, &revision, &lockedOwnerID); err != nil {
+		Scan(&revision, &lockedOwnerID); err != nil {
 		if isNoRows(err) {
 			return ProjectedMaterial{}, ErrNotFound
 		}

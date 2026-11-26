@@ -100,4 +100,5 @@ func TestProjectMaterialContentRevisesOnlyChangedContent(t *testing.T) {
 	expect(4, changed, material.Revision+1)
 	expect(5, created, material.Revision+2) // back to the original text
 	expect(4, changed, material.Revision+2) // stale version: nothing written
+	expect(5, changed, material.Revision+2) // a note's version projected already: nothing written
 }

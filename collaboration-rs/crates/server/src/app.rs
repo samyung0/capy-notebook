@@ -303,6 +303,8 @@ pub struct App {
     pub unplaced: crate::incidents::UnplacedOnce,
     pub projection_failures: crate::projection::Failures,
     pub projection_refused: crate::projection::Refused,
+    /// One durable projection per material at a time (`projection::Slots`).
+    pub projection_slots: crate::projection::Slots,
     pub pubsub: crate::pubsub::Completed,
     pub next_connection: AtomicU64,
     /// Channel ids the source handoff names (one per room join).
