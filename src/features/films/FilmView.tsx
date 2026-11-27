@@ -66,10 +66,14 @@ export default function FilmView({
       } else if (reply.type === 'video' && meta) {
         src = URL.createObjectURL(new Blob([reply.mp4], { type: 'video/mp4' }));
         setState({ meta, phase: 'video', src });
+        worker.terminate();
       } else if (reply.type === 'take') {
         const bytes = new Uint8Array(reply.bytes);
         if (player.current) player.current.feed(bytes);
         else takes.current.push(bytes);
+        // Its last: the worker's decoded arrays (hundreds of MB on a 3D
+        // film) are let go now, not when the film is.
+        if (reply.done) worker.terminate();
       } else setState({ phase: 'failed' });
     });
     worker.addEventListener('error', () => setState({ phase: 'failed' }));

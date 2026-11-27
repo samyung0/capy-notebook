@@ -19,6 +19,8 @@ gitignored `.results/`.
 | `scripts/run_files.py <python> <out.jsonl> <scene.py>[:<import folder>…] …` | The same for every scene class of other scene files (Manim CE code, run through `cmv-manimgx export --ce`), recording the error of each scene that doesn't run. For 3Blue1Brown's ManimGL files, pass `scripts/manimgl` and then the repository root as import folders |
 | `scripts/player/decode_bench.mjs <fzstd> <file.cmv>…` | JavaScript decode time and memory (`cmv.mjs` is the reader) |
 | `scripts/player/playback_run.mjs <playwright> chrome <page> <name>…` | Plays a page in Chrome and measures its processes. Pages: `film` (a video film from `.results/cmv/<name>.cmv`, WebCodecs), `playback` (a take from `.results/takes/<name>.take`, ManimGX's WebGPU player), `video` (`.results/takes/<name>.mp4` in a `<video>` element) |
+| `scripts/compare_forms.py <scene.drawn.cmv> <scene.video.cmv>` | Each second of one scene in both forms (`cmv-manimgx export --form drawn` and `--form video`): bytes drawn and as video, which is smaller, and the per-second floor a film switching form could reach |
+| `scripts/player/film_memory_dump.mjs <playwright> <base url> <seconds> <film>` | Plays one film in the app's file viewer, then prints Chrome's memory-infra dump by process and allocator (`DEPTH=`, `MATCH=` narrow it) |
 | `scripts/player/note_films_run.mjs <playwright> <base url> <seconds per film> <film>…` | A note holding several films in the app (dev server with mocks): puts the films from `.results/notefilms/<film>.cmv` in a note, plays each in turn, then waits at the top and forces a collection, sampling each Chrome process's macOS footprint and the engine's WebAssembly heap |
 
 The pages need `bench/manim` served on port 8765

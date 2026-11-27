@@ -62,6 +62,27 @@ on screen and lets go 3 s after leaving; scrolled back to, the film opens where 
 4. **The note itself is about 760 MB in the dev build** before any film. A production build would
    start lower; a film's own cost should be about the same.
 
+## Where one film's memory goes
+
+Chrome's memory-infra dump with Menger slice playing for 20 s in the file viewer
+(`scripts/player/film_memory_dump.mjs`):
+
+| Process | Allocator | Size |
+| --- | --- | --- |
+| GPU | Metal resources (`gpu/angle/metal`): ManimGX's buffers and render targets | 390–425 MB |
+| GPU | Driver memory (`ioaccelerator`), likely overlapping the line above | 400–440 MB |
+| GPU | Transfer memory (WebGPU uploads) | 80 MB |
+| Page | ArrayBuffers (`partition_alloc/array_buffer`) | 272 MB, **45 MB** with the fix below |
+| Page | Blink's buffer partition | 195–200 MB |
+| Page | Mapped GPU memory | 70 MB |
+| Page | V8 heap | 72 MB |
+
+Most of the ArrayBuffers were the conversion worker's: it keeps each array's last full version to
+code the next against, and stayed alive until the film unloaded. It now ends once it has posted
+its last chunk (or a video film's MP4). The dump doesn't break the Metal line down, so how much
+is ManimGX's shape store (arrays that only grow until more than half is dead,
+`rust/engine/src/render.rs`) against its render targets is not known.
+
 ## Not measured
 
 - A production build; phones, Safari and Firefox.
