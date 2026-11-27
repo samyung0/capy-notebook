@@ -1,9 +1,9 @@
 // Package cmvfile checks the structure of an uploaded CMV film: the file the
-// cmv-manimgx exporter writes on the user's computer (exporters/manimgx), which
+// cmv-manimgx exporter writes on the user's computer (https://github.com/samyung0/cmv-manim), which
 // the browser plays without running the scene. The check reads only the
 // header, the chunk index and the video parts' framing, so it is fast and runs
 // no code: it refuses a file the player could not read, not one that draws
-// something wrong. It mirrors cmv.validate in exporters/manimgx, which the
+// something wrong. It mirrors cmv.validate in that exporter, which the
 // exporter's `validate` command runs before an upload.
 //
 // The layout: "CMV0", the header's length (u32), the header JSON, an index of

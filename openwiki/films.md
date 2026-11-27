@@ -11,7 +11,7 @@ exporter is queued in `todo-queue.md`.
 
 | Piece | Where | Does |
 | --- | --- | --- |
-| Exporter | `exporters/manimgx` (`cmv-manimgx`, Python, MIT) | Runs a scene with ManimGX 0.1.1, writes both forms and keeps the smaller; `cmv-manimgx validate` runs the server's check. To be published as its own repository. |
+| Exporter | `cmv-manimgx` in https://github.com/samyung0/cmv-manim (`manimgx/`, Python 3.13, MIT) | Runs a scene with ManimGX 0.1.1, writes both forms and keeps the smaller; `cmv-manimgx validate` runs the server's check. Published on its own (Epo 2026-11-27); a ManimGL exporter will join it. |
 | Check | `server/internal/cmvfile` | Header, chunk index and video framing only; under a millisecond on a 2.6 MB film. Mirrors `cmv.validate` in the exporter. |
 | Upload | `sourceupload` kind `film` (`.cmv`), `checkSourceBytes` | A refused film is a 400 `invalid_film` with the reason. Stored only: no ingest job, ready at once, counted in quota like any file. Drive imports refuse a film (`unsupported_file`): the import worker runs no film check. |
 | Viewer | `src/features/films` (`FilmView`, from `FileViewer`) | A worker reads the film; video films play in `<video>`, drawn films on ManimGX's player. |
@@ -35,7 +35,7 @@ note's clone keeps the link. The agent writes no film. Details:
 
 ## The file
 
-`exporters/manimgx/src/cmv_manimgx/cmv.py` describes the format. In short:
+The exporter's `manimgx/src/cmv_manimgx/cmv.py` describes the format. In short:
 `CMV0`, the header (JSON: `cmv` 1, `form`, size, fps, frames, chunks, tracks;
 a drawn film also its quantization steps and `engine` {`manimgx`, version,
 take 1}), an index of one-second chunks, then the chunks. A chunk holds a
