@@ -156,7 +156,9 @@ pub struct EditOutcome {
 /// An agent's edit may remove or replace one (Epo 2026-10-21) but inserts
 /// none except a library figure ([inserts_media]).
 pub fn media_type(kind: &str) -> bool {
-    kind == "video" || kind == crate::material::FILM_TYPE || crate::material::MEDIA_TYPES.contains(&kind)
+    kind == "video"
+        || kind == crate::material::FILM_TYPE
+        || crate::material::MEDIA_TYPES.contains(&kind)
 }
 pub const MAX_TEXT_EDIT_CHARS: usize = 200_000;
 

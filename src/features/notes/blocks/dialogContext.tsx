@@ -80,6 +80,7 @@ let mountedDialogsApi: NoteBlockDialogsApi | null = null;
  * flashcard sets are authored on their own edit pages. */
 /** An open pick dialog: what it lists, and what its Insert and Create new do. */
 type Pick = {
+  editor: NoteEditorInstance;
   kind: EmbedPickKind;
   insert: (id: string) => Promise<void> | void;
   create?: () => void;
@@ -100,7 +101,10 @@ export function NoteBlockDialogsProvider({
   const { mutateAsync: createEmbeddedMaterial } = useCreateEmbeddedMaterial();
   // Whether the workspace holds a quiz and a set (unknown until read, and
   // for a note in no workspace: the dialog opens then).
-  const { data: workspace } = useWorkspace(workspaceId);
+  // The workspace page owns a refused read (WorkspaceOpen's error state).
+  const { data: workspace } = useWorkspace(workspaceId, {
+    errorBoundary: false,
+  });
   const holds = useRef({ flashcards: true, quiz: true });
   holds.current = {
     flashcards: workspace?.hasFlashcards ?? true,
@@ -165,6 +169,7 @@ export function NoteBlockDialogsProvider({
             .then(put, () => undefined)
             .finally(place.release);
         },
+        editor,
         insert: (id) =>
           createEmbedded({ kind: draft.kind, sourceId: id }).then(put),
         kind: draft.kind,
@@ -179,6 +184,7 @@ export function NoteBlockDialogsProvider({
     (editor: NoteEditorInstance, replace?: { id: string }) => {
       if (replace) {
         setPick({
+          editor,
           insert: (fileId) => {
             const at = editor.api.node({
               at: [],
@@ -194,6 +200,7 @@ export function NoteBlockDialogsProvider({
       }
       const place = holdInsertPlace(editor);
       setPick({
+        editor,
         insert: (fileId) => place.insert(filmNode(fileId)),
         kind: 'film',
         release: place.release,
@@ -250,6 +257,7 @@ export function NoteBlockDialogsProvider({
             pick.release();
             setPick(null);
           }}
+          onClosed={() => pick.editor.tf.focus()}
           onCreate={pick.create}
           onInsert={pick.insert}
           workspaceId={workspaceId}

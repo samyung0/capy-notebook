@@ -82,6 +82,9 @@ function useFilmRows(workspaceId: string) {
 
 type PickProps = {
   onClose: () => void;
+  /** Once it has gone: focus goes back to the note, not where the dialog
+   * last had it. */
+  onClosed: () => void;
   onCreate?: () => void;
   onInsert: (id: string) => Promise<void> | void;
   /** The note's workspace, '' for a note in none. */
@@ -120,6 +123,7 @@ function PickDialog({
   kind,
   list,
   onClose,
+  onClosed,
   onCreate,
   onInsert,
   rows,
@@ -154,6 +158,10 @@ function PickDialog({
       }
       compactFooter
       onClose={onClose}
+      onCloseAutoFocus={(event) => {
+        event.preventDefault();
+        onClosed();
+      }}
       open
       pending={inserting}
       title={TITLE[kind]()}
