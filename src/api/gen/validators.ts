@@ -63,6 +63,8 @@ export const GetDeletionPreflightResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -100,6 +102,8 @@ export const GetDeletionPreflightResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -3259,6 +3263,8 @@ export const ExploreWorkspacesResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -6367,13 +6373,18 @@ export const CreateEmbeddedMaterialParams = zod.object({
   "id": zod.string()
 })
 
+export const createEmbeddedMaterialBodySourceIdMax = 64;
+
+
+
 export const CreateEmbeddedMaterialBody = zod.object({
   "cards": zod.array(zod.object({
   "back": zod.string(),
   "front": zod.string()
 })).nullish(),
   "kind": zod.enum(['quiz', 'flashcards']),
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish()
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish(),
+  "sourceId": zod.string().max(createEmbeddedMaterialBodySourceIdMax).optional().describe('A quiz or flashcard set of the caller\'s to copy into the note')
 })
 
 export const CreateEmbeddedMaterialResponse = zod.object({
@@ -9377,6 +9388,8 @@ export const ListWorkspacesResponseItem = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -9470,6 +9483,8 @@ export const CreateWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -9537,6 +9552,8 @@ export const GetWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -9635,6 +9652,8 @@ export const UpdateWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -9985,6 +10004,8 @@ export const CloneWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -11186,6 +11207,8 @@ export const UpdateWorkspaceSharingResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -11781,6 +11804,8 @@ export const TransferWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),

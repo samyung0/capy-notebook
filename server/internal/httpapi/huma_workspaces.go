@@ -118,7 +118,16 @@ func (a *api) getWorkspace(ctx context.Context, in *workspaceIDInput) (*workspac
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return a.workspaceOutputFor(ctx, res)
+	out, err := a.workspaceOutputFor(ctx, res)
+	if err != nil {
+		return nil, err
+	}
+	quiz, flashcards, err := a.s.WorkspaceHolds(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	out.Body.HasQuiz, out.Body.HasFlashcards = &quiz, &flashcards
+	return out, nil
 }
 
 func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*workspaceOutput, error) {

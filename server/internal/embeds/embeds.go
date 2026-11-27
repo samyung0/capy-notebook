@@ -357,6 +357,15 @@ func elementTypes() []Element {
 	video.Forbidden = []string{"assetId", "url", "src"}
 	video.Resizable = true
 
+	// A film (a ManimGX .cmv file) a note shows, view-only: a live link to the
+	// file by id, read with the reader's own access (Epo 2026-11-27).
+	film := void("film", IndexNone)
+	film.TopLevel = true
+	film.Required = []string{"id", "fileId"}
+	film.Fields = []string{"type", "id", "fileId", "children"}
+	film.Forbidden = []string{"assetId", "url", "src"}
+	film.Materials = []string{Note}
+
 	// A canvas's one block, written by its room's projection: the stored
 	// version projected and the board's images, editor assets of the canvas.
 	canvas := void("canvas_board", IndexNone)
@@ -397,6 +406,7 @@ func elementTypes() []Element {
 		inline("slash_input", true, IndexNone),
 		media("img", true), media("audio", false),
 		video,
+		film,
 		canvas,
 		// An upload in progress holds nothing yet.
 		void("placeholder", IndexNone),

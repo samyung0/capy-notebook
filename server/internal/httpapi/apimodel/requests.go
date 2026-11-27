@@ -155,9 +155,12 @@ type CreateMaterialReq struct {
 // a quiz or flashcard set authored inside the note {id}. The note title gives
 // the default title; the caller inserts the returned id as a reference block.
 type CreateEmbeddedMaterialReq struct {
-	Kind      store.MaterialKind `json:"kind" enum:"quiz,flashcards"`
-	Questions []map[string]any   `json:"questions,omitempty"`
-	Cards     []CardContent      `json:"cards,omitempty"`
+	Kind store.MaterialKind `json:"kind" enum:"quiz,flashcards"`
+	// SourceID copies a quiz or set the caller may open into the note
+	// instead of making a new one from Questions or Cards (Epo 2026-11-27).
+	SourceID  string           `json:"sourceId,omitempty" maxLength:"64" doc:"A quiz or flashcard set of the caller's to copy into the note"`
+	Questions []map[string]any `json:"questions,omitempty"`
+	Cards     []CardContent    `json:"cards,omitempty"`
 }
 
 // CardContent is one authored flashcard face pair.

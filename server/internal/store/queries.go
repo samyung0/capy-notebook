@@ -417,6 +417,19 @@ func (s *Store) GetWorkspace(ctx context.Context, userID, id string) (Workspace,
 	return w, err
 }
 
+// WorkspaceHolds says whether the workspace holds a quiz and a flashcard set
+// userID may open, as the note's Quiz and Flashcards pickers list them
+// (ListOwnedMaterials with Member): with none, those commands make a new one
+// at once (Epo 2026-11-27). The caller has checked read access.
+func (s *Store) WorkspaceHolds(ctx context.Context, userID, id string) (quiz, flashcards bool, err error) {
+	const holds = `EXISTS (SELECT 1 FROM materials m WHERE m.workspace_id=$2 AND m.kind=%s
+		AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.assignment_id IS NULL
+		AND workspace_item_visible(` + materialHiddenSQL + `, m.workspace_id, $1))`
+	err = s.pool.QueryRow(ctx, `SELECT `+fmt.Sprintf(holds, `'quiz'`)+`, `+fmt.Sprintf(holds, `'flashcards'`),
+		userID, id).Scan(&quiz, &flashcards)
+	return quiz, flashcards, err
+}
+
 func (s *Store) WorkspaceStats(ctx context.Context, userID, id string) (WorkspaceStats, error) {
 	if err := s.AssertWorkspaceMemberEditor(ctx, userID, id); err != nil {
 		return WorkspaceStats{}, err

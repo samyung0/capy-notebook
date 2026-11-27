@@ -150,12 +150,13 @@ pub struct EditOutcome {
     pub rewrites: HashMap<String, String>,
 }
 
-/// A media block: an uploaded file ([crate::material::MEDIA_TYPES]) or an
-/// embedded video (the catalog's elements that require or forbid `assetId`).
+/// A media block: an uploaded file ([crate::material::MEDIA_TYPES]), an
+/// embedded video (the catalog's elements that require or forbid `assetId`)
+/// or a film (Epo 2026-11-27: the agent writes none).
 /// An agent's edit may remove or replace one (Epo 2026-10-21) but inserts
 /// none except a library figure ([inserts_media]).
 pub fn media_type(kind: &str) -> bool {
-    kind == "video" || crate::material::MEDIA_TYPES.contains(&kind)
+    kind == "video" || kind == crate::material::FILM_TYPE || crate::material::MEDIA_TYPES.contains(&kind)
 }
 pub const MAX_TEXT_EDIT_CHARS: usize = 200_000;
 

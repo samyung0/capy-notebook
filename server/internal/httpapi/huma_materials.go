@@ -454,6 +454,9 @@ func (a *api) createEmbeddedMaterial(ctx context.Context, in *createEmbeddedMate
 	if in.Body.Kind != "quiz" && in.Body.Kind != "flashcards" {
 		return nil, huma.Error400BadRequest("unsupported embedded material kind")
 	}
+	if in.Body.SourceID != "" {
+		return a.copyIntoNote(ctx, in)
+	}
 	cards := make([][2]string, len(in.Body.Cards))
 	for i, card := range in.Body.Cards {
 		cards[i] = [2]string{card.Front, card.Back}
@@ -470,6 +473,46 @@ func (a *api) createEmbeddedMaterial(ctx context.Context, in *createEmbeddedMate
 		return nil, hErr(err)
 	}
 	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), mt.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return a.materialResponse(ctx, mt, role, false, false)
+}
+
+// copyIntoNote is the Quiz or Flashcards picker's Insert: the note's own copy
+// of a quiz or set the caller may open, made as a paste's copy is (questions
+// or cards and their images, no attempts or progress). One the caller cannot
+// open, or of another kind, is 404; one past a quota is the quota's error.
+func (a *api) copyIntoNote(ctx context.Context, in *createEmbeddedMaterialInput) (*materialOutput, error) {
+	actor := userID(ctx)
+	src, err := a.s.GetMaterial(ctx, in.Body.SourceID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if src.Kind != in.Body.Kind {
+		return nil, hErr(store.ErrNotFound)
+	}
+	// The actor pays for the copied images, under its plan caps (M16).
+	_, _, limits, err := a.s.EditorAssetMaterial(ctx, in.ID, actor)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	adopted, refused, err := a.s.AdoptEmbeddedMaterials(ctx, actor, in.ID,
+		[]store.EmbeddedAdoption{{SourceID: src.ID, Copy: true, Standalone: true}}, limits)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if adopted[0] == "" {
+		if refused {
+			return nil, quotaError(nil)
+		}
+		return nil, hErr(store.ErrNotFound)
+	}
+	mt, err := a.s.GetMaterial(ctx, adopted[0])
+	if err != nil {
+		return nil, hErr(err)
+	}
+	role, err := a.s.MaterialEffectiveRole(ctx, actor, mt.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}

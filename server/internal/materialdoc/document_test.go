@@ -1393,3 +1393,33 @@ func TestRewriteQuestionTopics(t *testing.T) {
 		t.Fatalf("topics = %v, %v", qs[0]["topicIds"], qs[1]["topicIds"])
 	}
 }
+
+// A film is a top-level note block naming its file; a workspace clone points
+// it at the file's copy and drops one whose file was not copied.
+func TestFilmBlock(t *testing.T) {
+	film := func(fileID string) map[string]any {
+		return map[string]any{"type": FilmType, "id": "fm", "fileId": fileID, "children": []any{textLeaf("")}}
+	}
+	doc, err := Marshal(Envelope{SchemaVersion: 1, Value: []map[string]any{ParagraphNode("intro"), film("f_a")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateKind(doc, "note"); err != nil {
+		t.Fatalf("a film should be valid in a note: %v", err)
+	}
+	blank, err := json.Marshal(Envelope{SchemaVersion: 1, Value: []map[string]any{film(" ")}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateKind(string(blank), "note"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a film without its file should be refused, got %v", err)
+	}
+	moved, err := RewriteFilmFileIDs(doc, map[string]string{"f_a": "f_b"})
+	if err != nil || !strings.Contains(moved, `"fileId":"f_b"`) {
+		t.Fatalf("film not moved to the copy: %v %s", err, moved)
+	}
+	dropped, err := RewriteFilmFileIDs(doc, map[string]string{})
+	if err != nil || strings.Contains(dropped, FilmType) || !strings.Contains(dropped, "intro") {
+		t.Fatalf("film whose file was not copied kept: %v %s", err, dropped)
+	}
+}

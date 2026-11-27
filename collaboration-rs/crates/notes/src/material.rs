@@ -23,6 +23,8 @@ pub const DEPTH_CEILING: usize = 1024;
 pub const HTML_EMBED_TYPE: &str = "html_embed";
 /// The void block a note stores for an embedded quiz or flashcard set.
 pub const MATERIAL_REF_TYPE: &str = "material_ref";
+/// A film a note shows: a top-level void naming its file (Go's `FilmType`).
+pub const FILM_TYPE: &str = "film";
 /// Media blocks name their file: an asset id, never a URL (Epo, 2026-10-10).
 /// The catalog's elements that require `assetId`.
 pub const MEDIA_TYPES: [&str; 2] = ["img", "audio"];
@@ -644,6 +646,16 @@ fn validate_element(node: &Node, kind: &str, depth: usize, policy: &Policy) -> C
         "column" => validate_column_width(node),
         "table" => validate_table_sizes(node),
         MATERIAL_REF_TYPE => validate_material_ref(node),
+        FILM_TYPE => {
+            if node
+                .get("fileId")
+                .and_then(Value::as_str)
+                .is_none_or(|id| js_trim(id).is_empty())
+            {
+                return fail("fileId is required");
+            }
+            Ok(())
+        }
         "video" => {
             if node.get("provider").and_then(Value::as_str) != Some("youtube") {
                 return fail("video provider must be youtube");

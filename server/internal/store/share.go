@@ -1774,6 +1774,12 @@ func (s *Store) cloneWorkspaceOnce(
 				}
 			}
 			content := materialSnapshot.content
+			if mt.Kind == "note" {
+				// A film follows its file's copy (file ids are all one length).
+				if content, err = materialdoc.RewriteFilmFileIDs(content, fileMap); err != nil {
+					return "", nil, 0, err
+				}
+			}
 			if mt.Kind == "quiz" {
 				// Questions' own topics follow the topics' new ids (topic ids
 				// are all one length, so the size counted above holds).

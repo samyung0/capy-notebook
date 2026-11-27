@@ -114,7 +114,7 @@ func preview(kind string, nodes []map[string]any) (json.RawMessage, error) {
 
 // Media, embeds and diagrams have no preview block; containers are read
 // through.
-var previewSkipped = set("hr", "toc", "audio", "video", "mermaid", "diagram", "mindmap",
+var previewSkipped = set("hr", "toc", "audio", "video", FilmType, "mermaid", "diagram", "mindmap",
 	"chart", "plot", "graph", HTMLEmbedType, RefType, "quiz", "flashcards")
 
 type noteBuilder struct {

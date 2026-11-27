@@ -24,6 +24,10 @@ export interface PublicWorkspace {
   description: string;
   fileCount: number;
   filesLimit: number;
+  /** The workspace holds a flashcard set the caller may open (single read only) */
+  hasFlashcards?: boolean;
+  /** The workspace holds a quiz the caller may open (single read only) */
+  hasQuiz?: boolean;
   iconId: string;
   id: string;
   isOwner: boolean;
