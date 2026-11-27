@@ -16,6 +16,7 @@ const explicitExtensions: Record<string, string[]> = {
     'opus',
   ],
   doc: ['docx', 'doc'],
+  film: ['cmv'],
   image: [
     'png',
     'jpg',
@@ -77,6 +78,7 @@ const kindOrder: FileKind[] = [
   'slides',
   'audio',
   'json',
+  'film',
   'unknown',
 ];
 

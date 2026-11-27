@@ -293,6 +293,10 @@ type Workspace struct {
 	// CanClone: members of any role and effective editors may copy the
 	// workspace, of a class effective editors alone; a link/public viewer may not.
 	CanClone bool `json:"canClone"`
+	// HasQuiz and HasFlashcards: the workspace holds a quiz, a flashcard set
+	// the caller may open. Only GET /api/workspaces/{id} answers them.
+	HasQuiz       *bool `json:"hasQuiz,omitempty" doc:"The workspace holds a quiz the caller may open (single read only)"`
+	HasFlashcards *bool `json:"hasFlashcards,omitempty" doc:"The workspace holds a flashcard set the caller may open (single read only)"`
 }
 
 // FromWorkspace renders a workspace the requester owns. It reports no owner

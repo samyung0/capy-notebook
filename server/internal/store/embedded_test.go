@@ -776,3 +776,70 @@ func TestEmbeddedCopiesKeepTheirCredits(t *testing.T) {
 	}
 	credited(refs[0].MaterialID)
 }
+
+// A note's Quiz picker inserts the note's own copy of a quiz of the actor's
+// that sits in no note (Standalone); a paste never copies one, and a quiz the
+// actor cannot open is never copied.
+func TestAdoptCopiesAPickedQuiz(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_pick_owner")
+	strangerID := newBlobTestUser(t, s, "u_pick_stranger")
+	note, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "note", Title: "Picks", Content: materialTestContent(t, "# Picks\n\nbody")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	quizContent, err := materialdoc.QuizDocument(json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"True?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	own, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, Kind: "quiz", Title: "Mine", Content: quizContent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := s.CreateMaterial(ctx, Material{CreatedBy: strangerID, Kind: "quiz", Title: "Theirs", Content: quizContent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	limits := mustPlanLimits(t, s, PlanFree)
+	pasted, _, err := s.AdoptEmbeddedMaterials(ctx, ownerID, note.ID, []EmbeddedAdoption{{SourceID: own.ID}}, limits)
+	if err != nil || pasted[0] != "" {
+		t.Fatalf("a paste copied a quiz in no note: %v %v", pasted, err)
+	}
+	picked, _, err := s.AdoptEmbeddedMaterials(ctx, ownerID, note.ID, []EmbeddedAdoption{
+		{SourceID: own.ID, Copy: true, Standalone: true},
+		{SourceID: theirs.ID, Copy: true, Standalone: true},
+	}, limits)
+	if err != nil || picked[0] == "" || picked[0] == own.ID || picked[1] != "" {
+		t.Fatalf("picked = %v, %v; want a copy of the own quiz and nothing of the other's", picked, err)
+	}
+	copied, err := s.GetMaterial(ctx, picked[0])
+	if err != nil || copied.ParentMaterialID != note.ID || copied.Kind != "quiz" {
+		t.Fatalf("copy = %+v, %v; want the note's own quiz", copied, err)
+	}
+}
+
+// The workspace read says whether it holds a quiz and a flashcard set, so a
+// note's Quiz and Flashcards make a new one at once when it holds none.
+func TestWorkspaceHolds(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_holds_owner")
+	ws, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Holds", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if quiz, sets, err := s.WorkspaceHolds(ctx, ownerID, ws.ID); err != nil || quiz || sets {
+		t.Fatalf("an empty workspace holds %v %v, %v", quiz, sets, err)
+	}
+	cards, err := materialdoc.FlashcardsDocument([]materialdoc.Card{{ID: "c1", Front: "f", Back: "b"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateMaterial(ctx, Material{CreatedBy: ownerID, WorkspaceID: ws.ID, Kind: "flashcards", Title: "Set", Content: cards}); err != nil {
+		t.Fatal(err)
+	}
+	if quiz, sets, err := s.WorkspaceHolds(ctx, ownerID, ws.ID); err != nil || quiz || !sets {
+		t.Fatalf("a workspace with one set holds %v %v, %v", quiz, sets, err)
+	}
+}

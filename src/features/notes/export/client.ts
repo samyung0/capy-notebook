@@ -23,6 +23,7 @@ export function exportLabels(): ExportLabels {
     choices: m.editor_export_choices(),
     column: m.editor_export_column(),
     false: m.question_ui_false(),
+    film: m.editor_film(),
     front: m.editor_card_front(),
     interactive: m.editor_export_interactive(),
     marks: m.editor_export_marks(),

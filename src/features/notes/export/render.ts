@@ -439,6 +439,14 @@ export async function renderExport(
       if (md) return `${link(esc(labels.video), url, html)}\n\n`;
       return `<p>${link(esc(labels.video), url, true)}</p><p>${await picture({ type: 'youtube', videoId }, `capy-video:${videoId}`, true)}</p>`;
     }
+    if (type === 'film') {
+      // A film plays only in the app: the export links back to its block.
+      const url = new URL(noteUrl);
+      url.searchParams.set('block', field(node, 'id'));
+      return md
+        ? `${link(esc(labels.film), url.href, html)}\n\n`
+        : `<p>${link(escapeHtml(labels.film), url.href, true)}</p>`;
+    }
     if (type === 'html_embed') {
       // The snippet never runs here or reaches the rasteriser: the export
       // links back to the block in the note.

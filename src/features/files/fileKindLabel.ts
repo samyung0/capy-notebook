@@ -21,6 +21,8 @@ export function fileKindLabel(kind: FileKind): string {
       return m.file_kind_audio();
     case 'json':
       return m.file_kind_json();
+    case 'film':
+      return m.file_kind_film();
     default:
       return m.file_kind_unknown();
   }

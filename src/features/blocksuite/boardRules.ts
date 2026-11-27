@@ -534,11 +534,11 @@ function linkFits(props: Fields) {
   );
 }
 
-/** A material card: a workspace quiz or set by id, with its title. */
+/** A material card: a workspace quiz, set or film by id, with its title. */
 function materialFits(props: Fields) {
   const { kind, materialId, title } = props;
   return (
-    (kind === 'quiz' || kind === 'flashcards') &&
+    (kind === 'quiz' || kind === 'flashcards' || kind === 'film') &&
     isString(materialId) &&
     materialId.length > 0 &&
     materialId.length <= BOARD_CATALOG.limits.MATERIAL_ID_MAX &&

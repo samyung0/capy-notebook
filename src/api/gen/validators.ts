@@ -63,6 +63,8 @@ export const GetDeletionPreflightResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -100,6 +102,8 @@ export const GetDeletionPreflightResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -3259,6 +3263,8 @@ export const ExploreWorkspacesResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -3472,7 +3478,7 @@ export const ListOwnedFilesResponse = zod.object({
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
   "position": zod.int(),
@@ -3572,7 +3578,7 @@ export const CreateStandaloneBlankFileResponse = zod.object({
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
   "position": zod.int(),
@@ -3674,7 +3680,7 @@ export const MoveFilesResponseItem = zod.object({
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
   "position": zod.int(),
@@ -3785,7 +3791,7 @@ export const GetFileResponse = zod.object({
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
   "position": zod.int(),
@@ -3886,7 +3892,7 @@ export const UpdateFileResponse = zod.object({
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
   "position": zod.int(),
@@ -4113,7 +4119,7 @@ export const CloneFileResponse = zod.object({
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
   "position": zod.int(),
@@ -5322,7 +5328,7 @@ export const ListItemsResponse = zod.object({
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
   "position": zod.int(),
@@ -6367,13 +6373,18 @@ export const CreateEmbeddedMaterialParams = zod.object({
   "id": zod.string()
 })
 
+export const createEmbeddedMaterialBodySourceIdMax = 64;
+
+
+
 export const CreateEmbeddedMaterialBody = zod.object({
   "cards": zod.array(zod.object({
   "back": zod.string(),
   "front": zod.string()
 })).nullish(),
   "kind": zod.enum(['quiz', 'flashcards']),
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish()
+  "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish(),
+  "sourceId": zod.string().max(createEmbeddedMaterialBodySourceIdMax).optional().describe('A quiz or flashcard set of the caller\'s to copy into the note')
 })
 
 export const CreateEmbeddedMaterialResponse = zod.object({
@@ -8233,7 +8244,7 @@ export const ListRecentResponse = zod.object({
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
   "position": zod.int(),
@@ -8560,7 +8571,7 @@ export const SearchQueryParams = zod.object({
 })
 
 export const SearchResponseItem = zod.object({
-  "fileKind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']).optional(),
+  "fileKind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']).optional(),
   "href": zod.string(),
   "iconId": zod.string().optional(),
   "id": zod.string(),
@@ -8607,7 +8618,7 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "imageMaxBytes": zod.int().describe('The caller\'s plan image cap, which each picture inside an Office upload must fit'),
   "kinds": zod.array(zod.object({
   "extensions": zod.array(zod.string()),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "text": zod.boolean()
 })),
   "maxBytes": zod.int(),
@@ -9377,6 +9388,8 @@ export const ListWorkspacesResponseItem = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -9470,6 +9483,8 @@ export const CreateWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -9537,6 +9552,8 @@ export const GetWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -9635,6 +9652,8 @@ export const UpdateWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -9985,6 +10004,8 @@ export const CloneWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -10281,7 +10302,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
   "position": zod.int(),
@@ -10384,7 +10405,7 @@ export const CreateBlankFileResponse = zod.object({
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
   "position": zod.int(),
@@ -10971,7 +10992,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'audio_duration_limit', 'tabular_column_limit', 'tabular_text_limit', 'no_speech']).optional(),
   "indexed": zod.boolean(),
   "isPayer": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "lostAccess": zod.boolean().optional().describe('The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it'),
   "name": zod.string(),
   "position": zod.int(),
@@ -11186,6 +11207,8 @@ export const UpdateWorkspaceSharingResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
@@ -11320,7 +11343,7 @@ export const GetWorkspaceStatsResponse = zod.object({
   "fileChanges": zod.array(zod.object({
   "errorId": zod.string().optional(),
   "fileId": zod.string(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'film', 'unknown']),
   "lastEditedAt": zod.iso.datetime({"offset":true}),
   "name": zod.string(),
   "state": zod.enum(['waiting', 'queued', 'processing', 'failed'])
@@ -11781,6 +11804,8 @@ export const TransferWorkspaceResponse = zod.object({
   "description": zod.string(),
   "fileCount": zod.int(),
   "filesLimit": zod.int(),
+  "hasFlashcards": zod.boolean().optional().describe('The workspace holds a flashcard set the caller may open (single read only)'),
+  "hasQuiz": zod.boolean().optional().describe('The workspace holds a quiz the caller may open (single read only)'),
   "iconId": zod.string(),
   "id": zod.string(),
   "isOwner": zod.boolean(),

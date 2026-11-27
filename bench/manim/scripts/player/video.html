@@ -1,0 +1,31 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>MP4 playback</title>
+<!--
+  The baseline for playback.html: the same film as an H.264 MP4 in a <video> at 640×360 CSS
+  (1280×720 decoded). /scripts/player/video.html?take=<name> plays /.results/takes/<name>.mp4
+  once; window.result holds its frame counts.
+-->
+<style>
+  body { margin: 0; background: #111; color: #ddd; font: 13px monospace; }
+  video { width: 640px; height: 360px; display: block; }
+  pre { padding: 8px; white-space: pre-wrap; }
+</style>
+<video muted playsinline></video>
+<pre id="out">loading…</pre>
+<script type="module">
+  const name = new URLSearchParams(location.search).get("take");
+  const video = document.querySelector("video");
+  video.src = `/.results/takes/${name}.mp4`;
+  const t0 = performance.now();
+  await video.play();
+  const start_ms = performance.now() - t0;
+  await new Promise((done) => video.addEventListener("ended", done, { once: true }));
+  const q = video.getVideoPlaybackQuality();
+  window.result = {
+    take: name, seconds: +video.duration.toFixed(1), start_ms: Math.round(start_ms),
+    frames_shown: q.totalVideoFrames - q.droppedVideoFrames, frames_dropped: q.droppedVideoFrames,
+    js_heap_MB: performance.memory ? +(performance.memory.usedJSHeapSize / 1e6).toFixed(0) : null,
+  };
+  document.getElementById("out").textContent = JSON.stringify(window.result, null, 1);
+</script>

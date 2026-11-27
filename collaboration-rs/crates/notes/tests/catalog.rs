@@ -50,6 +50,7 @@ fn documents() -> BTreeMap<&'static str, Vec<Value>> {
     note.extend([
         json!({ "type": "plot", "id": "cat_plot", "block": question("plot")["stem"][1], "children": leaf() }),
         json!({ "type": "placeholder", "id": "cat_upload", "mediaType": "img", "children": leaf() }),
+        json!({ "type": "film", "id": "cat_film", "fileId": "f_film", "children": leaf() }),
         json!({ "type": "table_view", "id": "cat_table_view", "block": {
             "title": "Tracker",
             "columns": [

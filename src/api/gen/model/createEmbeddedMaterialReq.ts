@@ -16,4 +16,9 @@ export interface CreateEmbeddedMaterialReq {
   kind: MaterialKind;
   /** @nullable */
   questions?: CreateEmbeddedMaterialReqQuestionsItem[] | null;
+  /**
+     * A quiz or flashcard set of the caller's to copy into the note
+     * @maxLength 64
+     */
+  sourceId?: string;
 }

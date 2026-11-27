@@ -492,7 +492,9 @@ function drawMaterialCard(box: Box, card: Fields) {
   const what =
     card['prop:kind'] === 'flashcards'
       ? m.drawing_board_flashcards()
-      : m.drawing_board_quiz();
+      : card['prop:kind'] === 'film'
+        ? m.drawing_board_film()
+        : m.drawing_board_quiz();
   const title = String(card['prop:title'] ?? '');
   const inner = { h: h - 16, w: w - 20, x: x + 10, y: y + 8 };
   return `<rect x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" rx="6" fill="#fff" stroke="#e6e6e6" stroke-width="1"/><svg x="${num(x)}" y="${num(y)}" width="${num(w)}" height="${num(h)}" viewBox="${num(x)} ${num(y)} ${num(w)} ${num(h)}" overflow="hidden">${lines(inner, `${title}\n${what}`, FONT_SIZE_NOTE, '#1d1d1f', 'left')}</svg>`;

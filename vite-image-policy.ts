@@ -192,7 +192,13 @@ function sentrySecurityUrl(dsn?: string, environment?: string) {
 }
 
 /** The app's static files; of these, only worker scripts would apply a policy. */
-const STATIC_PATHS = ['/assets/*', '/icons/*', '/mathlive/*', '/favicon.svg'];
+const STATIC_PATHS = [
+  '/assets/*',
+  '/icons/*',
+  '/mathlive/*',
+  '/vendor/*',
+  '/favicon.svg',
+];
 
 /**
  * Sends the policies with the app's pages. Workers Assets serves the SPA's

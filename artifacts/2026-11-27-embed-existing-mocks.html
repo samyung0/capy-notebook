@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Embed existing items</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;500;600;700;800&display=swap">
+<style>
+/* Tokens copied from src/styles/tokens/themes/capy.css (latte + mocha) and catppuccin.css. */
+:root {
+  --page: #f7f7f7; --canvas: #f9fafa; --card: #ffffff; --card-hover: #f7f8f8; --item-hover: #eff1f1;
+  --overlay: #ffffff; --overlay-border: #d6d6d6; --field: #ffffff; --search-bg: #f1f3f2;
+  --fg: #222222; --fg2: #4b4b4b; --muted: #6b6b6b; --border: #d6d6d6; --strong: #afafaf; --divider: #e6e6e6;
+  --action: #222222; --action-fg: #ffffff; --accent: #8c7bd9; --tint-bg: #ece6f6; --tint-fg: #5b4aa8;
+  --warn-bg: #f7f0e5; --warn-fg: #a9772a; --ok-bg: #e7f6ee; --ok-fg: #2f7d56;
+  --ctp-blue: #1e66f5; --ctp-sapphire: #209fb5; --ctp-mauve: #8839ef; --ctp-red: #d20f39; --ctp-peach: #fe640b; --ctp-maroon: #e64553; --ctp-green: #40a02b; --ctp-yellow: #df8e1d;
+  --shadow-pop: 0 10px 34px rgba(0,0,0,.14); --shadow-card: 0 1px 2px rgba(0,0,0,.04), 0 4px 12px rgba(0,0,0,.05);
+  --dot: #d9dcdc;
+  --font: "Fustat", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #0d1219; --canvas: #080b10; --card: #161d27; --card-hover: #232c3a; --item-hover: #1a222d;
+  --overlay: #1d2633; --overlay-border: #3f4d64; --field: #121821; --search-bg: #1c2430;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --border: #323e52; --strong: #3a4657; --divider: rgba(255,255,255,.07);
+  --action: #cdd4de; --action-fg: #0d1219; --accent: #b5a1f8; --tint-bg: #31334b; --tint-fg: #c8b8fa;
+  --warn-bg: #2f2611; --warn-fg: #f4c878; --ok-bg: #16301f; --ok-fg: #8fe3b9;
+  --ctp-blue: #89b4fa; --ctp-sapphire: #74c7ec; --ctp-mauve: #cba6f7; --ctp-red: #f38ba8; --ctp-peach: #fab387; --ctp-maroon: #eba0ac; --ctp-green: #a6e3a1; --ctp-yellow: #f9e2af;
+  --shadow-pop: 0 10px 34px rgba(0,0,0,.5); --shadow-card: 0 1px 2px rgba(0,0,0,.3); --dot: #1f2733;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --page: #0d1219; --canvas: #080b10; --card: #161d27; --card-hover: #232c3a; --item-hover: #1a222d;
+  --overlay: #1d2633; --overlay-border: #3f4d64; --field: #121821; --search-bg: #1c2430;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --border: #323e52; --strong: #3a4657; --divider: rgba(255,255,255,.07);
+  --action: #cdd4de; --action-fg: #0d1219; --accent: #b5a1f8; --tint-bg: #31334b; --tint-fg: #c8b8fa;
+  --warn-bg: #2f2611; --warn-fg: #f4c878; --ok-bg: #16301f; --ok-fg: #8fe3b9;
+  --ctp-blue: #89b4fa; --ctp-sapphire: #74c7ec; --ctp-mauve: #cba6f7; --ctp-red: #f38ba8; --ctp-peach: #fab387; --ctp-maroon: #eba0ac; --ctp-green: #a6e3a1; --ctp-yellow: #f9e2af;
+  --shadow-pop: 0 10px 34px rgba(0,0,0,.5); --shadow-card: 0 1px 2px rgba(0,0,0,.3); --dot: #1f2733;
+  color-scheme: dark }
+
+* { box-sizing: border-box }
+[data-i] { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0 }
+[data-i] > svg { width: 18px; height: 18px }
+.saved [data-i] > svg { width: 16px; height: 16px }
+body { margin: 0; background: var(--page); color: var(--fg); font: 500 14.8px/1.45 var(--font); padding: 28px 16px 80px }
+main { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px }
+h1 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -.02rem }
+h2 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -.02rem }
+h3 { margin: 0; font-size: 16px; font-weight: 700 }
+p { margin: 0 }
+.lede { color: var(--fg2); max-width: 75ch; display: flex; flex-direction: column; gap: 8px }
+.jump { display: flex; gap: 8px; flex-wrap: wrap }
+.btn { height: 36px; padding: 0 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--fg); font: 600 14px/1 var(--font); display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; text-decoration: none }
+.btn.sm { height: 28px; padding: 0 12px; font-size: 13.5px }
+.btn.dark { background: var(--action); color: var(--action-fg); border-color: var(--action) }
+.btn.off { opacity: .5 }
+.btn svg { width: 16px; height: 16px }
+
+/* Option sections */
+.opt { display: flex; flex-direction: column; gap: 22px; border-top: 1px solid var(--divider); padding-top: 28px }
+.opt-head { display: flex; flex-direction: column; gap: 6px; max-width: 80ch }
+.opt-head .k { font-size: 12px; font-weight: 800; letter-spacing: .06rem; color: var(--muted); text-transform: uppercase }
+.opt-head p { color: var(--fg2) }
+.board { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 330px); gap: 24px; align-items: start }
+@media (max-width: 960px) { .board { grid-template-columns: minmax(0, 1fr) } }
+.side { display: flex; flex-direction: column; gap: 8px; color: var(--fg2); font-size: 13.5px; min-width: 0 }
+.side b { color: var(--fg) }
+.side ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px }
+.side code { font-size: 12px; background: var(--item-hover); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere }
+.lbl { font-size: 11px; font-weight: 700; letter-spacing: .06rem; text-transform: uppercase; color: var(--muted) }
+.row-boards { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start }
+
+/* App frame (workspace centre card) */
+.app { background: var(--card); border-radius: 14px; box-shadow: var(--shadow-card); overflow: hidden; min-width: 0; position: relative }
+.app-top { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 16px; border-bottom: 1px solid var(--divider); min-width: 0 }
+.app-top .t { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.app-top .saved { color: var(--muted); font-size: 13px; display: flex; align-items: center; gap: 4px; flex-shrink: 0 }
+.app-top .sp { flex: 1 }
+.tb { display: flex; align-items: center; gap: 2px; height: 40px; padding: 0 10px; border-bottom: 1px solid var(--divider); overflow: hidden; white-space: nowrap }
+.tbb { height: 28px; min-width: 28px; padding: 0 5px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; border-radius: 5px; color: var(--fg); font-weight: 500; font-size: 14px; flex-shrink: 0 }
+.tbb svg { width: 18px; height: 18px }
+.tbb.on { background: var(--item-hover) }
+.tbsep { width: 1px; height: 20px; background: var(--divider); margin: 0 6px; flex-shrink: 0 }
+.doc { padding: 22px 28px 28px; max-width: 700px; margin: 0 auto; position: relative }
+.doc .h1 { font-size: 30px; font-weight: 800; letter-spacing: -.02rem; line-height: 1.2; margin-bottom: 14px }
+.doc .h2 { font-size: 21px; font-weight: 600; margin: 18px 0 8px }
+.doc p { margin: 0 0 10px }
+.caret { display: inline-block; width: 1.5px; height: 1.1em; background: var(--fg); vertical-align: -3px }
+.slash-line { color: var(--fg) }
+.ph { color: var(--muted) }
+
+/* Popover menus (ToolbarPopoverContent / slash menu) */
+.pop { position: absolute; z-index: 3; background: var(--overlay); border: 1px solid var(--overlay-border); border-radius: 10px; box-shadow: var(--shadow-pop); padding: 6px 4px; font-weight: 500; font-size: 14px }
+.pop.static { position: relative }
+.pi { height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 8px; border-radius: 8px; white-space: nowrap; color: var(--fg) }
+.pi svg { width: 18px; height: 18px; flex-shrink: 0 }
+.pi.hl { background: var(--card-hover) }
+.pi kbd { margin-left: auto; font: 400 12px var(--font); color: var(--muted) }
+.pg { padding: 10px 8px 6px; font-size: 12px; color: var(--muted); font-weight: 500; line-height: 16px }
+.pg:first-child { padding-top: 4px }
+.new { font-size: 10px; font-weight: 800; letter-spacing: .03rem; color: var(--ok-fg); background: var(--ok-bg); border-radius: 5px; padding: 1px 5px; margin-left: 4px }
+
+/* Dialog (SimpleDialog) */
+.dlg { background: var(--card); border-radius: 14px; box-shadow: var(--shadow-pop); padding: 24px 20px 20px; display: flex; flex-direction: column; gap: 0; min-width: 0; border: 1px solid var(--overlay-border) }
+.dlg-h { display: flex; align-items: center; gap: 12px; padding-bottom: 16px }
+.dlg-h .t { flex: 1; min-width: 0; font-size: 22px; font-weight: 800; letter-spacing: -.02rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.xbtn { width: 32px; height: 32px; display: grid; place-items: center; color: var(--fg); flex-shrink: 0 }
+.xbtn svg { width: 20px; height: 20px }
+.search { height: 32px; border-radius: 8px; background: var(--search-bg); display: flex; align-items: center; gap: 8px; padding: 0 10px; color: var(--muted); min-width: 0 }
+.search svg { width: 16px; height: 16px; flex-shrink: 0 }
+.search span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.search.typed { color: var(--fg) }
+.dlg-f { display: flex; justify-content: flex-end; gap: 8px; padding-top: 16px; flex-wrap: wrap }
+
+/* PickList rows (ExistingQuizPicker) */
+.plist { margin-top: 8px; display: flex; flex-direction: column }
+.prow { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 0 10px; border-radius: 8px; min-width: 0 }
+.prow.on { background: var(--card-hover) }
+.prow .rd { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid var(--muted); flex-shrink: 0 }
+.prow.on .rd { border: 5px solid var(--action) }
+.prow .n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.prow .m { color: var(--muted); font-size: 13px; flex-shrink: 0; white-space: nowrap }
+.prow.dim .n, .prow.dim .fi { opacity: .5 }
+.fi { width: 16px; height: 16px; flex-shrink: 0; display: block }
+.grp { font-size: 12px; color: var(--muted); padding: 12px 10px 4px; display: flex; align-items: center; gap: 6px }
+.wsico { width: 14px; height: 14px; border-radius: 4px; background: linear-gradient(135deg, #c9bdf3, #8c7bd9); flex-shrink: 0; display: inline-block }
+.wsico.g { background: linear-gradient(135deg, #b9ecd2, #45b07c) }
+
+/* Tabs (underline, as the app's Tabs) */
+.tabs { display: flex; gap: 18px; border-bottom: 1px solid var(--divider); margin: 0 -20px 12px; padding: 0 20px; overflow-x: auto }
+.tabs span { padding-bottom: 9px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap }
+.tabs span.on { color: var(--fg); border-color: var(--fg) }
+
+/* Canvas Misc panel tiles (boardTools renderMaterials) */
+.panel { background: var(--overlay); border: 1px solid var(--overlay-border); border-radius: 10px; box-shadow: var(--shadow-pop); padding: 14px 12px 12px; width: 100%; max-width: 380px }
+.panel-h { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-weight: 600 }
+.panel-h .sp { flex: 1 }
+.panel-h svg { width: 18px; height: 18px }
+.tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 6px }
+.tile { padding: 8px; border-radius: 8px; display: flex; flex-direction: column; gap: 3px; min-width: 0; font-size: 12.5px }
+.tile.hl { background: var(--card-hover) }
+.tile .t { font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.tile .q { color: var(--fg2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden }
+.tile .c { color: var(--muted); font-size: 11.5px; margin-top: auto }
+.tile.newt { border: 1px solid var(--border); align-items: center; justify-content: center; gap: 6px; min-height: 92px; color: var(--fg2) }
+.tile.newt svg { width: 20px; height: 20px; color: var(--accent) }
+.tile .poster { aspect-ratio: 16/9; border-radius: 4px; overflow: hidden; background: #000 }
+.tile .poster svg { width: 100%; height: 100%; display: block }
+
+/* Film (no frame): the ManimGX canvas plus its own control bar */
+.film { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; overflow: hidden; color: #fff }
+.film > svg.scene { position: absolute; inset: 0; width: 100%; height: 100% }
+.film .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 10px; font-size: 11.5px; background: linear-gradient(transparent, rgba(0,0,0,.6)); white-space: nowrap }
+.film .bar svg { width: 14px; height: 14px; flex-shrink: 0 }
+.film .track { flex: 1; height: 3px; background: rgba(255,255,255,.3); position: relative; min-width: 30px }
+.film .track i { position: absolute; left: 0; top: 0; bottom: 0; width: 38%; background: #fff }
+.film .tm { opacity: .9 }
+.film .bigplay { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; background: rgba(255,255,255,.92); display: grid; place-items: center; color: #111 }
+.film .bigplay svg { width: 22px; height: 22px; margin-left: 3px }
+.film .len { position: absolute; right: 8px; bottom: 8px; font-size: 11.5px; background: rgba(0,0,0,.6); padding: 1px 6px; border-radius: 4px }
+.cap { text-align: center; color: var(--muted); font-size: 14px; margin-top: 8px }
+.fblock { margin: 14px 0 16px; position: relative }
+.fblock.sel { outline: 2px solid var(--accent); outline-offset: 2px }
+/* BlockToolbar (flat hover bar) */
+.btb { position: absolute; top: -40px; right: 0; display: flex; gap: 2px; background: var(--overlay); border: 1px solid var(--overlay-border); border-radius: 8px; padding: 3px; box-shadow: var(--shadow-pop); z-index: 2 }
+.btb .tbb { font-size: 13px }
+.btb .tbb svg { width: 16px; height: 16px }
+
+/* Compact film row (option C) */
+.frow { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--divider); border-top: 1px solid var(--divider); margin: 12px 0 16px; min-width: 0 }
+.frow .n { font-weight: 600; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.frow .m { color: var(--muted); font-size: 13px; flex-shrink: 0 }
+.frow .thumb { width: 72px; aspect-ratio: 16/9; background: #000; flex-shrink: 0; overflow: hidden }
+.frow .thumb svg { width: 100%; height: 100%; display: block }
+
+/* Canvas board */
+.board-canvas { background-color: var(--canvas); background-image: radial-gradient(var(--dot) 1px, transparent 1px); background-size: 18px 18px; border-radius: 14px; box-shadow: var(--shadow-card); padding: 64px 24px 28px; position: relative; display: flex; justify-content: center; gap: 28px; flex-wrap: wrap; min-width: 0 }
+.ccard { background: var(--card); border: 1px solid var(--border); border-radius: 10px; width: 100%; max-width: 340px; overflow: hidden; position: relative }
+.ccard.sel { outline: 1.5px solid var(--accent); outline-offset: 3px }
+.ccard-h { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--divider); font-size: 13px; min-width: 0 }
+.ccard-h .n { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600 }
+.ccard-h .k { color: var(--muted); font-size: 12px }
+.free { width: 100%; max-width: 340px; position: relative }
+.free.sel { outline: 1.5px solid var(--accent); outline-offset: 3px }
+.ctb { position: absolute; top: -48px; left: 50%; transform: translateX(-50%); display: flex; gap: 2px; background: var(--overlay); border: 1px solid var(--overlay-border); border-radius: 8px; padding: 3px; box-shadow: var(--shadow-pop); z-index: 2; white-space: nowrap }
+.ctb .tbb { font-size: 13px }
+.ctb .tbb svg { width: 16px; height: 16px }
+.linkcard { background: var(--card); border: 1px solid var(--border); border-radius: 10px; width: 100%; max-width: 300px; overflow: hidden }
+.linkcard .body { padding: 10px 12px; display: flex; flex-direction: column; gap: 2px }
+.linkcard .body b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.linkcard .body span { color: var(--muted); font-size: 12.5px }
+
+/* Phones */
+.phone { width: 100%; max-width: 360px; background: var(--card); border: 1px solid var(--border); border-radius: 22px; overflow: hidden; position: relative; flex-shrink: 0 }
+.phone .app-top { height: 52px }
+.phone .doc { padding: 16px 16px 20px }
+.phone .doc .h1 { font-size: 24px }
+.phone-dim { position: absolute; inset: 0; background: rgba(0,0,0,.35); z-index: 3 }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4; background: var(--card); border-radius: 14px 14px 0 0; padding: 18px 16px 16px; border-top: 1px solid var(--overlay-border) }
+.sheet .dlg-h .t { font-size: 19px }
+.phone .dlg-wrap { position: absolute; inset: 56px 12px auto; z-index: 4 }
+.phone .dlg { padding: 18px 14px 14px }
+.phone .dlg-h .t { font-size: 19px }
+.phone .tabs { margin: 0 -14px 10px; padding: 0 14px }
+
+/* Today strip */
+.today { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px }
+.today figure { margin: 0; display: flex; flex-direction: column; gap: 6px; min-width: 0 }
+.today img { width: 100%; display: block; border-radius: 8px; border: 1px solid var(--divider) }
+.today figcaption { font-size: 13px; color: var(--fg2) }
+
+/* Tables */
+.tw { overflow-x: auto }
+table { border-collapse: collapse; width: 100%; min-width: 620px; font-size: 13.5px }
+th, td { text-align: left; vertical-align: top; padding: 9px 10px; border-bottom: 1px solid var(--divider) }
+th { font-size: 11px; letter-spacing: .06rem; text-transform: uppercase; color: var(--muted); font-weight: 700 }
+td b { font-weight: 700 }
+.pick { display: inline-block; font-size: 12px; font-weight: 800; padding: 2px 8px; border-radius: 6px; background: var(--ok-bg); color: var(--ok-fg) }
+ol.q { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; color: var(--fg2); max-width: 90ch }
+ol.q b { color: var(--fg) }
+@media (max-width: 520px) {
+  .doc { padding: 16px }
+  .hide-sm { display: none !important }
+}
+</style>
+</head>
+<body>
+<main>
+
+<header style="display:flex;flex-direction:column;gap:12px">
+  <h1>Embed existing quizzes, flashcards and films</h1>
+  <div class="lede">
+    <p>Three ways to put an existing quiz, flashcard set or film into a note, and a film onto the canvas. Everything embedded is view-only in its host. Each option is drawn at desktop width and at 360 px, with the app's own tokens (capy latte and mocha) and its existing components named beside each piece.</p>
+  </div>
+  <nav class="jump">
+    <a class="btn sm" href="#today">Today</a>
+    <a class="btn sm" href="#a">Option A</a>
+    <a class="btn sm" href="#b">Option B</a>
+    <a class="btn sm" href="#c">Option C</a>
+    <a class="btn sm" href="#decide">Pick and decisions</a>
+  </nav>
+</header>
+
+<!-- ============ TODAY ============ -->
+<section id="today" class="opt">
+  <div class="opt-head">
+    <span class="k">Today</span>
+    <h2>What the app does now</h2>
+    <p>A note's Study menu and its <code>/quiz</code> and <code>/flashcards</code> commands always make a new quiz or set inside the note. Images and audio are always uploaded from the computer. Only the canvas's Misc panel and the New graded quiz's Existing file dialog let you pick something that already exists. Screenshots from this worktree with mock data.</p>
+  </div>
+  <div class="today">
+    <figure><img src="2026-11-27-embed-existing/02-study-menu.png" alt="Study menu with Quiz and Flashcards"><figcaption>Study menu: Quiz, Flashcards (always new)</figcaption></figure>
+    <figure><img src="2026-11-27-embed-existing/03-media-menu.jpg" alt="Upload media menu"><figcaption>Upload media: image, audio, YouTube</figcaption></figure>
+    <figure><img src="2026-11-27-embed-existing/04-slash-menu.jpg" alt="Slash menu"><figcaption>Slash menu, File group first</figcaption></figure>
+    <figure><img src="2026-11-27-embed-existing/06-note-embedded-quiz-view.jpg" alt="Embedded quiz in note view"><figcaption>An embedded quiz in View: no frame, no title</figcaption></figure>
+    <figure><img src="2026-11-27-embed-existing/10-canvas-quiz-picker.jpg" alt="Canvas Misc panel quiz list"><figcaption>Canvas Misc › Quiz: New tile, then the workspace's quizzes</figcaption></figure>
+    <figure><img src="2026-11-27-embed-existing/11-canvas-quiz-card.jpg" alt="Canvas quiz card"><figcaption>A canvas quiz card (the real runner)</figcaption></figure>
+    <figure><img src="2026-11-27-embed-existing/14-existing-file-picker.jpg" alt="Existing file picker"><figcaption>New graded quiz › Existing file (PickList)</figcaption></figure>
+    <figure><img src="2026-11-27-embed-existing/08-film-drawn-viewer.jpg" alt="Drawn film viewer"><figcaption>A drawn film in the file viewer, ManimGX's bar</figcaption></figure>
+  </div>
+</section>
+
+<!-- ============ OPTION A ============ -->
+<section id="a" class="opt">
+  <div class="opt-head">
+    <span class="k">Option A</span>
+    <h2>One row per kind, opening the Existing file dialog <span class="pick">Picked, with changes</span></h2>
+    <p>Quiz and Flashcards stay one row each in the Study menu and the slash menu. When the workspace has one, the row opens the dialog New graded quiz uses, listing the workspace's quizzes or sets, with Create new under the list (a new set starts on a real sample card); with none it makes a new one at once, as today. Upload media and the slash menu get Manim film, which always opens the dialog listing the workspace's films. The film plays in the note at the column's width.</p>
+  </div>
+
+  <div class="board">
+    <div class="app">
+      <div class="app-top"><span data-i="note" class="fi"></span><span class="t">Lecture notes — the cell</span><span class="saved"><span data-i="cloud" style="width:16px;height:16px;display:inline-flex"></span>Saved</span><span class="sp"></span><span class="btn sm">Preview</span></div>
+      <div class="tb">
+        <span class="tbb"><span data-i="comment"></span></span>
+        <span class="tbb on"><span data-i="study"></span>Study</span>
+        <span class="tbb"><span data-i="plus"></span>Paragraph</span>
+        <span class="tbsep"></span>
+        <span class="tbb"><span data-i="undo"></span></span><span class="tbb"><span data-i="redo"></span></span>
+        <span class="tbsep"></span>
+        <span class="tbb"><span data-i="filePlus"></span></span><span class="tbb"><span data-i="upload"></span></span><span class="tbb"><span data-i="download"></span></span>
+        <span class="tbsep hide-sm"></span>
+        <span class="tbb hide-sm" style="font-weight:700">B</span><span class="tbb hide-sm" style="font-style:italic">I</span><span class="tbb hide-sm" style="text-decoration:underline">U</span>
+      </div>
+      <div class="doc" style="min-height:330px">
+        <div class="h1">Lecture notes — the cell</div>
+        <p>The <b>cell</b> is the basic unit of life. Today we covered structure, transport, and energy.</p>
+        <p><span class="caret"></span></p>
+        <div class="pop" style="left:22px;top:-6px;width:192px">
+          <div class="pi hl"><span data-i="quiz"></span>Quiz</div>
+          <div class="pi"><span data-i="cards"></span>Flashcards</div>
+        </div>
+        <div class="pop" style="right:22px;top:110px;width:190px" >
+          <div class="pi"><span data-i="image"></span>Upload image</div>
+          <div class="pi"><span data-i="audio"></span>Upload audio</div>
+          <div class="pi"><span data-i="link"></span>YouTube embed</div>
+          <div class="pi hl"><span data-i="film"></span>Manim film<span class="new">new</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">Entry points</span>
+      <p><b>Study menu</b> (<code>ToolbarStudyMenu</code>, <code>ToolbarPopoverRow</code>): Quiz and Flashcards as today. Each opens the dialog when the workspace holds one (<code>hasQuiz</code>, <code>hasFlashcards</code> on the workspace read), else makes a new one at once.</p>
+      <p><b>Upload media</b> (<code>MediaUploadMenu</code>): Manim film (so it isn't read as an ordinary video) always shows and opens the same dialog with the workspace's films. Films never upload here: a film is a file of the workspace, uploaded on the Files page.</p>
+      <p><b>Slash menu</b> (<code>editorCommands.ts</code>): <code>/quiz</code> and <code>/flashcards</code> behave as the Study rows; a new Manim film in File, found by <code>/manim</code> or <code>/film</code>.</p>
+      <div class="pop static" style="width:250px;margin-top:6px">
+        <div class="pg">Block elements</div>
+        <div class="pi hl"><span data-i="quiz"></span>Quiz</div>
+        <div class="pi"><span data-i="cards"></span>Flashcards</div>
+        <div class="pg">File</div>
+        <div class="pi"><span data-i="film"></span>Manim film</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="row-boards">
+      <div class="dlg" style="flex:1 1 420px;max-width:600px">
+        <div class="dlg-h"><span class="t">Quiz</span><span class="xbtn" data-i="x"></span></div>
+        <div class="search"><span data-i="search"></span><span>Search quizzes</span></div>
+        <div class="plist">
+          <div class="prow on"><span class="rd"></span><span class="fi" data-f="quiz"></span><span class="n">Cell biology basics</span><span class="m">12 questions</span></div>
+          <div class="prow"><span class="rd"></span><span class="fi" data-f="quiz"></span><span class="n">Genetics check-in</span><span class="m">15 questions</span></div>
+          <div class="prow"><span class="rd"></span><span class="fi" data-f="quiz"></span><span class="n">Past paper 2025 P1 quiz</span><span class="m">26 questions</span></div>
+          <div class="prow"><span class="rd"></span><span class="fi" data-f="quiz"></span><span class="n">Near-limit quiz</span><span class="m">22 questions</span></div>
+        </div>
+        <div style="margin-top:8px"><span class="btn"><span data-i="plus"></span>Create new</span></div>
+        <div class="dlg-f"><span class="btn">Cancel</span><span class="btn dark">Insert</span></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:20px;flex:1 1 360px;max-width:520px">
+      <div class="dlg">
+        <div class="dlg-h"><span class="t">Film</span><span class="xbtn" data-i="x"></span></div>
+        <div class="search typed"><span data-i="search"></span><span>circ</span></div>
+        <div class="plist">
+          <div class="prow on"><span class="rd"></span><span class="fi" data-f="video"></span><span class="n">Circle.cmv</span><span class="m">2.6 MB</span></div>
+          <div class="prow"><span class="rd"></span><span class="fi" data-f="video"></span><span class="n">Circle video.cmv</span><span class="m">Hidden from members</span></div>
+        </div>
+        <div class="dlg-f"><span class="btn">Cancel</span><span class="btn dark">Insert</span></div>
+      </div>
+      <div class="dlg">
+        <div class="dlg-h"><span class="t">Film</span><span class="xbtn" data-i="x"></span></div>
+        <div class="search"><span data-i="search"></span><span>Search films</span></div>
+        <p style="color:var(--muted);font-size:13px;margin:12px 0 28px">No ManimGX films uploaded yet</p>
+        <div class="dlg-f"><span class="btn">Cancel</span><span class="btn dark off">Insert</span></div>
+      </div>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">Picker</span>
+      <p><b>Dialog</b>: <code>SimpleDialog</code> with the body of <code>useExistingQuizPicker</code>: <code>SearchInput</code> and <code>PickList</code> radio rows (<code>FileMenuRow</code>, <code>FileIcon</code>, name, meta). Create new (quiz and flashcards only, bordered) sits right under the last row; the footer has Cancel and Insert.</p>
+      <p><b>Create new</b>: a new quiz starts on a blank question as today; a new set's first card is filled with a real sample (Photosynthesis / How plants turn light, water and carbon dioxide into sugar and oxygen), so the embed never looks empty.</p>
+      <p><b>Scope</b>: the note's workspace only; a note in no workspace lists the person's own items in no workspace.</p>
+      <p><b>Insert</b>: a quiz or set is copied into the note (its own embedded copy, as a paste from another note is). A film is a live link to its file.</p>
+      <p><b>No films</b>: the dialog opens on a short blank line, with room for a link to the exporter later.</p>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="app">
+      <div class="app-top"><span data-i="note" class="fi"></span><span class="t">Lecture notes — the cell</span><span class="sp"></span><span class="btn sm">Edit</span></div>
+      <div class="doc">
+        <div class="h2">Rates of change</div>
+        <p>The derivative is the slope of the tangent. Watch the secant close in on it:</p>
+        <div class="fblock"><div class="film" data-film="drawn"></div></div>
+        <p>The same idea gives the rate a reaction runs at any moment.</p>
+        <p class="lbl" style="margin-top:22px">The same film in Edit, selected</p>
+        <div class="fblock sel" style="margin-top:52px">
+          <div class="btb"><span class="tbb"><span data-i="open"></span>Open</span><span class="tbb"><span data-i="swap"></span>Replace</span><span class="tbb"><span data-i="trash"></span></span></div>
+          <div class="film" data-film="drawn" data-t="0:04.6"></div>
+        </div>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">Film in a note</span>
+      <p><b>View</b>: the film fills the text column with no frame, ManimGX's own bar over its foot (play, time, line, scrubber, full screen). A video film shows the browser's <code>&lt;video&gt;</code> controls instead. No caption.</p>
+      <p><b>Edit</b>: the film is a void block. It still plays, with a flat <code>BlockToolbar</code>: Open (the file viewer), Replace (the picker again), Delete. No resize in this pass.</p>
+      <p><b>Load</b>: <code>FilmView</code> mounts only near the screen (<code>useNearScreen</code>, as embeds), so a note with films loads no engine until one is near.</p>
+      <p><b>Gone</b>: a trashed or unreadable film draws the unsupported-block line's look: "This film can't be shown".</p>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="board-canvas">
+      <div class="ccard sel">
+        <div class="ctb"><span class="tbb"><span data-i="open"></span>Open</span><span class="tbb"><span data-i="connect"></span>Connect</span><span class="tbb"><span data-i="lock"></span></span><span class="tbb"><span data-i="more"></span></span></div>
+        <div class="ccard-h"><span class="fi" data-f="video"></span><span class="n">Derivative.cmv</span><span class="k">Film</span></div>
+        <div class="film" data-film="drawn"></div>
+      </div>
+      <div class="panel" style="max-width:300px">
+        <div class="pg" style="padding:0 4px 6px">From the workspace</div>
+        <div style="display:flex;gap:18px;padding:0 6px">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12.5px"><span style="width:26px;height:26px;display:grid;place-items:center;color:var(--ctp-blue)" data-i="quiz"></span>Quiz</div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12.5px"><span style="width:26px;height:26px;display:grid;place-items:center;color:var(--ctp-red)" data-i="cards"></span>Flashcards</div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12.5px"><span style="width:26px;height:26px;display:grid;place-items:center;color:var(--ctp-sapphire)" data-i="film"></span>Film <span class="new" style="margin:0">new</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">Canvas</span>
+      <p><b>Card</b>: the material card's shape (<code>CanvasMaterialCards</code>: header row with icon, name and kind, then the body), the body a film. The toolbar has Open instead of Edit: a film is view-only.</p>
+      <p><b>Adding</b>: the Misc panel's From the workspace gets a Film tile (<code>boardTools.ts</code> <code>renderMaterials</code>), listing the workspace's films as quizzes are listed.</p>
+      <p><b>Off screen</b>: like a quiz card, a far card draws a still (decision 5), not a running player.</p>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="row-boards">
+      <div class="phone" style="height:640px">
+        <div class="app-top"><span data-i="back" style="width:18px;height:18px;display:inline-flex"></span><span data-i="note" class="fi"></span><span class="t">Lecture notes — the cell</span></div>
+        <div class="doc"><div class="h1">Lecture notes — the cell</div><p>The cell is the basic unit of life.</p></div>
+        <div style="position:absolute;inset:0;z-index:4;background:var(--card);display:flex;flex-direction:column;padding:12px 16px 16px">
+          <div style="display:flex;align-items:center;gap:12px;height:40px;margin-bottom:10px"><span class="xbtn" data-i="x" style="margin:0"></span><span class="t" style="font-size:19px;font-weight:600;flex:1">Flashcards</span><span class="btn dark">Insert</span></div>
+          <div class="search"><span data-i="search"></span><span>Search flashcard sets</span></div>
+          <div class="plist">
+            <div class="prow on"><span class="rd"></span><span class="fi" data-f="cards"></span><span class="n">Organelles</span><span class="m">24 cards</span></div>
+            <div class="prow"><span class="rd"></span><span class="fi" data-f="cards"></span><span class="n">Membrane transport terms</span><span class="m">18 cards</span></div>
+          </div>
+          <div style="margin-top:8px"><span class="btn"><span data-i="plus"></span>Create new</span></div>
+        </div>
+      </div>
+      <div class="phone" style="height:640px">
+        <div class="app-top"><span data-i="back" style="width:18px;height:18px;display:inline-flex"></span><span data-i="note" class="fi"></span><span class="t">Lecture notes — the cell</span></div>
+        <div class="doc">
+          <div class="h2" style="margin-top:0">Rates of change</div>
+          <p>The derivative is the slope of the tangent. Watch the secant close in on it:</p>
+          <div class="fblock"><div class="film" data-film="drawn" data-small="1"></div></div>
+          <p>The same idea gives the rate a reaction runs at any moment.</p>
+        </div>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">360 px</span>
+      <p>The dialog fills the screen, as every <code>SimpleDialog</code> does on a phone: Insert in its header, Create new under the last row, Cancel as the header's ×. The film runs the full text width (328 px), and the bar shortens to play, time, scrubber and full screen.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ OPTION B ============ -->
+<section id="b" class="opt">
+  <div class="opt-head">
+    <span class="k">Option B</span>
+    <h2>The canvas's Misc tiles in the note too: New first, then what exists</h2>
+    <p>Study opens a panel with Quiz, Flashcards and Film tabs. Each tab is the canvas Misc panel's grid: a New tile, then the workspace's items. One picker on both surfaces. New becomes two clicks (open, then New). A film shows its first frame until played.</p>
+  </div>
+
+  <div class="board">
+    <div class="app">
+      <div class="app-top"><span data-i="note" class="fi"></span><span class="t">Lecture notes — the cell</span><span class="saved"><span data-i="cloud" style="width:16px;height:16px;display:inline-flex"></span>Saved</span><span class="sp"></span><span class="btn sm">Preview</span></div>
+      <div class="tb">
+        <span class="tbb"><span data-i="comment"></span></span>
+        <span class="tbb on"><span data-i="study"></span>Study</span>
+        <span class="tbb"><span data-i="plus"></span>Paragraph</span>
+        <span class="tbsep"></span>
+        <span class="tbb"><span data-i="undo"></span></span><span class="tbb"><span data-i="redo"></span></span>
+        <span class="tbsep"></span>
+        <span class="tbb"><span data-i="filePlus"></span></span><span class="tbb"><span data-i="upload"></span></span><span class="tbb"><span data-i="download"></span></span>
+      </div>
+      <div class="doc" style="min-height:420px">
+        <div class="h1">Lecture notes — the cell</div>
+        <p>The <b>cell</b> is the basic unit of life.</p>
+        <div class="panel" style="position:absolute;left:22px;top:-6px;z-index:3">
+          <div class="tabs" style="margin:0 -12px 10px;padding:0 12px"><span class="on">Quiz</span><span>Flashcards</span><span>Film</span></div>
+          <div class="search" style="margin-bottom:8px"><span data-i="search"></span><span>Filter</span></div>
+          <div class="tiles">
+            <div class="tile newt"><span data-i="plus"></span>New quiz</div>
+            <div class="tile"><span class="t">Genetics check-in</span><span class="q">A cross between Aa × Aa gives what genotype ratio?</span><span class="c">15 questions</span></div>
+            <div class="tile hl"><span class="t">Cell biology basics</span><span class="q">Which organelle produces most of the ATP during respiration?</span><span class="c">12 questions</span></div>
+            <div class="tile"><span class="t">Past paper 2025 P1 quiz</span><span class="q">Which organelle releases most of a cell's energy?</span><span class="c">26 questions</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">Entry and picker in one</span>
+      <p><b>Panel</b>: a <code>Popover</code> drawing the Misc panel's material grid (<code>boardTools.ts</code> <code>renderMaterials</code>, <code>thumbnail</code>, the New tile), ported to React or shared as one component the board and the note both mount. Tabs are the app's <code>Tabs</code>.</p>
+      <p><b>Filter</b>: shown from <code>FILTER_FROM</code> items, as on the canvas.</p>
+      <p><b>Slash</b>: <code>/quiz</code>, <code>/flashcards</code> and <code>/film</code> open the panel on their tab instead of creating at once.</p>
+      <p><b>Scope</b>: the note's workspace only, as the workspace canvas lists. A note with no workspace lists the person's own items (the account Canvas page's rule, with a workspace chip on each tile).</p>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="row-boards">
+      <div class="panel" style="flex:1 1 320px">
+        <div class="tabs" style="margin:0 -12px 10px;padding:0 12px"><span>Quiz</span><span>Flashcards</span><span class="on">Film</span></div>
+        <div class="tiles">
+          <div class="tile hl"><div class="poster" data-film-poster="1"></div><span class="t">Derivative.cmv</span><span class="c">0:12</span></div>
+          <div class="tile"><div class="poster" data-film-poster="2"></div><span class="t">Circle.cmv</span><span class="c">0:01</span></div>
+          <div class="tile"><div class="poster" data-film-poster="3"></div><span class="t">Krebs cycle.cmv</span><span class="c">Hidden from members</span></div>
+          <div class="tile"><div class="poster" data-film-poster="2"></div><span class="t">Circle video.cmv</span><span class="c">0:01</span></div>
+        </div>
+      </div>
+      <div class="side" style="flex:1 1 260px">
+        <span class="lbl">Film tab</span>
+        <p>No New tile: a film comes from the exporter and is uploaded on the Files page. Each tile shows the film's first frame (decision 5: someone has to make that still).</p>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">Maps to</span>
+      <ul><li>Tiles: the canvas Misc tiles, same sizes.</li><li>Film poster: a new still per film (none exists today).</li></ul>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="app">
+      <div class="app-top"><span data-i="note" class="fi"></span><span class="t">Lecture notes — the cell</span><span class="sp"></span><span class="btn sm">Edit</span></div>
+      <div class="doc">
+        <div class="h2">Rates of change</div>
+        <p>The derivative is the slope of the tangent. Watch the secant close in on it:</p>
+        <div class="fblock"><div class="film" data-film="poster"></div></div>
+        <p>Pressed, the poster becomes the player in place, with ManimGX's bar:</p>
+        <div class="fblock"><div class="film" data-film="drawn" data-t="0:00.3"></div></div>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">Film in a note</span>
+      <p><b>Before play</b>: the first frame with a round play button and the length. Nothing loads but the still: the 1.9 MB engine and the film come on the press.</p>
+      <p><b>After</b>: <code>FilmView</code> in place, its own controls. No caption by default.</p>
+      <p>Lightest for a note with several films; costs a poster per film.</p>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="board-canvas">
+      <div class="free sel">
+        <div class="ctb"><span class="tbb"><span data-i="open"></span>Derivative.cmv</span><span class="tbb"><span data-i="connect"></span>Connect</span><span class="tbb"><span data-i="lock"></span></span><span class="tbb"><span data-i="more"></span></span></div>
+        <div class="film" data-film="poster"></div>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">Canvas</span>
+      <p><b>Card</b>: no header and no border: the film alone, like a placed image (<code>affine:image</code>). Its name is on the selection toolbar, as Open.</p>
+      <p>Differs from the quiz and set cards, which keep their header.</p>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="row-boards">
+      <div class="phone" style="height:640px">
+        <div class="app-top"><span data-i="back" style="width:18px;height:18px;display:inline-flex"></span><span data-i="note" class="fi"></span><span class="t">Lecture notes — the cell</span></div>
+        <div class="doc"><div class="h1">Lecture notes — the cell</div><p>The cell is the basic unit of life.</p></div>
+        <div class="phone-dim"></div>
+        <div class="sheet">
+          <div class="tabs" style="margin:0 -16px 10px;padding:0 16px"><span class="on">Quiz</span><span>Flashcards</span><span>Film</span></div>
+          <div class="tiles">
+            <div class="tile newt"><span data-i="plus"></span>New quiz</div>
+            <div class="tile"><span class="t">Genetics check-in</span><span class="q">A cross between Aa × Aa gives what genotype ratio?</span><span class="c">15 questions</span></div>
+            <div class="tile"><span class="t">Cell biology basics</span><span class="q">Which organelle produces most of the ATP?</span><span class="c">12 questions</span></div>
+            <div class="tile"><span class="t">Near-limit quiz</span><span class="q">Which organelle makes ATP? (part 1)</span><span class="c">22 questions</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="phone" style="height:640px">
+        <div class="app-top"><span data-i="back" style="width:18px;height:18px;display:inline-flex"></span><span data-i="note" class="fi"></span><span class="t">Lecture notes — the cell</span></div>
+        <div class="doc">
+          <div class="h2" style="margin-top:0">Rates of change</div>
+          <p>The derivative is the slope of the tangent. Watch the secant close in on it:</p>
+          <div class="fblock"><div class="film" data-film="poster"></div></div>
+          <p>The same idea gives the rate a reaction runs at any moment.</p>
+        </div>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">360 px</span>
+      <p>The panel opens as a bottom sheet (<code>Drawer</code>), two tiles a row.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ OPTION C ============ -->
+<section id="c" class="opt">
+  <div class="opt-head">
+    <span class="k">Option C</span>
+    <h2>One "From files" command for every kind, in the Files page's rows</h2>
+    <p>New stays where it is. One command, From files, opens a wide dialog listing quizzes, sets and films together in the Files page's columns, with its Filter. A film sits in the note as one row and opens in the film viewer.</p>
+  </div>
+
+  <div class="board">
+    <div class="app">
+      <div class="app-top"><span data-i="note" class="fi"></span><span class="t">Lecture notes — the cell</span><span class="saved"><span data-i="cloud" style="width:16px;height:16px;display:inline-flex"></span>Saved</span><span class="sp"></span><span class="btn sm">Preview</span></div>
+      <div class="tb">
+        <span class="tbb"><span data-i="comment"></span></span>
+        <span class="tbb"><span data-i="study"></span>Study</span>
+        <span class="tbb"><span data-i="plus"></span>Paragraph</span>
+        <span class="tbsep"></span>
+        <span class="tbb"><span data-i="undo"></span></span><span class="tbb"><span data-i="redo"></span></span>
+        <span class="tbsep"></span>
+        <span class="tbb on"><span data-i="filePlus"></span></span><span class="tbb"><span data-i="upload"></span></span><span class="tbb"><span data-i="download"></span></span>
+      </div>
+      <div class="doc" style="min-height:260px">
+        <div class="h1">Lecture notes — the cell</div>
+        <p>The <b>cell</b> is the basic unit of life.</p>
+        <div class="pop" style="left:150px;top:-6px;width:200px">
+          <div class="pi hl"><span data-i="folder"></span>From files<span class="new">new</span></div>
+          <div class="pi"><span data-i="image"></span>Upload image</div>
+          <div class="pi"><span data-i="audio"></span>Upload audio</div>
+          <div class="pi"><span data-i="link"></span>YouTube embed</div>
+        </div>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">Entry points</span>
+      <p><b>Upload media</b> (<code>MediaUploadMenu</code>) gets From files on top. The Study menu is unchanged (New only).</p>
+      <p><b>Slash</b>: one command, <code>/from files</code>, keywords quiz, flashcards, film.</p>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="dlg" style="max-width:820px">
+      <div class="dlg-h"><span class="t">From files</span><span class="xbtn" data-i="x"></span></div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <div class="search" style="flex:1 1 220px"><span data-i="search"></span><span>Search files</span></div>
+        <span class="btn sm"><span data-i="filter"></span>Quizzes, sets, films</span>
+      </div>
+      <div class="tw" style="margin-top:8px">
+        <table style="min-width:560px">
+          <thead><tr><th>Name</th><th>Workspace</th><th>Added</th></tr></thead>
+          <tbody>
+            <tr style="background:var(--card-hover)"><td><span style="display:flex;gap:8px;align-items:center"><span class="fi" data-f="video"></span>Derivative.cmv</span></td><td><span style="display:flex;gap:6px;align-items:center"><span class="wsico"></span>Biology 101</span></td><td>1 hour ago</td></tr>
+            <tr><td><span style="display:flex;gap:8px;align-items:center"><span class="fi" data-f="quiz"></span>Cell biology basics</span></td><td><span style="display:flex;gap:6px;align-items:center"><span class="wsico"></span>Biology 101</span></td><td>2 hours ago</td></tr>
+            <tr><td><span style="display:flex;gap:8px;align-items:center"><span class="fi" data-f="cards"></span>Organelles</span></td><td><span style="display:flex;gap:6px;align-items:center"><span class="wsico"></span>Biology 101</span></td><td>Yesterday</td></tr>
+            <tr><td><span style="display:flex;gap:8px;align-items:center"><span class="fi" data-f="quiz"></span>Integration drill</span></td><td><span style="display:flex;gap:6px;align-items:center"><span class="wsico g"></span>Calculus II</span></td><td>3 days ago</td></tr>
+            <tr><td><span style="display:flex;gap:8px;align-items:center"><span class="fi" data-f="video"></span>Menger sponge.cmv</span></td><td><span style="color:var(--muted)">–</span></td><td>Last week</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="dlg-f"><span class="btn">Cancel</span><span class="btn dark">Insert</span></div>
+    </div>
+    <div class="side">
+      <span class="lbl">Picker</span>
+      <p><b>Dialog</b>: <code>SimpleDialog</code> with the Files page's <code>ItemsList</code> in list view (Name, Workspace, Added; no Size, no row menu), its Filter (<code>FilterMenu</code>) fixed to the three kinds, reading <code>GET /api/items</code>.</p>
+      <p>One click picks a row, Insert puts it in. Every workspace the person is in shows, the note's first by sort.</p>
+      <p>Most to build: the list needs a pick mode and the items endpoint needs quizzes and sets.</p>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="app">
+      <div class="app-top"><span data-i="note" class="fi"></span><span class="t">Lecture notes — the cell</span><span class="sp"></span><span class="btn sm">Edit</span></div>
+      <div class="doc">
+        <div class="h2">Rates of change</div>
+        <p>The derivative is the slope of the tangent. Watch the secant close in on it:</p>
+        <div class="frow"><div class="thumb" data-film-poster="1"></div><span class="n">Derivative.cmv</span><span class="m">0:12</span><span class="btn sm">Play<span data-i="fwd"></span></span></div>
+        <p>The same idea gives the rate a reaction runs at any moment.</p>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">Film in a note</span>
+      <p><b>Row</b>: still, name, length and a bordered Play. Play opens the film viewer (<code>FilmView</code>) in a <code>SimpleDialog</code> at full size, as a canvas card's Edit opens <code>CanvasMaterialDialog</code>.</p>
+      <p>Cheapest to draw, keeps the note short; the film is never watched beside its text.</p>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="board-canvas">
+      <div class="linkcard"><div class="thumb" data-film-poster="1" style="aspect-ratio:16/9;background:#000"></div><div class="body"><b>Derivative.cmv</b><span>Film · 0:12</span></div></div>
+    </div>
+    <div class="side">
+      <span class="lbl">Canvas</span>
+      <p><b>Card</b>: the link card's shape (<code>affine:embed-capy-link</code>: a YouTube link shows its poster and name). Double-click opens the film dialog.</p>
+    </div>
+  </div>
+
+  <div class="board">
+    <div class="row-boards">
+      <div class="phone" style="height:600px">
+        <div class="app-top"><span data-i="back" style="width:18px;height:18px;display:inline-flex"></span><span data-i="note" class="fi"></span><span class="t">Lecture notes — the cell</span></div>
+        <div class="doc"><div class="h1">Lecture notes — the cell</div></div>
+        <div class="phone-dim"></div>
+        <div class="dlg-wrap">
+          <div class="dlg">
+            <div class="dlg-h"><span class="t">From files</span><span class="xbtn" data-i="x"></span></div>
+            <div style="display:flex;gap:6px"><div class="search" style="flex:1"><span data-i="search"></span><span>Search files</span></div><span class="btn sm" style="width:32px;padding:0;justify-content:center"><span data-i="filter"></span></span></div>
+            <div class="plist">
+              <div class="prow on" style="min-height:48px"><span class="fi" data-f="video"></span><span style="flex:1;min-width:0"><span class="n" style="display:block">Derivative.cmv</span><span class="m" style="display:flex;gap:5px;align-items:center"><span class="wsico"></span>Biology 101 · 1 hour ago</span></span></div>
+              <div class="prow" style="min-height:48px"><span class="fi" data-f="quiz"></span><span style="flex:1;min-width:0"><span class="n" style="display:block">Cell biology basics</span><span class="m" style="display:flex;gap:5px;align-items:center"><span class="wsico"></span>Biology 101 · 2 hours ago</span></span></div>
+              <div class="prow" style="min-height:48px"><span class="fi" data-f="quiz"></span><span style="flex:1;min-width:0"><span class="n" style="display:block">Integration drill</span><span class="m" style="display:flex;gap:5px;align-items:center"><span class="wsico g"></span>Calculus II · 3 days ago</span></span></div>
+            </div>
+            <div class="dlg-f"><span class="btn">Cancel</span><span class="btn dark">Insert</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="phone" style="height:600px">
+        <div class="app-top"><span data-i="back" style="width:18px;height:18px;display:inline-flex"></span><span data-i="note" class="fi"></span><span class="t">Lecture notes — the cell</span></div>
+        <div class="doc">
+          <div class="h2" style="margin-top:0">Rates of change</div>
+          <p>The derivative is the slope of the tangent. Watch the secant close in on it:</p>
+          <div class="frow"><div class="thumb" data-film-poster="1"></div><span class="n">Derivative.cmv</span><span class="btn sm">Play<span data-i="fwd"></span></span></div>
+          <p>The same idea gives the rate a reaction runs at any moment.</p>
+        </div>
+      </div>
+    </div>
+    <div class="side">
+      <span class="lbl">360 px</span>
+      <p>The Files page's phone rows: name over workspace and time. The film row drops its length.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DECIDE ============ -->
+<section id="decide" class="opt">
+  <div class="opt-head">
+    <span class="k">Pick and decisions</span>
+    <h2>Side by side</h2>
+  </div>
+  <div class="tw">
+    <table>
+      <thead><tr><th></th><th>A · menu rows + Existing dialog</th><th>B · Misc tiles everywhere</th><th>C · one From files list</th></tr></thead>
+      <tbody>
+        <tr><td><b>New quiz</b></td><td>One click, as today</td><td>Two clicks</td><td>One click, as today</td></tr>
+        <tr><td><b>Picker reused</b></td><td><code>useExistingQuizPicker</code> body, as is</td><td>Canvas Misc grid (Lit), port or share</td><td><code>ItemsList</code>, needs a pick mode</td></tr>
+        <tr><td><b>Film in a note</b></td><td>Player in place, loads near screen</td><td>Still, player on press</td><td>Row, plays in a dialog</td></tr>
+        <tr><td><b>Canvas card</b></td><td>Material card shape</td><td>Bare film, like an image</td><td>Link card shape</td></tr>
+        <tr><td><b>Needs a still per film</b></td><td>Only for far canvas cards</td><td>Yes, everywhere</td><td>Yes, everywhere</td></tr>
+        <tr><td><b>Build size</b></td><td>Smallest</td><td>Medium</td><td>Largest</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p><span class="pick">Recommended: A</span> &nbsp;It adds rows to menus that exist, reuses the one Existing picker the app already ships, keeps New at one click, and draws the film like an image in the note's flow. Option B's play-on-press could be added to A later if notes with many films prove heavy.</p>
+
+  <h2>Decisions for Epo</h2>
+  <ol class="q">
+    <li><b>An existing quiz or set: copy or link?</b> Today a note's quiz is a child row of the note (<code>parent_material_id</code>); pasting another note's quiz makes a copy. A copy (as New graded quiz's Existing does) keeps that model: same rooms, trash, share and quota rules, no new access check, but later edits to the original don't reach the note. A live link means a new kind of reference whose readers need the original's access, and whose edits in the note would change the original. Moodle offers both (copy or "shortcut"); Notion's linked database is a live link; Google's chart can stay linked or be a copy. Proposed: copy.</li>
+    <li><b>A film from another workspace, or private.</b> A film is a file, and a link to it needs every reader of the note to be able to read it. Options: list only the note's workspace's films, plus your own films in no workspace for a note in no workspace (proposed); or copy the file into this workspace on insert (counts quota again); or show readers who can't open it a "You can't open this film" line (Notion's synced blocks do this).</li>
+    <li><b>A film hidden from members.</b> Insert it anyway (members see the can't-open line) or leave hidden films out of the list.</li>
+    <li><b>The film is trashed or deleted.</b> Proposed: the block stays and says "This film can't be shown" (the unsupported-block line's look); Restore brings it back. Nothing deletes the block for the user.</li>
+    <li><b>A still per film.</b> A canvas card off screen (and options B and C everywhere) needs a first frame. Nothing makes one today: films skip ingest, so no <code>thumbs/</code> key. Either the exporter writes a poster into the CMV header, or the browser renders frame 0 at upload and sends it with the file.</li>
+    <li><b>Shared notes.</b> A public note's films must play for anyone with the link: the share read hands out the film's bytes like it hands out the embedded quizzes (<code>anonymousEmbeds</code>). Allowed for every film, or only films whose own file is shared?</li>
+    <li><b>Does the agent write films?</b> The catalog's <code>edit.agent</code> for film: none (proposed), or a <code>film</code> fence naming a file id.</li>
+  </ol>
+</section>
+
+</main>
+
+<script>
+// Icons: hugeicons-shaped strokes as the app's Icon draws them (1.5 stroke, 24 box).
+const S = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const I = {
+  study: S('<path d="M12 6.5c-2-2-5.5-2.5-8.5-1.5v13c3-1 6.5-.5 8.5 1.5 2-2 5.5-2.5 8.5-1.5V5c-3-1-6.5-.5-8.5 1.5Z"/><path d="M12 6.5V19.5"/>'),
+  plus: S('<path d="M12 4v16M4 12h16"/>'),
+  comment: S('<path d="M8 13.5h8M8 8.5h4"/><path d="M6 18v3l4-3h7a3 3 0 0 0 3-3V7a3 3 0 0 0-3-3H7a3 3 0 0 0-3 3v8a3 3 0 0 0 2 3Z"/>'),
+  undo: S('<path d="M4 8h10a6 6 0 0 1 0 12H8"/><path d="M8 4 4 8l4 4"/>'),
+  redo: S('<path d="M20 8H10a6 6 0 0 0 0 12h6"/><path d="m16 4 4 4-4 4"/>'),
+  filePlus: S('<path d="M14 2.5H8A3.5 3.5 0 0 0 4.5 6v12A3.5 3.5 0 0 0 8 21.5h8a3.5 3.5 0 0 0 3.5-3.5V8L14 2.5Z"/><path d="M12 10v7M8.5 13.5h7"/>'),
+  upload: S('<path d="M12 15V4M7.5 8.5 12 4l4.5 4.5"/><path d="M4 15v2.5A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5V15"/>'),
+  download: S('<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/><path d="M4 15v2.5A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5V15"/>'),
+  quiz: S('<path d="M13.5 2.5 5 13.5h6.5l-1 8 8.5-11h-6.5l1-8Z"/>'),
+  quizOpen: S('<path d="M11 3 4.5 12H10l-.8 6.5"/><circle cx="16.5" cy="16.5" r="3.5"/><path d="m19 19 2 2"/>'),
+  cards: S('<rect x="3" y="7" width="14" height="13" rx="2"/><path d="M7 4h11a3 3 0 0 1 3 3v9"/>'),
+  cardsOpen: S('<rect x="3" y="7" width="11" height="13" rx="2"/><path d="M7 4h9"/><circle cx="17" cy="15" r="3.5"/><path d="m19.5 17.5 2 2"/>'),
+  image: S('<rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="15.5" cy="9" r="1.5"/><path d="m3 16 5-5 9 9"/>'),
+  audio: S('<circle cx="7" cy="17" r="3"/><path d="M10 17V5l10-2v12"/><circle cx="17" cy="15" r="3"/>'),
+  link: S('<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/>'),
+  film: S('<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 8.5h18M8 4l-2 4.5M13 4l-2 4.5M18 4l-2 4.5"/><path d="m10 12 4.5 2.5L10 17v-5Z"/>'),
+  folder: S('<path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h3.6l2 2.5h7.4A2.5 2.5 0 0 1 21 10v7.5a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 17.5v-10Z"/>'),
+  search: S('<circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/>'),
+  x: S('<path d="M18 6 6 18M6 6l12 12"/>'),
+  open: S('<path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/>'),
+  swap: S('<path d="M4 8h14l-3-3M20 16H6l3 3"/>'),
+  trash: S('<path d="M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5l1 13h9l1-13"/>'),
+  connect: S('<path d="M5 19c0-8 6-6 7-10s5-4 7-4"/><circle cx="5" cy="19" r="1.5"/><path d="M15.5 4.5 19 5l-.5 3.5"/>'),
+  lock: S('<rect x="5" y="10.5" width="14" height="10" rx="2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>'),
+  more: S('<circle cx="12" cy="5.5" r=".8"/><circle cx="12" cy="12" r=".8"/><circle cx="12" cy="18.5" r=".8"/>'),
+  cloud: S('<path d="M7 18.5h10a4 4 0 0 0 .5-8 5.5 5.5 0 0 0-10.7-1A4.5 4.5 0 0 0 7 18.5Z"/>'),
+  back: S('<path d="M20 12H5M9 7.5 4.5 12 9 16.5"/><path d="M4.5 7.5v9" opacity="0"/>'),
+  fwd: S('<path d="M4 12h15M15 7.5l4.5 4.5-4.5 4.5"/>'),
+  filter: S('<path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/>'),
+  play: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5-12-7.5Z" fill="currentColor"/></svg>',
+  full: S('<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>'),
+};
+// Catppuccin file glyphs from src/assets/catppuccin.svg (FileIcon).
+const F = {
+  video: '<svg class="fi" viewBox="0 0 16 16" stroke-width="1.3"><g fill="none" stroke="var(--ctp-sapphire)" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.5h10c.83 0 1.5.67 1.5 1.5v9c0 .83-.67 1.5-1.5 1.5H3A1.5 1.5 0 011.5 13V4c0-.83.67-1.5 1.5-1.5m-1.5 3h13"/><path d="m3.5 5.5 2-3m1.5 3 2-3m1.5 3 2-3M6.5 8v4l4-2z"/></g></svg>',
+  quiz: '<svg class="fi" viewBox="0 0 16 16" stroke-width="1.3"><path d="m3.5 9.5 7.04-9-2.04 6h4l-7.04 9 2.04-6z" fill="none" stroke="var(--ctp-blue)" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  cards: '<svg class="fi" viewBox="0 0 16 16" stroke-width="1.3"><path d="M2 3.5C1.17 3.5.5 4.24.5 5.06v5.88c0 .81.67 1.56 1.5 1.56h12c.83 0 1.5-.74 1.5-1.56V5.06c0-.81-.67-1.56-1.5-1.56Zm.4 3H4v3H2.4c-.26-.45-.4-.98-.4-1.5s.14-1.05.4-1.5M6 6.5h4v3H6Zm6 0h1.6c.26.45.4.98.4 1.5s-.14 1.05-.4 1.5H12Z" fill="none" stroke="var(--ctp-mauve)" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  note: '<svg class="fi" viewBox="0 0 16 16" stroke-width="1.3"><g fill="none" stroke="var(--ctp-peach)"><rect x="1.5" y="1.5" width="5" height="5" rx="1"/><rect x="9.5" y="1.5" width="5" height="5" rx="1"/><rect x="1.5" y="9.5" width="5" height="5" rx="1"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/></g></svg>',
+};
+document.querySelectorAll('[data-i]').forEach((el) => {
+  if (el.dataset.i === 'note') { el.outerHTML = F.note; return; }
+  el.innerHTML = I[el.dataset.i] || '';
+});
+document.querySelectorAll('[data-f]').forEach((el) => { el.outerHTML = F[el.dataset.f]; });
+
+// A drawn ManimGX frame: axes, a curve, a secant closing on its tangent (black, as ManimGX draws).
+function scene(v = 1) {
+  if (v === 2) return '<svg class="scene" viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet"><circle cx="160" cy="90" r="46" fill="none" stroke="#58c4dd" stroke-width="3"/></svg>';
+  if (v === 3) return '<svg class="scene" viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet"><g fill="none" stroke-width="2.5"><circle cx="160" cy="90" r="52" stroke="#83c167"/></g><g fill="#fff" font-family="serif" font-size="11" text-anchor="middle"><text x="160" y="34">Acetyl-CoA</text><text x="222" y="94">Citrate</text><text x="160" y="154">Succinate</text><text x="98" y="94">Malate</text></g><g fill="#fc6255"><circle cx="160" cy="38" r="3"/><circle cx="212" cy="90" r="3"/><circle cx="160" cy="142" r="3"/><circle cx="108" cy="90" r="3"/></g></svg>';
+  return '<svg class="scene" viewBox="0 0 320 180" preserveAspectRatio="xMidYMid meet">' +
+    '<g stroke="#bbbbbb" stroke-width="1.2"><path d="M40 150H290M60 160V20"/></g>' +
+    '<path d="M60 140 C 120 136, 170 110, 200 80 S 260 26, 285 22" fill="none" stroke="#58c4dd" stroke-width="3"/>' +
+    '<path d="M110 156 L 280 40" stroke="#ffff00" stroke-width="2.2"/>' +
+    '<path d="M130 150 L 265 18" stroke="#fc6255" stroke-width="1.6" stroke-dasharray="5 4" opacity=".8"/>' +
+    '<circle cx="186" cy="94" r="4" fill="#fff"/><circle cx="232" cy="52" r="4" fill="#fc6255"/>' +
+    '<g fill="#fff" font-family="serif" font-style="italic" font-size="14"><text x="240" y="70">h</text><text x="292" y="30">f(x)</text></g>' +
+    '<text x="70" y="38" fill="#fff" font-family="serif" font-size="11">slope = (f(x+h) − f(x)) / h</text></svg>';
+}
+document.querySelectorAll('[data-film]').forEach((el) => {
+  const t = el.dataset.t || '0:04.6';
+  if (el.dataset.film === 'poster') {
+    el.innerHTML = scene(1) + `<span class="bigplay">${I.play}</span><span class="len">0:12</span>`;
+    return;
+  }
+  el.innerHTML = scene(1) + `<div class="bar"><span>${I.play}</span><span class="tm">${t} / 0:12.0</span>${el.dataset.small ? '' : '<span class="tm">· Line 6</span>'}<span class="track"><i></i></span><span>${I.full}</span></div>`;
+});
+document.querySelectorAll('[data-film-poster]').forEach((el) => {
+  el.innerHTML = scene(Number(el.dataset.filmPoster)).replace('class="scene"', 'style="width:100%;height:100%;display:block"');
+});
+</script>
+</body>
+</html>

@@ -57,6 +57,7 @@ Mandatory to read when the task touches that domain. Prefer the listed file over
 | How quota bytes are accounted (`user_storage` / deltas), plan limits, material size/shape bounds, Yjs history growth, reservation/clone gating math                    | `[backend-storage-quota.md](openwiki/backend-storage-quota.md)`                               |
 | Ingest → index → hybrid search → chat agent / generate workflows, citations, clone/teardown                                                                           | `[agentic-retrieval.md](openwiki/agentic-retrieval.md)`                                       |
 | Chat decks: ppt-master in the retrieval image, create_deck/write_slide, the stored PPTX (`/api/internal/files`), figures and credits, main-format preference              | `[decks.md](openwiki/decks.md)`                                                               |
+| Films: user-exported ManimGX scenes (`.cmv`), the exporter in `exporters/manimgx`, the upload check (`cmvfile`), drawn films on ManimGX's vendored player, video films as MP4 | `[films.md](openwiki/films.md)` |
 | List-card thumbnails and previews: `thumbs/` keys and their blob lifecycle, hour-stable presigned links and their access rule, the ingest page-1 render, material `preview` JSON | `[thumbnails.md](openwiki/thumbnails.md)`                                                     |
 | The embed catalog: every element type a document may hold, embed kinds (chart, plot, graph, HTML, Mermaid, embedded quizzes and sets) and their names per layer, storage classes, the generated JSON/TS/Rust files | `[embeds.md](openwiki/embeds.md)`                                                             |
 | Plate/Yjs editor, collab tokens/modes (`view`/`edit`; no commenter role), checkpoints, projections, comment anchors, AI previews                                               | `[frontend/plate-editor.md](openwiki/frontend/plate-editor.md)`                               |
@@ -104,6 +105,7 @@ changing any of them.
 | `bench/parity`  | Office feature parity per format against Google's apps: tested view/edit/save/collab statuses, ranked remaining work, living `PARITY-<FMT>.md` reports (`python3 bench/parity/scripts/parity.py`) | Yes, `--check` |
 | `bench/parsers` | Ingest-host parser accuracy, OCR modes, concurrency, worker memory and OOM        | No, VM     |
 | `bench/grading` | Small local models against the production quiz-grading rubric, native and browser | No         |
+| `bench/manim`   | ManimGX scenes as CMV films (drawn or H.264 video, smaller kept): size, fidelity, decode, playback cost | No         |
 | `bench/rag`     | Live retrieval diagnostic plus six frozen retrieval/agent experiments             | No, lab    |
 
 Every family separates `scripts/` (runnable) from `fixtures/` (input data) and

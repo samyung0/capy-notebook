@@ -28,6 +28,7 @@ import {
   type CardMaterialKind,
   materialHostOf,
   releaseMaterialHost,
+  type StudyCardKind,
 } from '@/features/canvas/materialCardHosts';
 import { youtubeWatchUrl } from '@/features/materials/youtubeUrl';
 import { m } from '@/i18n';
@@ -58,6 +59,7 @@ const onSurface = {
 export {
   type CardMaterialKind,
   MATERIAL_CARD_SIZE,
+  type StudyCardKind,
 } from '@/features/canvas/materialCardHosts';
 
 export const LINK_FLAVOUR = 'affine:embed-capy-link';
@@ -113,8 +115,9 @@ export type WorkspaceLinks = {
         workspace?: { iconId?: string; name: string };
       }[]
     | undefined;
-  open: (materialId: string) => void;
-  create: (kind: CardMaterialKind) => Promise<{ id: string; title: string }>;
+  /** A quiz or set in its editor, a film in the file viewer. */
+  open: (materialId: string, kind: CardMaterialKind) => void;
+  create: (kind: StudyCardKind) => Promise<{ id: string; title: string }>;
 };
 const lent = new WeakMap<BlockStdScope, WorkspaceLinks>();
 /** The material cards on screen, redrawn when the workspace's list changes. */
@@ -340,11 +343,17 @@ class MaterialBlockComponent extends GfxBlockComponent<MaterialBlockModel> {
     // An unloaded list isn't a missing material: the runner host, its body loading.
     const runs = listed !== null;
     const what =
-      kind === 'quiz' ? m.drawing_board_quiz() : m.drawing_board_flashcards();
-    const icon =
       kind === 'quiz'
-        ? html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1e96eb" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" /></svg>`
-        : html`<svg width="18" height="18" viewBox="0 0 32 30" aria-hidden="true"><rect x="9" y="3" width="20" height="14" rx="2" fill="none" stroke="currentColor" transform="rotate(8 19 10)" /><rect x="4" y="9" width="20" height="14" rx="2" fill="#e8798f" /></svg>`;
+        ? m.drawing_board_quiz()
+        : kind === 'film'
+          ? m.drawing_board_film()
+          : m.drawing_board_flashcards();
+    const icon =
+      kind === 'film'
+        ? html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#209fb5" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M10 9.5v5l4.5-2.5Z" fill="#209fb5" /></svg>`
+        : kind === 'quiz'
+          ? html`<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1e96eb" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M13 3 5 13.5h6L10 21l8-10.5h-6L13 3Z" /></svg>`
+          : html`<svg width="18" height="18" viewBox="0 0 32 30" aria-hidden="true"><rect x="9" y="3" width="20" height="14" rx="2" fill="none" stroke="currentColor" transform="rotate(8 19 10)" /><rect x="4" y="9" width="20" height="14" rx="2" fill="#e8798f" /></svg>`;
     // The header moves and selects the card, and opens the material for editing on a
     // double click; the body below is the runner (Epo 2026-11-09).
     return html`<div
@@ -354,7 +363,8 @@ class MaterialBlockComponent extends GfxBlockComponent<MaterialBlockModel> {
       <div
         class="row head"
         @dblclick=${() => {
-          if (listed) workspaceOf(this.std)?.open(this.model.props.materialId);
+          if (listed)
+            workspaceOf(this.std)?.open(this.model.props.materialId, kind);
         }}
       >
         ${icon}

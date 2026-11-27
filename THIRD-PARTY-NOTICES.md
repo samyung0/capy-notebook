@@ -135,3 +135,16 @@ the Office editors draw, copied from `@tabler/icons` 3.50.0
 (https://github.com/tabler/tabler-icons).
 
 License: MIT, Copyright (c) 2020-2024 Paweł Kuna.
+
+---
+
+## ManimGX web player (vendored build)
+
+`public/vendor/manimgx/0.1.1/` holds ManimGX's player for the page as its
+0.1.1 Pyodide wheel (`manimgx-0.1.1-cp313-abi3-pyemscripten_2026_0_wasm32.whl`)
+builds it: `_engine.web()` (`engine.js`, `engine.wasm`) and
+`_engine.face_fonts()` (`font0.ttf`..`font23.ttf`), unmodified
+(https://github.com/academa-labs/manimgx). License: MIT, `LICENSE` there; the
+crates compiled into it are listed with their licenses in
+`LICENSE-THIRD-PARTY` (the Pyodide build carries no x264); the Noto and Source
+Han fonts are under the SIL Open Font License 1.1, `LICENSE-FONTS-OFL-1.1.txt`.

@@ -9,8 +9,13 @@ import { cn } from '@/lib/cn';
 export function CannotShow({
   className,
   inToolbar = false,
+  label = m.material_unsupported_block(),
   ...props
-}: ComponentProps<'span'> & { inToolbar?: boolean }) {
+}: ComponentProps<'span'> & {
+  inToolbar?: boolean;
+  /** What cannot be shown, when it is not a block ("This film can't be shown"). */
+  label?: string;
+}) {
   return (
     <span
       className={cn(
@@ -21,7 +26,7 @@ export function CannotShow({
       contentEditable={false}
       {...props}
     >
-      {m.material_unsupported_block()}
+      {label}
     </span>
   );
 }

@@ -757,6 +757,7 @@ export type MaterialPage = Omit<GenMaterialPage, 'items'> & {
  * can open, as the workspace canvas reads a workspace's quizzes and sets. */
 export interface MaterialListParams {
   kinds?: MaterialKind[];
+  locations?: MaterialListLocation[];
   scope?: 'owned' | 'member';
   workspaceIds?: string[];
 }

@@ -2698,6 +2698,10 @@ components:
             type: object
           nullable: true
           type: array
+        sourceId:
+          description: A quiz or flashcard set of the caller's to copy into the note
+          maxLength: 64
+          type: string
       required:
         - kind
       type: object
@@ -3749,6 +3753,7 @@ components:
         - slides
         - audio
         - json
+        - film
         - unknown
       type: string
     FileLinks:
@@ -6522,6 +6527,12 @@ components:
         filesLimit:
           format: int64
           type: integer
+        hasFlashcards:
+          description: The workspace holds a flashcard set the caller may open (single read only)
+          type: boolean
+        hasQuiz:
+          description: The workspace holds a quiz the caller may open (single read only)
+          type: boolean
         iconId:
           type: string
         id:
@@ -9758,6 +9769,12 @@ components:
         filesLimit:
           format: int64
           type: integer
+        hasFlashcards:
+          description: The workspace holds a flashcard set the caller may open (single read only)
+          type: boolean
+        hasQuiz:
+          description: The workspace holds a quiz the caller may open (single read only)
+          type: boolean
         iconId:
           type: string
         id:

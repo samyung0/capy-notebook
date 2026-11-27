@@ -89,6 +89,10 @@ func (s *Store) EnsureEmbeddedMaterial(ctx context.Context, actorID, noteID stri
 type EmbeddedAdoption struct {
 	SourceID string
 	Copy     bool
+	// Standalone also takes a quiz or set of its own (no note), the actor
+	// may open: a note's Quiz or Flashcards picker inserts a copy of one
+	// (Epo 2026-11-27). A paste never does.
+	Standalone bool
 }
 
 // AdoptEmbeddedMaterials makes each quiz or flashcard block pasted into noteID
@@ -166,8 +170,19 @@ func (s *Store) AdoptEmbeddedMaterials(
 	loaded := false
 	for i, block := range blocks {
 		src, ok := sources[block.SourceID]
-		if !ok || src.ParentMaterialID == "" || (src.Kind != "quiz" && src.Kind != "flashcards") {
+		if !ok || (src.Kind != "quiz" && src.Kind != "flashcards") {
 			continue
+		}
+		if src.ParentMaterialID == "" {
+			// A graded quiz's own quiz is never copied out.
+			if !block.Standalone || src.AssignmentID != "" {
+				continue
+			}
+			if _, err := materialEffectiveAccess(ctx, tx, actorID, src.ID); errors.Is(err, ErrNotFound) {
+				continue
+			} else if err != nil {
+				return nil, false, err
+			}
 		}
 		if src.ParentMaterialID == noteID && !block.Copy {
 			// Its block came back (undo, cut and paste): back out of the trash
@@ -179,7 +194,7 @@ func (s *Store) AdoptEmbeddedMaterials(
 			continue
 		}
 		// Through the parent: material access itself refuses a trashed row.
-		if src.ParentMaterialID != noteID {
+		if src.ParentMaterialID != "" && src.ParentMaterialID != noteID {
 			if _, err := materialEffectiveAccess(ctx, tx, actorID, src.ParentMaterialID); errors.Is(err, ErrNotFound) {
 				continue
 			} else if err != nil {

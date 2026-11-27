@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useOwnedMaterials } from '@/api/hooks';
+import { useOwnedFiles, useOwnedMaterials } from '@/api/hooks';
 import type { MaterialListItem } from '@/api/types';
 import type { DrawingBoardOptions } from '@/features/blocksuite/drawingBoard';
 import type { CanvasBoard } from '@/features/canvas/useCanvasBoard';
@@ -39,6 +39,37 @@ export function useCanvasMaterials(workspaceId?: string) {
     [pages, hasNextPage]
   );
   return { materials, readAt: dataUpdatedAt };
+}
+
+/** The workspace's films for the film cards and the Misc panel's Film
+ * (Epo 2026-11-27), every page, as the board's links carry them: `undefined`
+ * until the last page is in. */
+export function useCanvasFilms(workspaceId: string) {
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useOwnedFiles({
+      kinds: ['film'],
+      scope: 'member',
+      workspaceIds: [workspaceId],
+    });
+  useEffect(() => {
+    if (hasNextPage && !isFetchingNextPage) void fetchNextPage();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+  return useMemo(
+    () =>
+      data && !hasNextPage
+        ? data.pages
+            .flatMap((page) => page.items)
+            .filter((file) => !file.lostAccess)
+            .map(
+              ({ id, name }): LinkMaterial => ({
+                id,
+                kind: 'film',
+                title: name,
+              })
+            )
+        : undefined,
+    [data, hasNextPage]
+  );
 }
 
 type LinkMaterial = NonNullable<
@@ -132,7 +163,7 @@ export function useCanvasLinks({
         return item;
       },
       materials: () => latest.current.materials,
-      open: (id) => latest.current.open(id),
+      open: (id, kind) => latest.current.open(id, kind),
     }),
     [account, workspaceId]
   );

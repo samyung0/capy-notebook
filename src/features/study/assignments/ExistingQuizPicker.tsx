@@ -52,6 +52,7 @@ export function paperFileRows(
 /** One pick from a radio list in the Convert file menu's rows, with its
  * loading, failed and empty states and a search over the names. */
 export function PickList({
+  empty = m.common_nothing_yet(),
   failed,
   label,
   onPick,
@@ -59,6 +60,8 @@ export function PickList({
   query,
   rows,
 }: {
+  /** What an empty list says (not a search that matches nothing). */
+  empty?: string;
   failed?: { error: unknown; retry: () => void };
   label: string;
   onPick: (id: string) => void;
@@ -82,7 +85,7 @@ export function PickList({
   if (shown.length === 0)
     return (
       <p className="t-meta mt-3 text-fg-muted">
-        {query ? m.common_no_matches() : m.common_nothing_yet()}
+        {query ? m.common_no_matches() : empty}
       </p>
     );
   return (

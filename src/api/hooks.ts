@@ -2598,6 +2598,7 @@ export const useOwnedMaterials = (params: MaterialListParams = {}) =>
         `/materials${listSearch(
           {
             kind: params.kinds,
+            location: params.locations,
             scope: params.scope,
             workspaceId: params.workspaceIds,
           },
@@ -2611,6 +2612,12 @@ export const useOwnedMaterials = (params: MaterialListParams = {}) =>
 function invalidateOwnedMaterials(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: qk.itemsRoot });
   qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
+  // The workspace reads say whether a quiz or set is held (hasQuiz,
+  // hasFlashcards): their own key alone, not what sits under it.
+  qc.invalidateQueries({
+    predicate: ({ queryKey }) =>
+      queryKey.length === 2 && queryKey[0] === qk.workspace('')[0],
+  });
 }
 
 /** Create a note outside any workspace. */

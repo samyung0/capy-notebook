@@ -1,0 +1,78 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>CMV video film</title>
+<!--
+  Plays a video-form CMV film (see ../cmv.py) on a canvas at 1280×720: each one-second chunk's
+  H.264 access units go to WebCodecs' VideoDecoder a second ahead of the clock, and each frame
+  is painted when its time comes. Served from bench/manim:
+  /scripts/player/film.html?take=<name> reads /.results/cmv/<name>.cmv.
+  window.result holds frames painted and missed when the film has played once.
+-->
+<style>
+  body { margin: 0; background: #111; color: #ddd; font: 13px monospace; }
+  canvas { width: 640px; height: 360px; display: block; }
+  pre { padding: 8px; white-space: pre-wrap; }
+</style>
+<canvas width="1280" height="720"></canvas>
+<pre id="out">loading…</pre>
+<script type="module">
+  import { Reader } from "./cmv.mjs";
+
+  const out = document.getElementById("out");
+  const name = new URLSearchParams(location.search).get("take");
+  const bytes = new Uint8Array(await (await fetch(`/.results/cmv/${name}.cmv`)).arrayBuffer());
+  const reader = new Reader(bytes, null); // a video film has no draw part: nothing to decompress
+  const { fps, frames: total, form } = reader.meta;
+  if (form !== "video") throw new Error(`${name} is a ${form} film`);
+
+  // the codec string from the first keyframe's sequence parameter set (profile, flags, level)
+  const key = reader.segments(0)[0].colour[0];
+  let sps = 0;
+  for (let i = 0; i + 4 < key.length; i++) if (key[i] === 0 && key[i + 1] === 0 && key[i + 2] === 1 && (key[i + 3] & 31) === 7) { sps = i + 4; break; }
+  const hex = (b) => b.toString(16).padStart(2, "0");
+  const codec = `avc1.${hex(key[sps])}${hex(key[sps + 1])}${hex(key[sps + 2])}`;
+
+  const ready = new Map(); // frame number → VideoFrame
+  const decoder = new VideoDecoder({
+    output: (frame) => ready.set(Math.round((frame.timestamp * fps) / 1e6), frame),
+    error: (e) => (out.textContent = `decoder: ${e.message}`),
+  });
+  decoder.configure({ codec, hardwareAcceleration: "prefer-hardware" }); // no description: Annex-B
+  let next = 0; // the next chunk to hand the decoder
+  function feed(shown) {
+    while (next < reader.chunks.length && reader.chunks[next].first <= shown + fps) {
+      for (const { first, colour } of reader.segments(next)) {
+        colour.forEach((data, i) =>
+          decoder.decode(new EncodedVideoChunk({ type: i === 0 ? "key" : "delta", timestamp: ((first + i) * 1e6) / fps, data })),
+        );
+      }
+      next++;
+    }
+  }
+
+  const paint = document.querySelector("canvas").getContext("2d");
+  let painted = 0, missed = 0, last = -1;
+  await new Promise((done) => {
+    const started = performance.now();
+    function tick(now) {
+      const f = Math.floor(((now - started) / 1000) * fps);
+      if (f >= total) return done();
+      feed(f);
+      if (f !== last) {
+        last = f;
+        const frame = ready.get(f);
+        if (frame) { paint.drawImage(frame, 0, 0); painted++; } else missed++;
+        for (const [k, v] of ready) if (k <= f) { v.close(); ready.delete(k); }
+      }
+      out.textContent = `${name}: ${(f / fps).toFixed(1)} s`;
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  });
+  window.result = {
+    take: name, form, codec, MB: +(bytes.length / 1e6).toFixed(2), seconds: +(total / fps).toFixed(1),
+    frames_painted: painted, frames_missed: missed,
+    js_heap_MB: performance.memory ? +(performance.memory.usedJSHeapSize / 1e6).toFixed(0) : null,
+  };
+  out.textContent = JSON.stringify(window.result, null, 1);
+</script>

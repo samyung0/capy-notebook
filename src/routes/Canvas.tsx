@@ -98,7 +98,8 @@ function OwnCanvas({
       const known = links.materials()?.find(({ id }) => id === materialId);
       // A card whose quiz or set is not listed (gone, or the list is still
       // loading) says so itself and opens nothing.
-      if (!known) return;
+      // No film is listed here: the account's page has no films.
+      if (!known || known.kind === 'film') return;
       setEditing({ id: known.id, kind: known.kind, title: known.title });
     },
     readAt,

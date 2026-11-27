@@ -96,6 +96,7 @@ export type FileIconName = (typeof FILE_ICON_NAMES)[number];
 const KIND_ICON: Record<FileKind, FileIconName> = {
   audio: 'audio',
   doc: 'ms-word',
+  film: 'video',
   image: 'image',
   json: 'json',
   md: 'markdown',
