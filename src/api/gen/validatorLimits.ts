@@ -199,6 +199,7 @@ export const createMaterialDiscussionBodyAnchorQuoteMax = 1000;
 export const createMaterialDiscussionBodyAnchorStartMax = 4096;
 export const createMaterialDiscussionBodyBlockIdMax = 128;
 export const createMaterialDiscussionBodyTextMax = 3000;
+export const createEmbeddedMaterialBodySourceIdMax = 64;
 export const updateMaterialBodyTitleMax = 120;
 export const getMeResponseCustomizationPageFrameDotsItemXMin = 0;
 export const getMeResponseCustomizationPageFrameDotsItemXMax = 1;
