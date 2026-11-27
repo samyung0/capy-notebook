@@ -1338,12 +1338,17 @@ export function useDeleteWorkspace(options?: MutationUiOptions) {
   });
 }
 
-/** The lists a visit moves: workspaces always (the recent order), and the
- * Member file and material lists and search when a visitor's workspace joins
- * or leaves them (every mutation marks Recent stale, queryClient.ts). */
+/** The lists a visit moves: workspaces always (the recent order), and To do,
+ * the Member file and material lists and search when a visitor's workspace
+ * joins or leaves them (every mutation marks Recent stale, queryClient.ts). A
+ * member's open moves nothing in To do: it is only marked stale, so its page
+ * reads it again when opened, not the workspace just opened (Q910). */
 function invalidateVisitLists(qc: QueryClient, visitor: boolean) {
   void qc.invalidateQueries({ queryKey: ['workspaces'] });
-  void qc.invalidateQueries({ queryKey: qk.todo });
+  void qc.invalidateQueries({
+    queryKey: qk.todo,
+    refetchType: visitor ? 'active' : 'none',
+  });
   if (!visitor) return;
   // The owned files' root holds the Files page's list too.
   void qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });

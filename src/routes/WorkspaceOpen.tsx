@@ -40,6 +40,7 @@ import {
 import { isMissing } from '@/api/queryClient';
 import type { Citation, Region, ResourceRef } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
+import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
@@ -114,7 +115,6 @@ import {
   workspaceSections,
 } from '@/features/workspace/WorkspaceRail';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
-import { WorkspaceSkeleton } from '@/features/workspace/WorkspaceSkeleton';
 import { prefetchDashboard } from '@/features/workspace/workspacePreload';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -764,21 +764,15 @@ function WorkspaceOpen() {
   });
   useEffect(() => registerTourPanels(tourPanels), []);
 
-  // The frame at once, with skeletons where its content goes (Q906).
-  if (wsLoading)
+  if (wsLoading) {
     return (
-      <WorkspaceSkeleton
-        // Where the page draws CenterContent's header: phones, a tablet's
-        // Files, an open item from lg.
-        header={
-          page !== 'canvas' &&
-          (!railShown || (page === 'files' && (!lg || !!openKey)))
-        }
-        page={page}
-        panel={leftShown}
-        rail={railShown}
+      <LoadingLarge
+        backLabel={m.workspace_back_to()}
+        backTo="/"
+        title={m.workspace_loading()}
       />
     );
+  }
 
   // Offline before the first load: the fetch resumes on reconnect.
   if (waitsForConnection(wsFetchStatus, ws))

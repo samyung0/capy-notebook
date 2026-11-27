@@ -1,7 +1,7 @@
 import { QueryClient } from '@tanstack/react-query';
 import { afterEach, expect, it, vi } from 'vitest';
 import { API_BASE } from '@/api/client';
-import { workspaceQuery } from '@/api/hooks';
+import { workspaceQuery, workspacesQuery } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import {
   opensDashboard,
@@ -67,6 +67,20 @@ it("starts the Dashboard's reads together", async () => {
     '/todo',
     '/learning/continue?workspaceId=ws',
   ]);
+});
+
+// Q911: the workspace list the card was picked from already names its staff.
+it("adds a class staff's To grade when the workspace list says so", async () => {
+  const asked = requests();
+  const qc = new QueryClient();
+  qc.setQueryData(workspacesQuery({ sort: 'accessed' }).queryKey, [
+    { id: 'ws', kind: 'class', role: 'owner' } as Workspace,
+  ]);
+  prefetchDashboard(qc, 'ws');
+  await settle();
+  expect(asked()).toContain(
+    '/workspaces/ws/assignments?closed=true&done=true&pending=true'
+  );
 });
 
 // Q907: Study's Frequently wrong went out only after topics and practice.

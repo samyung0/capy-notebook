@@ -20,7 +20,6 @@ import { ContinueCards } from '@/features/study/ContinueCards';
 import { studyView } from '@/features/study/practice/studyView';
 import { assignmentsLink } from '@/features/study/studyRoutes';
 import { getLocale, m } from '@/i18n';
-import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import { isWorkspaceReadOnly } from './access';
@@ -29,10 +28,6 @@ import { WorkspaceEmpty } from './WorkspaceEmpty';
 
 /** How many recent files the Dashboard shows (boards H1, H2: one row of four). */
 const RECENT = 4;
-
-// One column leaves room under the page for the floating chat button.
-const PAGE =
-  'page-px flex min-h-0 flex-1 flex-col gap-6.5 overflow-auto pt-5 pb-24 lg:pt-7 lg:pb-10';
 
 /** The workspace's front page (Epo 2026-11-02, boards H1 owner, H2 member):
  * its icon, name, owner and member count, Upload and Make a quiz from a
@@ -81,7 +76,8 @@ export function WorkspaceDashboard({
     : '';
 
   return (
-    <div className={PAGE}>
+    // One column leaves room under the page for the floating chat button.
+    <div className="page-px flex min-h-0 flex-1 flex-col gap-6.5 overflow-auto pt-5 pb-24 lg:pt-7 lg:pb-10">
       {/* Spread apart on one line; wrapped, the actions start their own line
           at the left, 20px from the text above and more from what follows. Their negative
           margins give that whatever the width: on one line the name's height
@@ -123,7 +119,24 @@ export function WorkspaceDashboard({
           <TodoSection workspace={workspace} />
         ))}
       {empty && <WorkspaceEmpty onUpload={canAdd ? onUpload : undefined} />}
-      {!recent && <RecentFilesSkeleton />}
+      {/* Recent files load as their cards' shapes (Epo 2026-11-12). */}
+      {!recent && (
+        <section className="flex flex-col gap-3">
+          <h2 className="t-subtitle">{m.dashboard_recent_files()}</h2>
+          <div
+            aria-label={m.a11y_loading()}
+            className="-mx-1 grid grid-cols-2 gap-x-2 gap-y-3 md:grid-cols-4 md:gap-4"
+            role="status"
+          >
+            {Array.from({ length: 4 }, (_, i) => (
+              <Skeleton
+                className="aspect-4/3 rounded-(--radius-tile)"
+                key={i}
+              />
+            ))}
+          </div>
+        </section>
+      )}
       {items.length > 0 && (
         <section className="flex flex-col gap-3">
           <h2 className="t-subtitle">{m.dashboard_recent_files()}</h2>
@@ -155,52 +168,6 @@ export function WorkspaceDashboard({
           </ul>
         </section>
       )}
-    </div>
-  );
-}
-
-/** Recent files load as their cards' shapes (Epo 2026-11-12). */
-function RecentFilesSkeleton() {
-  return (
-    <section className="flex flex-col gap-3">
-      <h2 className="t-subtitle">{m.dashboard_recent_files()}</h2>
-      <div
-        aria-label={m.a11y_loading()}
-        className="-mx-1 grid grid-cols-2 gap-x-2 gap-y-3 md:grid-cols-4 md:gap-4"
-        role="status"
-      >
-        {Array.from({ length: RECENT }, (_, i) => (
-          <Skeleton className="aspect-4/3 rounded-(--radius-tile)" key={i} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/** A line of text as a bar, in the line's own height. */
-function LineSkeleton({ className }: { className: string }) {
-  return (
-    <div className={cn('flex min-h-[1lh] items-center', className)}>
-      <Skeleton className="h-[0.75em] w-full" />
-    </div>
-  );
-}
-
-/** The Dashboard while its workspace loads (Q906): the head as shapes where
- * the icon, name and owner go, then Recent files as the page shows it loading.
- * What a role decides (Upload and Make a quiz, Continue, To do or To grade)
- * waits for the workspace's read. */
-export function WorkspaceDashboardSkeleton() {
-  return (
-    <div className={PAGE}>
-      <div className="flex min-w-0 items-center gap-5">
-        <Skeleton className="hidden size-12 shrink-0 rounded-[12px] md:block" />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <LineSkeleton className="t-page-title w-56 max-w-full" />
-          <LineSkeleton className="t-meta w-36 max-w-full" />
-        </div>
-      </div>
-      <RecentFilesSkeleton />
     </div>
   );
 }

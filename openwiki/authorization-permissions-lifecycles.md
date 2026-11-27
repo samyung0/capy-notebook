@@ -2588,7 +2588,10 @@ sends at most one visit per workspace per five minutes
 except for a visitor's workspace, which always sends so a Forget on another
 device never holds back the next open; the gateway acknowledges a repeat
 within five minutes of its own last write without a database call, and the
-upsert rewrites only rows older than that. The old per-workspace
+upsert rewrites only rows older than that. A sent visit refreshes the
+workspace lists; To do is read again at once only after a visitor's open,
+which can add the workspace to it, and a member's open only marks it stale for
+its page (Q910). The old per-workspace
 `last_accessed_at`, which only the owner's opens moved, is gone; ops reads
 `max(opened_at)` (active workspaces in 7 days, a user's workspaces).
 

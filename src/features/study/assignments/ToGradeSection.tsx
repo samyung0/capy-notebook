@@ -4,6 +4,7 @@ import type { Assignment } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
+import { TO_GRADE } from '@/features/workspace/workspacePreload';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -58,7 +59,7 @@ export function ToGradeSection({ workspaceId }: { workspaceId: string }) {
   const navigate = useNavigate();
   const { data, error, isPending, refetch } = useAssignments(
     workspaceId,
-    { closed: true, done: true, pending: true, topics: [] },
+    TO_GRADE,
     { errorBoundary: false }
   );
   const revealRef = useLoadingReveal(isPending);

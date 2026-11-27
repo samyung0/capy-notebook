@@ -49,6 +49,30 @@ function withWorkspace(
   qc.ensureQueryData(workspaceQuery(workspaceId)).then(then, () => undefined);
 }
 
+/** The workspace as the cache already holds it before its read answers: its
+ * own read kept from an earlier visit, else a list it was picked from. */
+function cachedWorkspace(qc: QueryClient, workspaceId: string) {
+  const own = qc.getQueryData(workspaceQuery(workspaceId).queryKey);
+  if (own) return own;
+  for (const [, list] of qc.getQueriesData<Workspace[]>({
+    queryKey: ['workspaces'],
+  })) {
+    const listed = Array.isArray(list)
+      ? list.find((workspace) => workspace.id === workspaceId)
+      : undefined;
+    if (listed) return listed;
+  }
+}
+
+/** A class's To grade, its staff's first Dashboard section (ToGradeSection):
+ * every assignment with something waiting on staff, open or closed. */
+export const TO_GRADE: AssignmentListParams = {
+  closed: true,
+  done: true,
+  pending: true,
+  topics: [],
+};
+
 /** Whether a workspace URL opens its Dashboard: no workspace page under it
  * (`/workspaces/<id>` alone), no open item and no other view. */
 export const opensDashboard = (
@@ -58,12 +82,19 @@ export const opensDashboard = (
   pathname.split('/').filter(Boolean).length === 2 &&
   !(search.file || search.material || search.view);
 
-/** The Dashboard's: its head and Activity, Recent files, To do and Continue. */
+/** The Dashboard's: its head and Activity, Recent files, To do and Continue,
+ * and To grade when the cache already says the person is a class's staff;
+ * otherwise To grade waits for the workspace's read and the page (Q911). */
 export function prefetchDashboard(qc: QueryClient, workspaceId: string) {
   qc.prefetchQuery(workspaceDashboardQuery(workspaceId));
   qc.prefetchQuery(workspaceRecentQuery(workspaceId));
   qc.prefetchQuery({ ...todoQuery(), ...optional });
   qc.prefetchQuery(continueQuery(workspaceId));
+  if (studyView(cachedWorkspace(qc, workspaceId)).manages)
+    qc.prefetchInfiniteQuery({
+      ...assignmentsQuery(workspaceId, TO_GRADE),
+      ...optional,
+    });
 }
 
 /** Study at `tab`. Overview and Topics are every member's marks for a class's

@@ -2245,7 +2245,11 @@ Grades not released (`toRelease`: Manual grades held, every submission graded,
 and it has closed or everyone it went to submitted; Claude's reading of when
 release is due). It reads `GET /api/workspaces/{id}/assignments?pending=true`
 (`AssignmentListParams.Pending`, `pendingSQL` then `Assignment.Pending`), which
-To do's stream event refreshes. With nothing waiting it says Nothing to grade.
+To do's stream event refreshes. The read starts with the Dashboard's other
+reads when the cached workspace (its own read from an earlier visit, or the
+list the card was picked from) already says the person is staff
+(`prefetchDashboard`, `TO_GRADE`, Q911). With nothing waiting it says Nothing
+to grade.
 The account To do keeps answers waiting and adds submissions to grade on the
 same row ("Grade submissions on Osmosis lab write-up", "2 submissions to
 grade"); grades to release stay off it.
