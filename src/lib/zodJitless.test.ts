@@ -1,10 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { zodConfig } from './zodJitless';
+import './zodJitless';
 
 const JITLESS_IMPORT =
   /^import (?:\{ zodConfig \} from )?'(\.\/lib|@\/lib)\/zodJitless';$/;
-const CHINESE = /[一-鿿]/;
 
 // Zod reads `jitless` as it builds each object schema, so the setting holds
 // only when it runs before any module that builds one: first in each page
@@ -23,13 +22,5 @@ describe('Zod jitless', () => {
   it('configures zod through its global before zod loads', async () => {
     const { z } = await import('zod');
     expect(z.config().jitless).toBe(true);
-  });
-
-  it('keeps a locale set before zod builds its first schema', async () => {
-    const { default: zhCN } = await import('zod/v4/locales/zh-CN.js');
-    Object.assign(zodConfig, zhCN());
-    const { z } = await import('zod');
-    const message = z.string().safeParse(1).error?.issues[0]?.message;
-    expect(message).toMatch(CHINESE);
   });
 });

@@ -8,6 +8,7 @@ import { useFinishToasts } from '@/features/questions/finishToasts';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { AccountVoiceOverlay } from '@/features/voice/VoiceCard';
 import { useKeyboardHeight } from '@/lib/useKeyboardHeight';
+import { whenIdle } from '@/lib/whenIdle';
 import { workspaceOfPath } from '@/lib/workspacePath';
 import { AccountBlockedScreen } from './AccountBlockedScreen';
 import { InShellMain } from './AppErrorBoundary';
@@ -36,19 +37,24 @@ export function AppShell() {
   // account no longer has are deleted, and a deleted item's are offered (Q40).
   const { data: me } = useMe({ errorBoundary: false });
   const actorId = me?.id;
-  // The sweeps' code (drafts, device copies, Yjs) loads here, after sign-in,
-  // and stays out of the app's entry (Q908).
+  // The sweeps' code (drafts, device copies, Yjs) loads after sign-in once the
+  // first page's chunks are in, and stays out of the app's entry (Q908). A
+  // chunk that fails to load skips the sweep until the next boot.
   useEffect(() => {
     if (!actorId) return;
-    void Promise.all([
-      import('@/lib/editDrafts'),
-      import('@/features/collaboration/deletedEditsToast'),
-    ]).then(([{ startDraftSweeps }, { offerDeletedEdits }]) =>
-      startDraftSweeps(actorId, api, offerDeletedEdits)
-    );
-    void import('@/features/collaboration/deviceCopy').then(
-      ({ startDeviceCopySweep }) => startDeviceCopySweep(actorId)
-    );
+    whenIdle(() => {
+      Promise.all([
+        import('@/lib/editDrafts'),
+        import('@/features/collaboration/deletedEditsToast'),
+      ])
+        .then(([{ startDraftSweeps }, { offerDeletedEdits }]) =>
+          startDraftSweeps(actorId, api, offerDeletedEdits)
+        )
+        .catch(() => undefined);
+      import('@/features/collaboration/deviceCopy')
+        .then(({ startDeviceCopySweep }) => startDeviceCopySweep(actorId))
+        .catch(() => undefined);
+    });
   }, [actorId]);
   useFinishToasts();
   useKeyboardHeight();

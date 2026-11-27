@@ -23,14 +23,19 @@ export const isAuthForm = (pathname: string) =>
   pathname === '/sign-up' ||
   pathname === '/forgot-password';
 
-const CLIENT_UAT = /(?:^|;\s*)__client_uat=([^;]*)/;
+const CLIENT_UAT = /(?:^|;\s*)__client_uat(?:_[\w-]+)?=([^;]*)/g;
 
-/** Clerk keeps `__client_uat` on this domain: the session's time, or 0 once
- * signed out; a first visit has none. Clerk's own answer still decides; this
- * only says what it will most likely be. */
+/** Clerk keeps `__client_uat` cookies on the root domain: the session's time,
+ * or 0 once signed out; a first visit has none. Every Clerk instance on the
+ * domain (UAT's and production's) writes the plain one, and each its own
+ * suffixed one, so only all of them missing or 0 says signed out: a visitor
+ * signed in on one instance waits for Clerk rather than meeting the sign-in
+ * form first. Clerk's own answer still decides; this only says what it will
+ * most likely be. */
 export function likelySignedOut() {
-  const match = document.cookie.match(CLIENT_UAT);
-  return !match || match[1] === '0';
+  for (const [, value] of document.cookie.matchAll(CLIENT_UAT))
+    if (value !== '0') return false;
+  return true;
 }
 
 /** With Clerk on (not MSW, not a run without a key). */

@@ -54,9 +54,9 @@ function AuthTokenBridge({ children, pending }: AuthProviderProps) {
       // the first identity has none, and the open code stays out of the
       // app's entry (Q908).
       if (previousIdentity.current !== undefined)
-        void import('@/features/files/sourceOpen').then(({ dropSourceOpens }) =>
-          dropSourceOpens()
-        );
+        import('@/features/files/sourceOpen')
+          .then(({ dropSourceOpens }) => dropSourceOpens())
+          .catch(() => undefined);
       claimSentOpens(identity);
       previousIdentity.current = identity;
     }
@@ -85,9 +85,11 @@ function AuthTokenBridge({ children, pending }: AuthProviderProps) {
   }, [getToken, isLoaded, isSignedIn]);
 
   // Route loaders must not run until the matching token getter is installed;
-  // the auth forms drawn early have none.
+  // the auth forms drawn early have none. Early is the first wait only: a
+  // later sign-out waits like any change of account.
   if (!isLoaded || readyIdentity !== identity) {
-    if (early && !identity) return <>{children}</>;
+    if (early && !identity && readyIdentity === undefined)
+      return <>{children}</>;
     if (pending !== undefined) return <>{pending}</>;
     return <BootLoader />;
   }

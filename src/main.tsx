@@ -23,6 +23,7 @@ import { FirstLoadLoader } from './components/app/BootLoader';
 import { provideRecoveryWriter } from './features/collaboration/recoveryDownload';
 import { getLocale } from './i18n';
 import { initErrorReporting, reportReactError } from './lib/observability';
+import { whenIdle } from './lib/whenIdle';
 import { router } from './router';
 import { ThemeProvider } from './theme/ThemeProvider';
 import 'streamdown/styles.css';
@@ -50,12 +51,15 @@ provideRecoveryWriter(async () => {
 document.documentElement.lang = getLocale();
 // Zod's own messages (form and question validation) follow the UI locale.
 // Set here, not in @/i18n, so public pages that use copy load no zod. English
-// is zod's default, and a locale set before zod loads still wins, so zod and
-// its Chinese messages load only when needed (Q908).
+// is zod's default, and a locale set before zod loads still wins, so the
+// Chinese messages load once the first page is in (Q908); a form checked
+// before then shows zod's English message.
 if (getLocale() === 'zh')
-  void import('zod/v4/locales/zh-CN.js').then(({ default: zhCN }) =>
-    Object.assign(zodConfig, zhCN())
-  );
+  whenIdle(() => {
+    import('zod/v4/locales/zh-CN.js')
+      .then(({ default: zhCN }) => Object.assign(zodConfig, zhCN()))
+      .catch(() => undefined);
+  });
 
 // Mocks are on in development by default; set VITE_USE_MSW=false to hit the
 // real Go gateway (Vite proxies /api → http://localhost:8080). A production

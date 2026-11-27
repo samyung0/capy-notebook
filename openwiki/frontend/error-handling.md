@@ -224,9 +224,12 @@ Reload) is distinct from `account_deletion_busy`, `subscription_exists`,
 `transfer_self` and `nothing_to_process`. The Go store's
 specific conflicts wrap `ErrConflict`, so internal callers still see a
 conflict. Zod's own messages follow the UI locale: `src/main.tsx` loads zod's
-Chinese messages for a Chinese UI and puts them on zod's global settings
-(`zodConfig`, `src/lib/zodJitless.ts`), which zod reads whenever it loads,
-English being its default; zod itself stays out of the app's entry (Q908).
+Chinese messages for a Chinese UI once the browser is idle after boot (at
+most 2 s, `src/lib/whenIdle.ts`) and puts them on zod's global settings
+(`zodConfig`, `src/lib/zodJitless.ts`), which zod reads whenever it loads and
+whenever it words an issue, English being its default; a form checked before
+they land shows zod's English message. Zod itself stays out of the app's
+entry (Q908).
 Question validation throws or reports paraglide copy.
 
 `too_many_ingest_leases` is kind `ingest`, distinct from `llm_credits_exhausted`

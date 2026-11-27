@@ -2048,8 +2048,9 @@ password; the verified reset also signs the user in) and `/sso-callback`
 (Clerk's redirect callback, which completes the session or transfers a
 first-time OAuth account into sign-up). A same-origin `redirect_url` query
 carries the post-auth destination through every hop. A visitor without
-Clerk's session cookie (`__client_uat` missing, or `0` after signing out) on a
-signed-in page is moved to `/sign-in?redirect_url=<path>` before the router
+Clerk's session cookie on a signed-in page (every `__client_uat` cookie
+missing or `0`: the root domain's shared one and each Clerk instance's
+suffixed one, so a session on UAT counts while production's says signed out) is moved to `/sign-in?redirect_url=<path>` before the router
 reads the address (`src/lib/bootSignIn.ts`, imported first in `src/main.tsx`;
 the public pages are listed in `src/lib/clerkSession.ts`, kept equal to the
 router's by `clerkSession.test.ts`), so no load waits for Clerk to say so.

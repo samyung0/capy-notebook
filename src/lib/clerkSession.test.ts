@@ -28,8 +28,11 @@ it("reads Clerk's session cookie", () => {
     vi.stubGlobal('document', { cookie: value });
   cookie('');
   expect(likelySignedOut()).toBe(true);
-  cookie('__client_uat_EelQ9s3T=1795740952; __client_uat=0');
+  cookie('__client_uat_EelQ9s3T=0; __client_uat=0');
   expect(likelySignedOut()).toBe(true);
+  // Signed in on one instance, out of another sharing the root domain.
+  cookie('__client_uat_EelQ9s3T=1795740952; __client_uat=0');
+  expect(likelySignedOut()).toBe(false);
   cookie('theme=dark; __client_uat=1795740952');
   expect(likelySignedOut()).toBe(false);
 });

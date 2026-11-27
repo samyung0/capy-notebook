@@ -43,6 +43,7 @@ import {
 } from '@/components/app/AppErrorBoundary';
 import { AuthShellRoute, RootRoute } from '@/components/app/RouteComponents';
 import { parseThemeSearch } from '@/components/app/themeDrawerSearch';
+import { prefetchOffice } from '@/features/files/prefetchOffice';
 import {
   parseDocumentModeSearch,
   parseMaterialPageSearch,
@@ -101,22 +102,6 @@ type Loader = (args: {
   context: RouterContext;
   params: Record<string, string>;
 }) => void;
-
-/** An Office file's open (its view's code, the source session and the room's
- * socket), its code loaded by the first route that opens a file, so Yjs and the
- * room code stay out of the app's entry (Q908). Started first in the loader and
- * never awaited; a hover's preload loads the code too (the prefetch itself
- * skips a preload), and a failed load leaves the view to read the file itself,
- * as a failed prefetch does. */
-function prefetchOffice(
-  qc: QueryClient,
-  fileId: string,
-  load: { abortController: AbortController; preload: boolean }
-) {
-  import('@/features/files/prefetchOfficeFile')
-    .then(({ prefetchOfficeFile }) => prefetchOfficeFile(qc, fileId, load))
-    .catch(() => undefined);
-}
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: RootRoute,
