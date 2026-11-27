@@ -51,7 +51,10 @@ and menger).
 The check refuses a film (or image track) past 1080p either way round (long
 side 1920, short side 1080) or 60 fps (Epo 2026-11-27), and one past 16 tracks, a 64 KiB header
 or a chunk whose draw part inflates past 64 MiB (`cmvfile` and `cmv.py`, the
-same numbers). Per-file size caps are the plan's, as for any upload.
+same numbers). Per-file size caps are the plan's, as for any upload (10 MiB
+Free, 30 MiB Pro; Epo 2026-11-27). A drawn film takes about 5 to 7.5 times its
+size in the page while it plays, so a 30 MiB one may need 150 to 230 MB: kept,
+as a tab already spends more on the editor or a video site.
 
 Measurements, both forms on 48 examples and 68 real scenes, and playback cost:
 `bench/manim/reports/2026-11-26-cmv-playback.md`.
