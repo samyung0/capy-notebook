@@ -41,32 +41,40 @@ export interface EnginePlayer {
 }
 
 export const MANIMGX_VERSION = '0.1.1';
-const BASE = `/vendor/manimgx/${MANIMGX_VERSION}/`;
 const FONTS = 24;
 
-let loading: Promise<Engine> | null = null;
+/** An engine of one film's own, and the call that lets it go. */
+export interface FilmEngine {
+  engine: Engine;
+  release(): void;
+}
 
-/** The engine, loaded once per page; a failed load is tried again next time. */
-export function loadEngine(): Promise<Engine> {
-  loading ??= (async () => {
-    const engine = (await import(
-      /* @vite-ignore */ `${BASE}engine.js`
-    )) as Engine;
-    await engine.default({ module_or_path: `${BASE}engine.wasm` });
-    const fonts = await Promise.all(
-      Array.from({ length: FONTS }, async (_, i) => {
-        const response = await fetch(`${BASE}font${i}.ttf`);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return new Uint8Array(await response.arrayBuffer());
-      })
-    );
-    await engine.init(fonts);
-    return engine;
-  })();
-  loading.catch(() => {
-    loading = null;
+/** An engine for one drawn film, in a frame of its own
+ * (public/films/engine-frame.html). The engine keeps one GPU device and a
+ * WebAssembly heap that only grows for the realm's life (a page-wide engine
+ * kept 3.0 GB, 1.7 GB of it GPU, once eight films had gone, bench/manim/
+ * reports/2026-11-27-note-films-memory.md); removing the frame gives them
+ * back. */
+export async function loadEngine(): Promise<FilmEngine> {
+  const frame = document.createElement('iframe');
+  frame.hidden = true;
+  frame.src = `/films/engine-frame.html?v=${MANIMGX_VERSION}&fonts=${FONTS}`;
+  const loaded = new Promise((resolve, reject) => {
+    frame.addEventListener('load', resolve, { once: true });
+    frame.addEventListener('error', reject, { once: true });
   });
-  return loading;
+  document.body.append(frame);
+  try {
+    await loaded;
+    const view = frame.contentWindow as
+      | (Window & { engine?: Promise<Engine> })
+      | null;
+    if (!view?.engine) throw new Error('the engine frame did not load');
+    return { engine: await view.engine, release: () => frame.remove() };
+  } catch (error) {
+    frame.remove();
+    throw error;
+  }
 }
 
 /** Whether this browser has WebGPU, which drawn films need. */

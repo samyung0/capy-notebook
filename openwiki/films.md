@@ -15,7 +15,7 @@ exporter is queued in `todo-queue.md`.
 | Check | `server/internal/cmvfile` | Header, chunk index and video framing only; under a millisecond on a 2.6 MB film. Mirrors `cmv.validate` in the exporter. |
 | Upload | `sourceupload` kind `film` (`.cmv`), `checkSourceBytes` | A refused film is a 400 `invalid_film` with the reason. Stored only: no ingest job, ready at once, counted in quota like any file. Drive imports refuse a film (`unsupported_file`): the import worker runs no film check. |
 | Viewer | `src/features/films` (`FilmView`, from `FileViewer`) | A worker reads the film; video films play in `<video>`, drawn films on ManimGX's player. |
-| Engine | `public/vendor/manimgx/0.1.1/` | ManimGX's web player (wasm-bindgen JS, 1.9 MB WebAssembly) and its 24 fonts, as its Pyodide wheel builds them (`THIRD-PARTY-NOTICES.md`). Loaded only when a drawn film opens. |
+| Engine | `public/vendor/manimgx/0.1.1/`, loaded by `public/films/engine-frame.html` | ManimGX's web player (wasm-bindgen JS, 1.9 MB WebAssembly) and its 24 fonts, as its Pyodide wheel builds them (`THIRD-PARTY-NOTICES.md`). Each drawn film loads its own copy in a hidden same-origin frame (`loadEngine`), removed with the film: the engine keeps one GPU device and a WebAssembly heap that only grows for its realm's life, so a page-wide engine kept 1.7 GB of GPU memory after every film had gone. |
 
 ## In notes and on the canvas
 
@@ -24,7 +24,9 @@ Epo 2026-11-27. A note holds a film as a void `film` block `{id, fileId}`
 films); a workspace canvas as a film card (Misc › From the workspace › Film).
 Both are live links to the file, not copies, and play it in place
 (`FilmEmbed`: `FilmView` `embedded` at the column's width, `contain` inside a
-card; the file viewer keeps its 48rem cap), loading only near the screen. The
+card; the file viewer keeps its 48rem cap), loaded only while on screen and let
+go 3 s after leaving it (a drawn film's player holds hundreds of MB); scrolled
+back, it opens where it was, paused (`resumeAt` in `FilmView`). The
 reader's own access decides: a film they can't read, or one in the Trash,
 says "This film can't be shown" and comes back when restored. Share pages
 always say so, as they serve standalone notes and a standalone file has no
@@ -71,6 +73,14 @@ same numbers). Per-file size caps are the plan's, as for any upload (10 MiB
 Free, 30 MiB Pro; Epo 2026-11-27). A drawn film takes about 5 to 7.5 times its
 size in the page while it plays, so a 30 MiB one may need 150 to 230 MB: kept,
 as a tab already spends more on the editor or a video site.
+
+A note with eight films (five drawn, three video), each played in turn, peaks
+near 3 GB in Chrome on the Mac; once they have all scrolled away and the page
+has collected, 1.2 GB is left against 0.76 GB with no films, where the
+page-wide engine left 3.0 GB (`bench/manim/reports/
+2026-11-27-note-films-memory.md`). The peak is the films themselves: Menger
+slice, a 2.5 MB drawn film, takes about 1.5 GB of GPU memory on its own while
+it plays, inside ManimGX's engine.
 
 Measurements, both forms on 48 examples and 68 real scenes, and playback cost:
 `bench/manim/reports/2026-11-26-cmv-playback.md`.

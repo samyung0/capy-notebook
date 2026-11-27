@@ -23,6 +23,7 @@ export class DrawnPlayer {
     engine: Engine,
     box: HTMLElement,
     canvas: HTMLCanvasElement,
+    time: number,
     onError: (error: unknown) => void
   ) {
     this.box = box;
@@ -31,7 +32,7 @@ export class DrawnPlayer {
     const rect = canvas.getBoundingClientRect();
     canvas.width = Math.max(1, Math.round(rect.width * devicePixelRatio));
     canvas.height = Math.max(1, Math.round(rect.height * devicePixelRatio));
-    this.player = new engine.Player(canvas, 0, false, MAC);
+    this.player = new engine.Player(canvas, time, false, MAC);
     this.player.resize(canvas.width, canvas.height, devicePixelRatio);
     this.wire();
   }
@@ -47,12 +48,15 @@ export class DrawnPlayer {
     this.after();
   }
 
-  destroy() {
+  /** Frees the player; returns where the film was. */
+  destroy(): number {
     this.controller.abort();
     clearTimeout(this.timer);
     cancelAnimationFrame(this.frame);
     this.player.pause();
+    const { time } = this.player;
     this.player.free();
+    return time;
   }
 
   private fail(error: unknown) {

@@ -14,8 +14,8 @@ const loading = <Skeleton className="aspect-video w-full rounded-none" />;
 /** A film shown in place, view-only: a note's film block, a canvas card (Epo
  * 2026-11-27). A live link to its file, read with the reader's own access: a
  * film they cannot open, or one in the Trash, says it can't be shown, and its
- * restore brings it back. The player and its file load only near the screen,
- * as an embed's room joins. */
+ * restore brings it back. The player and its file load only while it is on
+ * screen. */
 export function FilmEmbed({
   contain = false,
   fileId,
@@ -25,7 +25,10 @@ export function FilmEmbed({
   fileId: string;
 }) {
   const box = useRef<HTMLDivElement>(null);
-  const { near } = useNearScreen(box);
+  // Only on screen: each drawn film's player holds hundreds of MB, and the
+  // engine's heap keeps its high-water mark (bench/manim/reports/
+  // 2026-11-27-note-films-memory.md). Scrolling back resumes where it was.
+  const { near } = useNearScreen(box, { lingerMs: 3000, margin: '0px' });
   const {
     data: file,
     isError: unreadable,

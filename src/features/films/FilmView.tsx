@@ -8,6 +8,10 @@ import { DrawnPlayer } from './drawnPlayer';
 import { hasWebGpu, loadEngine } from './engine';
 import type { FilmReply, FilmRequest } from './film.worker';
 
+/** Where each film was when its player let go (a film block scrolled away),
+ * by link: it opens there again, paused. */
+const resumeAt = new Map<string, number>();
+
 type State =
   | { phase: 'loading' }
   | { phase: 'failed' }
@@ -80,14 +84,20 @@ export default function FilmView({
   useEffect(() => {
     if (!drawn) return;
     let cancelled = false;
+    let release: (() => void) | undefined;
     loadEngine().then(
-      (engine) => {
-        if (cancelled || !(box.current && canvas.current)) return;
+      (loaded) => {
+        release = loaded.release;
+        if (cancelled || !(box.current && canvas.current)) {
+          release();
+          return;
+        }
         try {
           player.current = new DrawnPlayer(
-            engine,
+            loaded.engine,
             box.current,
             canvas.current,
+            resumeAt.get(url) ?? 0,
             () => setState({ phase: 'failed' })
           );
         } catch {
@@ -102,10 +112,11 @@ export default function FilmView({
     );
     return () => {
       cancelled = true;
-      player.current?.destroy();
+      if (player.current) resumeAt.set(url, player.current.destroy());
       player.current = null;
+      release?.();
     };
-  }, [drawn]);
+  }, [drawn, url]);
 
   if (embedded && state.phase === 'failed')
     return <CannotShow label={m.film_cannot_show()} />;
@@ -143,6 +154,15 @@ export default function FilmView({
           className="absolute inset-0 size-full"
           controls
           onError={() => setState({ phase: 'failed' })}
+          onLoadedMetadata={(event) => {
+            event.currentTarget.currentTime = resumeAt.get(url) ?? 0;
+          }}
+          ref={(element) => {
+            if (!element) return;
+            return () => {
+              resumeAt.set(url, element.currentTime);
+            };
+          }}
           src={state.src}
         />
       ) : (

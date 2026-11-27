@@ -61,10 +61,19 @@ async function sample(phase) {
   }
   const { usedSize } = await pageCdp.send("Runtime.getHeapUsage");
   const mounted = await page.locator(".slate-film canvas, .slate-film video").count();
-  // The engine's WebAssembly heap (one per page, shared by every film; it only grows).
+  // The engines' WebAssembly heaps: one per drawn film loaded, in its own frame (engine.ts).
   const wasm = await page.evaluate(async () => {
-    const engine = await import("/vendor/manimgx/0.1.1/engine.js");
-    return window.__mgxLoaded ? (await engine.default()).memory.buffer.byteLength / 2 ** 20 : 0;
+    let bytes = 0;
+    for (const frame of document.querySelectorAll('iframe[src*="engine-frame"]')) {
+      const engine = await frame.contentWindow?.engine?.catch(() => null);
+      if (engine) bytes += (await engine.default()).memory.buffer.byteLength;
+    }
+    // Before films had frames of their own: the page's one engine, once a drawn film loaded it.
+    if (window.__benchPageEngine) {
+      const engine = await import("/vendor/manimgx/0.1.1/engine.js");
+      bytes += (await engine.default()).memory.buffer.byteLength;
+    }
+    return bytes / 2 ** 20;
   });
   const s = {
     t: +((Date.now() - t0) / 1000).toFixed(1),
@@ -115,13 +124,30 @@ await page.evaluate(async (rows) => {
 
 await hold("note, no films", 10_000);
 
-// Empty lines at the note's end, then each film in the first of them (a film takes its line).
-const empties = editor.locator(".slate-p").filter({ hasText: /^\s*$/ });
-await editor.locator(".slate-p").last().click();
+// Empty lines right after the note's own "Organelle overview" heading (not inside one of its
+// embeds' editors), then each film in the first of them still empty: they stand in order.
+const heading = editor.getByRole("heading", { name: "Organelle overview" });
+const text = heading.locator("[data-slate-string]").last();
+const end = await text.boundingBox();
+await text.click({ position: { x: end.width - 1, y: end.height / 2 } });
 for (const _ of rows) await page.keyboard.press("Enter");
-const slot = (await empties.count()) - rows.length - 1;
+const markSlot = () =>
+  page.evaluate(() => {
+    for (const old of document.querySelectorAll("[data-bench-slot]")) old.removeAttribute("data-bench-slot");
+    const h2 = [...document.querySelectorAll("[data-slate-editor] h2")].find((e) => e.textContent.trim() === "Organelle overview");
+    let block = h2.closest("[data-slot=block-wrapper]") ?? h2;
+    while ((block = block.nextElementSibling)) {
+      if (block.querySelector(".slate-film")) continue;
+      const line = block.matches(".slate-p") ? block : block.querySelector(".slate-p");
+      if (!line || line.textContent.trim() !== "") return false;
+      line.setAttribute("data-bench-slot", "");
+      return true;
+    }
+    return false;
+  });
 for (const r of rows) {
-  await empties.nth(slot).click();
+  if (!(await markSlot())) throw new Error("no empty line after the heading");
+  await page.locator("[data-bench-slot]").click();
   await page.keyboard.type("/manim");
   await page.getByRole("option", { exact: true, name: "Manim film" }).click({ timeout: 10_000 }).catch(async (e) => {
     await page.screenshot({ path: path.join(filmDir, "failed.png") });
@@ -134,24 +160,36 @@ for (const r of rows) {
   });
   await dialog.getByRole("button", { exact: true, name: "Insert" }).click();
   await dialog.waitFor({ state: "detached" });
+  // The closed picker hands focus back to the note; a click before that is undone.
+  await page.waitForFunction(() => !!document.activeElement?.closest("[data-slate-editor]"));
 }
 const blocks = page.locator(".slate-film");
 console.error(`films in the note: ${await blocks.count()}`);
 await page.keyboard.press("Escape");
+// Out of the editor, so it doesn't scroll back to its caret while the walk scrolls.
+await page.evaluate(() => {
+  window.getSelection()?.removeAllRanges();
+  document.activeElement?.blur();
+});
 
 // Walk the note: each film in view, played.
 for (let i = 0; i < rows.length; i++) {
   const block = blocks.nth(i);
-  await block.scrollIntoViewIfNeeded();
+  await block.evaluate((el) => el.scrollIntoView({ block: "center" }));
   const player = block.locator("canvas, video").first();
   await player.waitFor({ timeout: 60_000 });
   if (await block.locator("video").count()) await block.locator("video").evaluate((v) => { v.muted = true; return v.play(); });
   else {
-    await block.locator("[role=application]").focus();
-    await page.evaluate(() => { window.__mgxLoaded = true; });
-    await page.keyboard.press("k");
+    // The player comes up once its engine has (its frame); then k plays.
+    await page.waitForTimeout(3000);
+    // k plays (ManimGX's keys); the press scrolls the player into view and focuses it.
+    await block.locator("[role=application]").press("k");
+    await page.evaluate(() => {
+      window.__benchPageEngine ||= !document.querySelector('iframe[src*="engine-frame"]');
+    });
   }
   await hold(`playing ${rows[i].name}`, dwell);
+  await block.screenshot({ path: path.join(filmDir, `${rows[i].name}.png`) });
 }
 
 // Back to the top, past the linger, so the films off screen let go.

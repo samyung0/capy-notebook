@@ -1314,7 +1314,8 @@ Create new and, with none, "No ManimGX films uploaded yet" (room for a link to
 the exporter later). It inserts a top-level void `film` block `{id, fileId}`
 (`filmNode`), a live link to the file, not a copy (films.md). The block
 (`blocks/FilmElement.tsx`) plays the film in place at the column's width with
-no frame (`FilmEmbed`, mounted only near the screen); selected in Edit it
+no frame (`FilmEmbed`, mounted only while on screen and let go 3 s after,
+resuming where it was; films.md); selected in Edit it
 shows Open (the file viewer), Replace (the dialog again, `pickFilm(editor,
 {id})`) and Delete above its top right. View draws the same through the
 static kit's `film`. A film the reader can't read, or one in the Trash, says
