@@ -41,9 +41,15 @@ export default function FilmView({
   const [state, setState] = useState<State>({ phase: 'loading' });
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
-  // a drawn film's take, kept until its player is up
+  // a drawn film's take, kept for its life: a film that rests (its player
+  // and engine gone) wakes from it without converting the film again
   const takes = useRef<Uint8Array[]>([]);
   const player = useRef<DrawnPlayer | null>(null);
+  // its last picture while it rests and until it is drawn again
+  const [poster, setPoster] = useState<string | null>(null);
+  const [resting, setResting] = useState(false);
+  // the click that woke it, handed on once its player is up
+  const wakeClick = useRef<[number, number] | null>(null);
 
   useEffect(() => {
     const worker = new Worker(new URL('./film.worker.ts', import.meta.url), {
@@ -53,6 +59,8 @@ export default function FilmView({
     let meta: FilmMeta | undefined;
     takes.current = [];
     setState({ phase: 'loading' });
+    setPoster(null);
+    setResting(false);
     worker.addEventListener('message', (event: MessageEvent<FilmReply>) => {
       const reply = event.data;
       if (reply.type === 'meta') {
@@ -69,8 +77,8 @@ export default function FilmView({
         worker.terminate();
       } else if (reply.type === 'take') {
         const bytes = new Uint8Array(reply.bytes);
-        if (player.current) player.current.feed(bytes);
-        else takes.current.push(bytes);
+        takes.current.push(bytes);
+        player.current?.feed(bytes);
         // Its last: the worker's decoded arrays (hundreds of MB on a 3D
         // film) are let go now, not when the film is.
         if (reply.done) worker.terminate();
@@ -85,8 +93,9 @@ export default function FilmView({
   }, [url]);
 
   const drawn = state.phase === 'drawn';
+  const filmWidth = drawn ? state.meta.width : 0;
   useEffect(() => {
-    if (!drawn) return;
+    if (!drawn || resting) return;
     let cancelled = false;
     let release: (() => void) | undefined;
     loadEngine().then(
@@ -101,14 +110,25 @@ export default function FilmView({
             loaded.engine,
             box.current,
             canvas.current,
+            filmWidth,
             resumeAt.get(url) ?? 0,
-            () => setState({ phase: 'failed' })
+            {
+              onDrawn: () => setPoster(null),
+              onError: () => setState({ phase: 'failed' }),
+              onRest: () => {
+                // a WebGPU canvas reads back the picture it last showed
+                setPoster(canvas.current?.toDataURL() ?? null);
+                setResting(true);
+              },
+            }
           );
         } catch {
           setState({ phase: 'failed' });
           return;
         }
-        for (const bytes of takes.current.splice(0)) player.current.feed(bytes);
+        for (const bytes of takes.current) player.current.feed(bytes);
+        if (wakeClick.current) player.current.click(...wakeClick.current);
+        wakeClick.current = null;
       },
       () => {
         if (!cancelled) setState({ phase: 'failed' });
@@ -120,7 +140,7 @@ export default function FilmView({
       player.current = null;
       release?.();
     };
-  }, [drawn, url]);
+  }, [drawn, filmWidth, resting, url]);
 
   if (embedded && state.phase === 'failed')
     return <CannotShow label={m.film_cannot_show()} />;
@@ -142,6 +162,7 @@ export default function FilmView({
     <div
       aria-label={name}
       className="relative bg-black outline-none"
+      onKeyDown={resting ? () => setResting(false) : undefined}
       ref={box}
       role={state.phase === 'drawn' ? 'application' : undefined}
       style={{
@@ -170,10 +191,30 @@ export default function FilmView({
           src={state.src}
         />
       ) : (
-        <canvas
-          className="absolute inset-0 size-full touch-pan-y"
-          ref={canvas}
-        />
+        <>
+          <canvas
+            className="absolute inset-0 size-full touch-pan-y"
+            ref={canvas}
+          />
+          {poster && (
+            <img
+              alt=""
+              className="absolute inset-0 size-full"
+              onPointerDown={(event) => {
+                if (!resting || event.button !== 0) return;
+                const rect = event.currentTarget.getBoundingClientRect();
+                const c = canvas.current;
+                if (c)
+                  wakeClick.current = [
+                    ((event.clientX - rect.left) * c.width) / rect.width,
+                    ((event.clientY - rect.top) * c.height) / rect.height,
+                  ];
+                setResting(false);
+              }}
+              src={poster}
+            />
+          )}
+        </>
       )}
     </div>
   );

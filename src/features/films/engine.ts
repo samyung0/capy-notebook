@@ -31,6 +31,7 @@ export interface EnginePlayer {
   key(key: string, ctrl: boolean, alt: boolean, meta: boolean): boolean;
   leave(): void;
   pause(): void;
+  readonly playing: boolean;
   pointer(x: number, y: number): void;
   press(x: number, y: number, touch: boolean): boolean;
   release(): boolean;

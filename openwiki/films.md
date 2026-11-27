@@ -82,5 +82,14 @@ page-wide engine left 3.0 GB (`bench/manim/reports/
 slice, a 2.5 MB drawn film, takes about 1.5 GB of GPU memory on its own while
 it plays, inside ManimGX's engine.
 
+Two limits on Capy's side (`bench/manim/reports/2026-11-27-manimgx-memory.md`):
+a drawn film's canvas never draws more pixels than the film was exported at
+(its render targets cost about 90 bytes a pixel, so a full-screen Retina
+canvas would hold about 600 MB for a picture no sharper than the export), and
+a drawn film paused and untouched for 60 s rests: its player and engine go,
+its last picture stays, and a click or key wakes it where it was, the click
+handed on to the player (`DrawnPlayer` `onRest`, `FilmView`). Its take stays
+in the page meanwhile (tens of MB), so waking converts nothing again.
+
 Measurements, both forms on 48 examples and 68 real scenes, and playback cost:
 `bench/manim/reports/2026-11-26-cmv-playback.md`.
