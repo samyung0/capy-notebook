@@ -68,7 +68,8 @@ async function sample(phase) {
       const engine = await frame.contentWindow?.engine?.catch(() => null);
       if (engine) bytes += (await engine.default()).memory.buffer.byteLength;
     }
-    // Before films had frames of their own: the page's one engine, once a drawn film loaded it.
+    // Before films had frames of their own (a checkout from before 2026-11-27, which vendored
+    // 0.1.1): the page's one engine, once a drawn film loaded it.
     if (window.__benchPageEngine) {
       const engine = await import("/vendor/manimgx/0.1.1/engine.js");
       bytes += (await engine.default()).memory.buffer.byteLength;

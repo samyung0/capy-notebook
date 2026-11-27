@@ -187,6 +187,89 @@ In order of what they'd save (inferred from the measurements above):
 5. **Optionally, fewer samples**: the 4 samples (colour and depth) are 48 of the 90 B a pixel.
    An option to draw meshes without them would let a host trade edges for memory.
 
+## After the fork's fixes
+
+Capy's fork of ManimGX, https://github.com/samyung0/manimgx, branch `capy/gpu-memory`: one commit
+on 0.1.1 (`rust/engine/src/render.rs`), built as 0.1.1's Pyodide wheel builds the player (cargo
+`--release --target wasm32-unknown-unknown --features web`, wasm-bindgen 0.2.128), staged as
+`public/vendor/manimgx/0.1.1-capy.1/`. It changes four things:
+
+- **Destroys what it lets go**: an image's texture when it is evicted or replaced, a store buffer
+  when its array outgrows it, the instance, view and sprite buffers when outgrown, the
+  see-through lists when made again. A repack never made new buffers (it sends everything again
+  into the same ones), so it needed nothing.
+- **Keeps uploaded images held**: `has` and `held` count the textures on the GPU, so an image
+  is not made again for every frame that shows it, and the 64 MB budget counts it.
+- **Grows by half**: buffers grow to 1.5 times what they need instead of the next power of two,
+  and a store array that outgrows its buffer is copied to the new one on the GPU, so only what
+  was added since is sent.
+- **Not done**: one texture per image track, written each frame. The take gives each frame of a
+  track its own TEXTURE key, and the player doesn't know which keys are one track's, so that
+  needs a change to the take format. With the two fixes above, each frame's texture is destroyed
+  once evicted, and the budget bounds how many stay.
+
+Same setup and films as above, 25 s of play at 1×. `film_gpu_ledger.mjs` now also takes a
+resource off the books when it is destroyed. Footprint is macOS's, summed over Chrome's
+processes (`note_films_run.mjs`, one film in a note, played 25 s). "Before" is 0.1.1. The
+footprint runs before and after were made the same day on the same app, the engine's version
+the only change.
+
+### Menger slice
+
+| | 0.1.1 | Fork | |
+| --- | --- | --- | --- |
+| Live GPU resources, highest (ledger) | 1,047 MB | **166 MB** | measured |
+| … image textures, highest | 845 MB | 78 MB | measured |
+| … store and other buffers, highest | 202 MB | 88 MB | measured |
+| Image textures made / destroyed | 564 / 0 | 342 / 334 | measured |
+| Store buffers in use at the end | 96–104 MB | 78 MB | measured |
+| `writeBuffer` / `writeTexture` in 25 s | 664 MB / 1,111 MB | 517 MB / 672 MB | measured |
+| GPU process: Metal (memory-infra, 25 s) | 647 MB (722 MB at 14 s) | **149 MB** | measured |
+| GPU process: transfer memory | 77.5 MB | 11.5 MB | measured |
+| WebAssembly memory | 180–254 MB | 216 MB | measured |
+| Chrome in all, highest while playing (footprint) | 2,388 MB | **1,282 MB** | measured |
+| … GPU process, at that moment | 1,143 MB | 289 MB | measured |
+| … page process (renderer), at that moment | 960 MB | 831 MB | measured |
+| Chrome in all, after the film went and a collection | 746 MB | 755 MB | measured |
+| Chrome in all, the note before the film | 769 MB | 772 MB | measured |
+
+342 textures were made for the 203 the take sends. Between 5 and 12 s, when one image stays on
+screen, the fork made 1 texture where 0.1.1 made 200. The others are images the budget evicted,
+now that it counts them, made again when shown again (inferred).
+
+### Hopf fibration (no image track)
+
+| | 0.1.1 | Fork | |
+| --- | --- | --- | --- |
+| Live GPU resources, highest (ledger) | 240 MB | **121 MB** | measured |
+| Store buffers made | 43, 219 MB | 51, 258 MB (all but 14 destroyed) | measured |
+| Store buffers in use at the end | 113 MB | 94 MB | measured |
+| `writeBuffer` in 25 s | 514 MB | 410 MB | measured |
+| GPU process: Metal (memory-infra, 25 s) | 160 MB | 145 MB | measured |
+| GPU process: transfer memory | 77.4 MB | 9.4 MB | measured |
+| WebAssembly memory | 193 MB | 193 MB | measured |
+| Chrome in all, highest while playing (footprint) | 1,401 MB | **1,262 MB** | measured |
+| … GPU process, at that moment | 336 MB | 256 MB | measured |
+| Chrome in all, after the film went and a collection | 756 MB | 745 MB | measured |
+
+### What the fixes did
+
+1. **Menger slice's peak in Chrome nearly halves: 2.39 → 1.28 GB.** Its GPU process falls from
+   1.14 GB to 0.29 GB. Nothing waits for the collector now: live GPU resources top out at 166 MB
+   instead of 1.05 GB.
+2. **Hopf fibration gains less (1.40 → 1.26 GB):** it had no image textures. Its store buffers
+   are 20% smaller (growth by half), and the old ones are freed at once instead of waiting for
+   the collector.
+3. **Chrome's WebGPU transfer buffer stays small (77 → 9–12 MB):** a growing store array is
+   copied on the GPU instead of being sent whole again.
+4. **The WebAssembly memory is unchanged (190–220 MB):** these fixes don't touch it. It is now
+   the largest part of a drawn film's cost, with the page's own memory. The store's copy of its
+   arrays, the 32 MB decode cache, and repacking beside the old store are next (findings 3 and
+   ManimGX change 4 above).
+5. **Pictures checked by eye** (Menger at 8 and 18 s, Hopf at 25 s) against 0.1.1's. ManimGX's
+   49 engine tests pass, two of them new: a grown store buffer holds what it was sent, and an
+   uploaded image stays held until evicted.
+
 ## Can ManimGX draw a video frame itself?
 
 **Not in 0.1.1.** (Source.) The take's only image is TEXTURE: a raw RGBA array. The player
@@ -236,4 +319,6 @@ full-frame video seconds on ManimGX's canvas.
 - How much of the Metal line left after collection is Dawn's staging or deferred releases.
 - The WebAssembly memory's makeup (that needs an instrumented engine build); the 40 MB the film
   adds to Blink's buffer partition.
-- Any of the ManimGX changes above; the savings given for them are estimates from this ledger.
+- The ManimGX changes not made in the fork (one texture per track, the WebAssembly memory, fewer
+  samples); the savings given for them are estimates from this ledger. The fork at 2×, full
+  screen, or in Safari and Firefox.

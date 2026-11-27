@@ -1,6 +1,6 @@
 // A ledger of what ManimGX's player asks WebGPU for while a film plays: every buffer and texture
-// its engine frame makes (by label, with its size), when the page lets go of them (the engine
-// never calls destroy(): a resource goes only when the garbage collector takes its wrapper), the
+// its engine frame makes (by label, with its size), until it is destroyed or the garbage
+// collector takes its wrapper (ManimGX 0.1.1 never calls destroy(); the fork's build does), the
 // bytes it writes, the take it is fed (by array kind) and its WebAssembly memory. Opens one film
 // in the app's file viewer (dev server with mocks) as film_memory_dump.mjs does, plays it, prints
 // a line a second and a summary, then runs the collector and prints what is left. DUMP=1 adds
@@ -35,6 +35,7 @@ await context.addInitScript(() => {
   };
   const L = {
     collected: { buffer: 0, texture: 0 }, collectedBytes: { buffer: 0, texture: 0 },
+    destroyed: { buffer: 0, texture: 0 }, destroyedBytes: { buffer: 0, texture: 0 },
     configure: [], fed: { arrays: {}, messages: {} }, draws: 0, live: new Map(), log: [], made: {}, nextId: 1,
     memory: null, writeBuffer: { bytes: 0, calls: 0 }, writeTexture: { bytes: 0, calls: 0 },
   };
@@ -46,8 +47,10 @@ await context.addInitScript(() => {
     L.collected[r.kind]++;
     L.collectedBytes[r.kind] += r.bytes;
   });
+  const ids = new WeakMap();
   const keep = (object, kind, label, bytes, extra) => {
     const id = L.nextId++;
+    ids.set(object, id);
     L.live.set(id, { bytes, kind, label, t: performance.now(), ...extra });
     const m = (L.made[`${kind}:${label}`] ??= { bytes: 0, count: 0 });
     m.count++;
@@ -75,6 +78,19 @@ await context.addInitScript(() => {
     bytes *= (BPP[desc.format] ?? 4) * samples;
     return keep(createTexture.call(this, desc), "texture", desc.label || `(none) ${desc.format}${samples > 1 ? ` x${samples}` : ""}`, bytes, { d, format: desc.format, h, samples, w });
   };
+  // destroy() frees it now (ManimGX 0.1.1 never calls it; Capy's fork does)
+  for (const [kind, proto] of [["buffer", GPUBuffer.prototype], ["texture", GPUTexture.prototype]]) {
+    const destroy = proto.destroy;
+    proto.destroy = function () {
+      const r = L.live.get(ids.get(this));
+      if (r) {
+        L.live.delete(ids.get(this));
+        L.destroyed[kind]++;
+        L.destroyedBytes[kind] += r.bytes;
+      }
+      return destroy.call(this);
+    };
+  }
   const Q = GPUQueue.prototype;
   const writeBuffer = Q.writeBuffer;
   Q.writeBuffer = function (buffer, offset, data, dataOffset, size) {
@@ -164,7 +180,7 @@ await context.addInitScript(() => {
       else textures += r.bytes;
     }
     return {
-      buffers, byLabel, collected: L.collected, log: L.log.map((r) => ({ ...r, live: L.live.has(r.id) })), collectedBytes: L.collectedBytes,
+      buffers, byLabel, collected: L.collected, destroyed: L.destroyed, destroyedBytes: L.destroyedBytes, log: L.log.map((r) => ({ ...r, live: L.live.has(r.id) })), collectedBytes: L.collectedBytes,
       configure: L.configure, fed: L.fed, made: L.made, textures,
       wasm: L.memory ? L.memory.buffer.byteLength : 0,
       draws: L.draws, writeBuffer: L.writeBuffer, writeTexture: L.writeTexture,
@@ -214,7 +230,7 @@ for (let i = 1; i <= Number(secondsArg); i++) {
   peak = { buffers: Math.max(peak.buffers, s.buffers), textures: Math.max(peak.textures, s.textures), wasm: Math.max(peak.wasm, s.wasm) };
   const image = s.byLabel["texture:image"] ?? { bytes: 0, count: 0 };
   console.log(
-    `${String(i).padStart(3)} s  live buffers ${MB(s.buffers).padStart(7)} MB  textures ${MB(s.textures).padStart(7)} MB (image ${image.count} = ${MB(image.bytes)} MB)  collected b/t ${s.collected.buffer}/${s.collected.texture}  wasm ${MB(s.wasm)} MB  draws ${s.draws}  writeBuffer ${MB(s.writeBuffer.bytes)} MB  writeTexture ${MB(s.writeTexture.bytes)} MB`
+    `${String(i).padStart(3)} s  live buffers ${MB(s.buffers).padStart(7)} MB  textures ${MB(s.textures).padStart(7)} MB (image ${image.count} = ${MB(image.bytes)} MB)  collected b/t ${s.collected.buffer}/${s.collected.texture}  destroyed b/t ${s.destroyed.buffer}/${s.destroyed.texture}  wasm ${MB(s.wasm)} MB  draws ${s.draws}  writeBuffer ${MB(s.writeBuffer.bytes)} MB  writeTexture ${MB(s.writeTexture.bytes)} MB`
   );
 }
 

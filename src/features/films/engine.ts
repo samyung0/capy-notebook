@@ -41,7 +41,7 @@ export interface EnginePlayer {
   wheel(dx: number, dy: number): boolean;
 }
 
-export const MANIMGX_VERSION = '0.1.1';
+export const MANIMGX_VERSION = '0.1.1-capy.1';
 const FONTS = 24;
 
 /** An engine of one film's own, and the call that lets it go. */
