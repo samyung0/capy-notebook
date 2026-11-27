@@ -8,6 +8,11 @@ import {
   useState,
 } from 'react';
 import { IconButton } from '@/components/ui/IconButton';
+import {
+  loadedMathLive,
+  loadMathLive,
+  loadMathLiveModule,
+} from '@/features/materials/mathLive';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import mathFieldStyles from './mathField.css?inline';
@@ -275,6 +280,10 @@ export function MathField({
       setError(
         m.question_ui_formula_editor_could_not_load_close_and_try_again()
       );
+    // The preview drawn when editing ends also needs the static stylesheet:
+    // loading it now lets that preview draw in its first frame. Editing never
+    // waits on it, and a preview shows its own failure (its TeX).
+    if (!loadedMathLive()) loadMathLive().catch(() => {});
     // A preview already registered MathLive. Mount before React's first paint
     // instead of leaving an empty wrapper while a cached import resolves.
     const registered = customElements.get('math-field') as
@@ -287,7 +296,7 @@ export function MathField({
         failed();
       }
     } else {
-      import('mathlive')
+      loadMathLiveModule()
         .then(({ MathfieldElement }) => mount(MathfieldElement))
         .catch(failed);
     }

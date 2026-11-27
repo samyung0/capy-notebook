@@ -16,7 +16,9 @@ declare global {
   }
 }
 
-// MathPreview mounts MathLive asynchronously; a screenshot taken earlier drops formulas.
+// MathPreview loads MathLive asynchronously; a screenshot taken earlier drops formulas.
+// A drawn formula's markup is in its shadow root, or in a read-only field's
+// for one with an empty template slot; one that failed shows its TeX.
 async function mathDrawn() {
   const deadline = performance.now() + 10_000;
   for (;;) {
@@ -26,7 +28,7 @@ async function mathDrawn() {
       const field = host.querySelector('math-field');
       return field
         ? !field.shadowRoot?.querySelector('.ML__latex')?.childElementCount
-        : !host.textContent;
+        : !(host.shadowRoot?.textContent || host.textContent);
     });
     if (!pending.length) return;
     if (performance.now() > deadline)

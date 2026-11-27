@@ -18,6 +18,7 @@ import { m } from '@/i18n';
 import { errorKind } from '@/lib/errors';
 import { CannotShow } from './CannotShow';
 import type { MaterialElement, MaterialValue } from './document';
+import { loadedMathLive, loadMathLive } from './mathLive';
 
 /* The code a note's blocks load on their own, past what the editor brings:
  * what a block draws with and what its buttons open. Each loads once, for its
@@ -189,13 +190,13 @@ export const katexCode = blockCode(
   { quiet: true }
 );
 
-/** MathLive: a formula in an equation or a question's text, and a long
- * answer's Formula. Each of those handles its failure itself (the formula's
- * TeX as text, the field's could-not-load line). */
-export const mathCode = blockCode(() => import('mathlive'), {
+/** MathLive and its static stylesheet: a formula in an equation or a
+ * question's text, and a long answer's Formula. Each of those handles its
+ * failure itself (the formula's TeX as text, the field's could-not-load
+ * line). */
+export const mathCode = blockCode(loadMathLive, {
   quiet: true,
-  registered: () =>
-    typeof customElements !== 'undefined' && !!customElements.get('math-field'),
+  registered: () => loadedMathLive() !== undefined,
 });
 
 /** What a node needs by its `type`: a note's elements, a question's blocks, a

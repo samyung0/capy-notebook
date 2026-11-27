@@ -1290,7 +1290,7 @@ on Save (Epo 2026-10-17; Chart and Graph go in at once, above); its hover toolba
 Copy and Delete like a chart's, Edit opening the plot editor in the figure
 dialog (`PlotDialog`), and exports draw it like a chart with its points
 as the table. Inline
-and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
+and display equations use MathLive: the formula being edited is its field, every other one (viewing, question-editing previews) its static markup, or a read-only field when it holds an empty template slot (Q912, Q915, see MathPreview below). The math toolbar inserts formulas and common symbol templates.
 
 
 ### Picking an existing quiz, set or film
@@ -3466,12 +3466,12 @@ same array:
 | a graph's `formula` | KaTeX | laying out its formulas |
 | `html_embed` | `HtmlEmbedSourceDialog` | View source |
 | a quiz part's `canvas` answer, a drawn canvas | the drawing board (`DrawingBoardScreen`, BlockSuite) | Answer in Canvas, Open canvas, Edit canvas |
-| `equation`, `inline_equation`, a formula in a quiz's text, a quiz part's `open` answer | MathLive | drawing formulas; a long answer's Formula |
+| `equation`, `inline_equation`, a formula in a quiz's text, a quiz part's `open` answer | MathLive and its static stylesheet (`loadMathLive`) | drawing formulas; a long answer's Formula |
 
 Each loads once (`BlockCode`), for its lazy component and the preload alike. Until they
 settle (`Promise.allSettled`) the pane shows `PaneLoading` ("Loading preview") at once,
 and nothing when all of it is here already: a load that settled earlier, or MathLive
-registered by another import, counts at once. Each open waits afresh, a reopen before the
+loaded by a formula or field (`loadedMathLive`), counts at once. Each open waits afresh, a reopen before the
 last one's DOM left included. Code a block added while Preview is open needs loads without
 the loader. Edit from the loader goes back to where the editor was.
 
@@ -5477,8 +5477,45 @@ pending submenu work. Closing before commit also finishes menu focus restoration
 before React replaces the editor with its preview.
 MathLive 0.110 does not perform that cleanup itself; leaving it open makes the
 next field's menu call `showPopover()` on a disconnected element.
-MathPreview mounts inert, read-only MathLive fields without keyboard/menu controls,
-using the same fonts and layout as editing and a spoken-math accessible label.
+The formula being edited is a MathLive field (MathField). Every other one
+(note equations in the editor and View, question and quiz views, question-editor
+previews, a shared page's islands) is MathPreview: apart from one with an empty
+template slot (below), MathLive's static markup
+(`convertLatexToMarkup`, the shared page's renderer) drawn with
+`mathlive-static.css`, the same layout engine and fonts as the field without a
+field per formula (Epo 2026-11-27, Q912: a note with 180 read-only fields forced
+727 layouts per open). `loadMathLive` (`materials/mathLive.ts`) loads MathLive
+(through `loadMathLiveModule`, the module alone, which editing fields and slot
+previews use, so they never wait on the stylesheet) with the stylesheet as a
+constructed sheet, once; a response that is not `text/css` (the Worker's
+single-page fallback answers a missing file with the app's page and a 200)
+fails, and a failed load is not kept. The document adopts the sheet, which
+declares the fonts (so a face loads only once a formula uses it: 5 files on the
+Q912 long test note, where the fields loaded 20; a field that connects before the
+sheet is adopted, such as a slot preview, still loads all 20) and makes an editing field leave its
+fonts to those declarations, and each preview's shadow root adopts it for the
+markup. The markup sits in the host span's shadow root, as the field's drawing
+did, so a copy around a formula (Slate's or the browser's) picks up none of its
+glyphs; the host is `role="math"` with MathLive's spoken text
+(`convertLatexToSpeakableText`) as its label, the markup `aria-hidden`. The
+static renderer lays out in display style whatever the mode, so an inline
+formula's TeX is prefixed with `\textstyle`, as an inline field draws it; its
+markup takes the field's 1.21em size, 400 weight, 1.2 line height and serif text
+zones (`--_text-font-family`, which only the field's container sets), and inline
+it is an inline block capped at the line's width with -0.25em block margins, so
+line heights, baselines and formula boxes match the field's to within 0.1px. An
+inline formula wider than its line runs past the column into the padding and
+the note's sideways scroll, as the read-only field's content did (measured at
+1280 and 360 px in the Q912 review). Clipping it would hide part of the formula,
+and `overflow: hidden` on the inline block would also move its baseline.
+MathLive's static renderer draws an empty template slot (`\placeholder{}`) as a
+blank space with no option to draw it, so a formula whose LaTeX holds
+`\placeholder` (a string test, no parse) stays an inert, read-only MathLive
+field without keyboard/menu controls, which draws the slot's box (Epo
+2026-11-27, Q915): the field's layout and margins, its spoken text
+(`getValue('spoken-text')`) as the host's label, its drawing in its own shadow
+root, and it mounts synchronously once MathLive is registered. Shared pages'
+server markup still draws such slots blank.
 It and the shared note's server markup (`mathMarkup` in `src/share/server.tsx`)
 pass the LaTeX through `inertTex`, which draws MathLive's HTML commands
 (`\style`, `\htmlStyle`, `\class`, `\htmlClass`, `\cssId`, `\htmlId`,
@@ -5491,24 +5528,23 @@ its 0.111 strict-grammar validation drops an invalid colour, border,
 background or font family, and its `\enclose`/`\href`/`\htmlData` quoting
 fixes close the SVG overlay and attribute breakout, so those need nothing from
 `inertTex` (a pin below 0.111 would reopen that class, which an `inertTex`
-test guards). The stored LaTeX is unchanged. Share pages drop the markup into
-the DOM without a sanitizer, so `mathMarkup` also runs a cheap tripwire
+test guards). The stored LaTeX is unchanged. Both drop the markup into the DOM
+without a sanitizer, so `mathMarkup` and MathPreview also run a cheap tripwire
 (`markupIsInert`, `mathTripwire.ts`): markup carrying an inline event handler
 or a `url()`/`image-set()` paint or background (after decoding character
 references) is shown as the escaped source instead. The app's report-only
 image policy (deployment-runbook.md §2.4) governs `img-src` only; SVG paint
-falls under `default-src`, so the policy is not the fix for this class. This
-preserves native placeholders, accents and fractions in notes, question editors and
-question/quiz views. KaTeX remains confined to export figures, where empty slots map
+falls under `default-src`, so the policy is not the fix for this class.
+KaTeX remains confined to export figures, where empty slots map
 to `\square`; saved editable formulas retain their original placeholders. The
 editors declare the equation nodes and their `$…$`/`$$` input rules in
 `notes/equationPlugins.ts` (copied from @platejs/math 53's `MathRules`) rather
 than importing @platejs/math, whose entries import KaTeX and its stylesheet.
 A display formula wider than its column keeps its size and scrolls sideways in
 MathPreview's own box (question views, question-editor and note equation
-previews, note View); the inert field leaves wheel and touch to that box, which
-is `relative` so MathLive's absolutely positioned screen-reader node cannot widen
-the page. Inline formulas stay capped at their line's width. A shared note's
+previews, note View), which is `relative` so the markup's absolutely positioned
+parts cannot widen the page. An inline formula wider than its line runs past
+it (above). A shared note's
 server markup scrolls in the static equation block's own `overflow-auto` box.
 Both boxes carry `scroll-fade-x` (as Tabs do): while more of the formula is
 hidden at an edge, that edge fades over 28px, driven by the box's own scroll
@@ -5526,10 +5562,14 @@ math font size. Opening an existing block reserves its preview height while
 MathLive loads. When MathLive is already registered by a preview, MathField
 constructs the editor synchronously in its layout effect before the first paint.
 Awaiting even a cached dynamic import left one empty, collapsed frame on opening.
-MathPreview also reuses the registered constructor synchronously when editing ends,
-with its LaTeX in the initial `value` attribute before connection. Setting the value
-after mounting left the first frame empty until MathLive's next animation frame.
-New blank formulas still load MathLive lazily. Inline fields use textstyle; block fields use displaystyle.
+Once `loadMathLive` has settled (`loadedMathLive`), MathPreview draws in its
+first layout effect, before the first paint, so a preview drawn when editing
+ends paints in its first frame. MathField mounts from `loadMathLiveModule` and
+starts `loadMathLive` alongside without waiting on it, so this holds after a new
+blank formula (which still loads MathLive lazily) and a failed stylesheet never
+blocks editing; a preview shows that failure itself (its TeX). Preview's loader
+(`mathCode` in `blockCode.ts`) is `loadMathLive`, counted loaded once it has
+settled. Inline fields use textstyle; block fields use displaystyle.
 The shared MathField uses app-theme selection colors, serif text zones without
 MathLive's text-zone tint, and a black 1em caret. The caret-height override lives
 inside MathLive's shadow root because version 0.110 exposes no CSS part for it.

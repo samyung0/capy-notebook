@@ -52,7 +52,7 @@ export type SharePage =
 // Public pages are English only, and a Worker has no browser to ask.
 overwriteGetLocale(() => 'en');
 
-/** MathLive's static layout, as the editor's read-only field draws it. The
+/** MathLive's static layout, the renderer the app's MathPreview uses too. The
  * markup goes into the page without a sanitizer, so a formula whose markup
  * trips the tripwire (an event handler, or a paint/background fetch `inertTex`
  * did not catch) is shown as its escaped source instead. */

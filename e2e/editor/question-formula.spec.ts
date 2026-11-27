@@ -116,10 +116,8 @@ test('question formula accepts physical digits and retains them after commit', a
   const preview = editor
     .getByRole('button', { exact: true, name: m.question_ui_formula() })
     .first();
-  const rendered = preview.locator('math-field');
-  await expect(rendered).toHaveJSProperty('readOnly', true);
-  await expect(rendered).toHaveJSProperty('inert', true);
-  await expect(rendered).toHaveJSProperty('value', tex);
+  // Viewing draws MathLive's static markup in the editor's geometry (Q912).
+  const rendered = preview.getByRole('math');
   await expect(rendered.locator('.ML__base')).toContainText('ATP');
   const viewing = await rendered.locator('.ML__base').boundingBox();
   expect(Math.abs(viewing!.width - editing!.width)).toBeLessThan(0.1);
@@ -169,7 +167,7 @@ test('a wide display formula scrolls in its own box with an edge fade, a fitting
     formula.evaluate((element, end) => {
       const scrolls = (el: Element) =>
         ['auto', 'scroll'].includes(getComputedStyle(el).overflowX);
-      let box: Element | null = element.querySelector('math-field');
+      let box: Element | null = element;
       while (box && !scrolls(box)) box = box.parentElement;
       if (box && end) box.scrollLeft = box.scrollWidth;
       const style = box && getComputedStyle(box);
@@ -194,7 +192,7 @@ test('a wide display formula scrolls in its own box with an edge fade, a fitting
   expect(before.pageOverflow).toBe(0);
   // At rest only the hidden end fades.
   await expect.poll(async () => (await measure()).fade).toBe('0px 28px');
-  // The field is inert, so the wheel over it reaches the box.
+  // The wheel over the formula reaches its box.
   const bounds = (await formula.boundingBox())!;
   await page.mouse.move(bounds.x + 40, bounds.y + bounds.height / 2);
   await page.mouse.wheel(200, 0);

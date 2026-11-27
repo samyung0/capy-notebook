@@ -299,8 +299,8 @@ function Mention(props: SlateElementProps) {
   );
 }
 
-/** MathLive's own layout: the read-only field in the browser, its static
- * markup on the server (StaticMathContext). */
+/** MathLive's static markup: MathPreview's in the browser, the server's on
+ * shared pages (StaticMathContext). */
 function Equation({ displayMode, tex }: { displayMode: boolean; tex: string }) {
   const toMarkup = useContext(StaticMathContext);
   if (!toMarkup) return <MathPreview displayMode={displayMode} tex={tex} />;

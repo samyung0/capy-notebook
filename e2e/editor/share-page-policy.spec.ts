@@ -59,7 +59,7 @@ test('a shared note with formulas hydrates its islands under the script policy',
     { timeout: 30_000 }
   );
   await expect(
-    page.locator('[data-island="embed"] math-field').first()
+    page.locator('[data-island="embed"] [data-math-preview] .ML__latex').first()
   ).toBeAttached({ timeout: 30_000 });
   await expect(
     page.frameLocator('[data-island="html"] iframe').locator('#snippet-ready')
@@ -81,7 +81,10 @@ for (const { kind, math, path } of [
       timeout: 30_000,
     });
     // MathLive draws the quiz's formulas.
-    if (math) await expect(page.locator('math-field').first()).toBeAttached();
+    if (math)
+      await expect(
+        page.locator('[data-math-preview] .ML__latex').first()
+      ).toBeAttached();
     expect(await blocked()).toEqual([]);
   });
 

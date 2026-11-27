@@ -2548,9 +2548,21 @@ def build_app(target: str):
             (EMBED / "index.html").read_text(encoding="utf-8"), headers=headers
         )
 
+    @app.get("/mathlive/mathlive-static.css")
+    def mathlive_static_css():
+        # MathPreview draws with MathLive's static stylesheet, rewritten as
+        # vite-mathlive.ts serves it (fonts from the absolute path below).
+        css = (REPO / "node_modules/mathlive/mathlive-static.css").read_text(
+            encoding="utf-8"
+        )
+        css = css.replace('font-display:"swap"', "font-display:swap").replace(
+            "url(fonts/", "url(/mathlive/fonts/"
+        )
+        return Response(css, media_type="text/css")
+
     @app.get("/mathlive/fonts/{name}")
     def mathlive_font(name: str):
-        # MathPreview loads its fonts from this absolute path.
+        # The static stylesheet's fonts.
         path = REPO / "node_modules/mathlive/fonts" / name
         if path.parent != REPO / "node_modules/mathlive/fonts" or not path.exists():
             raise HTTPException(404)

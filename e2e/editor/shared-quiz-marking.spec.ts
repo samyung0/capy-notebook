@@ -135,7 +135,9 @@ for (const { screen, width } of SCREENS) {
     // The server's HTML shows first; the quiz's formula runs MathLive once its
     // island has hydrated, and a click before then is lost.
     await expect(
-      page.locator('[data-island="embed"] math-field').first()
+      page
+        .locator('[data-island="embed"] [data-math-preview] .ML__latex')
+        .first()
     ).toBeAttached({ timeout: 30_000 });
     const question = page.locator('[data-question-id]', {
       hasText: 'Bacteria are eukaryotes',

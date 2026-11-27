@@ -21,8 +21,9 @@ test('inline editing overlays its control without moving a formula near the line
       .closest('[data-slate-node="element"]')!
       .parentElement!.closest('[data-slate-node="element"]')! as HTMLElement;
     paragraph.dataset.formulaParagraph = '';
+    // A formula not being edited draws in its preview's shadow root (Q912).
     const formula = button
-      .querySelector('math-field')!
+      .querySelector('[data-math-preview]')!
       .shadowRoot!.querySelector('.ML__base')!;
     const box = formula.getBoundingClientRect();
     paragraph.style.width = `${box.right - paragraph.getBoundingClientRect().left + 2}px`;
@@ -103,8 +104,11 @@ test('a wrapped inline formula stays painted when opening and finishing editing'
     const frames = await slot.evaluate(async (el) => {
       const frames: { width: number; text: string }[] = [];
       const sample = () => {
-        const field = el.querySelector('math-field');
-        const content = field?.shadowRoot?.querySelector('.ML__base');
+        // The editing field, or the preview it replaces.
+        const content = (
+          el.querySelector('math-field') ??
+          el.querySelector('[data-math-preview]')
+        )?.shadowRoot?.querySelector('.ML__base');
         frames.push({
           text: content?.textContent ?? '',
           width: content?.getBoundingClientRect().width ?? 0,
@@ -132,9 +136,11 @@ test('a wrapped inline formula stays painted when opening and finishing editing'
         const frames: { width: number; text: string }[] = [];
         const done = new Promise<void>((resolve) => {
           const frame = () => {
-            const content = el
-              .querySelector('math-field')
-              ?.shadowRoot?.querySelector('.ML__base');
+            // The editing field, or the preview that replaces it.
+            const content = (
+              el.querySelector('math-field') ??
+              el.querySelector('[data-math-preview]')
+            )?.shadowRoot?.querySelector('.ML__base');
             frames.push({
               text: content?.textContent ?? '',
               width: content?.getBoundingClientRect().width ?? 0,
