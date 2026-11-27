@@ -4,7 +4,11 @@ import type { UndoTarget } from '@/features/collaboration/undo';
  * the element its block adopts. Kept apart from the board's own code so the page
  * subscribes to it without loading BlockSuite. */
 
-export type CardMaterialKind = 'quiz' | 'flashcards';
+/** A placed quiz or set, or a film (Epo 2026-11-27): a film card plays its
+ * file, view-only, with Open instead of Edit. */
+export type CardMaterialKind = 'quiz' | 'flashcards' | 'film';
+/** The kinds the Misc panel's New tile makes. */
+export type StudyCardKind = Exclude<CardMaterialKind, 'film'>;
 
 /** One placed card and the element the page renders its runner into. */
 export type MaterialCardHost = {
@@ -67,6 +71,8 @@ export const releaseMaterialHost = (blockId: string) => {
 /** A placed card's size in screen pixels: a quiz shows a question with its options,
  * a set one card with its count and steps, unscrolled (Epo 2026-11-13). */
 export const MATERIAL_CARD_SIZE: Record<CardMaterialKind, [number, number]> = {
+  // Its header, then the film at 16:9.
+  film: [480, 308],
   flashcards: [400, 340],
   quiz: [440, 500],
 };

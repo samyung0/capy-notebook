@@ -35,6 +35,7 @@ func TestKindFromNameUsesFrontendExtensionMap(t *testing.T) {
 		"script.py":         "txt",
 		"data.csv":          "sheet",
 		"state.json":        "json",
+		"circle.cmv":        "film",
 		"no-extension":      "unknown",
 		"archive.zip":       "unknown",
 		"legacy.doc":        "doc",
@@ -159,6 +160,7 @@ func TestBuildProcessingPlan(t *testing.T) {
 		{name: "book.xlsx", kind: "sheet", mode: ParseModeFast, wantRoute: RouteDocumentParse, wantCaption: CaptionNone, wantParser: ParseModeFast, wantPreview: true, wantStages: []string{"fetch_source", "parse_document", "chunk", "index", "generate_derivatives"}},
 		{name: "report.docx", kind: "doc", mode: ParseModeNone, wantRoute: RouteStoreOnly, wantCaption: CaptionNone},
 		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, wantRoute: RouteStoreOnly, wantCaption: CaptionNone},
+		{name: "circle.cmv", kind: "film", mode: ParseModeNone, wantRoute: RouteStoreOnly, wantCaption: CaptionNone},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

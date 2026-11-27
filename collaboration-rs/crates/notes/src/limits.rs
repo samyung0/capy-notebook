@@ -312,7 +312,7 @@ struct Written {
 /// level): `material::assert_canonical`, the embed catalog's `required` of
 /// the elements a Plate room holds, less a media block's `assetId`
 /// ([on_candidate] checks it).
-pub const OWN_KEYS: [(&str, &[&str]); 9] = [
+pub const OWN_KEYS: [(&str, &[&str]); 10] = [
     // Not a top-level block only, so its id is its own key.
     ("mermaid", &["id", "source"]),
     ("chart", &["block"]),
@@ -325,6 +325,7 @@ pub const OWN_KEYS: [(&str, &[&str]); 9] = [
         &["materialId", "refKind"],
     ),
     ("video", &["provider", "videoId"]),
+    (crate::material::FILM_TYPE, &["fileId"]),
     // A canvas's one block. Its board room admits by size alone (the server's
     // board model), so these are the store's rules for the projected block.
     ("canvas_board", &["version", "images"]),
@@ -399,8 +400,9 @@ fn shared_keys(keys: fn(&catalog::Element) -> &'static [&'static str]) -> Vec<&'
 }
 
 /// The keys whose value the store checks beyond its presence ([value_ok]).
-const VALUE_KEYS: [&str; 14] = [
+const VALUE_KEYS: [&str; 15] = [
     "version",
+    "fileId",
     "images",
     "refKind",
     "provider",
@@ -442,6 +444,9 @@ fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
         }
         ("video", "provider", Any::String(provider)) => &**provider == "youtube",
         ("video", "videoId", Any::String(id)) => crate::material::youtube_id(id),
+        (crate::material::FILM_TYPE, "fileId", Any::String(id)) => {
+            !crate::questions::js_trim(id).is_empty()
+        }
         (crate::material::HTML_EMBED_TYPE, "html", Any::String(html)) => {
             html.len() <= catalog::HTML_EMBED_MAX_BYTES
         }
@@ -475,6 +480,7 @@ fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
         (_, "listStyleType", value) => style_value_ok(value),
         (crate::material::MATERIAL_REF_TYPE, "refKind", _)
         | ("video", "provider" | "videoId", _)
+        | (crate::material::FILM_TYPE, "fileId", _)
         | (crate::material::HTML_EMBED_TYPE, "html", _) => false,
         _ => true,
     }

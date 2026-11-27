@@ -85,6 +85,7 @@ func catalogDocuments(t *testing.T) map[string][]map[string]any {
 	extra := []map[string]any{
 		{"type": "plot", "id": "cat_plot", "block": plot, "children": leaf},
 		{"type": "placeholder", "id": "cat_upload", "mediaType": "img", "children": leaf},
+		{"type": FilmType, "id": "cat_film", "fileId": "f_film", "children": leaf},
 		tableViewNode("cat_table_view", smallTableView()),
 		{"type": "p", "id": "cat_inputs", "children": []any{
 			textLeaf("Ask "),

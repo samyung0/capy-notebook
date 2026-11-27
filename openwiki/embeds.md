@@ -27,6 +27,10 @@ lists to cover are in the central todo list). Decisions: `human/frontend/plate-e
   ([Index text](#index-text)). The media blocks naming an
   editor asset are `img` and `audio` only: notes embed no PDF or other file
   (Epo 2026-10-15), so a stored `file` block is an unlisted type, below.
+  A note's `film` (Epo 2026-11-27) is a top-level void naming a film file by
+  `fileId` (required, closed fields, no `assetId`, `url` or `src`): a live link
+  the reader's access decides, never written by the agent
+  ([films](films.md#in-notes-and-on-the-canvas)).
   Markdown footnotes are not
   elements: the import turns them into text (see the note imports section of
   `frontend/plate-editor.md`). For each: `void` (it holds exactly one
@@ -225,7 +229,7 @@ the golden fixtures in `server/internal/materialdoc/testdata/index_text`
 | `question` | `quiz_question` | the question, below |
 | `item` | `material_ref` | the referenced quiz's or flashcard set's text, at the reference |
 | `table_view` | `table_view` | the title, then its first view as a Markdown table ([Table views](#table-views)) |
-| `none` | `hr`, `toc`, `equation`, `img`, `audio`, `video`, `placeholder`, `html_embed`, and the inline voids `inline_equation`, `mention`, `mention_input`, `slash_input` | nothing: media (and their captions), equations and the table of contents carry no text of their own, an inline void's children are empty (an equation's TeX and a mention's name stay out, as before), the transient elements hold nothing yet, and html_embed is out of the embeds round (Epo 2026-10-17) |
+| `none` | `hr`, `toc`, `equation`, `img`, `audio`, `video`, `film`, `placeholder`, `html_embed`, and the inline voids `inline_equation`, `mention`, `mention_input`, `slash_input` | nothing: media (and their captions), equations and the table of contents carry no text of their own, an inline void's children are empty (an equation's TeX and a mention's name stay out, as before), the transient elements hold nothing yet, and html_embed is out of the embeds round (Epo 2026-10-17) |
 
 A type the catalog does not list gives its text, as the read-only View shows
 an unsupported block's text. Inside a block's text an element whose rule is

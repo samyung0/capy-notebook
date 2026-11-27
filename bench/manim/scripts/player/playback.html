@@ -1,0 +1,91 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>CMV playback</title>
+<!--
+  Plays a take with ManimGX's own web player (WebGPU) at 1280×720 and measures it: the take's
+  feed, each draw call, frame pacing, memory. Served from bench/manim:
+  /scripts/player/playback.html?take=<name> reads /.results/takes/<name>.take.
+  Results land in window.result (and the page text) when the film has played once.
+-->
+<style>
+  body { margin: 0; background: #111; color: #ddd; font: 13px monospace; }
+  canvas { width: 640px; height: 360px; display: block; }
+  pre { padding: 8px; white-space: pre-wrap; }
+</style>
+<canvas width="1280" height="720"></canvas>
+<pre id="out">loading…</pre>
+<script type="module">
+  const out = document.getElementById("out");
+  const say = (t) => (out.textContent = t);
+  const name = new URLSearchParams(location.search).get("take");
+  const web = "/.results/web/";
+  const t0 = performance.now();
+  const engine = await import(web + "engine.js");
+  const exports = await engine.default({ module_or_path: web + "engine.wasm" });
+  const fonts = await Promise.all(
+    Array.from({ length: 24 }, (_, i) => fetch(`${web}font${i}.bin`).then((r) => r.arrayBuffer()).then((b) => new Uint8Array(b))),
+  );
+  await engine.init(fonts);
+  const boot_ms = performance.now() - t0;
+
+  const take = new Uint8Array(await (await fetch(`/.results/takes/${name}.take`)).arrayBuffer());
+  const canvas = document.querySelector("canvas");
+  const player = new engine.Player(canvas, 0, false, true);
+  player.resize(1280, 720, 1);
+  const wasmMB = () => exports.memory.buffer.byteLength / 1e6;
+  const before = wasmMB();
+  let t = performance.now();
+  const piece = 1 << 20; // fed as a stream of pieces, as the director drains a recorder
+  for (let at = 0; at < take.length; at += piece) player.feed(take.subarray(at, at + piece));
+  const feed_ms = performance.now() - t;
+  const fed = wasmMB();
+  const duration = player.duration;
+
+  const draws = [], gaps = [];
+  let last = 0, shown = -1, peak = fed;
+  player.time = 0;
+  // play it: draw on every animation frame, as the player asks, until the end
+  await new Promise((done) => {
+    const started = performance.now();
+    function frame(now) {
+      if (last) gaps.push(now - last);
+      last = now;
+      // the film's clock follows the page's; drawn only when its 30 fps frame changes
+      const time = (now - started) / 1000, f = Math.floor(time * 30);
+      player.time = time;
+      if (f !== shown) {
+        shown = f;
+        const a = performance.now();
+        player.draw();
+        draws.push(performance.now() - a);
+      }
+      peak = Math.max(peak, wasmMB());
+      if (player.time >= duration) return done();
+      say(`${name}: ${player.time.toFixed(1)} / ${duration.toFixed(1)} s`);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  });
+
+  // scrubbing: jump to 20 random times, each drawn once
+  const seeks = [];
+  for (let i = 0; i < 20; i++) {
+    player.time = Math.random() * duration;
+    const a = performance.now();
+    player.draw();
+    seeks.push(performance.now() - a);
+  }
+
+  const q = (xs, p) => { const s = [...xs].sort((a, b) => a - b); return +s[Math.min(s.length - 1, Math.floor(p * s.length))].toFixed(2); };
+  const result = {
+    take: name, take_MB: +(take.length / 1e6).toFixed(1), seconds: +duration.toFixed(1),
+    boot_ms: Math.round(boot_ms), feed_ms: Math.round(feed_ms),
+    draw_ms_median: q(draws, 0.5), draw_ms_p95: q(draws, 0.95), draw_ms_max: q(draws, 1),
+    frames_drawn: draws.length, refresh_gap_ms_median: q(gaps, 0.5), gaps_over_50ms: gaps.filter((g) => g > 50).length,
+    seek_ms_median: q(seeks, 0.5), seek_ms_max: q(seeks, 1),
+    wasm_MB_start: +before.toFixed(0), wasm_MB_fed: +fed.toFixed(0), wasm_MB_peak: +peak.toFixed(0),
+    js_heap_MB: performance.memory ? +(performance.memory.usedJSHeapSize / 1e6).toFixed(0) : null,
+  };
+  window.result = result;
+  say(JSON.stringify(result, null, 1));
+</script>

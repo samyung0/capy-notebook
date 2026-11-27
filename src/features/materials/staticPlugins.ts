@@ -100,6 +100,10 @@ const staticCustomBlockPlugins = [
     })
   ),
   createSlatePlugin({
+    key: 'film',
+    node: { isElement: true, isVoid: true, type: 'film' },
+  }),
+  createSlatePlugin({
     key: 'material_ref',
     node: { isElement: true, isVoid: true, type: 'material_ref' },
   }),

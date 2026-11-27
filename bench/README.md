@@ -32,6 +32,7 @@ place (Epo 2026-10-10).
 | [`parsers/`](parsers/)     | Ingest-host parser accuracy and capacity: OCR modes, concurrency, worker memory, OOM behavior    | `python bench/parsers/scripts/…` (needs VM) |
 | [`grading/`](grading/)     | Small local models against the production quiz-grading rubric, native and in-browser             | `python bench/grading/scripts/benchmark.py` |
 | [`extraction/`](extraction/) | Make a quiz: questions read from HKDSE past papers' pages with keys worked out where none is printed, paired with their mark schemes, against hand-built gold; labels, parts, marks, printed option order, worked-out key accuracy, pairing, cost, time per model | `python bench/extraction/scripts/run.py --paper … --model …` |
+| [`manim/`](manim/)         | ManimGX scenes as CMV films without Python: drawn (engine uploads, WebGPU player) or video (H.264 per second), the smaller kept; size, pixel fidelity, JavaScript decode, playback CPU and memory in Chrome against MP4 | `bench/manim/scripts/run_all.sh …`, `node bench/manim/scripts/player/playback_run.mjs …` |
 | [`rag/`](rag/scripts/)     | Retrieval and chat-agent quality: live diagnostic plus six frozen experiments                    | see below                                   |
 
 ### editor

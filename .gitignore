@@ -103,6 +103,7 @@ bench/collaboration/.results/
 bench/share-pages/.results/
 bench/gateway/.results/
 bench/extraction/.results/
+bench/manim/.results/
 # Exam text and figures: local only.
 bench/extraction/fixtures/
 bench/extraction/reports/*/*.jpg

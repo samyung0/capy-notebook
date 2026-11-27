@@ -17,6 +17,7 @@ import {
   QuizQuestionElement,
   VisualBlockElement,
 } from './elements';
+import { FilmElement } from './FilmElement';
 import { fixMermaidSelection, stampMermaidTheme } from './mermaidBlock';
 import {
   FLASHCARDS_KEY,
@@ -162,6 +163,7 @@ export const customBlockPlugins = [
       ['plot', VisualBlockElement],
       ['graph', VisualBlockElement],
       ['html_embed', HtmlEmbedElement],
+      ['film', FilmElement],
     ] as const
   ).map(([key, component]) =>
     createPlatePlugin({

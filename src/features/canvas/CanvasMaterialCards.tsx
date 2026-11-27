@@ -16,17 +16,18 @@ import type { MaterialListItem, MaterialPreview } from '@/api/types';
 import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
 import { UndoSink } from '@/features/collaboration/undo';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
+import { FilmEmbed } from '@/features/films/FilmEmbed';
 import { EmbedLoading } from '@/features/materials/embeds/EmbedView';
 import { materialIconName } from '@/lib/fileIcons';
 import { type OpenLink, OpenLinkContext, scopedOpenLink } from '@/lib/openLink';
 import {
-  type CardMaterialKind,
   cardEditing,
   type EditingCard,
   lendCardUndo,
   type MaterialCardHost,
   onCardState,
   onMaterialHosts,
+  type StudyCardKind,
   setCardEditable,
   setCardEditing,
 } from './materialCardHosts';
@@ -138,14 +139,22 @@ function PlacedCards({
       {cards.map(({ host, id, kind, materialId }) =>
         createPortal(
           <OpenLinkContext.Provider value={scopedOpenLink(link, id)}>
-            <CanvasMaterial
-              blockId={id}
-              editing={editing?.id === id}
-              kind={kind}
-              listed={listed?.has(materialId)}
-              materialId={materialId}
-              preview={listed?.get(materialId)?.preview}
-            />
+            {kind === 'film' ? (
+              // The film itself, view-only (Epo 2026-11-27); a gone one's
+              // card says so in its own chrome.
+              listed?.has(materialId) !== false && (
+                <FilmEmbed contain fileId={materialId} />
+              )
+            ) : (
+              <CanvasMaterial
+                blockId={id}
+                editing={editing?.id === id}
+                kind={kind}
+                listed={listed?.has(materialId)}
+                materialId={materialId}
+                preview={listed?.get(materialId)?.preview}
+              />
+            )}
           </OpenLinkContext.Provider>,
           host,
           id
@@ -165,7 +174,7 @@ function CanvasMaterial({
 }: {
   blockId: string;
   editing: boolean;
-  kind: CardMaterialKind;
+  kind: StudyCardKind;
   /** `undefined` while the workspace's list loads. */
   listed: boolean | undefined;
   materialId: string;

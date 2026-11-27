@@ -37,6 +37,8 @@ const (
 	HTMLEmbedType     = "html_embed"
 	HTMLEmbedMaxBytes = embeds.HTMLEmbedMaxBytes
 	HTMLEmbedMaxCount = embeds.HTMLEmbedMaxCount
+	// FilmType is a film a note shows: a top-level void naming its file.
+	FilmType = "film"
 )
 
 var (
@@ -583,6 +585,37 @@ func RewriteMaterialRefIDs(raw string, ids map[string]string) (string, error) {
 	return Marshal(doc)
 }
 
+// RewriteFilmFileIDs points every film at its file's copy, for workspace
+// clones, and drops a film whose file was not copied (trashed or in another
+// workspace), as RewriteMaterialRefIDs drops a reference.
+func RewriteFilmFileIDs(raw string, ids map[string]string) (string, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	kept := make([]map[string]any, 0, len(doc.Value))
+	changed := false
+	for _, node := range doc.Value {
+		if node["type"] == FilmType {
+			changed = true
+			fileID, _ := node["fileId"].(string)
+			if ids[fileID] == "" {
+				continue
+			}
+			node["fileId"] = ids[fileID]
+		}
+		kept = append(kept, node)
+	}
+	if !changed {
+		return raw, nil
+	}
+	if len(kept) == 0 {
+		kept = Empty().Value
+	}
+	doc.Value = kept
+	return Marshal(doc)
+}
+
 // PlainMentions turns every mention of a user live does not keep into the
 // plain text "@Name", for a copy whose readers that user is not among.
 func PlainMentions(raw string, live func(userID string) bool) (string, error) {
@@ -807,6 +840,10 @@ func validateElement(node map[string]any, typ string, depth int, children []any,
 		return validateTableSizes(node)
 	case RefType:
 		return validateMaterialRef(node)
+	case FilmType:
+		if fileID, _ := node["fileId"].(string); strings.TrimSpace(fileID) == "" {
+			return errors.New("fileId is required")
+		}
 	}
 	return nil
 }

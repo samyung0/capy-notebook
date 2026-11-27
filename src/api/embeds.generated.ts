@@ -520,6 +520,34 @@ export const EMBED_CATALOG = {
       ]
     },
     {
+      "type": "film",
+      "index": "none",
+      "void": true,
+      "topLevel": true,
+      "required": [
+        "id",
+        "fileId"
+      ],
+      "fields": [
+        "type",
+        "id",
+        "fileId",
+        "children"
+      ],
+      "forbidden": [
+        "assetId",
+        "url",
+        "src",
+        "color",
+        "backgroundColor",
+        "fontSize",
+        "fontFamily"
+      ],
+      "materials": [
+        "note"
+      ]
+    },
+    {
       "type": "canvas_board",
       "index": "none",
       "void": true,

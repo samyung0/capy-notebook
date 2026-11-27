@@ -15,8 +15,15 @@ import {
   SlateLeaf,
   type SlateLeafProps,
 } from 'platejs/static';
-import { type CSSProperties, createContext, useContext } from 'react';
+import {
+  type CSSProperties,
+  createContext,
+  lazy,
+  Suspense,
+  useContext,
+} from 'react';
 import { Button } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/feedback';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { CalloutIcon } from '@/features/notes/CalloutIcon';
 import { EditorIcon } from '@/features/notes/EditorIcon';
@@ -68,7 +75,9 @@ import { TableViewTable } from '@/features/notes/tableView/TableViewTable';
 import { QuestionView } from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { CannotShow } from './CannotShow';
 import type {
+  FilmElement as FilmNode,
   FlashcardElement as FlashcardNode,
   HtmlEmbedElement as HtmlEmbedNode,
   MaterialRefElement as MaterialRefNode,
@@ -82,7 +91,7 @@ import {
   quizQuestionElementToQuestion,
 } from './document';
 import { EmbedLoading } from './embeds/EmbedView';
-import { Island, StaticMathContext } from './Island';
+import { Island, PublicPageContext, StaticMathContext } from './Island';
 import { StandaloneMaterialTitle } from './MaterialRenderContext';
 import { MathPreview } from './MathPreview';
 import type { MediaAssetNode } from './MediaAssetView';
@@ -425,6 +434,37 @@ function MaterialRefElement(props: SlateElementProps) {
   );
 }
 
+// The app's View only: a shared page draws no film.
+const FilmEmbed = lazy(() =>
+  import('@/features/films/FilmEmbed').then((mod) => ({
+    default: mod.FilmEmbed,
+  }))
+);
+
+/** A film in View (Epo 2026-11-27): it plays in place as in Edit. A shared
+ * page serves only standalone notes and a standalone file has no share link,
+ * so there it can't be shown. */
+function FilmElement(props: SlateElementProps) {
+  const { fileId } = props.element as unknown as FilmNode;
+  const shared = useContext(PublicPageContext);
+  return (
+    <SlateElement {...props} className="my-4">
+      <div contentEditable={false}>
+        {shared ? (
+          <CannotShow label={m.film_cannot_show()} />
+        ) : (
+          <Suspense
+            fallback={<Skeleton className="aspect-video w-full rounded-none" />}
+          >
+            <FilmEmbed fileId={fileId} />
+          </Suspense>
+        )}
+      </div>
+      {props.children}
+    </SlateElement>
+  );
+}
+
 function MermaidElement(props: SlateElementProps) {
   const { source, theme, width } = props.element as unknown as MermaidNode;
   const caption = NodeApi.string(props.element);
@@ -531,6 +571,7 @@ export const staticNoteComponents = {
   column: Column,
   column_group: element('div', COLUMN_GROUP_CLASS),
   equation: BlockEquation,
+  film: FilmElement,
   flashcard: FlashcardElement,
   flashcard_back: element('p', FLASHCARD_BACK_CLASS),
   flashcard_front: element('p', FLASHCARD_FRONT_CLASS),

@@ -23,6 +23,7 @@ export interface ExportLabels {
   choices: string;
   column: string;
   false: string;
+  film: string;
   front: string;
   interactive: string;
   marks: string;

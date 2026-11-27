@@ -86,6 +86,7 @@ func (a *api) getSourceUploadPolicy(
 		store.FileSlides,
 		store.FileAudio,
 		store.FileJson,
+		store.FileFilm,
 		store.FileUnknown,
 	}
 	textKinds := map[store.FileKind]bool{
@@ -386,7 +387,7 @@ func (a *api) receiveSource(w http.ResponseWriter, r *http.Request, batch *strin
 	}
 	*batch = ""
 	check := func(spool io.ReaderAt, size int64) error {
-		return checkSourceImages(name, body.Kind, limits.ImageBytes, spool, size)
+		return checkSourceBytes(name, body.Kind, limits.ImageBytes, spool, size)
 	}
 	file, err := a.storeSourceBytes(ctx, stream, uploadID, key, body.ContentType, body.SizeBytes, check)
 	if err != nil {
@@ -619,6 +620,11 @@ func admitImport(meta integrations.ImportFileMetadata, parseMode string, maxByte
 		return "file_too_large", 0, "", ""
 	}
 	kind = integrations.KindFromName(meta.Name)
+	// A film is checked as it is uploaded (checkSourceBytes); the import
+	// worker does not check one, so a film comes from the user's device.
+	if kind == string(store.FileFilm) {
+		return "unsupported_file", 0, "", ""
+	}
 	mode = parseMode
 	if mode == "" {
 		mode = sourceupload.DefaultParseMode(meta.Name, kind)

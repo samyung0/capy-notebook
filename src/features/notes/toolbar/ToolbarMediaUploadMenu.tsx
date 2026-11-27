@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { useNoteBlockDialogs } from '@/features/notes/blocks/dialogContext';
 import { EditorIcon } from '@/features/notes/EditorIcon';
+import { insideContainer } from '@/features/notes/editorCommands';
 import { insertMediaPlaceholder } from '@/features/notes/insertMediaPlaceholder';
 import type { AnyEditor } from '@/features/notes/toolbar/NoteToolbar';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
@@ -41,6 +42,15 @@ export function MediaUploadMenu({ editor }: { editor: AnyEditor }) {
               insertYouTubeEmbed(editor, videoId);
             })
           }
+        />
+        <ToolbarPopoverRow
+          icon={<EditorIcon name="film" />}
+          label={m.editor_manim_film()}
+          onClick={() => {
+            setOpen(false);
+            // A top-level block, as the slash menu's /film.
+            if (!insideContainer(editor)) dialogs.pickFilm(editor);
+          }}
         />
       </ToolbarPopoverContent>
     </Popover>

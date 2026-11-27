@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
+import { m } from '../i18n';
 import { clickTextEnd, openEditorNote } from './helpers';
 
-// The slash menu's quiz creates its row before the block goes in. Whatever the
+// The picker's Create new makes the quiz's row before the block goes in. Whatever the
 // user does during that round trip stays: the block lands where the command
 // ran and the caret stays where the user went.
 test('a quiz lands where its command ran while the user types elsewhere', async ({
@@ -37,12 +38,37 @@ test('a quiz lands where its command ran while the user types elsewhere', async 
   await page.keyboard.press('Enter');
   await page.keyboard.type('/quiz');
   await page.getByRole('option', { exact: true, name: 'Quiz' }).click();
+  // The workspace holds quizzes, so Quiz opens the picker (Epo 2026-11-27).
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: m.embed_pick_create_new() })
+    .click();
   await page.waitForFunction(
     () => (window as unknown as { __embedHeld?: boolean }).__embedHeld
   );
+  // The closed dialog hands focus back to the note (else Slate's first focus
+  // after it puts the caret back on the held line).
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => !!document.activeElement?.closest('[data-slate-editor]')
+      )
+    )
+    .toBe(true);
 
   const third = editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true });
   await clickTextEnd(third);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        (text) =>
+          window.getSelection()?.anchorNode?.textContent?.includes(text) ??
+          false,
+        EDITOR_NOTE.thirdParagraph
+      )
+    )
+    .toBe(true);
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
   await page.keyboard.type('typed during');
@@ -79,6 +105,11 @@ test('a quiz takes its line and the caret when the caret stayed', async ({
   await page.keyboard.press('Enter');
   await page.keyboard.type('/quiz');
   await page.getByRole('option', { exact: true, name: 'Quiz' }).click();
+  // The workspace holds quizzes, so Quiz opens the picker (Epo 2026-11-27).
+  await page
+    .getByRole('dialog')
+    .getByRole('button', { name: m.embed_pick_create_new() })
+    .click();
   const quiz = editor.locator('.slate-material_ref');
   await expect(quiz).toHaveCount(1);
   const top = async (locator: typeof quiz) => (await locator.boundingBox())!.y;

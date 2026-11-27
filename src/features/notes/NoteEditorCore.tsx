@@ -2627,7 +2627,10 @@ export function NoteEditorCore({
   return (
     <EditorHoldScope>
       <NoteSeatContext.Provider value={seat}>
-        <NoteBlockDialogsProvider noteId={material.id}>
+        <NoteBlockDialogsProvider
+          noteId={material.id}
+          workspaceId={material.workspaceId ?? ''}
+        >
           <div className="flex max-h-full flex-1 flex-col overflow-auto">
             <Plate editor={editor} onValueChange={changeValue}>
               <CollaborationProvider

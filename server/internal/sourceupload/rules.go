@@ -71,6 +71,7 @@ var explicitKindExtensions = map[string][]string{
 	"slides": {"pptx", "ppt"},
 	"audio":  {"mp3", "wav", "m4a", "ogg", "flac", "aac", "webm", "mp4", "mpeg", "mpga", "opus"},
 	"json":   {"json", "map"},
+	"film":   {"cmv"},
 }
 
 // textExtensions is the complete TEXT_EXT list from AddSourceDialog. Keep

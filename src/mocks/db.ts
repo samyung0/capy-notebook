@@ -60,6 +60,8 @@ import {
   applyItemAwards,
 } from '@/features/quizzes/grade';
 import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
+import drawnFilmUrl from '../../server/internal/cmvfile/testdata/drawn.cmv?url';
+import videoFilmUrl from '../../server/internal/cmvfile/testdata/video.cmv?url';
 import { gradeQuestions, learnerView } from './answerKeys';
 import { biologyQuizQuestions } from './biologyQuiz';
 import {
@@ -1029,6 +1031,20 @@ const standaloneSeeds: {
     name: 'Lecture recording.wav',
     url: fileLinks.f_8.url,
   },
+  {
+    hoursAgo: 52,
+    id: 'f_standalone_film',
+    kind: 'film',
+    name: 'Circle.cmv',
+    url: drawnFilmUrl,
+  },
+  {
+    hoursAgo: 53,
+    id: 'f_standalone_film_video',
+    kind: 'film',
+    name: 'Circle video.cmv',
+    url: videoFilmUrl,
+  },
 ];
 standaloneSeeds.forEach((seed, index) => {
   fileLinks[seed.id] = { url: seed.url ?? textUrl(seed.body ?? '') };
@@ -1049,6 +1065,30 @@ standaloneSeeds.forEach((seed, index) => {
       : 640 * 1024,
     status: 'ready',
     workspaceId: '',
+  });
+});
+// Biology 101's films, for a note's Film and the canvas's (Epo 2026-11-27).
+(
+  [
+    ['f_bio_film', 'Derivative.cmv', drawnFilmUrl],
+    ['f_bio_film_video', 'Secant video.cmv', videoFilmUrl],
+  ] as const
+).forEach(([id, name, url], index) => {
+  fileLinks[id] = { url };
+  files.push({
+    addedAt: hours(3 + index),
+    hasBytes: true,
+    id,
+    indexed: false,
+    isPayer: true,
+    kind: 'film',
+    name,
+    position: 40 + index,
+    revision: 1,
+    sizeBytes: 640 * 1024,
+    status: 'ready',
+    topicId: null,
+    workspaceId: 'ws_bio',
   });
 });
 for (const fixture of standaloneOfficeFixtures) {

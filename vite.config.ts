@@ -250,6 +250,8 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
         '@betteroffice/xlsx/editor',
         '@betteroffice/xlsx/viewer',
         '@betteroffice/xlsx-react',
+        // The film worker's zstd finds its wasm next to its own module.
+        '@bokuweb/zstd-wasm',
       ],
       // Worker imports (the export worker's, the Mermaid worker's linkedom
       // and mermaid) are outside the initial crawl. Discovering these on the

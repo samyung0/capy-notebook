@@ -149,6 +149,26 @@ export interface MaterialRefElement extends MaterialElement {
   type: 'material_ref';
 }
 
+/** A film a note shows, view-only: a live link to a ManimGX .cmv file, read
+ * with the reader's own access (Epo 2026-11-27). Top-level void. */
+export interface FilmElement extends MaterialElement {
+  children: [MaterialText];
+  fileId: string;
+  id: string;
+  type: 'film';
+}
+
+export const FILM_TYPE = 'film';
+
+export function filmNode(fileId: string): FilmElement {
+  return {
+    children: [{ text: '' }],
+    fileId,
+    id: uid('block'),
+    type: FILM_TYPE,
+  };
+}
+
 export type CustomMaterialElement =
   | QuestionFigureElement
   | QuizElement
@@ -160,6 +180,7 @@ export type CustomMaterialElement =
   | MermaidCaptionElement
   | MaterialRefElement
   | HtmlEmbedElement
+  | FilmElement
   | TableViewElement;
 
 export const MATERIAL_REF_TYPE = 'material_ref';
@@ -449,6 +470,10 @@ function validateCustomElement(
         isTextNode(element.children[0]) &&
         element.children[0].text === ''
       );
+    case FILM_TYPE: {
+      const { fileId } = element as FilmElement;
+      return typeof fileId === 'string' && fileId.trim() !== '';
+    }
     case MATERIAL_REF_TYPE: {
       const ref = element as MaterialRefElement;
       const resolved =

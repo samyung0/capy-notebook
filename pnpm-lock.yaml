@@ -38,6 +38,9 @@ importers:
       "@blocksuite/affine":
         specifier: workspace:*
         version: link:vendor/blocksuite/affine/all
+      "@bokuweb/zstd-wasm":
+        specifier: 0.0.27
+        version: 0.0.27
       "@clerk/react":
         specifier: ^6.11.3
         version: 6.13.1(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -212,6 +215,9 @@ importers:
       fflate:
         specifier: 0.8.3
         version: 0.8.3
+      fzstd:
+        specifier: 0.1.1
+        version: 0.1.1
       geopattern:
         specifier: 1.2.3
         version: 1.2.3
@@ -4456,6 +4462,12 @@ packages:
         optional: true
       react:
         optional: true
+
+  "@bokuweb/zstd-wasm@0.0.27":
+    resolution:
+      {
+        integrity: sha512-GDm2uOTK3ESjnYmSeLQifJnBsRCWajKLvN32D2ZcQaaCIJI/Hse9s74f7APXjHit95S10UImsRGkTsbwHmrtmg==,
+      }
 
   "@borewit/text-codec@0.2.3":
     resolution:
@@ -12378,6 +12390,12 @@ packages:
       }
     engines: { node: ">=10" }
 
+  fzstd@0.1.1:
+    resolution:
+      {
+        integrity: sha512-dkuVSOKKwh3eas5VkJy1AW1vFpet8TA/fGmVA5krThl8YcOVE/8ZIoEA1+U1vEn5ckxxhLirSdY837azmbaNHA==,
+      }
+
   gensync@1.0.0-beta.2:
     resolution:
       {
@@ -17878,6 +17896,8 @@ snapshots:
       lit: 3.3.0
       react: 19.2.8
 
+  "@bokuweb/zstd-wasm@0.0.27": {}
+
   "@borewit/text-codec@0.2.3": {}
 
   "@braintree/sanitize-url@7.1.2": {}
@@ -23089,6 +23109,8 @@ snapshots:
   functions-have-names@1.2.3: {}
 
   fuse.js@7.5.0: {}
+
+  fzstd@0.1.1: {}
 
   gensync@1.0.0-beta.2: {}
 

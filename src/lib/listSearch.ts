@@ -112,6 +112,7 @@ export const FILE_KINDS: FileKind[] = [
   'slides',
   'audio',
   'json',
+  'film',
   'unknown',
 ];
 export const MATERIAL_KINDS: MaterialListKind[] = [
