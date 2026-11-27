@@ -79,6 +79,9 @@ vi.mock('@/api/client', async (load) => ({
   ...(await load<typeof import('@/api/client')>()),
   api: { post },
 }));
+// Those reports load their schema with the first one (Q908): loaded here once,
+// so its first transform cannot outlast vi.waitFor.
+await import('@/api/gen/validators');
 
 import {
   applyDrafts,
@@ -210,13 +213,15 @@ describe('the draft store', () => {
     ]);
     expect(await readDrafts('u_sweep:file:gone')).toEqual([]);
     // Rows deleted after a 404 are a discard the browser alone sees.
-    expect(post).toHaveBeenCalledExactlyOnceWith('/edit-incidents', {
-      fileId: 'gone',
-      fileKind: 'source_file',
-      kind: 'discard_unsaved',
-      reason: 'not_found',
-      sizeBytes: 5,
-    });
+    await vi.waitFor(() =>
+      expect(post).toHaveBeenCalledExactlyOnceWith('/edit-incidents', {
+        fileId: 'gone',
+        fileKind: 'source_file',
+        kind: 'discard_unsaved',
+        reason: 'not_found',
+        sizeBytes: 5,
+      })
+    );
     expect(await readDrafts('u_sweep:material:kept')).toHaveLength(1);
     // Another account's rows are never checked.
     expect(await readDrafts('u_other:file:gone')).toHaveLength(1);
@@ -263,13 +268,15 @@ describe('the draft store', () => {
     expect(await readDrafts('u_gone:material:trashed')).toHaveLength(1);
     expect(await readDrafts('u_gone:material:trashed:keys')).toHaveLength(1);
     expect(await readDrafts('u_gone:material:lost')).toEqual([]);
-    expect(post).toHaveBeenCalledExactlyOnceWith('/edit-incidents', {
-      fileId: 'lost',
-      fileKind: 'material',
-      kind: 'discard_unsaved',
-      reason: 'not_found',
-      sizeBytes: 3,
-    });
+    await vi.waitFor(() =>
+      expect(post).toHaveBeenCalledExactlyOnceWith('/edit-incidents', {
+        fileId: 'lost',
+        fileKind: 'material',
+        kind: 'discard_unsaved',
+        reason: 'not_found',
+        sizeBytes: 3,
+      })
+    );
     expect(await readDrafts('u_gone:file:away')).toHaveLength(1);
     // The device-copy sweep keeps the deleted quiz's copy alone (review
     // 2026-11-20 (3)).
