@@ -3046,6 +3046,12 @@ design, option d), and the nudge's release file on 2026-10-17.
   and its board rules refuse a film card. `MIN_SOURCE` stays 45 and
   `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names "client
   protocol 45 -> 46, material 44 -> 46".
+  The caret no-op pin (pin 6e677c606: the DOCX caret skips a no-op visible
+  update, so typing no longer climbs React's nested-update count to #185, a
+  crash on pin afa2e0ff1) raised `CLIENT_PROTOCOL` to 47 and `MIN_SOURCE` to
+  47, so source tabs from before it (protocol 46) reload; `MIN_MATERIAL`
+  stays 46 and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names
+  "client protocol 46 -> 47, source 45 -> 47".
 
 #### When to bump
 
