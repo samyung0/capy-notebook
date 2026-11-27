@@ -8,7 +8,7 @@ import {
   useAccessLostNotice,
 } from '@/features/collaboration/accessLostNotice';
 import { EmbedLoading } from '@/features/materials/embeds/EmbedView';
-import type { CardMaterialKind } from './materialCardHosts';
+import type { StudyCardKind } from './materialCardHosts';
 
 const AppEmbedEdit = lazy(() =>
   import('@/features/materials/embeds/AppEmbed').then((mod) => ({
@@ -19,7 +19,7 @@ const AppEmbedEdit = lazy(() =>
 /** The quiz or set a canvas's dialog edits, as the page already holds it. */
 export type DialogMaterial = {
   id: string;
-  kind: CardMaterialKind;
+  kind: StudyCardKind;
   title: string;
 };
 

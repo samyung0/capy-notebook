@@ -446,6 +446,23 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   },
   {
     get description() {
+      return m.editor_cmd_film();
+    },
+    group: 'fileOperations',
+    icon: 'film',
+    id: 'film',
+    keywords: ['manim', 'animation', 'video'],
+    get label() {
+      return m.editor_manim_film();
+    },
+    // A top-level block, as the quiz and flashcards are.
+    run: (editor, dialogs) => {
+      if (!insideContainer(editor)) dialogs?.pickFilm(editor);
+    },
+    widget: 'media',
+  },
+  {
+    get description() {
       return m.editor_cmd_mention();
     },
     focusEditor: false,
@@ -520,11 +537,10 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     },
     run: (editor, dialogs) => {
       if (insideContainer(editor)) return;
-      if (dialogs)
-        void dialogs.insertEmbedded(editor, {
-          kind: 'quiz',
-          questions: [starterQuestion()],
-        });
+      dialogs?.insertStudy(editor, {
+        kind: 'quiz',
+        questions: [starterQuestion()],
+      });
     },
     widget: 'quiz',
   },
@@ -541,11 +557,17 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     run: (editor, dialogs) => {
       if (insideContainer(editor)) return;
       // A set holds at least one card; the edit page drops a blank one on save.
-      if (dialogs)
-        void dialogs.insertEmbedded(editor, {
-          cards: [{ back: '', front: '' }],
-          kind: 'flashcards',
-        });
+      dialogs?.insertStudy(editor, {
+        // A real first card, so the new set doesn't look empty (Epo
+        // 2026-11-27).
+        cards: [
+          {
+            back: m.editor_sample_card_back(),
+            front: m.editor_sample_card_front(),
+          },
+        ],
+        kind: 'flashcards',
+      });
     },
     widget: 'flashcards',
   },

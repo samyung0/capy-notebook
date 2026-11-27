@@ -15,14 +15,15 @@ export type DrawingBoardOptions = {
     materials: () =>
       | {
           id: string;
-          kind: 'quiz' | 'flashcards';
+          kind: 'quiz' | 'flashcards' | 'film';
           title: string;
           preview?: import('@/api/types').MaterialPreview;
           /** On the account's page, the workspace it sits in; none when in none. */
           workspace?: { iconId?: string; name: string };
         }[]
       | undefined;
-    open: (materialId: string) => void;
+    /** A quiz or set in its editor, a film in the file viewer. */
+    open: (materialId: string, kind: 'quiz' | 'flashcards' | 'film') => void;
     create: (
       kind: 'quiz' | 'flashcards'
     ) => Promise<{ id: string; title: string }>;

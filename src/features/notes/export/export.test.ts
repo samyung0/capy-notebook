@@ -268,6 +268,25 @@ describe('readable note exports', () => {
     expect(draw).not.toHaveBeenCalled();
   });
 
+  it('links a film back to its block in the note', async () => {
+    const noteUrl = 'https://capy.test/workspaces/w?material=n';
+    const film = {
+      children: [{ text: '' }],
+      fileId: 'f1',
+      id: 'b1',
+      type: 'film',
+    };
+    const result = await renderExport(
+      [film],
+      'markdown',
+      labels,
+      {},
+      noteUrl,
+      async () => image
+    );
+    expect(result.content).toBe(`[Film](<${noteUrl}&block=b1>)\n\n`);
+  });
+
   it('draws a graph from its elements, the one place it becomes a picture', async () => {
     const draw = vi.fn(async () => image);
     const block = {

@@ -1612,7 +1612,20 @@ export const handlers = [
         ? HttpResponse.json(shared)
         : new HttpResponse(null, { status: 404 });
     }
-    return HttpResponse.json(ws);
+    // What a note's Quiz and Flashcards open on (Epo 2026-11-27).
+    const holds = (kind: 'quiz' | 'flashcards') =>
+      db.materials.some(
+        (mt) =>
+          mt.kind === kind &&
+          mt.workspaceId === ws.id &&
+          !mt.parentMaterialId &&
+          !mt.assignmentId
+      );
+    return HttpResponse.json({
+      ...ws,
+      hasFlashcards: holds('flashcards'),
+      hasQuiz: holds('quiz'),
+    });
   }),
   http.post('/api/workspaces/:id/visit', ({ params }) => {
     db.visits.set(String(params.id), new Date().toISOString());
@@ -2890,6 +2903,7 @@ export const handlers = [
       kind?: 'quiz' | 'flashcards';
       questions?: Question[];
       cards?: { front: string; back: string }[];
+      sourceId?: string;
     };
     if (body.kind !== 'quiz' && body.kind !== 'flashcards') {
       return HttpResponse.json(
@@ -2897,8 +2911,20 @@ export const handlers = [
         { status: 400 }
       );
     }
-    const block =
-      body.kind === 'quiz'
+    // A picked quiz or set: the note's own copy of it.
+    const source =
+      body.sourceId &&
+      db.materials.find(
+        (mt) =>
+          mt.id === body.sourceId &&
+          mt.kind === body.kind &&
+          !mt.parentMaterialId
+      );
+    if (body.sourceId && !source)
+      return new HttpResponse(null, { status: 404 });
+    const block = source
+      ? undefined
+      : body.kind === 'quiz'
         ? quizNode({
             questions: body.questions ?? [],
           })
@@ -2907,7 +2933,9 @@ export const handlers = [
           );
     const mt = db.makeMaterial({
       ...ownerMaterialAccess,
-      content: { schemaVersion: 1, value: [block] },
+      content: source
+        ? structuredClone(source.content)
+        : { schemaVersion: 1, value: [block!] },
       createdAt: new Date().toISOString(),
       id: uid('mat'),
       kind: body.kind,

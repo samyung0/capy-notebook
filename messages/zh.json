@@ -3685,5 +3685,18 @@
   "todo_submissions_waiting": "{count} 份提交待评分",
   "todo_submissions_waiting_one": "1 份提交待评分",
   "todo_grade_on": "为提交评分：",
-  "todo_grade": "评分"
+  "todo_grade": "评分",
+  "film_cannot_show": "无法显示此影片",
+  "film_none": "还没有上传 ManimGX 影片",
+  "editor_film": "影片",
+  "editor_cmd_film": "显示文件中的 ManimGX 影片",
+  "embed_pick_create_new": "新建",
+  "embed_pick_search_quizzes": "搜索测验",
+  "embed_pick_search_flashcards": "搜索抽认卡集",
+  "embed_pick_search_films": "搜索影片",
+  "drawing_board_film": "影片",
+  "editor_film_replace": "替换",
+  "editor_manim_film": "Manim 影片",
+  "editor_sample_card_front": "光合作用",
+  "editor_sample_card_back": "植物利用光、水和二氧化碳制造糖和氧气的过程"
 }

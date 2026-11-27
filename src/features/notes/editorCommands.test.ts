@@ -13,9 +13,11 @@ describe('editor insertion command catalog', () => {
   const dialogs = (openPlot = vi.fn<NoteBlockDialogsApi['openPlot']>()) => ({
     createEmbedded: vi.fn(),
     insertEmbedded: vi.fn(),
+    insertStudy: vi.fn(),
     noteId: 'note',
     openPlot,
     openYouTube: vi.fn(),
+    pickFilm: vi.fn(),
   });
   const editor = () => ({
     api: { block: () => undefined },
@@ -34,6 +36,26 @@ describe('editor insertion command catalog', () => {
       expect(opensOnMount(node.id)).toBe(true);
     }
   );
+
+  it('hands a quiz with a starter question to the pick or insert step', () => {
+    const target = editor();
+    const api = dialogs();
+    EDITOR_COMMANDS.find((item) => item.id === 'quiz')!.run(target, api);
+    expect(api.insertStudy).toHaveBeenCalledWith(
+      target,
+      expect.objectContaining({
+        kind: 'quiz',
+        questions: [expect.anything()],
+      })
+    );
+  });
+
+  it('opens the film picker for /film', () => {
+    const target = editor();
+    const api = dialogs();
+    EDITOR_COMMANDS.find((item) => item.id === 'film')!.run(target, api);
+    expect(api.pickFilm).toHaveBeenCalledWith(target);
+  });
 
   it('inserts a plot only after its dialog saves', () => {
     const target = editor();
@@ -90,12 +112,12 @@ describe('editor insertion command catalog', () => {
     expect(EDITOR_COMMANDS.every((command) => command.icon)).toBe(true);
   });
 
-  it('offers images, YouTube and audio as media, no PDF or file block', () => {
+  it('offers images, YouTube, audio and films as media, no PDF or file block', () => {
     expect(
       EDITOR_COMMANDS.filter(
         (command) => command.group === 'fileOperations'
       ).map((command) => command.id)
-    ).toEqual(['image', 'youtube', 'audio']);
+    ).toEqual(['image', 'youtube', 'audio', 'film']);
   });
 
   it('includes the complete heading and list set', () => {

@@ -571,9 +571,10 @@ function ResolvedFileView({
   if (file.kind === 'film')
     return lazyView(
       <FilmView
-        file={file}
         key={`${file.url}:${previewAttempt}`}
+        name={file.name}
         onRetry={retryPreview}
+        url={file.url}
       />
     );
 

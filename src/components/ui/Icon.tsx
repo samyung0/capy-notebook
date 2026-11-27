@@ -73,6 +73,7 @@ import {
   FileImportIcon,
   FilePlusIcon,
   Files01Icon,
+  Film01Icon,
   FilterVerticalIcon,
   FireIcon,
   FitToScreenIcon,
@@ -352,6 +353,8 @@ const HugeIcons = {
   files: FileEmpty02Icon,
   filesNav: Files01Icon,
   fileText: File02Icon,
+  // A note's and a canvas's ManimGX film.
+  film: Film01Icon,
   filter: FilterVerticalIcon,
   fitToScreen: FitToScreenIcon,
   flame: FireIcon,

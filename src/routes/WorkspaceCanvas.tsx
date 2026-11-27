@@ -13,6 +13,7 @@ import { CanvasMaterialCards } from '@/features/canvas/CanvasMaterialCards';
 import { useCanvasBoard } from '@/features/canvas/useCanvasBoard';
 import {
   linkMaterial,
+  useCanvasFilms,
   useCanvasLinks,
   useCanvasMaterials,
 } from '@/features/canvas/useCanvasMaterials';
@@ -25,6 +26,8 @@ import { cn } from '@/lib/cn';
 import { useOpenLink } from '@/lib/openLink';
 
 type BoardProps = {
+  /** A film card's Open: the file viewer. */
+  onOpenFile: (fileId: string) => void;
   onOpenMaterial: (materialId: string) => void;
   /** The material the workspace's item dialog shows, if any. */
   openMaterialId: string | null;
@@ -101,6 +104,7 @@ function CanvasBoard({
   gone,
   id,
   onRetry,
+  onOpenFile,
   onOpenMaterial,
   openMaterialId,
   workspaceId,
@@ -132,11 +136,14 @@ function CanvasBoard({
     void qc.invalidateQueries({ queryKey: qk.material(previous) });
   }, [openMaterialId, qc]);
   const { mutateAsync: createMaterial } = useCreateMaterial(workspaceId);
+  const films = useCanvasFilms(workspaceId);
   const linked = useMemo(
-    () => materials?.flatMap((item) => linkMaterial(item)),
-    [materials]
+    () =>
+      materials &&
+      films && [...materials.flatMap((item) => linkMaterial(item)), ...films],
+    [materials, films]
   );
-  // Its quiz and flashcard cards (Epo 2026-11-09).
+  // Its quiz, flashcard and film cards (Epo 2026-11-09, 2026-11-27).
   const {
     links,
     materials: listed,
@@ -156,7 +163,7 @@ function CanvasBoard({
       return { id: made.id, title: made.title };
     },
     materials: linked,
-    open: onOpenMaterial,
+    open: (id, kind) => (kind === 'film' ? onOpenFile(id) : onOpenMaterial(id)),
     readAt,
     workspaceId,
   });

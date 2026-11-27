@@ -1067,6 +1067,30 @@ standaloneSeeds.forEach((seed, index) => {
     workspaceId: '',
   });
 });
+// Biology 101's films, for a note's Film and the canvas's (Epo 2026-11-27).
+(
+  [
+    ['f_bio_film', 'Derivative.cmv', drawnFilmUrl],
+    ['f_bio_film_video', 'Secant video.cmv', videoFilmUrl],
+  ] as const
+).forEach(([id, name, url], index) => {
+  fileLinks[id] = { url };
+  files.push({
+    addedAt: hours(3 + index),
+    hasBytes: true,
+    id,
+    indexed: false,
+    isPayer: true,
+    kind: 'film',
+    name,
+    position: 40 + index,
+    revision: 1,
+    sizeBytes: 640 * 1024,
+    status: 'ready',
+    topicId: null,
+    workspaceId: 'ws_bio',
+  });
+});
 for (const fixture of standaloneOfficeFixtures) {
   fileLinks[fixture.id] = { url: fixture.sourceURL };
   files.push({

@@ -59,6 +59,7 @@ import {
 import {
   ArrowLeft04Icon,
   Cancel01Icon,
+  ExternalLinkIcon,
   Link04Icon,
   Pen01Icon,
   PlusSignIcon,
@@ -108,6 +109,7 @@ import {
   type LinkBlockModel,
   MATERIAL_CARD_SIZE,
   MATERIAL_FLAVOUR,
+  type StudyCardKind,
   workspaceOf,
 } from './boardCards';
 import { addChart, type ChartElementModel, openChart } from './boardChart';
@@ -1599,11 +1601,28 @@ export const boardToolbar = [
         {
           generate: (ctx: ToolbarContext) => {
             const [model] = ctx.getSurfaceModels();
-            if (!(onlyOne(ctx) && model && cardEditable(model.id))) return null;
+            if (!(onlyOne(ctx) && model)) return null;
             const card = model as unknown as {
               id: string;
-              props: { materialId: string };
+              props: { kind: CardMaterialKind; materialId: string };
             };
+            // A film is view-only: Open shows it in the file viewer (Epo
+            // 2026-11-27).
+            if (card.props.kind === 'film') {
+              const workspace = workspaceOf(ctx.std);
+              const listed = workspace
+                ?.materials()
+                ?.some(({ id }) => id === card.props.materialId);
+              if (!listed) return null;
+              return {
+                icon: html`${hugeIcon(ExternalLinkIcon)}`,
+                label: m.action_open(),
+                run: () => workspace?.open(card.props.materialId, 'film'),
+                showLabel: true,
+                tooltip: m.action_open(),
+              };
+            }
+            if (!cardEditable(model.id)) return null;
             const editing = cardEditing()?.id === card.id;
             const label = editing ? m.drawing_board_done() : m.action_edit();
             return {
@@ -2101,7 +2120,7 @@ class CapyFormulaSlot extends CapyPieceSlot {
 /** The Misc panel (Epo 2026-11-09, A; on the answer board too since 2026-11-10):
  * tiles in groups, each a card picked up and dropped like a slot's piece; a finger's
  * tap puts it in the view's middle. Each board shows what it may hold (`tileFits`). */
-type MiscView = 'klipy' | 'link' | 'quiz' | 'flashcards';
+type MiscView = 'klipy' | 'link' | 'quiz' | 'flashcards' | 'film';
 /** A tile: a card picked up like a slot's piece, or a picker it opens. KLIPY's
  * picker is the GIF & Sticker slot's, not a tile. */
 type MiscTile =
@@ -2163,6 +2182,12 @@ const MISC_GROUPS: {
         art: svg`<svg width="38" height="34" viewBox="0 0 32 30" aria-hidden="true"><rect x="9" y="3" width="20" height="14" rx="2" fill="#fff" stroke="#c9ccd2" transform="rotate(8 19 10)"/><rect x="4" y="9" width="20" height="14" rx="2" fill="#e8798f"/></svg>`,
         label: m.drawing_board_flashcards,
         view: 'flashcards',
+      },
+      {
+        // The workspace's films (Epo 2026-11-27); not on the account's page.
+        art: svg`<svg width="36" height="32" viewBox="0 0 24 24" fill="none" stroke="#209fb5" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4.5" width="19" height="15" rx="2.5"/><path d="M10 9v6l5-3Z" fill="#209fb5"/></svg>`,
+        label: m.drawing_board_film,
+        view: 'film',
       },
     ],
   },
@@ -3208,14 +3233,14 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
    * unplaced and unsaid). A full board makes none it would refuse to place; one
    * a peer filled while the create was in flight refuses the card with the cap's
    * line, and the one made still opens, kept in the workspace's list. */
-  private async createMaterial(kind: CardMaterialKind) {
+  private async createMaterial(kind: StudyCardKind) {
     const workspace = workspaceOf(this.edgeless.std);
     if (!workspace || this.creating || refusesAdds(this.gfx.doc)) return;
     this.creating = true;
     try {
       const made = await workspace.create(kind);
       this.placeMaterial(kind, made.id, made.title);
-      workspace.open(made.id);
+      workspace.open(made.id, kind);
     } catch (error) {
       const failed =
         kind === 'quiz'
@@ -3245,7 +3270,11 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
           )
         )
       : all;
-    const newTile = html`<button
+    // Films come from the exporter, uploaded on the Files page: no New.
+    const newTile =
+      kind === 'film'
+        ? nothing
+        : html`<button
       class="card new"
       ?disabled=${this.creating}
       type="button"
@@ -3254,13 +3283,16 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       <span class="plus">${hugeIcon(PlusSignIcon)}</span>
       ${kind === 'quiz' ? m.drawing_board_new_quiz() : m.drawing_board_new_set()}
     </button>`;
-    const none = links?.account
-      ? kind === 'quiz'
-        ? m.drawing_board_no_own_quizzes()
-        : m.drawing_board_no_own_flashcards()
-      : kind === 'quiz'
-        ? m.drawing_board_no_quizzes()
-        : m.drawing_board_no_flashcards();
+    const none =
+      kind === 'film'
+        ? m.film_none()
+        : links?.account
+          ? kind === 'quiz'
+            ? m.drawing_board_no_own_quizzes()
+            : m.drawing_board_no_own_flashcards()
+          : kind === 'quiz'
+            ? m.drawing_board_no_quizzes()
+            : m.drawing_board_no_flashcards();
     return html`<div class="body">
       ${
         all.length >= FILTER_FROM
@@ -3317,6 +3349,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
     preview?: MaterialPreview
   ) {
     const name = html`<span class="t">${title}</span>`;
+    if (kind === 'film') return name;
     if (kind === 'quiz') {
       const first = preview?.kind === 'quiz' ? preview.first : undefined;
       return first ? html`${name}<span class="q">${first.stem}</span>` : name;
@@ -3333,6 +3366,7 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
   }
 
   private count(kind: CardMaterialKind, preview?: MaterialPreview) {
+    if (kind === 'film') return m.drawing_board_film();
     if (kind === 'quiz')
       return questionCountLabel(
         preview?.kind === 'quiz' ? preview.questionCount : 0
@@ -3347,9 +3381,17 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
       return html`${this.head(m.drawing_board_gif_sticker, true)}${this.renderKlipy()}`;
     if (this.view === 'link')
       return html`${this.head(m.drawing_board_youtube)}${this.renderLink()}`;
-    if (this.view === 'quiz' || this.view === 'flashcards')
+    if (
+      this.view === 'quiz' ||
+      this.view === 'flashcards' ||
+      this.view === 'film'
+    )
       return html`${this.head(
-        this.view === 'quiz' ? m.drawing_board_quiz : m.drawing_board_flashcards
+        this.view === 'quiz'
+          ? m.drawing_board_quiz
+          : this.view === 'film'
+            ? m.drawing_board_film
+            : m.drawing_board_flashcards
       )}${this.renderMaterials(this.view)}`;
     const workspace = workspaceOf(this.edgeless.std);
     return html`<div class="head">
@@ -3362,10 +3404,13 @@ class CapyMiscPanel extends WithDisposable(SignalWatcher(LitElement)) {
           tiles: tiles.filter(
             (tile) =>
               tileFits(tile, boardKinds.get(this.edgeless.std)) &&
-              // The quizzes and sets need a list lent.
-              (workspace ||
-                !('view' in tile) ||
-                (tile.view !== 'quiz' && tile.view !== 'flashcards'))
+              // The quizzes and sets need a list lent, the films a
+              // workspace's.
+              (!('view' in tile) ||
+                (tile.view === 'film'
+                  ? !!workspace && !workspace.account
+                  : !!workspace ||
+                    (tile.view !== 'quiz' && tile.view !== 'flashcards')))
           ),
         }))
           .filter(({ tiles }) => tiles.length)

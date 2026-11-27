@@ -1032,6 +1032,7 @@ function WorkspaceOpen() {
             <Suspense fallback={null}>
               <WorkspaceCanvas
                 besideBack={!railShown}
+                onOpenFile={(id) => setOpenItem({ id, kind: 'file' })}
                 onOpenMaterial={(id) => setOpenItem({ id, kind: 'material' })}
                 openMaterialId={
                   openItem?.kind === 'material' ? openItem.id : null

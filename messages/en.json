@@ -3685,5 +3685,18 @@
   "todo_submissions_waiting": "{count} submissions to grade",
   "todo_submissions_waiting_one": "1 submission to grade",
   "todo_grade_on": "Grade submissions on",
-  "todo_grade": "Grade"
+  "todo_grade": "Grade",
+  "film_cannot_show": "This film can't be shown",
+  "film_none": "No ManimGX films uploaded yet",
+  "editor_film": "Film",
+  "editor_cmd_film": "Show a ManimGX film from your files",
+  "embed_pick_create_new": "Create new",
+  "embed_pick_search_quizzes": "Search quizzes",
+  "embed_pick_search_flashcards": "Search flashcard sets",
+  "embed_pick_search_films": "Search films",
+  "drawing_board_film": "Film",
+  "editor_film_replace": "Replace",
+  "editor_manim_film": "Manim film",
+  "editor_sample_card_front": "Photosynthesis",
+  "editor_sample_card_back": "How plants turn light, water and carbon dioxide into sugar and oxygen"
 }

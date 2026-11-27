@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ViewableFile } from '@/api/types';
+import { Skeleton } from '@/components/ui/feedback';
 import { FileError, FileLoading } from '@/features/files/FileStates';
+import { CannotShow } from '@/features/materials/CannotShow';
 import { m } from '@/i18n';
 import type { FilmMeta } from './cmv';
 import { DrawnPlayer } from './drawnPlayer';
@@ -15,13 +16,23 @@ type State =
   | { meta: FilmMeta; phase: 'drawn' };
 
 /** A CMV film (a ManimGX scene the user exported, cmv.ts): a video film in
- * the browser's <video>, a drawn film on ManimGX's own player. */
+ * the browser's <video>, a drawn film on ManimGX's own player. The file
+ * viewer centres it at most 48rem wide; `embedded` (a note's film block, a
+ * canvas card) fills its container's width at the film's proportions, with
+ * no frame (Epo 2026-11-27); `contain` (a canvas card) fits it inside its
+ * container's box instead. */
 export default function FilmView({
-  file,
+  contain = false,
+  embedded = false,
+  name,
   onRetry,
+  url,
 }: {
-  file: ViewableFile;
+  contain?: boolean;
+  embedded?: boolean;
+  name: string;
   onRetry: () => void;
+  url: string;
 }) {
   const [state, setState] = useState<State>({ phase: 'loading' });
   const box = useRef<HTMLDivElement>(null);
@@ -58,12 +69,12 @@ export default function FilmView({
       } else setState({ phase: 'failed' });
     });
     worker.addEventListener('error', () => setState({ phase: 'failed' }));
-    worker.postMessage({ url: file.url } satisfies FilmRequest);
+    worker.postMessage({ url } satisfies FilmRequest);
     return () => {
       worker.terminate();
       if (src) URL.revokeObjectURL(src);
     };
-  }, [file.url]);
+  }, [url]);
 
   const drawn = state.phase === 'drawn';
   useEffect(() => {
@@ -96,6 +107,12 @@ export default function FilmView({
     };
   }, [drawn]);
 
+  if (embedded && state.phase === 'failed')
+    return <CannotShow label={m.film_cannot_show()} />;
+  if (embedded && state.phase === 'no-webgpu')
+    return <CannotShow label={m.files_film_webgpu_title()} />;
+  if (embedded && state.phase === 'loading')
+    return <Skeleton className="aspect-video w-full rounded-none" />;
   if (state.phase === 'failed') return <FileError onRetry={onRetry} />;
   if (state.phase === 'no-webgpu')
     return (
@@ -106,35 +123,48 @@ export default function FilmView({
     );
   if (state.phase === 'loading') return <FileLoading />;
   const { height, width } = state.meta;
+  const film = (
+    <div
+      aria-label={name}
+      className="relative bg-black outline-none"
+      ref={box}
+      role={state.phase === 'drawn' ? 'application' : undefined}
+      style={{
+        aspectRatio: `${width} / ${height}`,
+        width:
+          embedded && !contain
+            ? '100%'
+            : `min(100cqw, ${width / height} * 100cqh${embedded ? '' : ', 48rem'})`,
+      }}
+      tabIndex={state.phase === 'drawn' ? 0 : undefined}
+    >
+      {state.phase === 'video' ? (
+        <video
+          className="absolute inset-0 size-full"
+          controls
+          onError={() => setState({ phase: 'failed' })}
+          src={state.src}
+        />
+      ) : (
+        <canvas
+          className="absolute inset-0 size-full touch-pan-y"
+          ref={canvas}
+        />
+      )}
+    </div>
+  );
+  if (embedded && !contain) return film;
+  if (embedded)
+    return (
+      <div className="grid size-full place-items-center [container-type:size]">
+        {film}
+      </div>
+    );
   return (
     // the film at its proportions, at most 48rem wide (both players go full
     // screen); a phone gives it the whole width
     <div className="grid h-full min-h-0 place-items-center [container-type:size] sm:p-6">
-      <div
-        aria-label={file.name}
-        className="relative bg-black outline-none"
-        ref={box}
-        role={state.phase === 'drawn' ? 'application' : undefined}
-        style={{
-          aspectRatio: `${width} / ${height}`,
-          width: `min(100cqw, ${width / height} * 100cqh, 48rem)`,
-        }}
-        tabIndex={state.phase === 'drawn' ? 0 : undefined}
-      >
-        {state.phase === 'video' ? (
-          <video
-            className="absolute inset-0 size-full"
-            controls
-            onError={() => setState({ phase: 'failed' })}
-            src={state.src}
-          />
-        ) : (
-          <canvas
-            className="absolute inset-0 size-full touch-pan-y"
-            ref={canvas}
-          />
-        )}
-      </div>
+      {film}
     </div>
   );
 }
