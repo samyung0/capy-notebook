@@ -26,7 +26,7 @@ import type {
 import { CITATION_FILL, quoteProbe, uniqueCitation } from './citations';
 import { docxIcons } from './docxIcons';
 import { docxStrings, editorMenus } from './docxMenus';
-import { BODY_PARAGRAPH, topParagraph } from './docxPlace';
+import { restoreTopParagraph, topParagraph } from './docxPlace';
 import { DOCX_RIBBON } from './docxRibbon';
 import { fontSliceErrors } from './fontSliceErrors';
 import { OfficeRibbon, type OfficeRibbonHost } from './OfficeRibbon';
@@ -277,18 +277,11 @@ export function DocxEditorHost({
         }
         area.scrollTop = position.scrollTop;
         if (!top) return;
-        // The pages now in view lay out their paragraphs; the top one goes
-        // back to its height (content above it may have changed).
-        await frames(1);
-        const line = top.line === null ? '' : `[data-from-line="${top.line}"]`;
-        const fragment = area.querySelector(
-          `${BODY_PARAGRAPH}[data-para-id="${CSS.escape(top.paraId)}"]${line}`
+        // The pages now in view lay out their paragraphs.
+        await frames(2);
+        await restoreTopParagraph(area, top, () =>
+          editorRef.current?.ensureVisiblePages()
         );
-        if (fragment)
-          area.scrollTop +=
-            fragment.getBoundingClientRect().top -
-            area.getBoundingClientRect().top -
-            top.offset;
       },
     });
     return () => onPositioner(null);

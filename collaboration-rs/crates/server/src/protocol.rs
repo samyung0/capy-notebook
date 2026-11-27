@@ -169,13 +169,13 @@ pub fn message(channel: u64, kind: Kind, payload: &[u8]) -> Bytes {
 /// every JOIN and draft send. A change an older client would break (openwiki
 /// plate-editor "Client protocol") raises it to N+1 and sets the broken
 /// family's minimum to N+1; the other family keeps its minimum.
-pub const CLIENT_PROTOCOL: u32 = 45;
+pub const CLIENT_PROTOCOL: u32 = 46;
 /// The oldest client material rooms accept (`material:`, `keys:`: notes,
 /// mindmaps, diagrams, quizzes, quiz keys, flashcard sets, canvases).
-pub const MIN_MATERIAL: u32 = 45;
+pub const MIN_MATERIAL: u32 = 46;
 /// The oldest client source rooms accept (`source:`: Office and text); every
 /// BetterOffice pin bump and Office protocol bump raises it.
-pub const MIN_SOURCE: u32 = 42;
+pub const MIN_SOURCE: u32 = 45;
 // A minimum above the server's own protocol would refuse every client.
 const _: () = assert!(MIN_MATERIAL <= CLIENT_PROTOCOL && MIN_SOURCE <= CLIENT_PROTOCOL);
 
@@ -589,18 +589,19 @@ mod tests {
     /// raised to 42 by the DOCX worker and caret pin. Since 44 a canvas
     /// stroke's points are one binary value: a tab from before (43) draws
     /// such a stroke as a placeholder and writes number arrays a newer tab
-    /// draws as one, so material rooms refuse it. Since 45 a note may hold a
-    /// `film` block and a canvas a film card: a tab from before (44) edits the
-    /// film as a text block and refuses the card, so material rooms refuse it.
+    /// draws as one, so material rooms refuse it. The visible-pages-first
+    /// pin raised source rooms to 45. Since 46 a note may hold a `film` block
+    /// and a canvas a film card: a tab from before (45) edits the film as a
+    /// text block and refuses the card, so material rooms refuse it.
     #[test]
     fn a_material_tab_from_before_the_board_rules_is_outdated() {
         assert!(outdated(MIN_MATERIAL, Some(36)));
         assert!(outdated(MIN_MATERIAL, Some(37)));
         assert!(outdated(MIN_MATERIAL, Some(40)));
-        assert!(outdated(MIN_MATERIAL, Some(44)));
-        assert!(!outdated(MIN_MATERIAL, Some(45)));
-        assert!(outdated(MIN_SOURCE, Some(41)));
-        assert!(!outdated(MIN_SOURCE, Some(42)));
+        assert!(outdated(MIN_MATERIAL, Some(45)));
+        assert!(!outdated(MIN_MATERIAL, Some(46)));
+        assert!(outdated(MIN_SOURCE, Some(44)));
+        assert!(!outdated(MIN_SOURCE, Some(45)));
     }
 
     #[test]

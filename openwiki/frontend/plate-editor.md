@@ -1322,7 +1322,7 @@ static kit's `film`. A film the reader can't read, or one in the Trash, says
 say so (they serve standalone notes, and a standalone file has no share link).
 Exports link back to the block. The agent cannot write a film block
 (`media_type` in `notes::edit`). The film and the canvas's film card raised the
-client protocol to 45 ([Client protocol](#when-to-bump)).
+client protocol to 46 ([Client protocol](#when-to-bump)).
 ## Interactive HTML blocks
 
 `html_embed {id, html, caption?}` is a top-level void with one empty text leaf,
@@ -3016,13 +3016,22 @@ design, option d), and the nudge's release file on 2026-10-17.
   are deleted by hand at the deploy (a saved drawing answer or drawn sample
   with strokes from before is refused as it opens, as any misfit is). Its
   deploy request names "client protocol 43 -> 44, material 43 -> 44".
+  The visible-pages-first pin (pin afa2e0ff1, Q815 C step 2: DOCX Edit's
+  first frame builds only the pages in view, the rest in batches of 8 that
+  keys, jumps and on-demand page builds go ahead of (Q838) until a batch has
+  waited 1 s (Q841); batch fills commit as React transitions (the React #185
+  fix); the hosts' handover positions once the pages in view are built)
+  raised `CLIENT_PROTOCOL` to 45 and `MIN_SOURCE` to 45, so source tabs from
+  before it (protocol 44) reload; `MIN_MATERIAL` stays 44 and
+  `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names "client
+  protocol 44 -> 45, source 42 -> 45".
   Films in notes and on the canvas (Epo 2026-11-27: a note's `film` void
   block, a canvas's film card, `kind` `film` on `affine:embed-capy-material`)
-  raised `CLIENT_PROTOCOL` to 45 and `MIN_MATERIAL` to 45: a tab from before
+  raised `CLIENT_PROTOCOL` to 46 and `MIN_MATERIAL` to 46: a tab from before
   edits a film block as an ordinary block (admission then refuses its text)
-  and its board rules refuse a film card. `MIN_SOURCE` stays 42 and
+  and its board rules refuse a film card. `MIN_SOURCE` stays 45 and
   `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names "client
-  protocol 44 -> 45, material 44 -> 45".
+  protocol 45 -> 46, material 44 -> 46".
 
 #### When to bump
 
