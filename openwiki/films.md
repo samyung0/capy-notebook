@@ -17,6 +17,22 @@ exporter is queued in `todo-queue.md`.
 | Viewer | `src/features/films` (`FilmView`, from `FileViewer`) | A worker reads the film; video films play in `<video>`, drawn films on ManimGX's player. |
 | Engine | `public/vendor/manimgx/0.1.1/` | ManimGX's web player (wasm-bindgen JS, 1.9 MB WebAssembly) and its 24 fonts, as its Pyodide wheel builds them (`THIRD-PARTY-NOTICES.md`). Loaded only when a drawn film opens. |
 
+## In notes and on the canvas
+
+Epo 2026-11-27. A note holds a film as a void `film` block `{id, fileId}`
+(Upload media's and the slash menu's Manim film, picked from the workspace's
+films); a workspace canvas as a film card (Misc › From the workspace › Film).
+Both are live links to the file, not copies, and play it in place
+(`FilmEmbed`: `FilmView` `embedded` at the column's width, `contain` inside a
+card; the file viewer keeps its 48rem cap), loading only near the screen. The
+reader's own access decides: a film they can't read, or one in the Trash,
+says "This film can't be shown" and comes back when restored. Share pages
+always say so, as they serve standalone notes and a standalone file has no
+share link. A workspace clone points the note's films at the copied files and
+drops one whose file wasn't copied (`materialdoc.RewriteFilmFileIDs`); a single
+note's clone keeps the link. The agent writes no film. Details:
+[plate-editor](frontend/plate-editor.md#picking-an-existing-quiz-set-or-film).
+
 ## The file
 
 `exporters/manimgx/src/cmv_manimgx/cmv.py` describes the format. In short:

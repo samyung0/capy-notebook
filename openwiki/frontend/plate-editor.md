@@ -767,7 +767,8 @@ server-rendered shared note hydrates, and equations render MathLive's static mar
 there (`StaticMathContext`). Inserting through the slash command or toolbar
 creates the row through `POST /api/materials/{noteId}/embedded` (a quiz with
 one starter question to edit, "What is 2 + 2?" as multiple choice, Epo
-2026-10-25; a set with one blank card) and inserts the reference at the top level, where it opens in place
+2026-10-25; a set with one sample card, Epo 2026-11-27), or opens the pick
+dialog first ([below](#picking-an-existing-quiz-set-or-film)), and inserts the reference at the top level, where it opens in place
 for editing. The block goes where the command ran, not where the caret is when
 the row arrives (`holdInsertPlace` in `insertEditorNode.ts`): over the
 command's line while it is still an empty paragraph, otherwise after it, and it
@@ -809,7 +810,7 @@ quiz needs at least one question and a set needs cards each with a front and a
 back (a pasted quiz's questions are checked too, `validateQuestions`). A fence
 that does not read is left out with a warning toast naming the kind; one
 whose create is refused is left out under the mutation's own error toast. The
-slash commands' new one-question quiz and one-blank-card set pass their drafts to
+slash commands' new one-question quiz and one-card set pass their drafts to
 `insertEmbedded` without a fence. The
 collaboration server refuses an update that writes `pending` or leaves a
 reference without its material id or below the top level, the store check refuses one (logged with the room's name, so with the note), Go refuses a
@@ -1283,6 +1284,45 @@ dialog (`PlotDialog`), and exports draw it like a chart with its points
 as the table. Inline
 and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
 
+
+### Picking an existing quiz, set or film
+
+Epo 2026-11-27 (mock A, `artifacts/2026-11-27-embed-existing-mocks.html`).
+The Study menu's and the slash menu's Quiz and Flashcards stay one row each.
+When the note's workspace holds one (`hasQuiz`, `hasFlashcards` on
+`GET /api/workspaces/{id}`, an EXISTS over its listed quizzes or sets:
+`store.WorkspaceHolds`), the row opens `EmbedPickDialog`
+(`notes/blocks/EmbedPickDialog.tsx`): the Existing file dialog's
+`SearchInput` and `PickList` over the workspace's quizzes or sets, with Create
+new right under the last row; with none it inserts a new one at once, as
+before (`insertStudy` in `blocks/dialogContext.tsx`; unknown, as for a note in
+no workspace, opens the dialog). A note in no workspace lists the person's
+own items in no workspace. Insert copies the pick into the note: `POST
+/api/materials/{noteId}/embedded` with `sourceId` runs the same adoption a
+paste from another note does (`AdoptEmbeddedMaterials`, `Standalone`), so the
+note holds its own copy; a source of the other kind is a 404, a graded quiz's
+own quiz is never copied. The held place (`holdInsertPlace`) is kept while the
+dialog is open. Create new makes what the one-click insert makes: a quiz with
+the starter question, a set with one card filled with a real sample (Epo
+2026-11-27: "Photosynthesis", `editor_sample_card_front`/`_back`). The
+workspace read is invalidated with the owned lists (`invalidateOwnedMaterials`).
+
+Upload media and the slash menu (`/manim`, `/film`) have **Manim film**
+(Epo 2026-11-27, named so it isn't read as an ordinary video), always shown:
+the same dialog over the workspace's films (`kind` `film` files), with no
+Create new and, with none, "No ManimGX films uploaded yet" (room for a link to
+the exporter later). It inserts a top-level void `film` block `{id, fileId}`
+(`filmNode`), a live link to the file, not a copy (films.md). The block
+(`blocks/FilmElement.tsx`) plays the film in place at the column's width with
+no frame (`FilmEmbed`, mounted only near the screen); selected in Edit it
+shows Open (the file viewer), Replace (the dialog again, `pickFilm(editor,
+{id})`) and Delete above its top right. View draws the same through the
+static kit's `film`. A film the reader can't read, or one in the Trash, says
+"This film can't be shown" and comes back when restored; share pages always
+say so (they serve standalone notes, and a standalone file has no share link).
+Exports link back to the block. The agent cannot write a film block
+(`media_type` in `notes::edit`). The film and the canvas's film card raised the
+client protocol to 45 ([Client protocol](#when-to-bump)).
 ## Interactive HTML blocks
 
 `html_embed {id, html, caption?}` is a top-level void with one empty text leaf,
@@ -2976,6 +3016,13 @@ design, option d), and the nudge's release file on 2026-10-17.
   are deleted by hand at the deploy (a saved drawing answer or drawn sample
   with strokes from before is refused as it opens, as any misfit is). Its
   deploy request names "client protocol 43 -> 44, material 43 -> 44".
+  Films in notes and on the canvas (Epo 2026-11-27: a note's `film` void
+  block, a canvas's film card, `kind` `film` on `affine:embed-capy-material`)
+  raised `CLIENT_PROTOCOL` to 45 and `MIN_MATERIAL` to 45: a tab from before
+  edits a film block as an ordinary block (admission then refuses its text)
+  and its board rules refuse a film card. `MIN_SOURCE` stays 42 and
+  `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names "client
+  protocol 44 -> 45, material 44 -> 45".
 
 #### When to bump
 
@@ -6390,6 +6437,15 @@ vendored changes (14 to 21 in `vendor/blocksuite/README.md`).
       lending it (`fetchNextPage` while `hasNextPage`); until then the list is
       `undefined`, the grid shows the New tile alone and a placed card's body loads
       rather than reading as gone.
+    - **Film** (Epo 2026-11-27, after Flashcards; the workspace canvas only, not
+      the Canvas page): the workspace's films (`useCanvasFilms`, every page of
+      `kind` `film` files) as tiles with no New tile, "No ManimGX films uploaded
+      yet" with none. A click places an `affine:embed-capy-material` card with
+      `kind` `film` and the file's id as `materialId` (480 × 308): the material
+      card's header (icon, name, Film), its body the film itself fitted inside it
+      (`FilmEmbed contain`), view-only. Its toolbar has Open (the file viewer,
+      `open(id, 'film')`) where a quiz has Edit; a film the workspace no longer
+      lists shows "can't be opened".
     - **Quizzes and flashcards** on the Canvas page (Epo 2026-11-13, mock
       DnhMYffHEjdxiUansbBDde A + W1, the group named N1 by default): the same two
       tiles over every quiz and set the person can open (`GET /api/materials` with
