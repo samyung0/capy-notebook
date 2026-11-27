@@ -2976,6 +2976,15 @@ design, option d), and the nudge's release file on 2026-10-17.
   are deleted by hand at the deploy (a saved drawing answer or drawn sample
   with strokes from before is refused as it opens, as any misfit is). Its
   deploy request names "client protocol 43 -> 44, material 43 -> 44".
+  The visible-pages-first pin (pin afa2e0ff1, Q815 C step 2: DOCX Edit's
+  first frame builds only the pages in view, the rest in batches of 8 that
+  keys, jumps and on-demand page builds go ahead of (Q838) until a batch has
+  waited 1 s (Q841); batch fills commit as React transitions (the React #185
+  fix); the hosts' handover positions once the pages in view are built)
+  raised `CLIENT_PROTOCOL` to 45 and `MIN_SOURCE` to 45, so source tabs from
+  before it (protocol 44) reload; `MIN_MATERIAL` stays 44 and
+  `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names "client
+  protocol 44 -> 45, source 42 -> 45".
 
 #### When to bump
 
