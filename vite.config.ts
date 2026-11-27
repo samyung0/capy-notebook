@@ -188,6 +188,11 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
           share: path.resolve(import.meta.dirname, 'share.html'),
           summary: path.resolve(import.meta.dirname, 'summary.html'),
         },
+        // Folds chunks under 1 KB (mostly one translation message each) into
+        // a chunk loaded with them wherever they load, so a page asks for far
+        // fewer files (Q908). Larger thresholds fold whole small pages into
+        // the entry, which every page loads.
+        output: { experimentalMinChunkSize: 1000 },
       },
       sourcemap: uploadSourceMaps ? 'hidden' : false,
     },

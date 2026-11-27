@@ -1,7 +1,7 @@
 import { useNavigate } from '@tanstack/react-router';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import { useState } from 'react';
-import { searchQueryQMax } from '@/api/gen/validators';
+import { searchQueryQMax } from '@/api/gen/validatorLimits';
 import { useSearch } from '@/api/hooks';
 import type { MaterialKind, SearchKind, SearchResult } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';

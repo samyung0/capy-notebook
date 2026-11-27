@@ -2,7 +2,7 @@ import { z } from 'zod';
 import {
   createItemBankQuestionBodyTagsItemMax,
   createItemBankQuestionBodyTagsMax,
-} from '@/api/gen/validators';
+} from '@/api/gen/validatorLimits';
 import type { TagInput } from '@/api/types';
 import { flattenTagErrors } from '@/components/ui/flattenTagErrors';
 import { InputError, InputTitle } from '@/components/ui/Input';

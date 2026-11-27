@@ -311,26 +311,24 @@ export async function dropDeletedCopies(
 }
 
 /** Runs the sweep once per page load per account, when the page is idle. */
-export function useDeviceCopySweep(owner: string | undefined) {
-  useEffect(() => {
-    if (!owner || swept === owner) return;
-    swept = owner;
-    const run = () => {
-      void sweepDeviceCopies(
-        owner,
-        async (ids) => {
-          const answer = await api.post<{ ids: string[] }>(
-            '/materials/readable',
-            { ids }
-          );
-          return answer.ids;
-        },
-        () => loadSweepKept(owner)
-      ).catch(() => undefined);
-    };
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(run);
-    else setTimeout(run, 0);
-  }, [owner]);
+export function startDeviceCopySweep(owner: string) {
+  if (swept === owner) return;
+  swept = owner;
+  const run = () => {
+    void sweepDeviceCopies(
+      owner,
+      async (ids) => {
+        const answer = await api.post<{ ids: string[] }>(
+          '/materials/readable',
+          { ids }
+        );
+        return answer.ids;
+      },
+      () => loadSweepKept(owner)
+    ).catch(() => undefined);
+  };
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run);
+  else setTimeout(run, 0);
 }
 
 let swept: string | undefined;

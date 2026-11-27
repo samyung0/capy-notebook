@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { useUnreadNotificationCount } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import { ProfileMenu } from '@/components/app/ProfileMenu';
+import { Skeleton } from '@/components/ui/feedback';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import type { MenuItem } from '@/components/ui/Menu';
 import { PendingDot } from '@/components/ui/PendingDot';
@@ -118,6 +119,7 @@ function RailItem({
   icon,
   label,
   onClick,
+  onPreload,
 }: {
   active: boolean;
   /** What waits there, by the icon. */
@@ -127,6 +129,8 @@ function RailItem({
   icon: IconName;
   label: string;
   onClick: () => void;
+  /** Under the pointer or focus: start what the press opens. */
+  onPreload?: () => void;
 }) {
   return (
     <button
@@ -136,6 +140,8 @@ function RailItem({
         active && 'bg-action font-bold text-action-fg hover:bg-action'
       )}
       onClick={onClick}
+      onFocus={onPreload}
+      onPointerEnter={onPreload}
       type="button"
     >
       <span className="relative">
@@ -152,14 +158,31 @@ function RailItem({
   );
 }
 
+// No panel of its own: on the shell like the app sidebar's background, so a
+// page frame shows straight through.
+const RAIL =
+  'flex h-full w-[62px] shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden py-3';
+
+/** Workspaces, back to the list. */
+function RailBack() {
+  return (
+    <Link className={cn(ITEM, 'mb-1')} preload="intent" to="/">
+      <Icon name="navigationBack" size={20} />
+      <RailLabel label={m.nav_workspaces()} />
+    </Link>
+  );
+}
+
 /** The labelled icon rail on every workspace page from md, so iPads keep it:
  * Workspaces back to the list, the sections, Settings opening the workspace's
  * settings dialog, and your avatar opening the workspace and account menu.
  * From lg Files and Agent open panels; below, the Files dropdown and the pages.
- * To do carries the count the Study panel showed beside Assignments. */
+ * To do carries the count the Study panel showed beside Assignments. A section
+ * under the pointer or focus preloads its page (Q907). */
 export function WorkspaceRail({
   accountItems,
   active,
+  onPreload,
   onSelect,
   onSettings,
   workspace,
@@ -167,6 +190,7 @@ export function WorkspaceRail({
   /** The workspace part of the avatar's menu (Invite, settings, Clone). */
   accountItems: MenuItem[];
   active: WorkspaceSection;
+  onPreload: (section: WorkspaceSection) => void;
   onSelect: (section: WorkspaceSection) => void;
   /** Opens Workspace settings, for whoever has them (Epo 2026-11-13). */
   onSettings?: () => void;
@@ -176,16 +200,8 @@ export function WorkspaceRail({
   const assignmentCount = useAssignmentCount(workspace);
   const membersNeedAction = useMembersNeedAction(workspace);
   return (
-    // No panel of its own: on the shell like the app sidebar's background, so a
-    // page frame shows straight through.
-    <nav
-      aria-label={m.workspace_rail_label()}
-      className="flex h-full w-[62px] shrink-0 flex-col items-center gap-2 overflow-y-auto overflow-x-hidden py-3"
-    >
-      <Link className={cn(ITEM, 'mb-1')} preload="intent" to="/">
-        <Icon name="navigationBack" size={20} />
-        <RailLabel label={m.nav_workspaces()} />
-      </Link>
+    <nav aria-label={m.workspace_rail_label()} className={RAIL}>
+      <RailBack />
       {workspaceSections(workspace).map((section) => (
         <RailItem
           active={active === section.value}
@@ -195,6 +211,7 @@ export function WorkspaceRail({
           key={section.value}
           label={section.label}
           onClick={() => onSelect(section.value)}
+          onPreload={() => onPreload(section.value)}
         />
       ))}
       <div className="mt-auto flex flex-col items-center gap-2">
@@ -213,6 +230,29 @@ export function WorkspaceRail({
           workspace={{ items: accountItems, name: workspace.name }}
         />
       </div>
+    </nav>
+  );
+}
+
+/** The rail while its workspace loads (Q906): Workspaces, then the shapes of
+ * the sections and your avatar, in the shell's hover tone (the cards' skeleton
+ * tone is the shell's own). Which sections and menus show depends on the
+ * person's role, so none is drawn before the workspace's read says. */
+export function WorkspaceRailSkeleton() {
+  return (
+    <nav aria-label={m.workspace_rail_label()} className={RAIL}>
+      <RailBack />
+      {Array.from({ length: 6 }, (_, i) => (
+        // An item's box: its icon over its label.
+        <div
+          className="flex w-[62px] flex-col items-center gap-0.5 px-0.5 pt-2 pb-1.5"
+          key={i}
+        >
+          <Skeleton className="size-5 rounded-[6px] bg-page-hover" />
+          <Skeleton className="my-px h-2.5 w-9 bg-page-hover" />
+        </div>
+      ))}
+      <Skeleton className="mt-auto size-11 shrink-0 rounded-full bg-page-hover" />
     </nav>
   );
 }

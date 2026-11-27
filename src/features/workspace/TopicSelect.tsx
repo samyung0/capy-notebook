@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { addTopicBodyNameMax } from '@/api/gen/validators';
+import { addTopicBodyNameMax } from '@/api/gen/validatorLimits';
 import type { Topic } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';

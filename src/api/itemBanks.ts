@@ -95,8 +95,8 @@ export const useItemBankQuestions = (bank: string, filter: ItemBankFilter) =>
   });
 
 /** Every tag the bank's questions hold, for its Tags filter and tag input. */
-export const useItemBankTags = (bank: string) =>
-  useQuery({
+export const itemBankTagsQuery = (bank: string) =>
+  queryOptions({
     meta: { errorBoundary: false },
     queryFn: ({ signal }) =>
       api
@@ -104,6 +104,8 @@ export const useItemBankTags = (bank: string) =>
         .then((body) => body.tags),
     queryKey: itemBankKeys.tags(bank),
   });
+export const useItemBankTags = (bank: string) =>
+  useQuery(itemBankTagsQuery(bank));
 
 /** A question copied into a bank (New question, Add to bank), or with `id`
  * an edit of one. */

@@ -1590,8 +1590,9 @@ Two content security policies, both built once per SPA build by
     and `/summary` run the Worker first and answer the 404 page.
     The dev server's templates also carry React's refresh preamble. The SPA's
     and the share pages' scripts set Zod to `jitless` first
-    (`src/lib/zodJitless.ts`), so Zod never probes `new Function` (the summary
-    and error pages' script builds no schema);
+    (`src/lib/zodJitless.ts`, on the global settings zod reads when it loads,
+    so the entry imports no zod), so Zod never probes `new Function` (the
+    summary and error pages' script builds no schema);
   - `script-src-attr 'none'` (no event-handler attributes),
     `worker-src 'self' blob:` (only clerk-js's timer worker was known to need
     `blob:`; the pages run clean without it locally, and it stays for PostHog's

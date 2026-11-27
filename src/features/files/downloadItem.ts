@@ -3,15 +3,15 @@ import * as Y from 'yjs';
 import { fileLinksQuery, materialWithBodyQuery } from '@/api/hooks';
 import type { SourceFile } from '@/api/types';
 import { parseMaterialDocument } from '@/features/materials/document';
-import {
-  downloadEditorFile,
-  exportNoteValue,
-} from '@/features/notes/documentAdapters';
 import type { ExportFormat } from '@/features/notes/export/render';
 import { trackDownload } from '@/features/workspace/sourceTransfers';
 import { isSourceText, officeFormatOf } from './fileUtils';
 import { readSourceView } from './sourceOpen';
 import { applySavedSource, savedSourceUpdate } from './sourceState';
+
+/** Note export (Markdown and DOCX, with its parsers) loads with the first
+ * download, not with the pages showing an item menu (Q908). */
+const documentAdapters = () => import('@/features/notes/documentAdapters');
 
 /** Download from an item menu (Epo 2026-10-27/28): a file's latest saved
  * state under its own name, shown as Preparing download until it saves. An
@@ -25,7 +25,13 @@ export function downloadFile(
 ) {
   return trackDownload(
     { kind: file.kind, name: file.name, workspaceId: file.workspaceId || null },
-    async () => downloadEditorFile(await fileBlob(file, queryClient), file.name)
+    async () => {
+      const [blob, { downloadEditorFile }] = await Promise.all([
+        fileBlob(file, queryClient),
+        documentAdapters(),
+      ]);
+      downloadEditorFile(blob, file.name);
+    }
   );
 }
 
@@ -86,9 +92,11 @@ export function downloadNote(
       workspaceId: note.workspaceId,
     },
     async () => {
-      const material = await queryClient.fetchQuery(
-        materialWithBodyQuery(note.id)
-      );
+      const [material, { downloadEditorFile, exportNoteValue }] =
+        await Promise.all([
+          queryClient.fetchQuery(materialWithBodyQuery(note.id)),
+          documentAdapters(),
+        ]);
       const value =
         parseMaterialDocument(material.content)?.value ??
         material.content.value;

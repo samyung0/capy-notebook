@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { updateConversationBodyTitleMax } from '@/api/gen/validators';
+import { updateConversationBodyTitleMax } from '@/api/gen/validatorLimits';
 import {
   useConversations,
   useDeleteConversation,

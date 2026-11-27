@@ -110,7 +110,11 @@ a refusal is a toast.
 ## Input length limits
 
 Limits come from the backend (`server/internal/fieldlimits`, generated into
-`src/api/gen/validators.ts` as `*Max` and `src/api/limits.generated.ts`).
+`src/api/gen/validators.ts` as `*Max`, copied to
+`src/api/gen/validatorLimits.ts`, and `src/api/limits.generated.ts`). Code that
+needs only a limit imports `validatorLimits`: the validators module lands whole
+in one chunk, so importing it from the app's entry put every zod schema there
+(Q908; `scripts/gen-validator-limits.mjs` runs in `pnpm gen:api`).
 Counts are Unicode code points (`textLength`), matching the backend's runes.
 
 - A titled field passes `count={{ max, value }}` to `InputTitle` (or
@@ -219,9 +223,11 @@ Reload) is distinct from `account_deletion_busy`, `subscription_exists`,
 `subscription_active`, `account_state_changed`, `clone_source_changed`,
 `transfer_self` and `nothing_to_process`. The Go store's
 specific conflicts wrap `ErrConflict`, so internal callers still see a
-conflict. Zod's own messages follow the UI locale (`z.config` in
-`src/i18n/index.ts`), and question validation throws or reports paraglide
-copy.
+conflict. Zod's own messages follow the UI locale: `src/main.tsx` loads zod's
+Chinese messages for a Chinese UI and puts them on zod's global settings
+(`zodConfig`, `src/lib/zodJitless.ts`), which zod reads whenever it loads,
+English being its default; zod itself stays out of the app's entry (Q908).
+Question validation throws or reports paraglide copy.
 
 `too_many_ingest_leases` is kind `ingest`, distinct from `llm_credits_exhausted`
 and `too_many_streams`. An upload is never retried by the browser: one past

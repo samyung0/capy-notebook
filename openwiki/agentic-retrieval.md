@@ -4261,7 +4261,9 @@ materials are sources.
   indexed query; trashed rows and other notes' rows never appear), and
   `useNoteFooter` takes each embed's credits from the read its block already
   makes (`qk.quiz`/`qk.material`; a failed read, such as a trashed row, drops
-  it), else from `embedCredits`, and unions them in document order with
+  it), read from the query cache without registering a query (an observer
+  would overwrite the block's query function and error handling, Q904), else
+  from `embedCredits`, and unions them in document order with
   `noteFooterProvenance` (`footerUnion.ts`, Go's rules: the parity table
   `server/internal/store/testdata/footer_union_parity.json` is read by
   `TestFooterUnionParity` and `footerUnion.test.ts`). The editor keeps the

@@ -43,7 +43,6 @@ import {
 } from '@/components/app/AppErrorBoundary';
 import { AuthShellRoute, RootRoute } from '@/components/app/RouteComponents';
 import { parseThemeSearch } from '@/components/app/themeDrawerSearch';
-import { prefetchOfficeFile } from '@/features/files/prefetchOfficeFile';
 import {
   parseDocumentModeSearch,
   parseMaterialPageSearch,
@@ -61,6 +60,13 @@ import {
   parseStudySearch,
   studyLink,
 } from '@/features/study/studyRoutes';
+import {
+  opensDashboard,
+  prefetchAssignments,
+  prefetchDashboard,
+  prefetchMembers,
+  prefetchStudy,
+} from '@/features/workspace/workspacePreload';
 import { checkReleaseOnFocus, loadUpdateOnPathChange } from '@/lib/appRelease';
 import { OfflineError } from '@/lib/errors';
 import { features } from '@/lib/features';
@@ -95,6 +101,22 @@ type Loader = (args: {
   context: RouterContext;
   params: Record<string, string>;
 }) => void;
+
+/** An Office file's open (its view's code, the source session and the room's
+ * socket), its code loaded by the first route that opens a file, so Yjs and the
+ * room code stay out of the app's entry (Q908). Started first in the loader and
+ * never awaited; a hover's preload loads the code too (the prefetch itself
+ * skips a preload), and a failed load leaves the view to read the file itself,
+ * as a failed prefetch does. */
+function prefetchOffice(
+  qc: QueryClient,
+  fileId: string,
+  load: { abortController: AbortController; preload: boolean }
+) {
+  import('@/features/files/prefetchOfficeFile')
+    .then(({ prefetchOfficeFile }) => prefetchOfficeFile(qc, fileId, load))
+    .catch(() => undefined);
+}
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: RootRoute,
@@ -241,9 +263,11 @@ const workspaceRoute = createRoute({
     abortController,
     context: { queryClient: qc },
     deps,
+    location,
     params,
     preload,
   }) => {
+    if (deps.file) prefetchOffice(qc, deps.file, { abortController, preload });
     const id = params.workspaceId;
     qc.prefetchQuery(workspaceQuery(id));
     qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
@@ -251,16 +275,22 @@ const workspaceRoute = createRoute({
     qc.prefetchQuery(filesQuery(id));
     qc.prefetchQuery(materialsQuery(id));
     qc.prefetchInfiniteQuery(conversationsQuery(id));
-    // The Dashboard's Continue, beside its other sections.
-    qc.prefetchQuery(continueQuery(id));
+    // Opened on its Dashboard (a workspace card's link), the Dashboard's reads
+    // ride this wave too, so hovering the card readies the whole first screen
+    // (Q906). Read from the URL being loaded or preloaded: moving between views
+    // without changing the open file runs no loader (the rail's hover does).
+    if (
+      opensDashboard(
+        location.pathname,
+        parseWorkspaceOpenSearch(location.search)
+      )
+    )
+      prefetchDashboard(qc, id);
     // The open file rides the first wave instead of waiting for the page to
     // render. An open material is left out on purpose: its body is the
     // document itself, and the heavy-document gate must see the list first.
-    if (deps.file) {
-      qc.prefetchQuery(fileQuery(deps.file));
-      // An Office file's open starts once its row arrives.
-      prefetchOfficeFile(qc, deps.file, { abortController, preload });
-    }
+    // An Office file's open (started above) starts once its row arrives.
+    if (deps.file) qc.prefetchQuery(fileQuery(deps.file));
   },
   path: '/workspaces/$workspaceId',
   staticData: { hideSidebar: true },
@@ -271,19 +301,33 @@ const workspaceRoute = createRoute({
 // workspace's route stays mounted and draws them in its centre, and the router
 // keeps the page before on screen until a page's code is in. Declared apart
 // from `addChildren`, whose argument would type them against their parent.
+// Each loader starts all its page's reads in one wave beside its code, on a
+// rail item's hover too (Q907).
 const workspacePages = [
+  // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
     component: lazyPage(() => import('@/routes/WorkspaceAssignments')),
     getParentRoute: () => workspaceRoute,
+    loaderDeps: ({ search }) => ({
+      assignment: search.assignment,
+      attempt: search.attempt,
+    }),
+    loader: ({ context: { queryClient: qc }, deps, params }) => {
+      prefetchAssignments(qc, params.workspaceId, deps);
+    },
     path: 'assignments',
     validateSearch: parseAssignmentsSearch,
   }),
   createRoute({
     component: lazyPage(() => import('@/routes/WorkspaceMembers')),
     getParentRoute: () => workspaceRoute,
+    loader: ({ context: { queryClient: qc }, params }) => {
+      prefetchMembers(qc, params.workspaceId);
+    },
     path: 'members',
   }),
   // One route for Study's tabs, so a tab switch keeps the page mounted.
+  // biome-ignore assist/source/useSortedKeys: TanStack types the loader's `params` from `params.parse` and its `deps` from `loaderDeps`, which must come first.
   createRoute({
     component: lazyPage(() => import('@/routes/WorkspaceStudy')),
     getParentRoute: () => workspaceRoute,
@@ -302,6 +346,10 @@ const workspacePages = [
         });
       },
       stringify: ({ tab }) => ({ tab }),
+    },
+    loaderDeps: ({ search }) => search,
+    loader: ({ context: { queryClient: qc }, deps, params }) => {
+      prefetchStudy(qc, params.workspaceId, params.tab, deps);
     },
     path: 'study/$tab',
     validateSearch: parseStudySearch,
@@ -453,8 +501,8 @@ const appRoutes = [
       params,
       preload,
     }) => {
+      prefetchOffice(qc, params.fileId, { abortController, preload });
       qc.prefetchQuery(fileQuery(params.fileId));
-      prefetchOfficeFile(qc, params.fileId, { abortController, preload });
     },
     path: '/files/$fileId',
     validateSearch: parseDocumentModeSearch,

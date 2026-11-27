@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { formatPoints } from '@/features/quizzes/grade';
+import { ASSIGNMENTS_FIRST_SORT } from '@/features/workspace/workspacePreload';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -121,7 +122,7 @@ function useAssignmentSort() {
   const [server, setSort] = useState<{
     ascending: boolean;
     by: AssignmentSort;
-  }>({ ascending: false, by: 'posted' });
+  }>(ASSIGNMENTS_FIRST_SORT);
   const sorting: ColumnSort<AssignmentSort> = {
     ascending: server.ascending,
     ascendingFirst: ['title', 'kind', 'topic'],

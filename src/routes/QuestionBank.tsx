@@ -31,7 +31,7 @@ import { api, isApiError } from '@/api/client';
 import {
   bankQuestionsQueryQMax,
   commentBankQuestionBodyTextMax,
-} from '@/api/gen/validators';
+} from '@/api/gen/validatorLimits';
 import type { BankTopicProgress } from '@/api/types';
 import { InlineErrorState } from '@/components/app/ErrorState';
 import {

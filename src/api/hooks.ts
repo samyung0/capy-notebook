@@ -1583,20 +1583,25 @@ export function onExtractionEnd(listener: (run: Extraction) => void) {
 
 /** The empty viewer's quick-open grid: the workspace's four newest files and
  * materials with thumbnails and previews, for members and link readers alike. */
-/** The workspace Dashboard's header and Activity (boards H1, H2). */
-export const useWorkspaceDashboard = (wsId: string) =>
-  useQuery({
-    meta: queryMeta({ errorBoundary: false }),
+/** The workspace Dashboard's header and Activity (boards H1, H2). Its policy
+ * rides the options, so a route prefetch that fails keeps it too. */
+export const workspaceDashboardQuery = (wsId: string) =>
+  queryOptions({
+    meta: { errorBoundary: false },
     queryFn: () => api.get<WorkspaceDashboard>(`/workspaces/${wsId}/dashboard`),
     queryKey: qk.workspaceDashboard(wsId),
   });
+export const useWorkspaceDashboard = (wsId: string) =>
+  useQuery(workspaceDashboardQuery(wsId));
 
-export const useWorkspaceRecent = (wsId: string) =>
-  useQuery({
-    meta: queryMeta({ errorBoundary: false }),
+export const workspaceRecentQuery = (wsId: string) =>
+  queryOptions({
+    meta: { errorBoundary: false },
     queryFn: () => api.get<WorkspaceRecent>(`/workspaces/${wsId}/recent`),
     queryKey: qk.filesRecent(wsId),
   });
+export const useWorkspaceRecent = (wsId: string) =>
+  useQuery(workspaceRecentQuery(wsId));
 
 export const fileQuery = (id: string | null) =>
   queryOptions({
@@ -2918,16 +2923,20 @@ export const useWorkspaceCollaborators = (
   });
 
 /** The owner's pending invites: every typed address, as typed. */
+export const workspaceInvitesQuery = (workspaceId: string) =>
+  queryOptions({
+    queryFn: () =>
+      api.get<PendingWorkspaceInvite[]>(`/workspaces/${workspaceId}/invites`),
+    queryKey: qk.workspaceInvites(workspaceId),
+  });
 export const useWorkspaceInvites = (
   workspaceId: string,
   options?: QueryUiOptions & { enabled?: boolean }
 ) =>
   useQuery({
+    ...workspaceInvitesQuery(workspaceId),
     enabled: !!workspaceId && options?.enabled !== false,
     meta: queryMeta(options),
-    queryFn: () =>
-      api.get<PendingWorkspaceInvite[]>(`/workspaces/${workspaceId}/invites`),
-    queryKey: qk.workspaceInvites(workspaceId),
   });
 
 // Invite and cancel failures render inside the form, not as toasts.
@@ -3399,16 +3408,13 @@ export interface AssignmentListParams {
 /** A class's assignments, a page at a time (Epo 2026-11-13): all of them for
  * its owner and teaching assistants, a member's own otherwise; filtered and
  * ordered by the server. */
-export const useAssignments = (
+export const assignmentsQuery = (
   workspaceId: string,
-  params: AssignmentListParams,
-  options?: QueryUiOptions
+  params: AssignmentListParams
 ) =>
-  useInfiniteQuery({
+  infiniteQueryOptions({
     getNextPageParam: (last: AssignmentList) => last.nextCursor || undefined,
     initialPageParam: '',
-    meta: queryMeta(options),
-    placeholderData: keepPreviousData,
     queryFn: ({ pageParam }) =>
       api.get<AssignmentList>(
         `/workspaces/${workspaceId}/assignments${listSearch(
@@ -3426,14 +3432,25 @@ export const useAssignments = (
       ),
     queryKey: [...qk.assignments(workspaceId), params],
   });
-
-export const useAssignment = (id: string, options?: QueryUiOptions) =>
-  useQuery({
-    enabled: !!id,
+export const useAssignments = (
+  workspaceId: string,
+  params: AssignmentListParams,
+  options?: QueryUiOptions
+) =>
+  useInfiniteQuery({
+    ...assignmentsQuery(workspaceId, params),
     meta: queryMeta(options),
+    placeholderData: keepPreviousData,
+  });
+
+export const assignmentQuery = (id: string) =>
+  queryOptions({
+    enabled: !!id,
     queryFn: () => api.get<Assignment>(`/assignments/${id}`),
     queryKey: qk.assignment(id),
   });
+export const useAssignment = (id: string, options?: QueryUiOptions) =>
+  useQuery({ ...assignmentQuery(id), meta: queryMeta(options) });
 
 /** The attempts whose answer rows a report read changed: their marks moved
  * (the AI's arrived, staff approved), so an open answer reads them anew. */
@@ -4142,16 +4159,20 @@ export const useStudyQuestionCount = (
   });
 
 /** Study's Overview Topics: the caller's own standing per topic. */
+export const studyTopicsQuery = (workspaceId: string) =>
+  queryOptions({
+    queryFn: () =>
+      api.get<StudyTopics>(`/workspaces/${workspaceId}/study/topics`),
+    queryKey: qk.studyTopics(workspaceId),
+  });
 export const useStudyTopics = (
   workspaceId: string,
   options?: QueryUiOptions & { enabled?: boolean }
 ) =>
   useQuery({
+    ...studyTopicsQuery(workspaceId),
     enabled: options?.enabled,
     meta: queryMeta(options),
-    queryFn: () =>
-      api.get<StudyTopics>(`/workspaces/${workspaceId}/study/topics`),
-    queryKey: qk.studyTopics(workspaceId),
   });
 
 /** Which questions a topic questions page lists: a topic's, Other files' or
@@ -4162,14 +4183,12 @@ export type QuestionsList =
 
 /** A topic questions page: each question with the caller's latest result, or
  * a member's for a class's staff (read only). */
-export const useStudyQuestions = (
+export const studyQuestionsQuery = (
   workspaceId: string,
   list: QuestionsList,
-  memberId?: string,
-  options?: QueryUiOptions
+  memberId?: string
 ) =>
-  useQuery({
-    meta: queryMeta(options),
+  queryOptions({
     queryFn: () =>
       api.get<{ questions: StudyQuestion[] }>(
         `/workspaces/${workspaceId}/study/${memberId ? `members/${encodeURIComponent(memberId)}/` : ''}questions${listSearch(
@@ -4187,6 +4206,16 @@ export const useStudyQuestions = (
       list.list,
       list.list === 'topic' ? list.topicId : null,
     ],
+  });
+export const useStudyQuestions = (
+  workspaceId: string,
+  list: QuestionsList,
+  memberId?: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    ...studyQuestionsQuery(workspaceId, list, memberId),
+    meta: queryMeta(options),
   });
 
 /** A member's latest answer to a question their lists show answered, for a
@@ -4214,17 +4243,21 @@ export const useMemberAnswer = (
 
 /** Study → Members: each member's line, for a class's owner and teaching
  * assistants. */
+export const membersProgressQuery = (workspaceId: string) =>
+  queryOptions({
+    queryFn: () =>
+      api.get<MembersProgress>(`/workspaces/${workspaceId}/study/members`),
+    queryKey: qk.membersProgress(workspaceId),
+  });
 export const useMembersProgress = (
   workspaceId: string,
   options?: QueryUiOptions,
   enabled = true
 ) =>
   useQuery({
+    ...membersProgressQuery(workspaceId),
     enabled,
     meta: queryMeta(options),
-    queryFn: () =>
-      api.get<MembersProgress>(`/workspaces/${workspaceId}/study/members`),
-    queryKey: qk.membersProgress(workspaceId),
   });
 
 /** A member's profile on Study → Members (board G2). */

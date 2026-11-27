@@ -15,6 +15,7 @@ import { Input, InputField } from '@/components/ui/Input';
 import { Tile } from '@/components/ui/Tile';
 import { useAuth, useSignIn, useSignUp } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
+import { likelySignedOut } from '@/lib/clerkSession';
 import { cn } from '@/lib/cn';
 import { clerkMessage, redirectAfterAuth, ssoUrls } from './clerk';
 import { newPasswordSchema, signInPasswordSchema } from './password';
@@ -323,6 +324,10 @@ function SignInCard() {
   const [step, setStep] = useState<'form' | 'newPassword' | 'secondFactor'>(
     signIn.status === 'needs_second_factor' ? 'secondFactor' : 'form'
   );
+  // Drawn before Clerk loaded (Q905), the card learns of that sign-in late.
+  useEffect(() => {
+    if (signIn.status === 'needs_second_factor') setStep('secondFactor');
+  }, [signIn.status]);
   const [formError, setFormError] = useState<string | null>(null);
   const id = useId();
   const schema = useMemo(
@@ -728,9 +733,12 @@ export function AuthLanding({ mode }: { mode: Mode }) {
   useEffect(() => {
     if (isLoaded && isSignedIn) router.history.replace(redirectAfterAuth());
   }, [isLoaded, isSignedIn, router]);
-  // Hold the form until Clerk knows the session, so a signed-in visitor goes
-  // straight to the redirect instead of seeing the form flash first.
-  if (!isLoaded || isSignedIn)
+  // Hold the form until Clerk knows the session when it may find one, so a
+  // signed-in visitor goes straight to the redirect instead of seeing the form
+  // flash first. A visitor it most likely has none for gets the form at once:
+  // Clerk's methods wait for its load (Q905).
+  const [hold] = useState(() => !likelySignedOut());
+  if (isSignedIn || (!isLoaded && hold))
     return (
       <AuthPage>
         <div className="flex justify-center">

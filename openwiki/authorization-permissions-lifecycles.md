@@ -2047,10 +2047,20 @@ Microsoft, email plus password, forgot-password and create-account links),
 password; the verified reset also signs the user in) and `/sso-callback`
 (Clerk's redirect callback, which completes the session or transfers a
 first-time OAuth account into sign-up). A same-origin `redirect_url` query
-carries the post-auth destination through every hop. `AuthGate` sends
-signed-out visitors to `/sign-in?redirect_url=<path>` itself; Clerk's
-`RedirectToSignIn` would put the URL in the hash, which the auth pages do not
-read. Once a session is active, the landing's signed-in effect is the only
+carries the post-auth destination through every hop. A visitor without
+Clerk's session cookie (`__client_uat` missing, or `0` after signing out) on a
+signed-in page is moved to `/sign-in?redirect_url=<path>` before the router
+reads the address (`src/lib/bootSignIn.ts`, imported first in `src/main.tsx`;
+the public pages are listed in `src/lib/clerkSession.ts`, kept equal to the
+router's by `clerkSession.test.ts`), so no load waits for Clerk to say so.
+There the form draws at once while Clerk loads beside it: Clerk's methods
+wait for its load, and the page holds the form only when the cookie says a
+session exists, so a signed-in visitor never sees it flash. `AuthGate` still
+sends visitors Clerk finds signed out to `/sign-in?redirect_url=<path>`,
+through the router (no page load); Clerk's `RedirectToSignIn` would put the
+URL in the hash, which the auth pages do not read. Clerk's prebuilt UI is never
+downloaded (`prefetchUI={false}`); one loader, index.html's, shows until the
+first page draws (`BootLoader`) (Q905). Once a session is active, the landing's signed-in effect is the only
 redirect to the destination; `finalize` does not navigate. Links between auth
 pages use SPA navigation and preserve search parameters. Sign-up and new-password
 forms require 12 characters with a digit and a symbol; sign-in only checks

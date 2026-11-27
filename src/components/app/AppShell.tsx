@@ -2,14 +2,11 @@ import { Outlet, useRouterState } from '@tanstack/react-router';
 import { useEffect } from 'react';
 import { api } from '@/api/client';
 import { useEventStream, useMe } from '@/api/hooks';
-import { offerDeletedEdits } from '@/features/collaboration/deletedEditsToast';
-import { useDeviceCopySweep } from '@/features/collaboration/deviceCopy';
 import { Tour } from '@/features/guide/Tour';
 import { useRunningTour } from '@/features/guide/tourStore';
 import { useFinishToasts } from '@/features/questions/finishToasts';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { AccountVoiceOverlay } from '@/features/voice/VoiceCard';
-import { startDraftSweeps } from '@/lib/editDrafts';
 import { useKeyboardHeight } from '@/lib/useKeyboardHeight';
 import { workspaceOfPath } from '@/lib/workspacePath';
 import { AccountBlockedScreen } from './AccountBlockedScreen';
@@ -39,10 +36,20 @@ export function AppShell() {
   // account no longer has are deleted, and a deleted item's are offered (Q40).
   const { data: me } = useMe({ errorBoundary: false });
   const actorId = me?.id;
+  // The sweeps' code (drafts, device copies, Yjs) loads here, after sign-in,
+  // and stays out of the app's entry (Q908).
   useEffect(() => {
-    if (actorId) startDraftSweeps(actorId, api, offerDeletedEdits);
+    if (!actorId) return;
+    void Promise.all([
+      import('@/lib/editDrafts'),
+      import('@/features/collaboration/deletedEditsToast'),
+    ]).then(([{ startDraftSweeps }, { offerDeletedEdits }]) =>
+      startDraftSweeps(actorId, api, offerDeletedEdits)
+    );
+    void import('@/features/collaboration/deviceCopy').then(
+      ({ startDeviceCopySweep }) => startDeviceCopySweep(actorId)
+    );
   }, [actorId]);
-  useDeviceCopySweep(actorId);
   useFinishToasts();
   useKeyboardHeight();
   const themeDrawer = useThemeDrawer();

@@ -4,7 +4,7 @@ import { isApiError } from '@/api/client';
 import {
   updateFileBodyNameMax,
   updateMaterialBodyTitleMax,
-} from '@/api/gen/validators';
+} from '@/api/gen/validatorLimits';
 import {
   useDeleteFile,
   useDeleteMaterial,

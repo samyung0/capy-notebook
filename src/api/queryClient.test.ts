@@ -13,6 +13,15 @@ it('leaves a rate-limited read to the user instead of retrying it', () => {
   expect(retry(0, new ApiError(503, 'Service Unavailable'))).toBe(true);
 });
 
+// Q904: content the server cannot read answers the same on every try.
+it('does not retry a read the server refused as unreadable', () => {
+  const retry = queryClient.getDefaultOptions().queries?.retry as (
+    failureCount: number,
+    error: unknown
+  ) => boolean;
+  expect(retry(0, new ApiError(422, 'Unprocessable Entity'))).toBe(false);
+});
+
 // Q39 (review 2026-11-20): a stored read of an item now deleted keeps its
 // data, which the page showing it keeps its unsent edits and header on; one
 // now missing drops it.

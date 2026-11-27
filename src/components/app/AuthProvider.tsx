@@ -1,17 +1,18 @@
 import { ClerkProvider, Show, useAuth } from '@clerk/react';
+import { useRouter } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { setAuthTokenGetter, USE_MSW } from '@/api/auth';
 import { api } from '@/api/client';
 import { queryClient } from '@/api/queryClient';
 import { startQueryPersistence } from '@/api/queryPersistence';
 import type { User } from '@/api/types';
-import { Spinner } from '@/components/ui/feedback';
 import { signInHref } from '@/features/auth/clerk';
 import { forgetMadeMaterials } from '@/features/canvas/useCanvasMaterials';
-import { dropSourceOpens } from '@/features/files/sourceOpen';
 import { forgetAssetLinks } from '@/features/materials/resolvedAssetLinks';
 import { claimAccountData } from '@/lib/accountData';
+import { isAuthForm, likelySignedOut } from '@/lib/clerkSession';
 import { claimSentOpens } from '@/lib/sentOpens';
+import { BootLoader } from './BootLoader';
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | string
@@ -29,6 +30,12 @@ function AuthTokenBridge({ children, pending }: AuthProviderProps) {
     undefined
   );
   const previousIdentity = useRef<string | null | undefined>(undefined);
+  // A visitor Clerk most likely has no session for sees an auth form at once:
+  // Clerk loads beside it, its methods wait for the load, and only a session
+  // Clerk does find remounts the tree (Q905).
+  const [early] = useState(
+    () => isAuthForm(window.location.pathname) && likelySignedOut()
+  );
 
   // Workspace/material responses contain requester-specific capabilities and
   // ownership. Never reuse them after sign-in, sign-out, or account changes.
@@ -43,7 +50,13 @@ function AuthTokenBridge({ children, pending }: AuthProviderProps) {
       queryClient.clear();
       forgetMadeMaterials();
       forgetAssetLinks();
-      dropSourceOpens();
+      // An Office open can only be pending after a page started one, so
+      // the first identity has none, and the open code stays out of the
+      // app's entry (Q908).
+      if (previousIdentity.current !== undefined)
+        void import('@/features/files/sourceOpen').then(({ dropSourceOpens }) =>
+          dropSourceOpens()
+        );
       claimSentOpens(identity);
       previousIdentity.current = identity;
     }
@@ -71,14 +84,12 @@ function AuthTokenBridge({ children, pending }: AuthProviderProps) {
     };
   }, [getToken, isLoaded, isSignedIn]);
 
-  // Route loaders must not run until the matching token getter is installed.
+  // Route loaders must not run until the matching token getter is installed;
+  // the auth forms drawn early have none.
   if (!isLoaded || readyIdentity !== identity) {
+    if (early && !identity) return <>{children}</>;
     if (pending !== undefined) return <>{pending}</>;
-    return (
-      <div className="flex h-dvh items-center justify-center">
-        <Spinner className="size-7" />
-      </div>
-    );
+    return <BootLoader />;
   }
   return <>{children}</>;
 }
@@ -105,11 +116,7 @@ function ServerAccountBridge({ children, pending }: AuthProviderProps) {
   }, []);
   if (ready) return <>{children}</>;
   if (pending !== undefined) return <>{pending}</>;
-  return (
-    <div className="flex h-dvh items-center justify-center">
-      <Spinner className="size-7" />
-    </div>
-  );
+  return <BootLoader />;
 }
 
 export function AppAuthProvider({ children, pending }: AuthProviderProps) {
@@ -123,6 +130,9 @@ export function AppAuthProvider({ children, pending }: AuthProviderProps) {
   return (
     <ClerkProvider
       afterSignOutUrl="/sign-in"
+      // Capy draws its own auth forms: Clerk's prebuilt UI never loads
+      // (2026-10-18, Q905).
+      prefetchUI={false}
       publishableKey={PUBLISHABLE_KEY}
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
@@ -134,11 +144,13 @@ export function AppAuthProvider({ children, pending }: AuthProviderProps) {
 
 /** Sends the visitor to /sign-in with this page in the `redirect_url` query,
  * which every auth page reads and keeps. Clerk's RedirectToSignIn puts it in
- * the hash (`/sign-in#/?redirect_url=`), which our auth pages never read. */
+ * the hash (`/sign-in#/?redirect_url=`), which our auth pages never read. A
+ * router move, not a page load: the app is already here (Q905). */
 function RedirectToSignIn() {
+  const router = useRouter();
   useEffect(() => {
-    window.location.assign(signInHref());
-  }, []);
+    router.history.replace(signInHref());
+  }, [router]);
   return null;
 }
 

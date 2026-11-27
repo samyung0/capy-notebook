@@ -82,7 +82,8 @@ export function freshAnswer(query: AnyQuery | undefined) {
 }
 
 function shouldRetry(failureCount: number, error: unknown): boolean {
-  // A rate-limited read is the user's to retry, not ours.
+  // A rate-limited read is the user's to retry, not ours; a 422 (content the
+  // server cannot read) answers the same on every try (Q904).
   if (
     isApiError(error) &&
     (error.status === 401 ||
@@ -90,6 +91,7 @@ function shouldRetry(failureCount: number, error: unknown): boolean {
       error.status === 404 ||
       error.status === 409 ||
       error.status === 410 ||
+      error.status === 422 ||
       error.status === 429)
   ) {
     return false;

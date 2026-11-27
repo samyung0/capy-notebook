@@ -1,5 +1,5 @@
-import { type QueryKey, useQueries } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { hashKey, type QueryKey, useQueryClient } from '@tanstack/react-query';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { qk } from '@/api/client';
 import type { Material, Provenance } from '@/api/types';
 import {
@@ -44,6 +44,11 @@ export function embedKey(
  * one, else the note read's `embedCredits`, the server's value at load. An
  * embed whose read failed (trashed, gone) drops out. It recomputes only when
  * the embeds or one of their reads change, and fetches nothing itself.
+ *
+ * It reads the cache without observers (Q904): an observer copies its
+ * options onto the shared query, so a footer observer without a query
+ * function stripped the embed block's own (and its `errorBoundary: false`),
+ * and a broken embed's retry then failed the whole note.
  */
 export function useNoteFooter(
   material: Pick<Material, 'embedCredits' | 'provenance'>,
@@ -62,26 +67,44 @@ export function useNoteFooter(
         : [],
     [key]
   );
-  const reads = useQueries({
-    combine: (results) => results,
-    // Disabled with no queryFn rather than skipToken: a refetch of the
-    // embed's read (children-ready invalidates it) then borrows the embed
-    // block's queryFn, where a skipToken left here would fail it.
-    queries: refs.map((ref) => ({
-      enabled: false,
-      queryKey: EMBED_READ_KEYS[ref.kind](ref.id),
-      select: (data: { provenance?: Provenance }) => data.provenance,
-    })),
-  });
+  const queryClient = useQueryClient();
+  const hashes = useMemo(
+    () => refs.map((ref) => hashKey(EMBED_READ_KEYS[ref.kind](ref.id))),
+    [refs]
+  );
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      const watched = new Set(hashes);
+      return queryClient
+        .getQueryCache()
+        .subscribe((event) => watched.has(event.query.queryHash) && onChange());
+    },
+    [queryClient, hashes]
+  );
+  // A value, so an unrelated cache event re-renders nothing. The same on the
+  // server: the site Worker renders shared notes.
+  const snapshot = () =>
+    hashes
+      .map((hash) => {
+        const state = queryClient.getQueryCache().get(hash)?.state;
+        return state ? `${state.status}:${state.dataUpdatedAt}` : '';
+      })
+      .join(' ');
+  const reads = useSyncExternalStore(subscribe, snapshot, snapshot);
   const { embedCredits, provenance } = material;
+  // `reads` stands for the cached states read below.
   return useMemo(() => {
+    const cache = queryClient.getQueryCache();
     const embeds: Provenance[] = [];
     refs.forEach((ref, i) => {
-      const read = reads[i];
-      if (read?.isError) return;
-      const credits = read?.isSuccess ? read.data : embedCredits?.[ref.id];
+      const state = cache.get<{ provenance?: Provenance }>(hashes[i])?.state;
+      if (state?.status === 'error') return;
+      const credits =
+        state?.status === 'success'
+          ? state.data?.provenance
+          : embedCredits?.[ref.id];
       if (credits) embeds.push(credits);
     });
     return noteFooterProvenance(provenance, embeds);
-  }, [refs, reads, embedCredits, provenance]);
+  }, [queryClient, refs, hashes, reads, embedCredits, provenance]);
 }

@@ -7,7 +7,7 @@ import {
   setAutoReloadBodyAmountCentsMin,
   setAutoReloadBodyThresholdCreditsMax,
   setSpendingLimitBodyLimitCentsMax,
-} from '@/api/gen/validators';
+} from '@/api/gen/validatorLimits';
 import {
   usePaymentMethodCheckout,
   useSetAutoReload,

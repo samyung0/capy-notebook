@@ -7,7 +7,7 @@ import { isApiError } from '@/api/client';
 import {
   billingTopUpBodyAmountCentsMax,
   billingTopUpBodyAmountCentsMin,
-} from '@/api/gen/validators';
+} from '@/api/gen/validatorLimits';
 import {
   usePaymentMethodCheckout,
   useSetAutoReload,

@@ -9,6 +9,9 @@ const {
   reportOnce,
   storageFailureReason,
 } = await import('./editIncidents');
+// The reports load the validators lazily; their first transform can outlast
+// vi.waitFor's second, so they load here once.
+await import('@/api/gen/validators');
 
 afterEach(() => {
   post.mockReset();
@@ -24,13 +27,16 @@ describe('edit incident reports', () => {
       'unreachable',
       2048
     );
-    expect(post).toHaveBeenCalledExactlyOnceWith('/edit-incidents', {
-      fileId: 'f_1',
-      fileKind: 'source_file',
-      kind: 'offline_episode',
-      reason: 'unreachable',
-      sizeBytes: 2048,
-    });
+    // The schema loads with the first report (Q908), so the post follows.
+    await vi.waitFor(() =>
+      expect(post).toHaveBeenCalledExactlyOnceWith('/edit-incidents', {
+        fileId: 'f_1',
+        fileKind: 'source_file',
+        kind: 'offline_episode',
+        reason: 'unreachable',
+        sizeBytes: 2048,
+      })
+    );
     await vi.waitFor(() =>
       expect(warn).toHaveBeenCalledWith(
         'Edit incident report failed:',
@@ -40,7 +46,7 @@ describe('edit incident reports', () => {
     expect(post).toHaveBeenCalledOnce();
   });
 
-  it('sends nothing the generated validator refuses', () => {
+  it('sends nothing the generated validator refuses', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     reportEditIncident({
       fileId: 'f_1',
@@ -48,8 +54,8 @@ describe('edit incident reports', () => {
       kind: 'unconfirmed_edit',
       reason: 'not a token' as never,
     });
+    await vi.waitFor(() => expect(warn).toHaveBeenCalledOnce());
     expect(post).not.toHaveBeenCalled();
-    expect(warn).toHaveBeenCalledOnce();
   });
 
   it('reports a recovery group once per page load', () => {

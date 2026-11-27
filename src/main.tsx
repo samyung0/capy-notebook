@@ -1,6 +1,8 @@
-import './lib/zodJitless';
+import { zodConfig } from './lib/zodJitless';
 // Before Sentry or the router read the address (urlTokenStash.ts).
 import './lib/bootUrlTokens';
+// After the tokens leave the address, before the router reads it.
+import './lib/bootSignIn';
 // The first stylesheet, so Tailwind sets the cascade layer order: a
 // component's `@layer components` loaded earlier ranks it below base.
 import './styles/tailwind.css';
@@ -12,13 +14,12 @@ import {
 } from '@tanstack/react-router';
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
-import { z } from 'zod';
-import { en, zhCN } from 'zod/locales';
 import { USE_MSW } from './api/auth';
 import { queryClient } from './api/queryClient';
 import { AppErrorBoundary } from './components/app/AppErrorBoundary';
 import { AppToaster } from './components/app/AppToaster';
 import { AppAuthProvider } from './components/app/AuthProvider';
+import { FirstLoadLoader } from './components/app/BootLoader';
 import { provideRecoveryWriter } from './features/collaboration/recoveryDownload';
 import { getLocale } from './i18n';
 import { initErrorReporting, reportReactError } from './lib/observability';
@@ -48,8 +49,13 @@ provideRecoveryWriter(async () => {
 // row. Changing the locale reloads the page.
 document.documentElement.lang = getLocale();
 // Zod's own messages (form and question validation) follow the UI locale.
-// Set here, not in @/i18n, so public pages that use copy load no zod.
-z.config(getLocale() === 'zh' ? zhCN() : en());
+// Set here, not in @/i18n, so public pages that use copy load no zod. English
+// is zod's default, and a locale set before zod loads still wins, so zod and
+// its Chinese messages load only when needed (Q908).
+if (getLocale() === 'zh')
+  void import('zod/v4/locales/zh-CN.js').then(({ default: zhCN }) =>
+    Object.assign(zodConfig, zhCN())
+  );
 
 // Mocks are on in development by default; set VITE_USE_MSW=false to hit the
 // real Go gateway (Vite proxies /api → http://localhost:8080). A production
@@ -112,6 +118,8 @@ enableMocks().finally(() => {
               <TooltipProvider>
                 <CrumbLinkContext.Provider value={Link}>
                   <RouterProvider context={{ queryClient }} router={router} />
+                  {/* index.html's loader until the first page draws (Q905). */}
+                  <FirstLoadLoader router={router} />
                 </CrumbLinkContext.Provider>
 
                 {MockScenarioPanel && (

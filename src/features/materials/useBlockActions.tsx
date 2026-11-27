@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { linkOptions, useNavigate } from '@tanstack/react-router';
 import { useCallback, useState } from 'react';
-import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
+import { updateMaterialBodyTitleMax } from '@/api/gen/validatorLimits';
 import { useDeleteMaterial, useUpdateMaterial } from '@/api/hooks';
 import type { MaterialListItem } from '@/api/types';
 import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';

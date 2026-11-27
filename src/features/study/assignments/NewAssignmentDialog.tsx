@@ -1,6 +1,6 @@
 import { type FormEvent, useId, useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { createAssignmentBodyTitleMax } from '@/api/gen/validators';
+import { createAssignmentBodyTitleMax } from '@/api/gen/validatorLimits';
 import {
   useCreateAssignment,
   useUpdateAssignment,

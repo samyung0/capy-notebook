@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Navigate,
   Outlet,
@@ -21,9 +21,11 @@ import {
   type GroupImperativeHandle,
   useGroupRef,
 } from 'react-resizable-panels';
+import { canvasesQuery } from '@/api/canvas';
 import { isApiError } from '@/api/client';
-import { addTopicBodyNameMax } from '@/api/gen/validators';
+import { addTopicBodyNameMax } from '@/api/gen/validatorLimits';
 import {
+  conversationsQuery,
   useAddTopic,
   useFile,
   useFiles,
@@ -33,11 +35,11 @@ import {
   useVisitWorkspace,
   useWorkspace,
   workspaceQuery,
+  workspaceRecentQuery,
 } from '@/api/hooks';
 import { isMissing } from '@/api/queryClient';
 import type { Citation, Region, ResourceRef } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
-import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
@@ -112,13 +114,17 @@ import {
   workspaceSections,
 } from '@/features/workspace/WorkspaceRail';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
+import { WorkspaceSkeleton } from '@/features/workspace/WorkspaceSkeleton';
+import { prefetchDashboard } from '@/features/workspace/workspacePreload';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { PREF_KEYS, readPref, removePref, writePref } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
-const WorkspaceCanvas = lazy(() => import('@/routes/WorkspaceCanvas'));
+// The board's code, which the rail's Canvas starts on hover.
+const loadCanvas = () => import('@/routes/WorkspaceCanvas');
+const WorkspaceCanvas = lazy(loadCanvas);
 const AddPracticeDialog = lazy(() =>
   import('@/features/study/practice/AddPractice').then((mod) => ({
     default: mod.AddPracticeDialog,
@@ -316,6 +322,7 @@ function WorkspaceOpen() {
   const workspaceId = (params as { workspaceId: string }).workspaceId;
   const navigate = useNavigate();
   const router = useRouter();
+  const qc = useQueryClient();
   const search = useSearch({ strict: false }) as WorkspaceOpenSearch;
 
   // Other failures without data go to the error boundary.
@@ -576,15 +583,18 @@ function WorkspaceOpen() {
     navigate({ ...home, search: {} });
   }
 
-  /** A rail section opens its page; pressing the shown Files or Agent again
-   * folds its side panel away or back. */
-  function selectSection(next: WorkspaceSection) {
-    if (lg && next === page && (next === 'files' || next === 'agent')) {
-      setSideOpen(!sideOpen);
-      return;
-    }
-    setSideOpen(true);
-    setCitationTarget(null);
+  /** Pressing the shown Files or Agent again folds its side panel. */
+  const folds = (next: WorkspaceSection) =>
+    lg && next === page && (next === 'files' || next === 'agent');
+
+  /** Where a rail section leads: one of Study's former pages, or this page's
+   * URL at a view. */
+  function sectionTarget(
+    next: WorkspaceSection
+  ): { studyPage: StudyPage } | { search: WorkspaceOpenSearch } {
+    if (next in SECTION_PAGE)
+      return { studyPage: SECTION_PAGE[next as keyof typeof SECTION_PAGE] };
+    if (next === 'dashboard') return { search: {} };
     // From another page Files opens on what was last open there, while it is
     // still listed (or before the lists load); on Files itself (a tablet's
     // open item) it is the list.
@@ -595,25 +605,60 @@ function WorkspaceOpen() {
       (last.kind === 'file'
         ? !files || files.some((file) => file.id === last.id)
         : !materials || materials.some((material) => material.id === last.id));
-    if (next in SECTION_PAGE)
-      openStudy(SECTION_PAGE[next as keyof typeof SECTION_PAGE]);
-    else if (next === 'dashboard') openDashboard();
-    else if (next === 'files' && last && listed)
-      navigate({ ...home, search: searchFromOpenItem(last) });
-    else
-      navigate({
-        ...home,
-        search: {
-          view:
-            next === 'canvas'
-              ? 'canvas'
-              : next === 'files'
-                ? 'files'
-                : lg
-                  ? 'chat'
-                  : 'chats',
-        },
-      });
+    if (next === 'files' && last && listed)
+      return { search: searchFromOpenItem(last) };
+    return {
+      search: {
+        view:
+          next === 'canvas'
+            ? 'canvas'
+            : next === 'files'
+              ? 'files'
+              : lg
+                ? 'chat'
+                : 'chats',
+      },
+    };
+  }
+
+  /** A rail section opens its page; pressing the shown Files or Agent again
+   * folds its side panel away or back. */
+  function selectSection(next: WorkspaceSection) {
+    if (folds(next)) {
+      setSideOpen(!sideOpen);
+      return;
+    }
+    setSideOpen(true);
+    setCitationTarget(null);
+    const target = sectionTarget(next);
+    if ('studyPage' in target) openStudy(target.studyPage);
+    else navigate({ ...home, search: target.search });
+  }
+
+  /** A rail section under the pointer or focus starts what its press opens
+   * (Q907): a workspace page's route preloads its code and reads; a view of
+   * this page prefetches its reads, and the canvas its code. */
+  function preloadSection(next: WorkspaceSection) {
+    if (folds(next)) return;
+    const target = sectionTarget(next);
+    if ('studyPage' in target) {
+      const to = target.studyPage;
+      if (to === 'assignments')
+        void router.preloadRoute(assignmentsLink(workspaceId));
+      else if (to === 'members')
+        void router.preloadRoute(membersLink(workspaceId));
+      else void router.preloadRoute(studyLink(workspaceId, to));
+    } else if (next === 'dashboard') prefetchDashboard(qc, workspaceId);
+    else if (next === 'canvas') {
+      void loadCanvas();
+      qc.prefetchInfiniteQuery(canvasesQuery(workspaceId));
+    } else if (next === 'agent')
+      qc.prefetchInfiniteQuery(conversationsQuery(workspaceId));
+    // Files: the last open file through the route's loader (its row and an
+    // Office file's open), and from lg the recent files on its list.
+    else if (target.search.file)
+      void router.preloadRoute({ ...home, search: target.search });
+    else if (lg) qc.prefetchQuery(workspaceRecentQuery(workspaceId));
   }
 
   function openCitation(citation: Citation) {
@@ -719,15 +764,21 @@ function WorkspaceOpen() {
   });
   useEffect(() => registerTourPanels(tourPanels), []);
 
-  if (wsLoading) {
+  // The frame at once, with skeletons where its content goes (Q906).
+  if (wsLoading)
     return (
-      <LoadingLarge
-        backLabel={m.workspace_back_to()}
-        backTo="/"
-        title={m.workspace_loading()}
+      <WorkspaceSkeleton
+        // Where the page draws CenterContent's header: phones, a tablet's
+        // Files, an open item from lg.
+        header={
+          page !== 'canvas' &&
+          (!railShown || (page === 'files' && (!lg || !!openKey)))
+        }
+        page={page}
+        panel={leftShown}
+        rail={railShown}
       />
     );
-  }
 
   // Offline before the first load: the fetch resumes on reconnect.
   if (waitsForConnection(wsFetchStatus, ws))
@@ -1131,6 +1182,7 @@ function WorkspaceOpen() {
           <WorkspaceRail
             accountItems={accountItems}
             active={page}
+            onPreload={preloadSection}
             onSelect={selectSection}
             onSettings={hasWorkspaceSettings(ws) ? openSettings : undefined}
             workspace={ws}

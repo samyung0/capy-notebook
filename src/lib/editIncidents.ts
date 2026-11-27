@@ -1,5 +1,4 @@
 import { api } from '@/api/client';
-import { ReportEditIncidentBody } from '@/api/gen/validators';
 import type { ReportEditIncidentReq } from '@/api/types';
 
 /**
@@ -7,16 +6,20 @@ import type { ReportEditIncidentReq } from '@/api/types';
  * work (human/observability-metering.md, 2026-10-05): stored in the
  * `edit_incidents` table beside the collaboration service's room incidents.
  * Sent once and never retried; an offline episode is reported after the
- * reconnect, and a failed report is only logged.
+ * reconnect, and a failed report is only logged. The schema loads with the
+ * first report, keeping the generated validators out of the app's entry
+ * (Q908).
  */
 export function reportEditIncident(incident: ReportEditIncidentReq) {
-  const body = ReportEditIncidentBody.safeParse(incident);
-  if (!body.success) {
-    console.warn('Edit incident not reported:', body.error);
-    return;
-  }
-  void api
-    .post('/edit-incidents', body.data)
+  void import('@/api/gen/validators')
+    .then(({ ReportEditIncidentBody }) => {
+      const body = ReportEditIncidentBody.safeParse(incident);
+      if (!body.success) {
+        console.warn('Edit incident not reported:', body.error);
+        return;
+      }
+      return api.post('/edit-incidents', body.data);
+    })
     .catch((error) => console.warn('Edit incident report failed:', error));
 }
 

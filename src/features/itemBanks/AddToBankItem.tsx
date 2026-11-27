@@ -1,5 +1,5 @@
 import { useParams } from '@tanstack/react-router';
-import { createItemBankQuestionBodyTagsItemMax } from '@/api/gen/validators';
+import { createItemBankQuestionBodyTagsItemMax } from '@/api/gen/validatorLimits';
 import { useItemBanks, useSaveItemBankQuestion } from '@/api/itemBanks';
 import type { ItemBank, Question, Topic } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';

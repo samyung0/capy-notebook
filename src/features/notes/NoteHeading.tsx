@@ -2,7 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
+import { updateMaterialBodyTitleMax } from '@/api/gen/validatorLimits';
 import { useMoveMaterial, useTopics, useUpdateMaterial } from '@/api/hooks';
 import type { Material } from '@/api/types';
 import { buttonVariants } from '@/components/ui/Button';

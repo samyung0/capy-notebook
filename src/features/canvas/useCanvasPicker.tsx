@@ -13,7 +13,7 @@ import {
   shareCanvas,
 } from '@/api/canvas';
 import { deletedItemOf, qk } from '@/api/client';
-import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
+import { updateMaterialBodyTitleMax } from '@/api/gen/validatorLimits';
 import {
   useDeleteMaterial,
   useUpdateMaterial,

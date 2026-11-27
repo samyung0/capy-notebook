@@ -1,5 +1,5 @@
 import { isApiError } from '@/api/client';
-import { createExtractionBodyTitleMax } from '@/api/gen/validators';
+import { createExtractionBodyTitleMax } from '@/api/gen/validatorLimits';
 import {
   EXTRACTION_ANSWER_FILES_MAX,
   EXTRACTION_PAGES_MAX,

@@ -9,7 +9,7 @@ import {
   streamChat,
 } from '@/api/chatStream';
 import { isApiError, qk } from '@/api/client';
-import { updateConversationBodyTitleMax } from '@/api/gen/validators';
+import { updateConversationBodyTitleMax } from '@/api/gen/validatorLimits';
 import {
   type ConversationCache,
   mapConversations,

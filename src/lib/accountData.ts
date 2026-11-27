@@ -2,7 +2,6 @@ import { forgetPersistedQueries } from '@/api/queryPersistence';
 import { claimCanvasViews } from '@/features/canvas/canvasViews';
 import { claimQuizRuns } from '@/features/makeQuiz/quizRuns';
 import { claimQuizWaits } from '@/features/makeQuiz/quizWaitStore';
-import { deleteAccountDrafts } from './editDrafts';
 import { claimLocalDrawingDrafts } from './localDb';
 import { claimSourceCache } from './sourceCache';
 import { claimUndoPayloads } from './undoPayloads';
@@ -38,7 +37,10 @@ export async function claimAccountData(owner: string | null): Promise<void> {
  */
 export async function clearAccountData(userId: string): Promise<void> {
   await Promise.all([
-    deleteAccountDrafts(userId).catch(() => undefined),
+    // Loaded here only: the drafts code stays out of the app's entry (Q908).
+    import('./editDrafts')
+      .then(({ deleteAccountDrafts }) => deleteAccountDrafts(userId))
+      .catch(() => undefined),
     forgetPersistedQueries(),
     claimAccountData(null),
   ]);

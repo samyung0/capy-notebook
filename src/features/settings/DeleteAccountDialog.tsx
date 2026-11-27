@@ -3,7 +3,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useMemo } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { USE_MSW } from '@/api/auth';
-import { requestAccountDeletionBodyConfirmEmailMax } from '@/api/gen/validators';
+import { requestAccountDeletionBodyConfirmEmailMax } from '@/api/gen/validatorLimits';
 import {
   useDeletionPreflight,
   useMe,
