@@ -782,6 +782,25 @@ export function NoteEditorCore({
     () => seed?.doc ?? new Y.Doc({ gc: true }),
     [collaborationToken.room]
   );
+  // The document goes with its mount (Q913): Plate's awareness and its 3 s
+  // timer end only with it, and they kept every closed note's document alive.
+  // Nothing holds the object afterwards: a room swap's late handover and the
+  // device copy encode its state as the mount goes. A task later, as `init`
+  // below, so React Strict Mode's setup/cleanup probe keeps it.
+  const docRelease = useRef<{
+    doc: Y.Doc;
+    timer: ReturnType<typeof setTimeout>;
+  } | null>(null);
+  useEffect(() => {
+    if (docRelease.current?.doc === ydoc)
+      clearTimeout(docRelease.current.timer);
+    return () => {
+      docRelease.current = {
+        doc: ydoc,
+        timer: setTimeout(() => ydoc.destroy(), 0),
+      };
+    };
+  }, [ydoc]);
   // Typing the room never saw that a join's step 2 hides in a deleted block
   // (Q237): armed by the room's step 1, read at each sync. Text alone counts
   // only from the clients of this mount's stored rows (Q410).

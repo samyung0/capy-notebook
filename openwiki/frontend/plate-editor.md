@@ -155,6 +155,14 @@ CenterContent
                         └── GhostTextSync (edit only)
 ```
 
+Each `NoteEditorCore` owns its Y.Doc: the device copy's for the first mount,
+else a new one. It destroys the doc a task after it unmounts (Q913), since
+Plate's awareness and its 3 s check timer end only with the doc. Before this,
+that timer kept every closed note's doc alive. Nothing holds the object after
+the mount: a room swap's late handover and the device copy encode its state
+before it goes. The task's delay keeps React Strict Mode's setup/cleanup probe
+from destroying a doc the mount still uses.
+
 `FloatingToolbar` shares the editor's positioned `PlateContainer`, following
 Plate playground's placement beside the editable content. The browser scrolls
 the toolbar and selection together immediately; Floating UI still handles
