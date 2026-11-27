@@ -4,11 +4,11 @@ Measures playing ManimGX scenes in the browser without running Python. Each scen
 file, the container: either a **drawn film** (what the engine drew, played by ManimGX's WebGPU
 player) or a **video film** (every frame as H.264), whichever is smaller. Measured: size,
 fidelity against ManimGX's exact render, JavaScript decode, and Chrome's CPU and memory while
-playing. The exporter and the format are the `cmv-manimgx` package in `exporters/manimgx/`;
+playing. The exporter and the format are the `cmv-manimgx` package (https://github.com/samyung0/cmv-manim);
 findings are in `reports/`.
 
-Needs a Python with the exporter installed (`uv pip install -e exporters/manimgx`, which brings
-`manimgx` v0.1.1), ManimGX's `examples/`, `ffmpeg`, Node, and Chrome for the browser runs. Outputs go to the
+Needs a Python with the exporter installed (Python 3.13: `uv pip install "cmv-manimgx @ git+https://github.com/samyung0/cmv-manim#subdirectory=manimgx"`,
+which brings `manimgx` v0.1.1), ManimGX's `examples/`, `ffmpeg`, Node, and Chrome for the browser runs. Outputs go to the
 gitignored `.results/`.
 
 | Script | Does |

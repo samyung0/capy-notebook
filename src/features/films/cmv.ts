@@ -1,7 +1,7 @@
 /**
- * Reads a CMV film: the file the cmv-manimgx exporter (exporters/manimgx)
+ * Reads a CMV film: the file the cmv-manimgx exporter (https://github.com/samyung0/cmv-manim)
  * writes on the user's computer, played here without running its scene. The
- * format is described in exporters/manimgx/src/cmv_manimgx/cmv.py; the server
+ * format is described in its manimgx/src/cmv_manimgx/cmv.py; the server
  * checks its structure on upload (server/internal/cmvfile).
  *
  * A video film's chunks hold H.264 segments only (`segments`). A drawn film's
