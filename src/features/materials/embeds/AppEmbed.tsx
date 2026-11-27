@@ -1,4 +1,5 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { ApiError } from '@/api/client';
 import { useCheckQuizQuestion, useMaterial, useQuiz } from '@/api/hooks';
 import type { Material } from '@/api/types';
 import { FileBanner } from '@/components/banners/FileBanner';
@@ -49,11 +50,19 @@ type OwnedProps = EmbedProps & {
   ownerId?: string;
 };
 
+/** A read no wait can fix (Q916): the item is gone (404) or its content
+ * cannot be read (422). A trashed one (410) comes back with Undo's restore,
+ * and a failed connection is tried again, so those keep the skeleton. */
+const unreadable = (error: Error | null) =>
+  error instanceof ApiError && (error.status === 404 || error.status === 422);
+
 const waitingForOwn = (
   ownerId: string | undefined,
-  isError: boolean,
+  error: Error | null,
   data: { parentMaterialId?: string } | undefined
-) => !!ownerId && (isError || (!!data && data.parentMaterialId !== ownerId));
+) =>
+  !!ownerId &&
+  (error ? !unreadable(error) : !!data && data.parentMaterialId !== ownerId);
 
 const setCards = (material: Material) =>
   flashcardsElementToCards(
@@ -223,11 +232,11 @@ function QuizGate({
     refresh: () => unknown
   ) => React.ReactNode;
 }) {
-  const { data, isPending, isError, refetch } = useQuiz(materialId, {
+  const { data, error, isPending, isError, refetch } = useQuiz(materialId, {
     errorBoundary: false,
   });
   const removed = useRemovedAssets(data?.removedAssetIds, refetch);
-  if (waitingForOwn(ownerId, isError, data)) return <EmbedLoading />;
+  if (waitingForOwn(ownerId, error, data)) return <EmbedLoading />;
   if (isError) return <EmbedUnavailable />;
   if (isPending || !data) return <EmbedLoading />;
   return (
@@ -246,11 +255,11 @@ function SetGate({
   ownerId?: string;
   children: (material: Material, refresh: () => unknown) => React.ReactNode;
 }) {
-  const { data, isPending, isError, refetch } = useMaterial(materialId, {
+  const { data, error, isPending, isError, refetch } = useMaterial(materialId, {
     errorBoundary: false,
   });
   const removed = useRemovedAssets(data?.removedAssetIds, refetch);
-  if (waitingForOwn(ownerId, isError, data)) return <EmbedLoading />;
+  if (waitingForOwn(ownerId, error, data)) return <EmbedLoading />;
   if (isError) return <EmbedUnavailable />;
   if (isPending || !data) return <EmbedLoading />;
   return (

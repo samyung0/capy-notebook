@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@/api/client';
 import { EMBED_CATALOG } from '@/api/embeds.generated';
 import type { Provenance } from '@/api/types';
 import type { MaterialRefKind } from '@/features/materials/document';
@@ -38,50 +39,69 @@ const question = {
   ],
 };
 
+// A read's failure for the next render (Q916); none by default.
+const reads = vi.hoisted(() => ({ error: null as Error | null }));
+
+const failed = () => ({
+  data: undefined,
+  error: reads.error,
+  isError: true,
+  isPending: false,
+  refetch: vi.fn(),
+});
+
 vi.mock('@/api/hooks', () => ({
   useCheckQuizQuestion: () => ({ mutateAsync: vi.fn() }),
-  useMaterial: () => ({
-    data: {
-      content: {
-        schemaVersion: 1,
-        value: [
-          {
-            children: [
-              {
-                children: [
-                  { children: [{ text: 'Front' }], type: 'p' },
-                  { children: [{ text: 'Back' }], type: 'p' },
-                ],
-                id: 'c1',
-                image: { assetId: 'asset_card' },
-                type: 'flashcard',
-              },
-            ],
-            id: 'fc',
-            type: 'flashcards',
+  useMaterial: () =>
+    reads.error
+      ? failed()
+      : {
+          data: {
+            content: {
+              schemaVersion: 1,
+              value: [
+                {
+                  children: [
+                    {
+                      children: [
+                        { children: [{ text: 'Front' }], type: 'p' },
+                        { children: [{ text: 'Back' }], type: 'p' },
+                      ],
+                      id: 'c1',
+                      image: { assetId: 'asset_card' },
+                      type: 'flashcard',
+                    },
+                  ],
+                  id: 'fc',
+                  type: 'flashcards',
+                },
+              ],
+            },
+            id: 'set',
+            provenance: credit('Set source book'),
+            removedAssetIds: ['asset_card'],
+            revision: 1,
           },
-        ],
-      },
-      id: 'set',
-      provenance: credit('Set source book'),
-      removedAssetIds: ['asset_card'],
-      revision: 1,
-    },
-    isError: false,
-    isPending: false,
-  }),
+          error: null,
+          isError: false,
+          isPending: false,
+        },
   // The live editors wait for the account before joining their rooms.
   useMe: () => ({ data: undefined }),
-  useQuiz: () => ({
-    data: {
-      id: 'quiz',
-      provenance: credit('Quiz source book'),
-      questions: [question],
-      removedAssetIds: ['asset_quiz'],
-    },
-    isError: false,
-    isPending: false,
-  }),
+  useQuiz: () =>
+    reads.error
+      ? failed()
+      : {
+          data: {
+            id: 'quiz',
+            provenance: credit('Quiz source book'),
+            questions: [question],
+            removedAssetIds: ['asset_quiz'],
+          },
+          error: null,
+          isError: false,
+          isPending: false,
+        },
 }));
 
 const render = (node: ReactNode) =>
@@ -179,5 +199,37 @@ describe('embed kinds', () => {
         <AppEmbedView materialId="x" refKind={'timeline' as MaterialRefKind} />
       )
     ).toThrow('timeline');
+  });
+});
+
+// Q916: in an editing note, the note's own quiz or set waits as a skeleton
+// until it is the note's own; a read that no wait can fix ends the wait.
+describe("an editing note's own embed whose read fails", () => {
+  afterEach(() => {
+    reads.error = null;
+  });
+
+  const edit = (refKind: MaterialRefKind) =>
+    render(
+      <AppEmbedEdit
+        materialId="item"
+        onEmpty={() => {}}
+        ownerId="note"
+        refKind={refKind}
+      />
+    );
+
+  it.each([404, 422])(
+    'says an item answering %i is no longer available',
+    (status) => {
+      reads.error = new ApiError(status, 'Refused');
+      expect(edit('quiz')).toContain(m.material_ref_unavailable());
+      expect(edit('flashcards')).toContain(m.material_ref_unavailable());
+    }
+  );
+
+  it('keeps waiting for a trashed one, which Undo restores', () => {
+    reads.error = new ApiError(410, 'Gone');
+    expect(edit('quiz')).toContain('animate-pulse');
   });
 });

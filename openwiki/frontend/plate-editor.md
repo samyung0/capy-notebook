@@ -679,7 +679,13 @@ it kept. In an editable note
 `MediaAssetView` (given the note as `ownerId`) shows a skeleton while a node's
 asset belongs to another material (the resolve answer's `materialId`) or does
 not resolve (trashed, waiting for the pass), and resolves again when
-`children-ready` names it (`childrenReady.ts`). A copy that does not fit the
+`children-ready` names it (`childrenReady.ts`). An embedded quiz or set
+(`AppEmbedEdit`, also given the note as `ownerId`) waits the same way while
+its item belongs to another note or its read fails. The exception is a read no
+wait can fix: an item that is gone (404) or whose content cannot be read (422)
+shows "This item is no longer available", as View does (Q916). A trashed item
+(410, which Undo's restore brings back) and a failed connection keep the
+skeleton. A copy that does not fit the
 payer's storage is dropped and only the writer who pasted gets
 `children-refused`, shown as a toast. Nothing is kept in IndexedDB and the
 browser never calls an adopt route.
