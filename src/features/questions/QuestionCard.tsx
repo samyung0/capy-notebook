@@ -1122,9 +1122,11 @@ export function QuestionCardView({
     head && own === first.blocks ? first.blocks.slice(1) : first.blocks;
   return (
     <div className="@container flex min-w-0 flex-col">
+      {/* Number, text and marks share the text's first baseline; centring
+          each in its own 40px box left the text a pixel or two lower. */}
       <div
         className={cn(
-          'grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2',
+          'grid grid-cols-[auto_minmax(0,1fr)_auto] items-baseline gap-x-2',
           !head && 'mb-1.5'
         )}
       >
@@ -1134,14 +1136,16 @@ export function QuestionCardView({
             <TextView marks text={head.text} />
           </div>
         )}
-        <span className="t-meta col-start-3 row-start-1 flex h-10 items-center gap-2 justify-self-end text-fg-muted">
-          {issue}
+        {/* Reversed so the marks come first: a flex box's baseline is its
+            first item's, and the issue icon has none of its own. */}
+        <span className="t-meta col-start-3 row-start-1 flex h-10 flex-row-reverse items-center gap-2 justify-self-end text-fg-muted">
           {lone
             ? marksLabel(questionMarks(question))
             : m.question_ui_marks_in_parts({
                 count: question.parts.length,
                 marks: marksLabel(questionMarks(question)),
               })}
+          {issue}
         </span>
       </div>
       {lone ? (
