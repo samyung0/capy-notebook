@@ -107,8 +107,9 @@ export default function FilmView({
   if (state.phase === 'loading') return <FileLoading />;
   const { height, width } = state.meta;
   return (
-    // the film at its proportions, as large as the pane holds
-    <div className="grid h-full min-h-0 place-items-center [container-type:size]">
+    // the film at its proportions, at most 48rem wide (both players go full
+    // screen); a phone gives it the whole width
+    <div className="grid h-full min-h-0 place-items-center [container-type:size] sm:p-6">
       <div
         aria-label={file.name}
         className="relative bg-black outline-none"
@@ -116,7 +117,7 @@ export default function FilmView({
         role={state.phase === 'drawn' ? 'application' : undefined}
         style={{
           aspectRatio: `${width} / ${height}`,
-          width: `min(100cqw, ${width / height} * 100cqh)`,
+          width: `min(100cqw, ${width / height} * 100cqh, 48rem)`,
         }}
         tabIndex={state.phase === 'drawn' ? 0 : undefined}
       >
