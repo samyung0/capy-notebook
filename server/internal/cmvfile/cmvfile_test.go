@@ -43,7 +43,9 @@ func TestCheckRefusesBrokenFilms(t *testing.T) {
 		"magic":     append([]byte("CMV1"), drawn[4:]...),
 		"cut short": drawn[:len(drawn)-1],
 		"trailing":  append(append([]byte{}, drawn...), 0),
-		"header":    append(append(append([]byte{}, drawn[:8]...), bytes.Repeat([]byte{' '}, headerEnd-8)...), drawn[headerEnd:]...),
+		// 99 fps, past the 60 allowed (the same length, so the film still adds up)
+		"fps":    bytes.Replace(drawn, []byte(`"fps":10.0`), []byte(`"fps":99.0`), 1),
+		"header": append(append(append([]byte{}, drawn[:8]...), bytes.Repeat([]byte{' '}, headerEnd-8)...), drawn[headerEnd:]...),
 		// The video film's first unit is its keyframe; a non-IDR NAL type replaces it.
 		"keyframe": func() []byte {
 			out := append([]byte{}, video...)

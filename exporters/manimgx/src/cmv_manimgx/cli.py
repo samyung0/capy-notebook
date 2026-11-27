@@ -67,6 +67,12 @@ def main(argv: list[str] | None = None) -> None:
         )
         return
 
+    # refused before rendering: Capy refuses a film past these (cmv.LIMITS)
+    if not cmv.fits(args.width, args.height) or not 1 <= args.fps <= cmv.LIMITS["fps"]:
+        sys.exit(
+            f"films are at most {cmv.LIMITS['long_side']}×{cmv.LIMITS['short_side']}"
+            f" (either way round) at {cmv.LIMITS['fps']} fps"
+        )
     if args.form != "drawn" and not shutil.which("ffmpeg"):
         sys.exit(
             "ffmpeg is needed for the video form: install it, or pass --form drawn"

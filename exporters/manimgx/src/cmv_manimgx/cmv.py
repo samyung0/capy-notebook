@@ -352,9 +352,10 @@ def decode_h264(units: list[bytes], w: int, h: int, gray: bool) -> np.ndarray:
 # Fast: the header, the index and each chunk's part headers are read; nothing is decompressed or
 # decoded. The same rules as the app's server (server/internal/cmvfile).
 LIMITS = {
-    "width": 3840,
-    "height": 2160,
-    "fps": 120,
+    # 1080p either way round: the long side at most 1920, the short at most 1080
+    "long_side": 1920,
+    "short_side": 1080,
+    "fps": 60,
     "tracks": 16,
     "header": 1 << 16,
     "draw_content": 64 << 20,
@@ -364,6 +365,17 @@ ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 
 class Invalid(ValueError):
     pass
+
+
+def fits(width, height) -> bool:
+    """Whether a film or track size is within LIMITS (at least 16 px a side)."""
+    sides = (width, height)
+    return (
+        all(isinstance(x, int) and not isinstance(x, bool) for x in sides)
+        and min(sides) >= 16
+        and max(sides) <= LIMITS["long_side"]
+        and min(sides) <= LIMITS["short_side"]
+    )
 
 
 def _zstd_content_size(frame: bytes) -> int:
@@ -412,9 +424,7 @@ def validate(data: bytes) -> dict:
         and lo <= meta[k] <= hi
     )
     if not (
-        num("width", 16, LIMITS["width"])
-        and num("height", 16, LIMITS["height"])
-        and num("fps", 1, LIMITS["fps"])
+        fits(meta.get("width"), meta.get("height")) and num("fps", 1, LIMITS["fps"])
     ):
         raise Invalid("the size or frame rate is out of range")
     if not (
@@ -431,9 +441,7 @@ def validate(data: bytes) -> dict:
         if not (
             isinstance(t, dict)
             and isinstance(t.get("alpha"), bool)
-            and all(isinstance(t.get(k), int) for k in ("width", "height"))
-            and 16 <= t["width"] <= LIMITS["width"]
-            and 16 <= t["height"] <= LIMITS["height"]
+            and fits(t.get("width"), t.get("height"))
         ):
             raise Invalid("a track's size is out of range")
     if form == "drawn":

@@ -48,7 +48,8 @@ and menger).
 
 ## Limits
 
-The check refuses a film past 3840×2160, 120 fps, 16 tracks, a 64 KiB header
+The check refuses a film (or image track) past 1080p either way round (long
+side 1920, short side 1080) or 60 fps (Epo 2026-11-27), and one past 16 tracks, a 64 KiB header
 or a chunk whose draw part inflates past 64 MiB (`cmvfile` and `cmv.py`, the
 same numbers). Per-file size caps are the plan's, as for any upload.
 

@@ -28,10 +28,12 @@ const (
 	Version     = 1
 	TakeVersion = 1
 
-	MaxWidth  = 3840
-	MaxHeight = 2160
-	MaxFPS    = 120
-	MaxTracks = 16
+	// 1080p either way round: the long side at most 1920, the short at most
+	// 1080 (Epo 2026-11-27).
+	MaxLongSide  = 1920
+	MaxShortSide = 1080
+	MaxFPS       = 60
+	MaxTracks    = 16
 	// MaxHeader bounds the header JSON, and MaxDrawContent the size a chunk's
 	// draw part declares it inflates to.
 	MaxHeader      = 64 << 10
@@ -170,7 +172,8 @@ func (h *header) check() error {
 	if h.Form != "drawn" && h.Form != "video" {
 		return invalid("the form is neither drawn nor video")
 	}
-	if h.Width < 16 || h.Width > MaxWidth || h.Height < 16 || h.Height > MaxHeight || h.FPS < 1 || h.FPS > MaxFPS {
+	if h.Width != float64(int(h.Width)) || h.Height != float64(int(h.Height)) ||
+		!fits(int(h.Width), int(h.Height)) || h.FPS < 1 || h.FPS > MaxFPS {
 		return invalid("the size or frame rate is out of range")
 	}
 	if h.Frames < 1 || h.Chunks < 1 {
@@ -180,7 +183,7 @@ func (h *header) check() error {
 		return invalid("too many tracks")
 	}
 	for _, t := range h.Tracks {
-		if t.Width < 16 || t.Width > MaxWidth || t.Height < 16 || t.Height > MaxHeight {
+		if !fits(t.Width, t.Height) {
 			return invalid("a track's size is out of range")
 		}
 	}
@@ -202,6 +205,13 @@ func (h *header) check() error {
 		}
 	}
 	return nil
+}
+
+// fits is whether a film or track size is within the limits, at least 16
+// pixels a side.
+func fits(width, height int) bool {
+	long, short := max(width, height), min(width, height)
+	return short >= 16 && long <= MaxLongSide && short <= MaxShortSide
 }
 
 // checkVideo checks a chunk's video part: its segments fill it exactly, each

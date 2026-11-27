@@ -30,8 +30,9 @@ cmv-manimgx export scene.py MyScene -o my-scene.cmv
 - `--ce` runs a file written for Manim CE (`from manim import *`) unchanged. ManimGX has Manim
   CE's API, and this resolves the `manim` imports to `manimgx`. Code that uses more of CE than
   ManimGX has still fails.
-- `--width`, `--height` and `--fps` set the film's size (default 1280×720 at 30 fps); `--crf`
-  sets the H.264 quality (default 23; lower is better and larger).
+- `--width`, `--height` and `--fps` set the film's size (default 1280×720 at 30 fps; at most
+  1920×1080, either way round, at 60 fps); `--crf` sets the H.264 quality (default 23; lower is
+  better and larger).
 
 Check a film before uploading it, with the same structure check the server runs:
 
