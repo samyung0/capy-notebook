@@ -10,4 +10,4 @@ package sourceupload
 // are not files and stay editable. The edit code stays: reverting the commit
 // that turned this off, and un-skipping the tests skipped with it, turns
 // editing back on.
-const FilesEditable = true
+const FilesEditable = false

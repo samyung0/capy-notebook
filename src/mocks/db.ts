@@ -193,7 +193,7 @@ function dateAt(dayOffset: number, hour: number, minute = 0): string {
 /** Go's sourceupload.FilesEditable, mirrored so dev and e2e match it (Q853
  * A): /me's filesEditable, and while it is false the handlers refuse a file's
  * edit session, room token, Blank, thumbnail capture and Process as Go does. */
-export const FILES_EDITABLE = true;
+export const FILES_EDITABLE = false;
 
 // The account lifecycle lives in `accountStatus`; handlers compose /me from both.
 export const user: Omit<User, 'account'> = {

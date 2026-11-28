@@ -21,7 +21,7 @@ DECK_BUILDING_WHEN = (
 )
 OFFICE_BUILDING_WHEN = (
     "read before reading a Word, Excel or PowerPoint file (it offers "
-    "inspect_office_document and edit_office_document); to edit or create one, read "
+    "inspect_office_document); to edit or create one, read "
     "it together with editing, in the same response"
 )
 
