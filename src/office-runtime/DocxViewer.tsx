@@ -27,7 +27,7 @@ import type {
   DocxViewport,
 } from './DocxViewer.worker';
 import { docxT, downloadMenu, printItem } from './docxMenus';
-import { DocxPage, packDocxPages } from './docxPages';
+import { DocxPage, idleSlices, packDocxPages } from './docxPages';
 import { textLayerSelection, topParagraph } from './docxPlace';
 import { takeDocxViewerWorker } from './docxViewerWorker';
 import {
@@ -525,41 +525,57 @@ export function DocxViewer({
       quoted.clear();
       return;
     }
-    const match = docxCitation(
-      citedList.pages.map(
-        (page) => quoted.get(page) ?? docxCitationPage(page.decode())
-      ),
-      citation
-    );
-    quoted.clear();
     const overlays: HTMLDivElement[] = [];
-    for (const rect of match?.rects ?? []) {
-      const canvas = viewer.querySelector<HTMLCanvasElement>(
-        `canvas[data-page-index="${rect.page}"]`
+    const highlight = (pages: DocxCitationPage[]) => {
+      quoted.clear();
+      const match = docxCitation(pages, citation);
+      for (const rect of match?.rects ?? []) {
+        const canvas = viewer.querySelector<HTMLCanvasElement>(
+          `canvas[data-page-index="${rect.page}"]`
+        );
+        const host = canvas?.parentElement;
+        if (!canvas || !host) continue;
+        const page = citedList.pages.find(
+          (page) => page.pageIndex === rect.page
+        );
+        if (!page) continue;
+        // In percent of the page, so it follows every zoom, re-fit and pinch.
+        const percent = (value: number, of: number) => `${(value / of) * 100}%`;
+        const overlay = document.createElement('div');
+        overlay.dataset.citationHighlight = 'true';
+        overlay.setAttribute('aria-hidden', 'true');
+        Object.assign(overlay.style, {
+          background: CITATION_FILL,
+          height: percent(rect.h, page.height),
+          left: percent(rect.x, page.width),
+          pointerEvents: 'none',
+          position: 'absolute',
+          top: percent(rect.y, page.height),
+          width: percent(rect.w, page.width),
+        });
+        host.append(overlay);
+        overlays.push(overlay);
+      }
+      overlays[0]?.scrollIntoView({ block: 'center' });
+    };
+    let stop = () => {};
+    // A cited open read each page for its quote as it came.
+    if (citedList.pages.every((page) => quoted.has(page)))
+      highlight(citedList.pages.map((page) => quoted.get(page)!));
+    else {
+      // A citation changed in an open file: its pages are decoded and read at
+      // idle time, and the quote is highlighted once all are (Q868 A); a newer
+      // or cleared citation stops the search.
+      const read: DocxCitationPage[] = [];
+      stop = idleSlices(
+        citedList.pages,
+        (page) =>
+          read.push(quoted.get(page) ?? docxCitationPage(page.decode())),
+        () => highlight(read)
       );
-      const host = canvas?.parentElement;
-      if (!canvas || !host) continue;
-      const page = citedList.pages.find((page) => page.pageIndex === rect.page);
-      if (!page) continue;
-      // In percent of the page, so it follows every zoom, re-fit and pinch.
-      const percent = (value: number, of: number) => `${(value / of) * 100}%`;
-      const overlay = document.createElement('div');
-      overlay.dataset.citationHighlight = 'true';
-      overlay.setAttribute('aria-hidden', 'true');
-      Object.assign(overlay.style, {
-        background: CITATION_FILL,
-        height: percent(rect.h, page.height),
-        left: percent(rect.x, page.width),
-        pointerEvents: 'none',
-        position: 'absolute',
-        top: percent(rect.y, page.height),
-        width: percent(rect.w, page.width),
-      });
-      host.append(overlay);
-      overlays.push(overlay);
     }
-    overlays[0]?.scrollIntoView({ block: 'center' });
     return () => {
+      stop();
       for (const overlay of overlays) overlay.remove();
     };
   }, [citedList, citation]);

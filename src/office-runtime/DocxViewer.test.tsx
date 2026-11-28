@@ -338,6 +338,95 @@ it('reads each page of a cited open for its quote as it comes', async () => {
   await act(async () => root.unmount());
 });
 
+// Q868 A: a citation changed in an open file is searched for at idle time,
+// a page at a time, and highlighted once every page is read; a newer citation
+// stops the search before it highlights anything.
+it('searches for a changed citation at idle time, a newer one stopping the search', async () => {
+  vi.useFakeTimers();
+  const decode = vi.spyOn(DocxPage.prototype, 'decode');
+  const div = Object.getPrototypeOf(document.createElement('div'));
+  div.scrollIntoView = () => {};
+  try {
+    const passages = [
+      '',
+      'the first passage',
+      '',
+      'the second passage',
+      'the third passage',
+    ];
+    const root = await open({ citation: { quote: passages[1]! } });
+    await act(async () => {
+      workers[0]?.send({
+        faces: [],
+        pages: passages.map((text, pageIndex) => ({
+          ...size,
+          pageIndex,
+          primitives: [
+            {
+              baselineY: 80,
+              color: '#000',
+              font: '16px Arial',
+              kind: 'text',
+              paraId: `P${pageIndex}`,
+              text: `Here is ${text || 'other text'}.`,
+              width: 300,
+              x: 20,
+            },
+          ],
+        })),
+        sliced: [],
+        type: 'pages',
+        width: size.width,
+      });
+      sendReady();
+    });
+    // The pages the mocked viewer would draw, for the highlight.
+    document.querySelector('.docx-runtime-viewer')!.innerHTML = passages
+      .map(
+        (_, page) => `<div><canvas data-page-index="${page}"></canvas></div>`
+      )
+      .join('');
+    await act(async () => {
+      for (const load of loads.splice(0)) load();
+      await vi.dynamicImportSettled();
+      await vi.runAllTimersAsync();
+    });
+    await act(async () => present());
+    const highlighted = () =>
+      [...document.querySelectorAll('[data-citation-highlight]')].map(
+        (overlay) =>
+          overlay.parentElement
+            ?.querySelector('canvas')
+            ?.getAttribute('data-page-index')
+      );
+    expect(highlighted()).toEqual(['1']);
+
+    const decoded = decode.mock.calls.length;
+    await act(async () =>
+      root.render(
+        viewer(new Uint8Array([1]), { citation: { quote: passages[3]! } })
+      )
+    );
+    // Nothing is decoded in the effect itself.
+    expect(decode).toHaveBeenCalledTimes(decoded);
+    expect(highlighted()).toEqual([]);
+    await act(async () =>
+      root.render(
+        viewer(new Uint8Array([1]), { citation: { quote: passages[4]! } })
+      )
+    );
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(highlighted()).toEqual(['4']);
+    await act(async () => root.unmount());
+  } finally {
+    Reflect.deleteProperty(div, 'scrollIntoView');
+    decode.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 it('prints every page, waiting for those still to come', async () => {
   let renderer: OfficeRenderer | null = null;
   const root = await open({

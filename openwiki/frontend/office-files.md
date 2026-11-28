@@ -314,7 +314,11 @@ time (in the direction the window moved), gives a page leaving the window its
 plain-text copy from what it keeps, and lets a replaced layout's pages go. A
 far page's plain-text copy, a copy over far pages, a print (a page at a time)
 and the reader's place for Edit decode it afresh; a cited open reads each
-page for its quote as it arrives, and an open without a citation reads none.
+page for its quote as it arrives, and an open without a citation reads none;
+a citation changed in an open file is searched for at idle time, a page
+decoded and read at a time (about 1-2 s at 481 pages), and highlighted once
+every page is read, the quote still unique in the whole file; a newer or
+cleared citation stops the search (Q868 A).
 A compact page's mirror keeps no reference to it (its positions never
 shift).
 Every editor and viewer WASM module grows its linear memory in steps as large

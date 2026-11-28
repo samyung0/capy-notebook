@@ -3,11 +3,11 @@ import type {
   DisplayPage,
 } from '@betteroffice/docx/layout/render';
 
-/** Pages pack in idle slices of at most this long, or of the idle time left
+/** Idle work runs in slices of at most this long, or of the idle time left
  * if that is shorter; without requestIdleCallback (Safari) a slice runs this
  * long after the one before. */
-const PACK_SLICE_MS = 8;
-const PACK_WAIT_MS = 250;
+const SLICE_MS = 8;
+const SLICE_WAIT_MS = 250;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -68,27 +68,49 @@ export class DocxPage implements CompactDisplayPage {
   }
 }
 
-/** Loads fflate, then packs `pages` at idle time, a slice at a time, until
- * every page is packed or the returned function stops it. */
-export function packDocxPages(pages: readonly DocxPage[]) {
-  const queue = [...pages];
-  const later = (run: (deadline?: IdleDeadline) => void) => {
-    if (typeof requestIdleCallback === 'function') requestIdleCallback(run);
-    else setTimeout(run, PACK_WAIT_MS);
+/** Runs `step` on each of `items` in order at idle time, a slice at a time,
+ * then `done`, unless the returned function stops it first. */
+export function idleSlices<T>(
+  items: readonly T[],
+  step: (item: T) => void,
+  done: () => void
+) {
+  let next = 0;
+  let stopped = false;
+  const later = () => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(slice);
+    else setTimeout(slice, SLICE_WAIT_MS);
   };
   const slice = (deadline?: IdleDeadline) => {
+    if (stopped) return;
     const end =
       performance.now() +
-      Math.min(PACK_SLICE_MS, deadline?.timeRemaining() ?? PACK_SLICE_MS);
-    while (queue.length > 0 && performance.now() < end) queue.shift()!.pack();
-    if (queue.length > 0) later(slice);
-    else scratch = new Uint8Array(0);
+      Math.min(SLICE_MS, deadline?.timeRemaining() ?? SLICE_MS);
+    while (next < items.length && performance.now() < end) step(items[next++]);
+    if (next < items.length) later();
+    else done();
+  };
+  later();
+  return () => {
+    stopped = true;
+  };
+}
+
+/** Loads fflate, then packs `pages` at idle time until every page is packed
+ * or the returned function stops it; the scratch buffer goes after either. */
+export function packDocxPages(pages: readonly DocxPage[]) {
+  let stopped = false;
+  let stop = () => {};
+  const drop = () => {
+    scratch = new Uint8Array(0);
   };
   void import('fflate').then(({ deflateSync, inflateSync }) => {
     fflate = { deflateSync, inflateSync };
-    if (queue.length > 0) later(slice);
+    if (!stopped) stop = idleSlices(pages, (page) => page.pack(), drop);
   });
   return () => {
-    queue.length = 0;
+    stopped = true;
+    stop();
+    drop();
   };
 }
