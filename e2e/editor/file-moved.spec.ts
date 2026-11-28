@@ -205,6 +205,8 @@ test('a bookmark to a file that is standalone now opens its own page, where its 
 test('a Move heard into a workspace this user cannot read closes the file where it is', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(120_000);
   await openFile(
     page,
@@ -218,6 +220,8 @@ test('a Move heard into a workspace this user cannot read closes the file where 
 test('nothing remembers a heard Move: the file unreadable later shows the file error', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(120_000);
   await openFile(page, `/workspaces/ws_scenarios?file=${FILE}&mode=edit`);
   await announceMove(page, MOVED_TO);

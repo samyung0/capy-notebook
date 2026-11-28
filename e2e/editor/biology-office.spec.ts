@@ -1183,6 +1183,8 @@ test.describe('DOCX on a phone', () => {
     test(`Edit keeps the page at the top across a rotation, ${level}, leaving the caret`, async ({
       page,
     }) => {
+      // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+      test.skip(true, FILES_VIEW_ONLY);
       test.setTimeout(300_000);
       await resize(page, 390);
       const frame = await open(page);
