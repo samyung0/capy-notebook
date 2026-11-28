@@ -51,6 +51,10 @@ beforeEach(() => {
   prefetchSourceOpen.mockReset();
   rows.clear();
   rows.set('workspace:ws_1', async () => WORKSPACE);
+  rows.set('me', async () => ({
+    account: { state: 'active' },
+    filesEditable: true,
+  }));
 });
 
 const DECK = { hasBytes: true, name: 'deck.pptx', workspaceId: 'ws_1' };
@@ -73,6 +77,17 @@ describe("an Office file's open from its route", () => {
     );
   });
 
+  it('starts View alone, no edit session or room token, while /me says files are view-only (Q853 A)', async () => {
+    // The mocks' /me, which mirrors Go's switch (src/mocks/db.ts).
+    const { accountStatus, user } = await import('@/mocks/db');
+    rows.set('me', async () => ({ ...user, account: accountStatus }));
+    rows.set('file:f_deck', async () => DECK);
+    load('f_deck');
+    await vi.waitFor(() =>
+      expect(prefetchSourceOpen).toHaveBeenCalledWith('f_deck', false)
+    );
+  });
+
   it('starts View alone for a file opened from the Trash', async () => {
     rows.set('file:f_trashed', async () => ({ ...DECK, trash: {} }));
     load('f_trashed');
@@ -83,12 +98,18 @@ describe("an Office file's open from its route", () => {
 
   it('opens a standalone file for editing by its owner, View alone while frozen', async () => {
     rows.set('file:f_own', async () => ({ ...DECK, workspaceId: '' }));
-    rows.set('me', async () => ({ account: { state: 'active' } }));
+    rows.set('me', async () => ({
+      account: { state: 'active' },
+      filesEditable: true,
+    }));
     load('f_own');
     await vi.waitFor(() =>
       expect(prefetchSourceOpen).toHaveBeenCalledWith('f_own', true)
     );
-    rows.set('me', async () => ({ account: { state: 'over_quota_frozen' } }));
+    rows.set('me', async () => ({
+      account: { state: 'over_quota_frozen' },
+      filesEditable: true,
+    }));
     load('f_own');
     await vi.waitFor(() =>
       expect(prefetchSourceOpen).toHaveBeenLastCalledWith('f_own', false)

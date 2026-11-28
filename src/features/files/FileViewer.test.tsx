@@ -15,6 +15,8 @@ Object.assign(globalThis, { document, IS_REACT_ACT_ENVIRONMENT: true, window });
 // What each editor view was told about editing.
 const views = vi.hoisted(() => ({
   edits: [] as [string, boolean][],
+  // /me's filesEditable.
+  filesEditable: true,
   frozen: false,
   mePending: false,
   // The workspace's owner, and the Retry processing calls and pending ids.
@@ -30,7 +32,10 @@ vi.mock('@/api/hooks', () => ({
     isError: false,
     isPending: false,
   }),
-  useMe: () => ({ isPending: views.mePending }),
+  useMe: () => ({
+    data: views.mePending ? undefined : { filesEditable: views.filesEditable },
+    isPending: views.mePending,
+  }),
   useRetryFileProcessing: () => ({
     mutateAsync: async (request: unknown) => {
       views.retried.push(request);
@@ -72,6 +77,7 @@ const { FileViewer } = await import('./FileViewer');
 
 afterEach(() => {
   views.edits.length = 0;
+  views.filesEditable = true;
   views.frozen = false;
   views.mePending = false;
   views.owner = true;
@@ -125,6 +131,16 @@ it("opens no standalone editor before the owner's account loads (E1)", async () 
 it("opens a workspace file's editor for a content editor", async () => {
   expect(await open('notes.docx', 'ws_1')).toEqual(['docx', true]);
   expect(await open('notes.md', 'ws_1')).toEqual(['text', true]);
+});
+
+it('opens every Office and text file in View while /me says files are view-only (Q853 A)', async () => {
+  // The mocks' /me, which mirrors Go's switch (src/mocks/db.ts).
+  const { user } = await import('@/mocks/db');
+  views.filesEditable = user.filesEditable;
+  expect(await open('notes.docx', 'ws_1')).toEqual(['docx', false]);
+  expect(await open('notes.md', 'ws_1')).toEqual(['text', false]);
+  expect(await open('notes.docx', '')).toEqual(['docx', false]);
+  expect(await open('notes.md', '')).toEqual(['text', false]);
 });
 
 /** What the viewer shows for a file, with its buttons; `press` clicks one. */

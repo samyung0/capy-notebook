@@ -5732,6 +5732,30 @@ def test_the_office_tools_come_last_once_offered(monkeypatch):
     assert names() == before + list(tools.OFFICE_TOOLS)
 
 
+def test_chat_offers_no_file_edit_while_files_are_view_only(monkeypatch):
+    """Q854 A: Go's contract leaves edit_office_document out, so no turn is
+    offered it, office_building offering the Office read alone; edit_document
+    (materials), the reads and the deck tools stay."""
+    _gateway(monkeypatch)
+    ctx = _owner_ctx()
+    ctx.edit_tools = ctx.office_tools = True
+    names = {s["function"]["name"] for s in tools.schemas_for(ctx)}
+    assert {
+        "inspect_office_document",
+        "inspect_document",
+        "edit_document",
+        "create_deck",
+        "write_slide",
+    } <= names
+    assert "edit_office_document" not in names
+    assert "edit_office_document" not in contract.DEFINITIONS
+    assert "edit_office_document" not in tools.REGISTRY
+    assert (
+        "- office_building: read before reading a Word, Excel or PowerPoint file "
+        "(it offers inspect_office_document);"
+    ) in skills.catalog("note")
+
+
 def test_a_viewer_reads_skills_and_office_files_but_edits_nothing(monkeypatch):
     """Every role that can chat reads skills, so a viewer gets the Office read
     tool once office_building is read; editing still needs edit rights."""
