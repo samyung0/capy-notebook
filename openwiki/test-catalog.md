@@ -32,8 +32,8 @@ FILES_VIEW_ONLY)` (`e2e/helpers/filesViewOnly.ts`) in the editor matrix
 `thumbnail-capture`, `office-images`, `office-press`, `office-first-click`,
 `office-ribbon` and `office-ribbon-input`), the real-stack `agent-writes`
 (Office sources), `office-undo-peer-edits` and `stored-drafts` (text source),
-and the UAT journeys `files` (Office and text), `officeLoad`, `accountDeletion`
-and `membership`.
+and the UAT journeys `files` (Office and text), `officeLoad`, `accountDeletion`,
+`membership`, `richContent` and `officeRefusal`.
 
 Question bank backend additions:
 
