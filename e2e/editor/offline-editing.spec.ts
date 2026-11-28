@@ -914,6 +914,8 @@ async function copiedDocx(page: Page) {
 test('a DOCX edited offline in a closed tab opens copy-only after its room moved on', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(240_000);
   const reopened = await closeDocxOffline(page, ' Typed before the move.');
   // A discard moves the room to the next epoch while the tab is closed.

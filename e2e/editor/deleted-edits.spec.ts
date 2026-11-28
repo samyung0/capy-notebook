@@ -904,6 +904,8 @@ test('a DOCX deleted while open keeps its unsent edits under the deleted strip, 
 test('a DOCX deleted while open downloads its unsent edits from its strip and keeps them', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(240_000);
   await typeDocxOffline(page, ' Kept to copy.');
   await deleteItem(page, DOCX, 'doc', DOCX_NAME);
@@ -928,6 +930,8 @@ test('a DOCX deleted while open downloads its unsent edits from its strip and ke
 test("a deleted DOCX's Download saves its unsent edits as a .docx", async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(240_000);
   await typeDocxOffline(page, ' Typed before the delete.');
   await deleteItem(page, DOCX, 'doc', DOCX_NAME);

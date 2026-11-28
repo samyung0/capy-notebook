@@ -755,6 +755,8 @@ async function openDocxOnPage4(page: Page, typing = false) {
 test('a DOCX maintenance pause keeps the reader where they are', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(300_000);
   const before = await openDocxOnPage4(page);
   await page.evaluate(async (id) => {
@@ -775,6 +777,8 @@ test('a DOCX maintenance pause keeps the reader where they are', async ({
 test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(300_000);
   await openDocxOnPage4(page);
   const old = await page
@@ -881,6 +885,8 @@ async function newEpoch(
 test('a tab hidden during a DOCX build swaps at once at the same page', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(300_000);
   await openDocxOnPage4(page);
   await newEpoch(page, DOCX);
@@ -907,6 +913,8 @@ for (const [hold, what] of [
   ['session', 'whose session request hangs'],
 ] as const)
   test(`a DOCX reload ${what} ends at the join's 30 s`, async ({ page }) => {
+    // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+    test.skip(true, FILES_VIEW_ONLY);
     test.setTimeout(300_000);
     await openDocxOnPage4(page);
     await newEpoch(page, DOCX, hold);
@@ -927,6 +935,8 @@ for (const [hold, what] of [
 test('a DOCX edit that keeps the caret brings it back into view', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(300_000);
   await openDocxOnPage4(page, true);
   expect(await pageInView(page, 'live', 0)).toBe(false);
@@ -961,6 +971,8 @@ async function holdLayoutWasm(page: Page) {
 test('a DOCX edit before the first caret pass brings the caret into view', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(300_000);
   const release = await holdLayoutWasm(page);
   await openDocxOnPage4(page, true);
@@ -982,6 +994,8 @@ test('a DOCX edit before the first caret pass brings the caret into view', async
 test('a DOCX ribbon edit before the first caret pass brings the caret into view', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(300_000);
   const release = await holdLayoutWasm(page);
   await openDocxOnPage4(page);
