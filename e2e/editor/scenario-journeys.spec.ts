@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, type Page, test } from '@playwright/test';
+import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
 import { officeEditMenu, officeFrame, saveOffice } from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
@@ -74,6 +75,8 @@ test("a public page's Clone link tells a non-member why they cannot copy", async
 test('one click fails a real source save and retry preserves the mounted editor', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   await launch(page, 'source-save-failed');
   const current = await page
     .locator('textarea')
@@ -127,6 +130,8 @@ for (const [id, kind] of [
   ['source-save-refused', 'refused'],
 ] as const) {
   test(`${id} shows the edits for copying until Discard`, async ({ page }) => {
+    // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+    test.skip(true, FILES_VIEW_ONLY);
     await launch(page, id);
     const draft = page.locator('textarea[readonly]');
     const banner = page.getByTestId('save-banner');
@@ -201,6 +206,8 @@ for (const [id, kind] of [
 test('a refused DOCX save keeps the edit copyable until Discard', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(120_000);
   await launch(page, 'office-docx-save');
   await page.evaluate(async () => {
@@ -270,6 +277,8 @@ test('a refused DOCX save keeps the edit copyable until Discard', async ({
 test('a refused PPTX save keeps the slide text copyable until Discard', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(120_000);
   await launch(page, 'office-pptx-save');
   await page.evaluate(async () => {
@@ -326,6 +335,8 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
   test(`${format} opens valid bytes, edits, fails save, and retries without replacing the iframe`, async ({
     page,
   }) => {
+    // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+    test.skip(true, FILES_VIEW_ONLY);
     // Native initialization and a full Vite reload share this workflow budget.
     test.setTimeout(120_000);
     await launch(page, `office-${format}-save`);
@@ -474,6 +485,8 @@ test('a new scenario cancels a pending auth request', async ({ page }) => {
 test('Office export failure keeps the editable iframe in Edit and draft download works', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   await launch(page, 'office-runtime-error');
   const frame = page.locator('iframe[src*="office-runtime"]');
   const mounted = await frame.elementHandle();
@@ -700,6 +713,8 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
 test('a frozen account or full storage mid-edit drops open editors to view and discards unsaved edits', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   const strip = page.getByText(m.editor_read_only_strip());
   for (const [id, reason] of [
     ['note-frozen-while-editing', m.editor_read_only_strip()],
@@ -747,6 +762,8 @@ test('a frozen account or full storage mid-edit drops open editors to view and d
 test('a text source in view mode shows its latest saved state, not only the published bytes', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   // Leaving Edit: the saved edit stays in view.
   await page.goto('/workspaces/ws_scenarios?file=mock-scenario-text&mode=edit');
   const input = page.getByRole('textbox', { name: m.source_edit_raw() });
@@ -771,6 +788,8 @@ test('a text source in view mode shows its latest saved state, not only the publ
 // Epo 2026-10-20: a text source published over the plan file limit (no
 // growth budget) opens to view only with a notice, its mode control disabled.
 test('a text source at its size limit opens to view only', async ({ page }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   await page.goto('/workspaces/ws_scenarios?file=mock-scenario-text');
   const toggle = page.getByRole('button', { name: m.material_mode() });
   await expect(toggle).toBeEnabled({ timeout: 30_000 });

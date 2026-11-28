@@ -1,5 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { EDITOR_NOTE, EDITOR_WORKSPACE_ID } from '../../src/mocks/editorSeed';
+import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
 import {
   officeEditMenu,
   officeFrame,
@@ -670,6 +671,8 @@ test('a reload during a build swaps to the newest room', async ({ page }) => {
 test('leaving a note during its build opens the next one cleanly', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(120_000);
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -820,6 +823,8 @@ test('a newer DOCX epoch swaps the editor with no banner or Reload', async ({
 test('a DOCX citation shown in Edit carries through a newer epoch', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(300_000);
   await page.goto('/workspaces/ws_bio');
   await showChatHistory(page);
@@ -997,6 +1002,8 @@ test('a DOCX ribbon edit before the first caret pass brings the caret into view'
 test('a newer XLSX epoch swaps the editor at the same sheet and cell', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(300_000);
   const fileId = 'bio-office-xlsx';
   await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);
@@ -1025,6 +1032,8 @@ test('a newer XLSX epoch swaps the editor at the same sheet and cell', async ({
 test('a newer PPTX epoch swaps the editor at the same slide', async ({
   page,
 }) => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(300_000);
   const fileId = 'bio-office-pptx';
   await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);
@@ -1052,6 +1061,8 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const)
   test(`a newer ${format} epoch swaps the editor at the same zoom`, async ({
     page,
   }) => {
+    // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+    test.skip(true, FILES_VIEW_ONLY);
     test.setTimeout(300_000);
     const fileId = `bio-office-${format}`;
     await page.goto(`/workspaces/ws_bio?file=${fileId}&mode=edit`);

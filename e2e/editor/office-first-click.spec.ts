@@ -1,7 +1,12 @@
 import { expect, type Page, test } from '@playwright/test';
+import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
 import { officeEditMenu } from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
+
+// Every test here edits a file.
+// biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+test.skip(true, FILES_VIEW_ONLY);
 
 declare global {
   interface Window {

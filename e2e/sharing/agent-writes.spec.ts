@@ -6,6 +6,7 @@ import { seed, users } from '../fixtures/seed';
 import { uploadSourceFile } from '../helpers/api';
 import { collaborationLink } from '../helpers/collaboration';
 import { expectEditorLive } from '../helpers/editor';
+import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
 import { type OfficeFormat, officeEditMenu } from '../helpers/office';
 import { openWorkspaceMaterial } from '../helpers/workspace';
 import { m } from '../i18n';
@@ -1322,6 +1323,8 @@ async function readShows(
 }
 
 test.describe('agent writes to Office sources', () => {
+  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
+  test.skip(true, FILES_VIEW_ONLY);
   test.describe.configure({ timeout: 300_000 });
   // The XLSX check finds the typed cell in the first editor's grid, which
   // renders only the columns in view: the viewer at 1280px with the rail's
