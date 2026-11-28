@@ -266,6 +266,9 @@ Sources: [maker](../server/internal/assetthumb/assetthumb.go),
 
 ## Browser captures
 
+While files are view-only (Q853 A) there are no edit frames, and Go refuses
+every capture (forbidden, read as `404`) before its checks.
+
 An edit frame of a DOCX, PPTX or XLSX file redraws the file's thumbnail as it is
 edited and Capy posts it to Go, which writes it to B2 itself (no upload
 session, no quota).

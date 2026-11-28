@@ -4400,6 +4400,19 @@ materials are sources.
 
 ### Tools
 
+While files are view-only (Epo 2026-11-28, Q854 A; `sourceupload.FilesEditable`)
+chat edits no file: Go leaves `edit_office_document` out of its definitions, so
+the generated contract has none and the pipeline registers none
+(`tools.py`); `/api/internal/documents/edit` answers every file target and
+`/api/internal/documents/office/create` with `unsupported_format` ("This file
+type cannot be edited.") before the authority; a chat Undo of an earlier file
+edit is refused; file rows say `editable` false (account rows with "You can view
+this but not edit it.") and an account read's Access line `canEdit` false; and
+read_skill's office_building line says "(it offers inspect_office_document)".
+Reads, `edit_document` on materials and the deck tools are unchanged; the rest
+of the model-read text about editing files waits for Epo's wording. The rows
+below describe the tools with the switch on.
+
 | Tool | Side effects | Notes |
 | --- | --- | --- |
 | `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; `file_ids` take any workspace item id, and any invalid supplied id rejects the call, naming it |
@@ -6773,6 +6786,13 @@ receipt. The delete then cascades; the old `rag_teardown` job and pipeline
 `/workspace/delete` endpoint are gone.
 
 ## Editable source refresh and pending evidence
+
+While files are view-only (Q853 A) no file is edited or refreshed: Go refuses
+room saves and every refresh request, the room service's automatic ones
+included (a due file then carries a `refresh_error`); jobs queued before the
+switch, maintenance publications and the reads of saved changes (pending
+evidence, `resolve_source_change`) still run. The rest of this section is the
+switch on.
 
 `source_documents` separates the live durable editing checkpoint from the
 published source/index checkpoint. The indexed baseline is versioned semantic
