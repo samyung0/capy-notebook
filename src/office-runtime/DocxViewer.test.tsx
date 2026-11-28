@@ -111,7 +111,7 @@ vi.mock('./runtimeMenus', async (importOriginal) => ({
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { DocxViewer } = await import('./DocxViewer');
-const { DocxPage, sentDocxPage } = await import('./docxPages');
+const { DocxPage } = await import('./docxPages');
 
 afterEach(() => {
   frameWidth = 1280;
@@ -154,22 +154,17 @@ function viewer(
   );
 }
 
-// Pages [from, to) of a five-page layout, whose widest page is wider, each
-// sent as its JSON.
+// Pages [from, to) of a five-page layout, whose widest page is wider.
 const size = { height: 1056, width: 816 };
-const sent = (pages: object[]) =>
-  pages.map((page) => sentDocxPage(page as DisplayPage));
 const sendPages = (from: number, to: number) =>
   workers[0]?.send({
     faces: [],
-    pages: sent(
-      Array.from({ length: to - from }, (_, i) => ({
-        height: size.height,
-        pageIndex: from + i,
-        primitives: [],
-        width: size.width,
-      }))
-    ),
+    pages: Array.from({ length: to - from }, (_, i) => ({
+      height: size.height,
+      pageIndex: from + i,
+      primitives: [],
+      width: size.width,
+    })),
     // The sizes of every page a C6 worker sent with its first pages: the
     // count follows the pages that came, not these.
     sizes: from === 0 ? Array.from({ length: 5 }, () => size) : undefined,
@@ -311,9 +306,7 @@ it('reads each page of a cited open for its quote as it comes', async () => {
   const send = (from: number, to: number) =>
     workers[0]?.send({
       faces: [],
-      pages: sent(
-        Array.from({ length: to - from }, (_, i) => quoted(from + i))
-      ),
+      pages: Array.from({ length: to - from }, (_, i) => quoted(from + i)),
       sliced: [],
       type: 'pages',
       width: size.width,
@@ -375,8 +368,9 @@ it('prints every page, waiting for those still to come', async () => {
   await act(async () => root.unmount());
 });
 
-// Q864 A: View keeps each page compact, its JSON deflated at idle time.
-it('keeps every page compact, deflated once the frame is idle', async () => {
+// Q864 A: once every page is in, View keeps each page packed, its JSON
+// deflated at idle time.
+it('packs every page once all are in and the frame is idle', async () => {
   vi.useFakeTimers();
   try {
     const root = await open();
@@ -427,10 +421,10 @@ it('reads the scroll offset, the body paragraph at the top and the text-layer se
   await act(async () =>
     workers[0]?.send({
       faces: [],
-      pages: sent([
+      pages: [
         { ...size, pageIndex: 0, primitives: [text(11, 0, 10)] },
         { ...size, pageIndex: 1, primitives: [text(40, 3, 40)] },
-      ]),
+      ],
       sliced: [],
       type: 'pages',
       width: size.width,
@@ -502,13 +496,11 @@ it('prints a reading layout from pages laid out whole', async () => {
   await act(async () => {
     workers[1]?.send({
       faces: [],
-      pages: sent(
-        Array.from({ length: 3 }, (_, pageIndex) => ({
-          ...size,
-          pageIndex,
-          primitives: [],
-        }))
-      ),
+      pages: Array.from({ length: 3 }, (_, pageIndex) => ({
+        ...size,
+        pageIndex,
+        primitives: [],
+      })),
       sliced: [],
       type: 'pages',
       width: size.width,

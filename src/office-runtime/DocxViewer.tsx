@@ -83,8 +83,8 @@ type Arrival = {
  * with `whole` every page before any (Q823 A). Each batch of pages goes to
  * `onPages` as it comes; the promise resolves with the whole layout. The
  * worker goes as soon as it is done, so the parser and engine memory are
- * released during ordinary reading. Each page comes as its JSON, deflated at
- * idle time until the layout is cancelled (Q864 A). */
+ * released during ordinary reading. Once every page is in, each is packed
+ * (its JSON deflated) at idle time until the layout is cancelled (Q864 A). */
 function layOut(
   bytes: Uint8Array,
   reading: Reading | null,
@@ -106,16 +106,14 @@ function layOut(
       worker.terminate();
     };
     const packing: DocxPage[] = [];
-    let cancelled = false;
     const pack = () => {
       const end = performance.now() + PACK_SLICE_MS;
       while (packing.length > 0 && performance.now() < end)
         packing.shift()!.pack();
-      if (packing.length > 0 && !cancelled) whenIdle(pack, PACK_WAIT_MS);
+      if (packing.length > 0) whenIdle(pack, PACK_WAIT_MS);
     };
     // A print waiting for the whole layout fails rather than waits on.
     cancel = () => {
-      cancelled = true;
       packing.length = 0;
       stop();
       reject(new Error('The DOCX layout was cancelled'));
@@ -125,12 +123,8 @@ function layOut(
     const sliced = new Map<string, SlicedOfficeFace>();
     worker.onmessage = ({ data }: MessageEvent<DocxViewerWorkerResponse>) => {
       if (data.type === 'pages') {
-        if (packing.length === 0) whenIdle(pack, PACK_WAIT_MS);
-        for (const sent of data.pages) {
-          const page = new DocxPage(sent);
-          pages[page.pageIndex] = page;
-          packing.push(page);
-        }
+        for (const page of data.pages)
+          pages[page.pageIndex] = new DocxPage(page);
         faces.push(...data.faces);
         const changed = data.sliced.map(({ bytes, families, id }) => {
           // Only grown outlines come with bytes.
@@ -147,14 +141,20 @@ function layOut(
         return;
       }
       stop();
-      if (data.type === 'error') reject(new Error(data.message));
-      else
-        resolve({
-          displayList: { pages },
-          faces,
-          marks: data.marks,
-          sliced: [...sliced.values()],
-        });
+      if (data.type === 'error') {
+        reject(new Error(data.message));
+        return;
+      }
+      // Far pages build their screen-reader copies from the pages as they
+      // come; once every page is in, each is packed.
+      packing.push(...pages);
+      whenIdle(pack, PACK_WAIT_MS);
+      resolve({
+        displayList: { pages },
+        faces,
+        marks: data.marks,
+        sliced: [...sliced.values()],
+      });
     };
     const transferable = bytes.slice().buffer;
     worker.postMessage({ bytes: transferable, reading, viewport, whole }, [
