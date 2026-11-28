@@ -67,11 +67,16 @@ const stats = {
   notIndexed: 0,
 } as WorkspaceStats;
 
-function render(workspace: Partial<Workspace>, files: SourceFile[] = []) {
+function render(
+  workspace: Partial<Workspace>,
+  files: SourceFile[] = [],
+  filesEditable = true
+) {
   buttons.length = 0;
   const client = new QueryClient();
-  // FailedFiles reads the files list.
+  // FailedFiles reads the files list; a file's Process reads /me.
   client.setQueryData(qk.files('ws_1'), files);
+  client.setQueryData(qk.me, { filesEditable });
   return renderToStaticMarkup(
     <QueryClientProvider client={client}>
       <IndexingTab
@@ -125,6 +130,23 @@ describe('IndexingTab note changes', () => {
     await vi.waitFor(() => expect(posted).toHaveBeenCalledTimes(3));
     expect(posted.mock.calls.map(([path]) => path).sort()).toEqual([
       '/files/f_1/process-changes',
+      '/materials/n_fail/process-changes',
+      '/materials/n_wait/process-changes',
+    ]);
+  });
+
+  it('gives a file no Process while files are view-only (Q853 A), and Process all sends the notes alone', async () => {
+    const posted = vi.spyOn(api, 'post').mockResolvedValue(undefined);
+    const html = render({ isOwner: true }, [], false);
+    expect(rowOf(html, 'edited.md')).toContain('data-state="waiting"');
+    expect(buttons.map((button) => button.children)).toEqual([
+      m.workspace_change_process_all(),
+      m.workspace_change_process(),
+      m.error_action_retry(),
+    ]);
+    buttons[0]?.onClick?.();
+    await vi.waitFor(() => expect(posted).toHaveBeenCalledTimes(2));
+    expect(posted.mock.calls.map(([path]) => path).sort()).toEqual([
       '/materials/n_fail/process-changes',
       '/materials/n_wait/process-changes',
     ]);
