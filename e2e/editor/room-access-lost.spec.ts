@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { m } from '../i18n';
 import { clickTextEnd } from './helpers';
 
@@ -95,6 +96,8 @@ for (const [name, url, text, read] of [
   test(`a ${name} editor refused by its room stays on the page, read-only`, async ({
     page,
   }) => {
+    // A view-only file opens in View, which joins no room.
+    if (name === 'text file') skipWhileFilesViewOnly();
     await page.goto(url);
     await expect(page.getByTestId('content-header')).toBeVisible({
       timeout: 60_000,
@@ -178,6 +181,7 @@ for (const [name, url, rows, id, close] of [
   test(`a ${name} refused by its room and by its read says it is unavailable`, async ({
     page,
   }) => {
+    if (name === 'text file') skipWhileFilesViewOnly();
     test.setTimeout(120_000);
     await page.goto(url);
     await expect(page.getByTestId('content-header')).toBeVisible({
