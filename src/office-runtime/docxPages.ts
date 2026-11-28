@@ -97,17 +97,21 @@ export function idleSlices<T>(
 }
 
 /** Loads fflate, then packs `pages` at idle time until every page is packed
- * or the returned function stops it; the scratch buffer goes after either. */
+ * or the returned function stops it; the scratch buffer goes after either.
+ * If fflate fails to load, the pages stay as the worker sent them (Q872 A). */
 export function packDocxPages(pages: readonly DocxPage[]) {
   let stopped = false;
   let stop = () => {};
   const drop = () => {
     scratch = new Uint8Array(0);
   };
-  void import('fflate').then(({ deflateSync, inflateSync }) => {
-    fflate = { deflateSync, inflateSync };
-    if (!stopped) stop = idleSlices(pages, (page) => page.pack(), drop);
-  });
+  void import('fflate').then(
+    ({ deflateSync, inflateSync }) => {
+      fflate = { deflateSync, inflateSync };
+      if (!stopped) stop = idleSlices(pages, (page) => page.pack(), drop);
+    },
+    () => {}
+  );
   return () => {
     stopped = true;
     stop();

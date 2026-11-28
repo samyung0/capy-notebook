@@ -68,3 +68,27 @@ it('packs in slices that end with the idle time left', async () => {
   idle.shift()!({ didTimeout: false, timeRemaining: () => 50 });
   expect(pages.some((page) => page.packed)).toBe(true);
 });
+
+it('keeps every page unpacked and drawn when fflate fails to load, with no unhandled rejection (Q872 A)', async () => {
+  const unhandled = vi.fn();
+  process.on('unhandledRejection', unhandled);
+  vi.doMock('fflate', () => {
+    throw new Error('fflate chunk failed to load');
+  });
+  vi.resetModules();
+  try {
+    const fresh = await import('./docxPages');
+    const pages = await fixturePages();
+    const kept = pages.map((page) => new fresh.DocxPage(page));
+    fresh.packDocxPages(kept);
+    await expect(import('fflate')).rejects.toThrow();
+    // Node reports an unhandled rejection once the microtasks run out.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(unhandled).not.toHaveBeenCalled();
+    expect(kept.some((page) => page.packed)).toBe(false);
+    expect(kept[1]!.decode()).toBe(pages[1]);
+  } finally {
+    process.off('unhandledRejection', unhandled);
+    vi.doUnmock('fflate');
+  }
+});

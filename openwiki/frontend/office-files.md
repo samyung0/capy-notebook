@@ -302,11 +302,12 @@ opened from a citation posts no `painted`: the host keeps its skeleton until
 after the last batch and goes.
 Once every page is in, the frame keeps each page packed (Q864 A,
 `src/office-runtime/docxPages.ts`): it loads fflate then (nothing on the
-open's path), and at idle time, in slices of at most 8 ms or the idle time
-left, writes each page's JSON and deflates it (fflate's fastest level), about
-39 KB a page against 187 KB of objects on the 481-page bench file, and lets
-the page go; the opening itself is unchanged, the far pages building their
-plain-text copies from the pages as they come. A packed page is decoded when
+open's path; if that load fails, the pages stay unpacked, Q872 A), and at
+idle time, in slices of at most 8 ms or the idle time left, writes each
+page's JSON and deflates it (fflate's fastest level), about 39 KB a page
+against 187 KB of objects on the 481-page bench file, and lets the page go;
+the opening itself is unchanged, the far pages building their plain-text
+copies from the pages as they come. A packed page is decoded when
 it is needed and dropped after: painting and the positioned mirror decode the
 pages near the viewport through a cache of the 16 used last
 (`NearDisplayPages`), which decodes the page next to enter the window at idle
