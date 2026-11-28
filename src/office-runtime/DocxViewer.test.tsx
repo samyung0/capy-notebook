@@ -380,6 +380,8 @@ it('packs every page once all are in and the frame is idle', async () => {
     });
     await act(async () => {
       for (const load of loads.splice(0)) load();
+      // fflate loads once packing starts.
+      await vi.dynamicImportSettled();
       await vi.runAllTimersAsync();
     });
     expect(drawnPages).toHaveLength(5);
@@ -395,6 +397,107 @@ it('packs every page once all are in and the frame is idle', async () => {
   } finally {
     vi.useRealTimers();
   }
+});
+
+// Q864 A: a page the worker sends again before `ready` (the first screen's
+// pages, a CJK rename run) replaces the one before; that one is packed.
+it('packs the page a worker sent again, not the one it replaced', async () => {
+  vi.useFakeTimers();
+  try {
+    const root = await open();
+    await act(async () => {
+      sendPages(0, 5);
+      workers[0]?.send({
+        faces: [],
+        pages: [{ ...size, pageIndex: 2, primitives: [{ kind: 'rect' }] }],
+        sliced: [],
+        type: 'pages',
+        width: size.width,
+      });
+      sendReady();
+    });
+    await act(async () => {
+      for (const load of loads.splice(0)) load();
+      await vi.dynamicImportSettled();
+      await vi.runAllTimersAsync();
+    });
+    const page = drawnPages[2] as InstanceType<typeof DocxPage>;
+    expect(page.packed).toBe(true);
+    expect(page.decode()).toEqual({
+      ...size,
+      pageIndex: 2,
+      primitives: [{ kind: 'rect' }],
+    });
+    await act(async () => root.unmount());
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+// Q805 A: an open that fails keeps the pages it showed, drawn and copyable as
+// they came: none is packed.
+it('keeps the pages of a failed open as they came', async () => {
+  vi.useFakeTimers();
+  try {
+    const onError = vi.fn();
+    const root = await open({ onError });
+    await act(async () => {
+      sendPages(0, 3);
+      workers[0]?.send({ message: 'broken', type: 'error' });
+    });
+    await act(async () => {
+      for (const load of loads.splice(0)) load();
+      await vi.dynamicImportSettled();
+      await vi.runAllTimersAsync();
+    });
+    expect(onError).toHaveBeenCalled();
+    expect(drawnPages).toHaveLength(3);
+    for (const page of drawnPages as InstanceType<typeof DocxPage>[]) {
+      expect(page.packed).toBe(false);
+      expect(page.decode()).toMatchObject({ pageIndex: page.pageIndex });
+    }
+    await act(async () => root.unmount());
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+// Q864 A: with no citation the viewer reads no page for one, at the open's
+// end or when a citation is cleared.
+it('decodes no page for a citation it does not have', async () => {
+  const decode = vi.spyOn(DocxPage.prototype, 'decode');
+  const root = await open();
+  await act(async () => {
+    sendPages(0, 5);
+    sendReady();
+  });
+  await settle();
+  await act(async () => present());
+  expect(decode).not.toHaveBeenCalled();
+
+  // A cited open, its quote found, then the citation cleared.
+  await act(async () =>
+    root.render(viewer(new Uint8Array([2]), { citation: { quote: 'a quote' } }))
+  );
+  await act(async () => {
+    workers[1]?.send({
+      faces: [],
+      pages: [{ ...size, pageIndex: 0, primitives: [] }],
+      sliced: [],
+      type: 'pages',
+      width: size.width,
+    });
+    workers[1]?.send({ marks: {}, type: 'ready' });
+  });
+  await settle();
+  await act(async () => present());
+  const read = decode.mock.calls.length;
+  await act(async () =>
+    root.render(viewer(new Uint8Array([2]), { citation: null }))
+  );
+  expect(decode).toHaveBeenCalledTimes(read);
+  decode.mockRestore();
+  await act(async () => root.unmount());
 });
 
 // Q608 A: View says where its reader is for the editor that follows it, as

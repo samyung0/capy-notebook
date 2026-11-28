@@ -114,9 +114,8 @@ export function docxCitationPage(page: DisplayPage): DocxCitationPage {
  * page order), when unique and safe to highlight. */
 export function docxCitation(
   pages: Iterable<DocxCitationPage>,
-  citation: OfficeCitation | null
+  citation: OfficeCitation
 ) {
-  if (!citation) return null;
   const paragraphs: DocxCitationPage = new Map();
   for (const page of pages) {
     for (const [key, part] of page) {

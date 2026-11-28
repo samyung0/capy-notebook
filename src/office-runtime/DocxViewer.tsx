@@ -16,7 +16,6 @@ import type {
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
 import { officeMark, officeMarkAt } from '@/lib/officeMarks';
-import { whenIdle } from '@/lib/whenIdle';
 import {
   CITATION_FILL,
   type DocxCitationPage,
@@ -28,7 +27,7 @@ import type {
   DocxViewport,
 } from './DocxViewer.worker';
 import { docxT, downloadMenu, printItem } from './docxMenus';
-import { DocxPage } from './docxPages';
+import { DocxPage, packDocxPages } from './docxPages';
 import { textLayerSelection, topParagraph } from './docxPlace';
 import { takeDocxViewerWorker } from './docxViewerWorker';
 import {
@@ -53,10 +52,6 @@ const READING_PADDING = 16;
 const READING_BELOW_PX = 768;
 /** Quiet time after a resize before the reading layout follows it. */
 const RESIZE_SETTLE_MS = 200;
-/** Pages deflate at idle time in slices this long, and at the latest this
- * long after the last slice. */
-const PACK_SLICE_MS = 8;
-const PACK_WAIT_MS = 250;
 
 type Reading = { padding: number; width: number };
 
@@ -105,16 +100,10 @@ function layOut(
       stopped = true;
       worker.terminate();
     };
-    const packing: DocxPage[] = [];
-    const pack = () => {
-      const end = performance.now() + PACK_SLICE_MS;
-      while (packing.length > 0 && performance.now() < end)
-        packing.shift()!.pack();
-      if (packing.length > 0) whenIdle(pack, PACK_WAIT_MS);
-    };
+    let stopPacking = () => {};
     // A print waiting for the whole layout fails rather than waits on.
     cancel = () => {
-      packing.length = 0;
+      stopPacking();
       stop();
       reject(new Error('The DOCX layout was cancelled'));
     };
@@ -147,8 +136,7 @@ function layOut(
       }
       // Far pages build their screen-reader copies from the pages as they
       // come; once every page is in, each is packed.
-      packing.push(...pages);
-      whenIdle(pack, PACK_WAIT_MS);
+      stopPacking = packDocxPages(pages);
       resolve({
         displayList: { pages },
         faces,
@@ -458,12 +446,15 @@ export function DocxViewer({
           );
       })
       .catch((value: unknown) => {
-        if (!cancelled)
-          onError(value instanceof Error ? value : new Error(String(value)));
+        if (cancelled) return;
+        // A failed open finds no quote.
+        quotedRef.current.clear();
+        onError(value instanceof Error ? value : new Error(String(value)));
       });
     return () => {
       cancelled = true;
       job.cancel();
+      quotedRef.current.clear();
       // A layout never shown deletes its faces now; one shown keeps them
       // while its pages stay, until the next is shown.
       if (!showed) release();
@@ -529,6 +520,11 @@ export function DocxViewer({
     const viewer = hostRef.current;
     if (!citedList || !viewer) return;
     const quoted = quotedRef.current;
+    // With no citation, no page is read.
+    if (!citation) {
+      quoted.clear();
+      return;
+    }
     const match = docxCitation(
       citedList.pages.map(
         (page) => quoted.get(page) ?? docxCitationPage(page.decode())

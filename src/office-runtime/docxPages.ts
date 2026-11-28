@@ -2,12 +2,19 @@ import type {
   CompactDisplayPage,
   DisplayPage,
 } from '@betteroffice/docx/layout/render';
-import { deflateSync, inflateSync } from 'fflate';
+
+/** Pages pack in idle slices of at most this long, or of the idle time left
+ * if that is shorter; without requestIdleCallback (Safari) a slice runs this
+ * long after the one before. */
+const PACK_SLICE_MS = 8;
+const PACK_WAIT_MS = 250;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+/** fflate, loaded once pages are packed, so the open loads nothing for it. */
+let fflate: typeof import('fflate') | undefined;
 /** The buffer each page's JSON is written into before it is deflated, grown
- * as a page needs, so packing leaves no buffer per page behind. */
+ * as a page needs and dropped after the last page of a packing. */
 let scratch = new Uint8Array(0);
 
 /** A page View keeps (Q864 A): the page as the worker sent it until it is
@@ -32,9 +39,12 @@ export class DocxPage implements CompactDisplayPage {
   }
 
   decode(): DisplayPage {
+    // A page is packed only once fflate is in.
     return (
       this.page ??
-      (JSON.parse(decoder.decode(inflateSync(this.bytes))) as DisplayPage)
+      (JSON.parse(
+        decoder.decode(fflate!.inflateSync(this.bytes))
+      ) as DisplayPage)
     );
   }
 
@@ -47,7 +57,34 @@ export class DocxPage implements CompactDisplayPage {
     if (scratch.length < json.length * 3)
       scratch = new Uint8Array(json.length * 3);
     const { written } = encoder.encodeInto(json, scratch);
-    this.bytes = deflateSync(scratch.subarray(0, written), { level: 1 });
+    this.bytes = fflate!.deflateSync(scratch.subarray(0, written), {
+      level: 1,
+    });
     this.page = null;
   }
+}
+
+/** Loads fflate, then packs `pages` at idle time, a slice at a time, until
+ * every page is packed or the returned function stops it. */
+export function packDocxPages(pages: readonly DocxPage[]) {
+  const queue = [...pages];
+  const later = (run: (deadline?: IdleDeadline) => void) => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(run);
+    else setTimeout(run, PACK_WAIT_MS);
+  };
+  const slice = (deadline?: IdleDeadline) => {
+    const end =
+      performance.now() +
+      Math.min(PACK_SLICE_MS, deadline?.timeRemaining() ?? PACK_SLICE_MS);
+    while (queue.length > 0 && performance.now() < end) queue.shift()!.pack();
+    if (queue.length > 0) later(slice);
+    else scratch = new Uint8Array(0);
+  };
+  void import('fflate').then((module) => {
+    fflate = module;
+    if (queue.length > 0) later(slice);
+  });
+  return () => {
+    queue.length = 0;
+  };
 }
