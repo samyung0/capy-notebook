@@ -4628,7 +4628,9 @@ _register("create_deck", _create_deck)
 _register("write_slide", _write_slide)
 # Last, so a turn that starts offering them appends them to its tools.
 _register("inspect_office_document", _inspect_office_document)
-_register("edit_office_document", _edit_office_document)
+# Go leaves it out of the contract while files are view-only (Q854 A).
+if "edit_office_document" in contract.DEFINITIONS:
+    _register("edit_office_document", _edit_office_document)
 
 
 # Offered only with the Library switch on and a configured library.
