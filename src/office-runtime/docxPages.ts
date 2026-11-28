@@ -11,8 +11,12 @@ const PACK_WAIT_MS = 250;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
-/** fflate, loaded once pages are packed, so the open loads nothing for it. */
-let fflate: typeof import('fflate') | undefined;
+/** fflate's two calls, loaded once pages are packed, so the open loads
+ * nothing for it (destructured, so the build keeps fflate's chunk as small
+ * as the other importers need). */
+let fflate:
+  | Pick<typeof import('fflate'), 'deflateSync' | 'inflateSync'>
+  | undefined;
 /** The buffer each page's JSON is written into before it is deflated, grown
  * as a page needs and dropped after the last page of a packing. */
 let scratch = new Uint8Array(0);
@@ -80,8 +84,8 @@ export function packDocxPages(pages: readonly DocxPage[]) {
     if (queue.length > 0) later(slice);
     else scratch = new Uint8Array(0);
   };
-  void import('fflate').then((module) => {
-    fflate = module;
+  void import('fflate').then(({ deflateSync, inflateSync }) => {
+    fflate = { deflateSync, inflateSync };
     if (queue.length > 0) later(slice);
   });
   return () => {
