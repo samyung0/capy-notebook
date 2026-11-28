@@ -162,22 +162,32 @@ def _apply_migration(dsn: str) -> None:
         )
 
 
-# Tests that edit files are marked files_view_only and skipped while files are
-# view-only (server/internal/sourceupload/editing.go, Q853 A); un-skip them
-# with the switch.
+# Go's sourceupload.FilesEditable (Q853 A) decides which tests run: those
+# marked files_view_only edit files and are skipped while it is off, those
+# marked view_only_refusals check what it refuses and are skipped while it is
+# on. Python reads it from the contract Go generates, which offers
+# edit_office_document only while files are editable (Q854 A).
 FILES_VIEW_ONLY = "File editing is off (Q853 A)"
 
 
 def pytest_configure(config):
     config.addinivalue_line(
-        "markers", f"files_view_only: edits files; skipped: {FILES_VIEW_ONLY}"
+        "markers", "files_view_only: edits files; skipped while files are view-only"
+    )
+    config.addinivalue_line(
+        "markers", "view_only_refusals: skipped while files are editable"
     )
 
 
 def pytest_collection_modifyitems(items):
+    from pipeline.retrieval import contract
+
+    editable = "edit_office_document" in contract.DEFINITIONS
     for item in items:
-        if item.get_closest_marker("files_view_only"):
+        if not editable and item.get_closest_marker("files_view_only"):
             item.add_marker(pytest.mark.skip(reason=FILES_VIEW_ONLY))
+        if editable and item.get_closest_marker("view_only_refusals"):
+            item.add_marker(pytest.mark.skip(reason="files are editable"))
 
 
 @pytest.fixture(scope="session")

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { expect, type Page, test } from '@playwright/test';
 import { strFromU8, unzipSync } from 'fflate';
-import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { officeEditMenu, officeFrame } from '../helpers/office';
 import { m } from '../i18n';
 import { clickTextEnd } from './helpers';
@@ -865,8 +865,7 @@ async function typeDocxOffline(page: Page, text: string) {
 test('a DOCX deleted while open keeps its unsent edits under the deleted strip, and Discard ends them', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   await typeDocxOffline(page, ' Kept to copy.');
   await deleteItem(page, DOCX, 'doc', DOCX_NAME);
@@ -904,8 +903,7 @@ test('a DOCX deleted while open keeps its unsent edits under the deleted strip, 
 test('a DOCX deleted while open downloads its unsent edits from its strip and keeps them', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   await typeDocxOffline(page, ' Kept to copy.');
   await deleteItem(page, DOCX, 'doc', DOCX_NAME);
@@ -930,8 +928,7 @@ test('a DOCX deleted while open downloads its unsent edits from its strip and ke
 test("a deleted DOCX's Download saves its unsent edits as a .docx", async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   await typeDocxOffline(page, ' Typed before the delete.');
   await deleteItem(page, DOCX, 'doc', DOCX_NAME);
@@ -961,8 +958,7 @@ test("a deleted DOCX's Download saves its unsent edits as a .docx", async ({
 test('a DOCX deleted while closed and reopened in edit mode keeps its unsent edits for the offer', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   await typeDocxOffline(page, ' Typed before the reopen.');
   await navigate(page, WORKSPACE);
@@ -987,8 +983,7 @@ test('a DOCX deleted while closed and reopened in edit mode keeps its unsent edi
 test('a DOCX whose save fails not found after its delete keeps its unsent edits under the deleted strip', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   await page.goto(`${WORKSPACE}?file=${DOCX}&mode=edit`);
   await expect(officeEditMenu(page)).toBeVisible({ timeout: 120_000 });

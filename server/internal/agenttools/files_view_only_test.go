@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // edit_office_document is not offered while files are view-only (Q854 A):
 // it is neither a definition nor in the generated contract; the reading
 // tools, edit_document (materials) and the deck tools stay.
 func TestEditOfficeDocumentIsNotOffered(t *testing.T) {
+	testdb.SkipWhileFilesEditable(t)
 	if Lookup("edit_office_document") != nil {
 		t.Fatal("edit_office_document is defined")
 	}

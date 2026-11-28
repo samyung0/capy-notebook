@@ -1,6 +1,6 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { OFFICE_PROTOCOL_VERSION } from '../../src/features/files/officeProtocol';
-import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import {
   officeEditMenu,
   officeMenuBar,
@@ -12,8 +12,7 @@ import {
 import { m } from '../i18n';
 
 // Every test here edits a file.
-// biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-test.skip(true, FILES_VIEW_ONLY);
+skipWhileFilesViewOnly();
 
 const frameOf = (page: Page) =>
   page.frameLocator('iframe[src*="office-runtime"]');

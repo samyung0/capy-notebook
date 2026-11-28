@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { officeEditMenu, officeMenu } from '../helpers/office';
 import { m } from '../i18n';
 
@@ -12,8 +12,7 @@ test('a DOCX font slice failing offline is a notice, fails Print and the capture
   context,
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   // An outline chunk of a sliced CJK face, from any realm (page or worker).
   const chunk = /fonts-cjk\/assets\/[\w-]+\/c\d+\.zst/;
@@ -109,8 +108,7 @@ test('a DOCX CJK face failing to open while editing is the notice and opens back
   context,
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   const failed = new Set<string>();
   const loaded = new Set<string>();
@@ -161,8 +159,7 @@ for (const mode of ['view', 'edit'] as const) {
     context,
     page,
   }) => {
-    // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-    test.skip(mode === 'edit', FILES_VIEW_ONLY);
+    if (mode === 'edit') skipWhileFilesViewOnly();
     test.setTimeout(180_000);
     await context.route(face, (route) => route.abort());
     await page.goto(
@@ -187,8 +184,7 @@ test('a DOCX CJK face failing as the file opens in edit keeps the error after th
   context,
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(180_000);
   await context.route(face, (route) => route.abort());
   await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');

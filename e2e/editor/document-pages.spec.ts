@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
@@ -34,8 +34,7 @@ const openItem = (page: Page, name: string) =>
     .dblclick();
 
 test('Files page rows open the shared document page', async ({ page }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   await page.goto('/files');
   await openItem(page, 'Study journal 001');
   await expect(page).toHaveURL(/\/materials\/mat_pagination_1$/);
@@ -412,8 +411,7 @@ test('a chat citation finds its note block by id after the text changed', async 
 });
 
 test('workspace file mode survives reload', async ({ page }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   await page.goto('/workspaces/ws_bio?file=f_2&mode=edit');
   const mode = page
     .getByTestId('content-header')
@@ -543,8 +541,7 @@ test('a chat citation opens the PDF, scrolls its box to the middle, then flashes
 test("workspace links remember each file's mode independently", async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(90_000);
   await page.goto('/workspaces/ws_bio');
   await showPanelView(page, m.workspace_tab_files());
@@ -607,8 +604,7 @@ test("workspace links remember each file's mode independently", async ({
 test('Files page and recent links use saved modes without reloading the app', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(90_000);
   await page.addInitScript(() =>
     localStorage.setItem('capy.document.mode.file.f_2', 'edit')

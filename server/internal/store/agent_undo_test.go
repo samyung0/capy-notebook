@@ -139,7 +139,7 @@ func undoTestPayloadAt(t *testing.T, s *Store, step AgentOperation, update strin
 // Redo's receipt is an edit again. An Undo the service builds no Redo for
 // (too large, Epo 2026-10-21) has a receipt with no ref and no payload.
 func TestDocumentUndoSendsItsPayloadAndReturnsTheRedo(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "undo_payload")
@@ -211,7 +211,7 @@ func TestDocumentUndoSendsItsPayloadAndReturnsTheRedo(t *testing.T) {
 // past its 24 h (r1 L4, Q385), and one whose actor was changed or dropped
 // (Q466) are refused before the collaboration service is asked. Fails if the signature or lifetime check goes.
 func TestAnUndoPayloadMustCarryTheServersSignature(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "undo_signed")
@@ -261,7 +261,7 @@ func TestAnUndoPayloadMustCarryTheServersSignature(t *testing.T) {
 // already (an insert-only edit's payload has nothing left to do: r1 L9).
 // Fails if Go writes the receipt only once an answer arrives.
 func TestALostUndoAnswerEndsWithOneReceipt(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "undo_lost")
@@ -302,7 +302,7 @@ func TestALostUndoAnswerEndsWithOneReceipt(t *testing.T) {
 // an edit's Undo, no agent_operations row holds the payload's update, the
 // Redo payload's or a signature. Fails if a receipt stores its payload.
 func TestUndoPayloadsAreNeverStored(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "undo_unstored")
@@ -333,7 +333,7 @@ func TestUndoPayloadsAreNeverStored(t *testing.T) {
 // payload (Epo 2026-10-21), a created file's for its day (Q162, Epo
 // 2026-10-22). Fails if a created file loses its Undo on a reload.
 func TestChatHistoryKeepsUndoOnEverySteps(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "undo_history")
@@ -445,7 +445,7 @@ func TestCreatedMaterialUndoTrashesAndRedoRestores(t *testing.T) {
 // conversation) and a Redo naming a step that is not stored. The save lands
 // with the step it can write. Fails if one bad step refuses the save.
 func TestARoomSavePassesOverAStepItCannotWrite(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "room_skip")
@@ -490,7 +490,7 @@ func TestARoomSavePassesOverAStepItCannotWrite(t *testing.T) {
 // Fails if the save drops its steps, stores a step twice or refuses the
 // save, or if a replay is not marked.
 func TestARoomSaveWritesItsAgentStepsWithItsCheckpoint(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "room_steps")

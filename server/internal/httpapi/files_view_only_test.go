@@ -13,6 +13,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/auth"
 	"github.com/samyung0/capy-notebook/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // doCollaboration calls a collaboration-service route with its secret.
@@ -39,6 +40,7 @@ func doCollaboration(t *testing.T, h http.Handler, method, path string, body any
 // token, the room service's join, save and processing request, Process,
 // Blank DOCX/XLSX and a thumbnail capture.
 func TestFilesViewOnlyRefusesEveryFileEditRoute(t *testing.T) {
+	testdb.SkipWhileFilesEditable(t)
 	fx, authority := openBlankFiles(t)
 	docx, md := officeSource(t, fx, "essay.docx"), officeSource(t, fx, "notes.md")
 	for _, name := range []string{"essay.docx", "notes.md"} {
@@ -120,6 +122,7 @@ func TestFilesViewOnlyRefusesEveryFileEditRoute(t *testing.T) {
 // Access lines say not editable, and its Undo of an earlier file edit is refused; a note still
 // takes its edit.
 func TestChatEditsNotesButNoFile(t *testing.T) {
+	testdb.SkipWhileFilesEditable(t)
 	h, st := openInternalHTTP(t)
 	edits := 0
 	authority := httptest.NewServer(withConverter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

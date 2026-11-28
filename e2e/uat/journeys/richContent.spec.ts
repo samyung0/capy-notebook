@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { FILES_VIEW_ONLY } from '../../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../../helpers/filesViewOnly';
 import {
   fixture,
   invite,
@@ -40,8 +40,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
   test(`rich-content ${format}: store-only, two editors, charge and preserved content, export-only publication under an open editor`, async ({
     run,
   }) => {
-    // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-    test.skip(true, FILES_VIEW_ONLY);
+    skipWhileFilesViewOnly();
     test.setTimeout(1_200_000);
     const workspaceId = await workspace(run, `rich-${format}`);
     const marker = `UAT_${randomUUID().replaceAll('-', '')}`;

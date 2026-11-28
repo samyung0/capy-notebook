@@ -27,6 +27,9 @@ vi.mock('./SheetView', () => ({}));
 
 import { prefetchOfficeFile } from './prefetchOfficeFile';
 
+// The mocks' /me, which mirrors Go's switch (src/mocks/db.ts).
+const { FILES_EDITABLE, accountStatus, user } = await import('@/mocks/db');
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => {
@@ -77,9 +80,10 @@ describe("an Office file's open from its route", () => {
     );
   });
 
-  it('starts View alone, no edit session or room token, while /me says files are view-only (Q853 A)', async () => {
-    // The mocks' /me, which mirrors Go's switch (src/mocks/db.ts).
-    const { accountStatus, user } = await import('@/mocks/db');
+  it('starts View alone, no edit session or room token, while /me says files are view-only (Q853 A)', async ({
+    skip,
+  }) => {
+    skip(FILES_EDITABLE, 'files are editable');
     rows.set('me', async () => ({ ...user, account: accountStatus }));
     rows.set('file:f_deck', async () => DECK);
     load('f_deck');

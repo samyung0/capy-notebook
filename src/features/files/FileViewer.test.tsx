@@ -133,10 +133,14 @@ it("opens a workspace file's editor for a content editor", async () => {
   expect(await open('notes.md', 'ws_1')).toEqual(['text', true]);
 });
 
-it('opens every Office and text file in View while /me says files are view-only (Q853 A)', async () => {
-  // The mocks' /me, which mirrors Go's switch (src/mocks/db.ts).
-  const { user } = await import('@/mocks/db');
-  views.filesEditable = user.filesEditable;
+// The mocks' /me, which mirrors Go's switch (src/mocks/db.ts).
+const { FILES_EDITABLE } = await import('@/mocks/db');
+
+it('opens every Office and text file in View while /me says files are view-only (Q853 A)', async ({
+  skip,
+}) => {
+  skip(FILES_EDITABLE, 'files are editable');
+  views.filesEditable = FILES_EDITABLE;
   expect(await open('notes.docx', 'ws_1')).toEqual(['docx', false]);
   expect(await open('notes.md', 'ws_1')).toEqual(['text', false]);
   expect(await open('notes.docx', '')).toEqual(['docx', false]);

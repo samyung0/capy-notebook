@@ -2,9 +2,10 @@ package store
 
 import (
 	"context"
-	"github.com/samyung0/capy-notebook/server/internal/testdb"
 	"testing"
 	"time"
+
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // A browser capture lands on a live file only: a file trashed after the
@@ -103,7 +104,7 @@ func TestThumbnailCaptureRaisesOneTreeEvent(t *testing.T) {
 // upload), once any change is saved. An open session without a saved change
 // is not.
 func TestThumbnailStaleFollowsTheLastSavedChange(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "stale_owner")

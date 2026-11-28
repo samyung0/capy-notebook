@@ -1,11 +1,13 @@
 import { expect, type Page, test } from '@playwright/test';
+import { skipWhileFilesEditable } from '../helpers/filesViewOnly';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
 
 // Files are view-only (Q852 A, Q853 A): /me says so (the mocks mirror Go's
 // switch, src/mocks/db.ts FILES_EDITABLE), so an Office or text file opens in
 // View with no Edit, no edit session and no room token, and the Create tab
-// offers no Blank DOCX or XLSX; a note keeps its room and saves.
+// offers no Blank DOCX or XLSX; a note keeps its room and saves. The first
+// two run only while the switch is off.
 
 /** Every request path (and query) the page makes. */
 function watchRequests(page: Page) {
@@ -29,6 +31,7 @@ const editRequests = (paths: string[], fileId: string) =>
 test('an Office file and a text file open in View with no Edit, edit session or room token', async ({
   page,
 }) => {
+  skipWhileFilesEditable();
   test.setTimeout(120_000);
   const paths = watchRequests(page);
   await page.goto('/workspaces/ws_bio?file=bio-office-docx');
@@ -58,6 +61,7 @@ test('an Office file and a text file open in View with no Edit, edit session or 
 });
 
 test('the Create tab offers no Blank DOCX or Blank XLSX', async ({ page }) => {
+  skipWhileFilesEditable();
   await page.goto('/workspaces/ws_bio');
   await expect(
     page.getByRole('heading', { exact: true, name: 'Biology 101' })

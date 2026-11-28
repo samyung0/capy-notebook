@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { expect, type Locator, type Page, test } from '@playwright/test';
-import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { openQuestionCard } from '../helpers/quizEditor';
 import { m } from '../i18n';
 import { clickTextEnd } from './helpers';
@@ -256,8 +256,7 @@ test('a quiz’s Retry refused for good shows the refused strip with the held ed
 test('a text file’s Retry refused for good shows the refused strip with the held edit', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   const input = await openText(page);
   const { retry, unsynced } = await typeHeld(
@@ -296,8 +295,7 @@ test('a quiz’s Retry refused for lost access shows the access-lost strip', asy
 test('a text file’s Retry refused for lost access shows the access-lost strip', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   const input = await openText(page);
   const { retry, unsynced } = await typeHeld(
@@ -353,8 +351,7 @@ test('a quiz’s refused strip downloads the held edit, and Discard ends it', as
 test('a text file’s refused strip downloads the held edit, and Discard ends it', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   const input = await openText(page);
   const { retry } = await typeHeld(

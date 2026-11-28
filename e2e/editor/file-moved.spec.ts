@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
-import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { m } from '../i18n';
 
 // Q454, Q455, Q462 and Q467 (Epo 2026-10-27, 2026-10-28): a Move tells an
@@ -99,8 +99,7 @@ async function visit(page: Page, url: string) {
 test('a Move heard while typing follows the file at once, with no dialog and no reload', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   const dialogs: string[] = [];
   page.on('dialog', (dialog) => {
@@ -185,8 +184,7 @@ test('a bookmark naming the old workspace opens the file in its own, replacing h
 test('a bookmark to a file that is standalone now opens its own page, where its owner edits it', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   await page.goto('/workspaces/ws_scenarios');
   await expect(page.getByText('User scenarios').first()).toBeVisible({
@@ -205,8 +203,7 @@ test('a bookmark to a file that is standalone now opens its own page, where its 
 test('a Move heard into a workspace this user cannot read closes the file where it is', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   await openFile(
     page,
@@ -220,8 +217,7 @@ test('a Move heard into a workspace this user cannot read closes the file where 
 test('nothing remembers a heard Move: the file unreadable later shows the file error', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   await openFile(page, `/workspaces/ws_scenarios?file=${FILE}&mode=edit`);
   await announceMove(page, MOVED_TO);

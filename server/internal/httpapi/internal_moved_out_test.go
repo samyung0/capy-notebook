@@ -20,7 +20,7 @@ import (
 // plain not found, so the answer never confirms it exists elsewhere. Fails
 // if the refusal ignores the receipt (always or never `moved_out`).
 func TestAFileEditedHereThenMovedOutAnswersMovedOut(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	h, st := openInternalHTTP(t)
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())

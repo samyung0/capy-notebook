@@ -135,7 +135,7 @@ func TestIngestJobPayloadStaysOnItsTransaction(t *testing.T) {
 // A writer's recheck reads; it must not queue behind a workspace write (a
 // checkpoint or a note save holding the workspace and the account).
 func TestSourceAccessCheckTakesNoLocks(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

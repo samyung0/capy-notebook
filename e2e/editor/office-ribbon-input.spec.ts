@@ -1,5 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
-import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import {
   officeEditMenu,
   officeFrame,
@@ -11,8 +11,7 @@ import {
 import { m } from '../i18n';
 
 // Every test here edits a file.
-// biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-test.skip(true, FILES_VIEW_ONLY);
+skipWhileFilesViewOnly();
 
 const open = async (page: Page, format: 'docx' | 'xlsx' | 'pptx') => {
   // Wide enough that every Home group is in the row, none in More.

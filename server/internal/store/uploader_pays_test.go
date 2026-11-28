@@ -1163,7 +1163,7 @@ func TestCoEditorsDoNotSeeAPayersSuspension(t *testing.T) {
 // refused before it waits on the file row. Each case fails on the old
 // owner-only check.
 func TestSourceEditsFollowTheFilesPayer(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	member := newBlobTestUser(t, s, "u_b7_member")

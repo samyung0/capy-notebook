@@ -31,7 +31,7 @@ func openBlankFiles(t *testing.T) (deckFileFixture, *officeAuthority) {
 // pays for and that is not processed, in the topic it named, under the
 // trimmed name with one extension.
 func TestCreateBlankFileStoresTheStarter(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	fx, authority := openBlankFiles(t)
 
 	rec := doAsUser(t, fx.h, http.MethodPost, "/api/workspaces/"+fx.ws+"/files/blank", fx.editor,
@@ -79,7 +79,7 @@ func TestCreateBlankFileRefusesAViewer(t *testing.T) {
 // An editor at its storage limit is refused before the engine builds
 // anything, so nothing is stored.
 func TestCreateBlankFileTakesTheStorageGate(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	fx, authority := openBlankFiles(t)
 	if _, err := fx.st.Pool().Exec(context.Background(),
 		`INSERT INTO user_storage (user_id, used_bytes) VALUES ($1, 1099511627776)
@@ -99,7 +99,7 @@ func TestCreateBlankFileTakesTheStorageGate(t *testing.T) {
 // standalone file the caller pays for, in no workspace and no topic; a topic
 // is refused before anything is built.
 func TestCreateStandaloneBlankFile(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	fx, authority := openBlankFiles(t)
 
 	rec := doAsUser(t, fx.h, http.MethodPost, "/api/files/blank", fx.editor,

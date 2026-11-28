@@ -155,7 +155,7 @@ func TestCloneIndexCopyFallsBackOrEnds(t *testing.T) {
 // A clone's edits publish once its index has copied (Epo 2026-10-28, D4):
 // a refresh request waits while the copy job is queued, then goes through.
 func TestCloneEditsPublishOnceItsIndexCopied(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_copy_publish")

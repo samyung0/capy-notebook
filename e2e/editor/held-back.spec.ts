@@ -1,6 +1,6 @@
 import { expect, type Page, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
-import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { officeEditMenu, saveOffice } from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
@@ -58,8 +58,7 @@ test('a note takes no edits while the tab holds back its messages', async ({
 test('an XLSX grid is busy and takes no Delete while the tab holds back', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
@@ -99,8 +98,7 @@ test('an XLSX grid is busy and takes no Delete while the tab holds back', async 
 test('an XLSX save during a hold waits for it, then commits the open cell and saves', async ({
   page,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');

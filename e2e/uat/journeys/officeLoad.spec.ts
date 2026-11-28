@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from '@playwright/test';
-import { FILES_VIEW_ONLY } from '../../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../../helpers/filesViewOnly';
 import { runDirectory } from './evidence';
 import {
   fileRow,
@@ -720,8 +720,7 @@ function writeSummary(run: UatRun, directory: string, results: OpenResult[]) {
 test('Office open times: DOCX, XLSX and PPTX, small and large, cold and warm', async ({
   run,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
+  skipWhileFilesViewOnly();
   test.setTimeout(80 * 60_000);
   const evidence = path.join(runDirectory(run.id), 'evidence');
   mkdirSync(evidence, { mode: 0o700, recursive: true });

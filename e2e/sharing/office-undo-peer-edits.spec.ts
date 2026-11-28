@@ -9,12 +9,11 @@ import type {
 import { expect, test } from '../fixtures/actors';
 import { seed } from '../fixtures/seed';
 import { uploadSourceFile } from '../helpers/api';
-import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { officeEditMenu, officeTab } from '../helpers/office';
 
 // Every test here edits a file.
-// biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-test.skip(true, FILES_VIEW_ONLY);
+skipWhileFilesViewOnly();
 
 /*
  * Undo in an Office room, in two browsers on the real stack (Q549, Q624): one

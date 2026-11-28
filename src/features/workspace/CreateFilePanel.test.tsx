@@ -63,7 +63,12 @@ async function titles(panel: ReactNode) {
   return [...shown.titles];
 }
 
-it('offers no Blank DOCX or Blank XLSX while /me says files are view-only (Q853 A)', async () => {
+const { FILES_EDITABLE } = await import('@/mocks/db');
+
+it('offers no Blank DOCX or Blank XLSX while /me says files are view-only (Q853 A)', async ({
+  skip,
+}) => {
+  skip(FILES_EDITABLE, 'files are editable');
   const blanks = [m.source_create_blank_docx(), m.source_create_blank_xlsx()];
   for (const panel of [
     <CreateFilePanel key="ws" onCreated={() => {}} workspaceId="ws_1" />,

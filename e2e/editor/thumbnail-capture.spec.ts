@@ -1,11 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { officeEditMenu } from '../helpers/office';
 import { m } from '../i18n';
 
 // Every test here edits a file.
-// biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-test.skip(true, FILES_VIEW_ONLY);
+skipWhileFilesViewOnly();
 
 // openwiki/thumbnails.md, phase 2a: an edit is drawn after 5 s idle, and the
 // page hiding uploads that capture, once; so does leaving the editor for View.

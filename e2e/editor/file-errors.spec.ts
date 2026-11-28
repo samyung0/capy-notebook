@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, type Page, test } from '@playwright/test';
 import { expectErrorSurface } from '../helpers/errors';
-import { FILES_VIEW_ONLY } from '../helpers/filesViewOnly';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { showPanelView } from '../helpers/panelView';
 import { openWorkspaceSettings } from '../helpers/workspace';
 import { m } from '../i18n';
@@ -331,8 +331,7 @@ for (const mode of ['view', 'edit'] as const) {
   test(`an XLSX face that fails to load in ${mode} reaches Sentry`, async ({
     page,
   }) => {
-    // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-    test.skip(mode === 'edit', FILES_VIEW_ONLY);
+    if (mode === 'edit') skipWhileFilesViewOnly();
     // The faces fail once the test's Sentry client listens: e2e has no DSN.
     let listen: () => void;
     const listening = new Promise<void>((resolve) => {
