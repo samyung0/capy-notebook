@@ -490,3 +490,4 @@
 - Developer Epo decided (2026-11-27, Q849 A, "all A", from C:/WEB/capy-harness/2026-11-21-gap-round/print-type-496/) a DOCX export keeps its pictures' ids and names stable across exports (`wp:docPr` id and name, `pic:cNvPr` name), as Word does on save, instead of randomising them on every export.
 - Developer Epo decided (2026-11-28, Q867 B) DOCX View keeps drawing no header watermarks (its layout request has no watermark region), unlike Edit.
 - Developer Epo decided (2026-11-28, Q868 A, "recommended") a citation that changes in an already open, packed DOCX View decodes and searches pages in idle slices and highlights the quote when the search ends (about 1-2 s at 481 pages), the page staying responsive; with no citation, nothing is decoded.
+- Developer Epo decided (2026-11-28, Q872 A, "recommended") a DOCX View whose page-packing code (fflate) fails to load keeps its pages unpacked as step 1 did, the failure caught with no unhandled rejection.
