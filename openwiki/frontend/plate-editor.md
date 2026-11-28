@@ -3062,6 +3062,13 @@ design, option d), and the nudge's release file on 2026-10-17.
   source tabs from before it (protocol 47) reload; `MIN_MATERIAL` stays 46
   and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names "client
   protocol 47 -> 48, source 47 -> 48".
+  The packed View pages pin (pin dfbc77711: DOCX View's worker keeps none
+  of the pages it hands over, and the page keeps each page deflated once
+  every page is in, decoded when it is painted, printed, copied or read,
+  Q864 A steps 1 and 2, Q870 A) raised `CLIENT_PROTOCOL` to 49 and
+  `MIN_SOURCE` to 49, so source tabs from before it (protocol 48) reload;
+  `MIN_MATERIAL` stays 46 and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy
+  request names "client protocol 48 -> 49, source 48 -> 49".
 
 #### When to bump
 
