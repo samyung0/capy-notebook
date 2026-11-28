@@ -148,10 +148,12 @@ test('account chat: search, list, read and write across workspaces and no worksp
   assert(summary?.includes(`file_id=${ownText}`), summary);
   assert(summary.includes(`file_id=${memberText}`), summary);
   assert(summary.includes(`file_id=${loose}, outside workspaces`), summary);
-  // Edit rights: the viewer's file is view only, the owner's text editable.
+  // Edit rights: the viewer's file is view only, the owner's text editable
+  // only while files are editable (Q853 A).
+  const ownRights = FILES_EDITABLE ? 'view and edit' : 'view only';
   assert(
     summary.includes(`workspace_id=${shared}, view only`) &&
-      summary.includes(`workspace_id=${own}, view and edit`),
+      summary.includes(`workspace_id=${own}, ${ownRights}`),
     summary
   );
   assert(loosely?.startsWith('You did not name a workspace_id'), loosely);
