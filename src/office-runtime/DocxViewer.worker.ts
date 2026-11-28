@@ -1,6 +1,5 @@
 /// <reference lib="webworker" />
 
-import type { DisplayPage } from '@betteroffice/docx/layout/render';
 import {
   configureDefaultFonts,
   type DocxPageSize,
@@ -10,6 +9,7 @@ import {
   openDocumentViewer,
 } from '@betteroffice/docx/viewer';
 import { epochNow } from '@/lib/officeMarks';
+import { type SentDocxPage, sentDocxPage } from './docxPages';
 import {
   keepOfficeFontBytes,
   type OfficeFace,
@@ -44,7 +44,7 @@ export type DocxViewerWorkerResponse =
       faces: OfficeFace[];
       /** In order, each at its `pageIndex`: a page sent again replaces the
        * one before. */
-      pages: DisplayPage[];
+      pages: SentDocxPage[];
       /** The widest page of the whole document, known before its pages are. */
       width: number;
       /** Sliced faces whose outlines (`bytes`) or painted families grew. */
@@ -133,16 +133,21 @@ self.onmessage = (event: MessageEvent<Request>) => {
         }
       );
       marks['worker:first-pages'] ??= epochNow();
+      const sent = pages.map(sentDocxPage);
       self.postMessage(
         {
           faces,
-          pages,
+          pages: sent,
           sliced: changed,
           type: 'pages',
           width,
         } satisfies DocxViewerWorkerResponse,
-        // Outlines come in a new buffer each time.
-        changed.flatMap(({ bytes }) => (bytes ? [bytes] : []))
+        // Outlines come in a new buffer each time; the pages' JSON goes over
+        // without a copy.
+        [
+          ...changed.flatMap(({ bytes }) => (bytes ? [bytes] : [])),
+          ...sent.map(({ json }) => json.buffer),
+        ]
       );
     },
     whole,

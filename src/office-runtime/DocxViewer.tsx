@@ -1,7 +1,5 @@
 import {
   createCanvasImageResolver,
-  type DisplayList,
-  type DisplayPage,
   rasterizeDisplayPage,
 } from '@betteroffice/docx/layout/render';
 import {
@@ -18,12 +16,19 @@ import type {
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
 import { officeMark, officeMarkAt } from '@/lib/officeMarks';
-import { CITATION_FILL, docxCitation } from './citations';
+import { whenIdle } from '@/lib/whenIdle';
+import {
+  CITATION_FILL,
+  type DocxCitationPage,
+  docxCitation,
+  docxCitationPage,
+} from './citations';
 import type {
   DocxViewerWorkerResponse,
   DocxViewport,
 } from './DocxViewer.worker';
 import { docxT, downloadMenu, printItem } from './docxMenus';
+import { DocxPage } from './docxPages';
 import { textLayerSelection, topParagraph } from './docxPlace';
 import { takeDocxViewerWorker } from './docxViewerWorker';
 import {
@@ -48,11 +53,17 @@ const READING_PADDING = 16;
 const READING_BELOW_PX = 768;
 /** Quiet time after a resize before the reading layout follows it. */
 const RESIZE_SETTLE_MS = 200;
+/** Pages deflate at idle time in slices this long, and at the latest this
+ * long after the last slice. */
+const PACK_SLICE_MS = 8;
+const PACK_WAIT_MS = 250;
 
 type Reading = { padding: number; width: number };
 
+type Pages = { pages: DocxPage[] };
+
 type Layout = {
-  displayList: DisplayList;
+  displayList: Pages;
   faces: OfficeFace[];
   marks: Record<string, number>;
   sliced: SlicedOfficeFace[];
@@ -62,7 +73,7 @@ type Layout = {
  * batch paints with that none before did. */
 type Arrival = {
   faces: OfficeFace[];
-  pages: DisplayPage[];
+  pages: DocxPage[];
   sliced: SlicedOfficeFace[];
   width: number;
 };
@@ -72,7 +83,8 @@ type Arrival = {
  * with `whole` every page before any (Q823 A). Each batch of pages goes to
  * `onPages` as it comes; the promise resolves with the whole layout. The
  * worker goes as soon as it is done, so the parser and engine memory are
- * released during ordinary reading. */
+ * released during ordinary reading. Each page comes as its JSON, deflated at
+ * idle time until the layout is cancelled (Q864 A). */
 function layOut(
   bytes: Uint8Array,
   reading: Reading | null,
@@ -93,17 +105,32 @@ function layOut(
       stopped = true;
       worker.terminate();
     };
+    const packing: DocxPage[] = [];
+    let cancelled = false;
+    const pack = () => {
+      const end = performance.now() + PACK_SLICE_MS;
+      while (packing.length > 0 && performance.now() < end)
+        packing.shift()!.pack();
+      if (packing.length > 0 && !cancelled) whenIdle(pack, PACK_WAIT_MS);
+    };
     // A print waiting for the whole layout fails rather than waits on.
     cancel = () => {
+      cancelled = true;
+      packing.length = 0;
       stop();
       reject(new Error('The DOCX layout was cancelled'));
     };
-    const pages: DisplayPage[] = [];
+    const pages: DocxPage[] = [];
     const faces: OfficeFace[] = [];
     const sliced = new Map<string, SlicedOfficeFace>();
     worker.onmessage = ({ data }: MessageEvent<DocxViewerWorkerResponse>) => {
       if (data.type === 'pages') {
-        for (const page of data.pages) pages[page.pageIndex] = page;
+        if (packing.length === 0) whenIdle(pack, PACK_WAIT_MS);
+        for (const sent of data.pages) {
+          const page = new DocxPage(sent);
+          pages[page.pageIndex] = page;
+          packing.push(page);
+        }
         faces.push(...data.faces);
         const changed = data.sliced.map(({ bytes, families, id }) => {
           // Only grown outlines come with bytes.
@@ -205,10 +232,10 @@ export function DocxViewer({
   // function per layout).
   const [shown, setShown] = useState<{
     complete: boolean;
-    displayList: DisplayList;
+    displayList: Pages;
     id: number;
     release: () => void;
-    whole: Promise<DisplayList>;
+    whole: Promise<Pages>;
     width: number;
   } | null>(null);
   const displayList = shown?.displayList ?? null;
@@ -232,6 +259,9 @@ export function DocxViewer({
   useEffect(() => {
     citedRef.current = citation;
   }, [citation]);
+  // A cited open reads each page for its quote as it comes, while the worker
+  // still builds, so the search decodes no page at the end (Q864 A).
+  const quotedRef = useRef(new Map<DocxPage, DocxCitationPage>());
   // View › Page layout, one choice per person for every DOCX file.
   const [pageLayout, setPageLayout] = useState(() =>
     readViewToggle('docxPageLayout')
@@ -316,18 +346,22 @@ export function DocxViewer({
       let printed = await whole;
       let release = () => {};
       if (reading) {
-        const layout = await layOut(bytes, null, frameViewport(1), true)
-          .promise;
+        const job = layOut(bytes, null, frameViewport(1), true);
+        const layout = await job.promise;
+        // Its pages go with the print: none is deflated.
+        job.cancel();
         await registerOfficeFaces(layout.faces);
         release = await registerSlicedFaces(layout.sliced);
         printed = layout.displayList;
       }
-      // One page drawn, encoded and released at a time, as pptxRender does;
-      // a page that cannot be drawn fails the print.
+      // One page decoded, drawn, encoded and released at a time, as
+      // pptxRender does; a page that cannot be drawn fails the print.
       const pages: OfficeRenderedPage[] = [];
       try {
         for (const page of printed.pages) {
-          const canvas = await rasterizeDisplayPage(page, { resolveImage });
+          const canvas = await rasterizeDisplayPage(page.decode(), {
+            resolveImage,
+          });
           try {
             pages.push(await canvasPage(canvas, page.width, page.height));
           } finally {
@@ -373,6 +407,10 @@ export function DocxViewer({
       // A cited open waits for every page, so it lays them all out first.
       citedRef.current !== null,
       ({ faces, pages, sliced, width }) => {
+        if (citedRef.current)
+          for (const page of pages)
+            if (!quotedRef.current.has(page))
+              quotedRef.current.set(page, docxCitationPage(page.decode()));
         arrived = arrived.then(async () => {
           // Paint with the faces the worker measured, under their Office
           // names, from the bytes it fetched.
@@ -434,7 +472,7 @@ export function DocxViewer({
 
   // Where the reader is, for the editor after View (Q608 A): the scroll
   // offset, the body paragraph at the top and the text layer's selection.
-  const pagesRef = useRef<readonly DisplayPage[]>([]);
+  const pagesRef = useRef<readonly DocxPage[]>([]);
   pagesRef.current = displayList?.pages ?? [];
   useEffect(() => {
     onPositioner({
@@ -490,7 +528,14 @@ export function DocxViewer({
   useLayoutEffect(() => {
     const viewer = hostRef.current;
     if (!citedList || !viewer) return;
-    const match = docxCitation(citedList, citation);
+    const quoted = quotedRef.current;
+    const match = docxCitation(
+      citedList.pages.map(
+        (page) => quoted.get(page) ?? docxCitationPage(page.decode())
+      ),
+      citation
+    );
+    quoted.clear();
     const overlays: HTMLDivElement[] = [];
     for (const rect of match?.rects ?? []) {
       const canvas = viewer.querySelector<HTMLCanvasElement>(

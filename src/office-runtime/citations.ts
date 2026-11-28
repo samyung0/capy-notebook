@@ -1,5 +1,5 @@
 import {
-  type DisplayList,
+  type DisplayPage,
   glyphRunRect,
   textRunRect,
 } from '@betteroffice/docx/layout/render';
@@ -66,53 +66,66 @@ export function insidePage(
   );
 }
 
+/** A page's text and highlight rects by paragraph (paraId, else block), in
+ * paint order: a page read once as it comes (Q864 A keeps pages compact). */
+export type DocxCitationPage = Map<
+  string,
+  { text: string; safe: boolean; rects: Array<CitationRect & { page: number }> }
+>;
+
+export function docxCitationPage(page: DisplayPage): DocxCitationPage {
+  const paragraphs: DocxCitationPage = new Map();
+  for (const item of page.primitives) {
+    if (item.kind !== 'text' && item.kind !== 'glyphRun') continue;
+    // A paragraph a page or column break splits paints as several blocks
+    // sharing its paraId, so a quote can span the break.
+    const identity = item.paraId ?? item.blockKey;
+    if (!identity) continue;
+    const key = String(identity);
+    const group = paragraphs.get(key) ?? { rects: [], safe: true, text: '' };
+    group.text += item.text;
+    const rect = item.kind === 'text' ? textRunRect(item) : glyphRunRect(item);
+    // Off-page or transformed text has unreliable overlay geometry.
+    if (
+      !item.hiddenObject &&
+      !item.hidden &&
+      !item.rotationDeg &&
+      !item.rtl &&
+      (!item.paintClip ||
+        ([item.paintClip.x, item.paintClip.w].every(Number.isFinite) &&
+          item.paintClip.w > 0 &&
+          rect.x >= item.paintClip.x &&
+          rect.x + rect.w <= item.paintClip.x + item.paintClip.w)) &&
+      !item.clipGroup?.clip &&
+      (item.clipGroup?.opacity === undefined || item.clipGroup.opacity === 1) &&
+      (item.opacity === undefined || item.opacity === 1) &&
+      insidePage(rect, page.width, page.height)
+    ) {
+      group.rects.push({ ...rect, page: page.pageIndex });
+    } else {
+      group.safe = false;
+    }
+    paragraphs.set(key, group);
+  }
+  return paragraphs;
+}
+
+/** The quote's paragraph among `pages` (each from `docxCitationPage`, in
+ * page order), when unique and safe to highlight. */
 export function docxCitation(
-  list: DisplayList,
+  pages: Iterable<DocxCitationPage>,
   citation: OfficeCitation | null
 ) {
   if (!citation) return null;
-  const paragraphs = new Map<
-    string,
-    {
-      text: string;
-      safe: boolean;
-      rects: Array<CitationRect & { page: number }>;
-    }
-  >();
-  for (const page of list.pages) {
-    for (const item of page.primitives) {
-      if (item.kind !== 'text' && item.kind !== 'glyphRun') continue;
-      // A paragraph a page or column break splits paints as several blocks
-      // sharing its paraId, so a quote can span the break.
-      const identity = item.paraId ?? item.blockKey;
-      if (!identity) continue;
-      const key = String(identity);
-      const group = paragraphs.get(key) ?? { rects: [], safe: true, text: '' };
-      group.text += item.text;
-      const rect =
-        item.kind === 'text' ? textRunRect(item) : glyphRunRect(item);
-      // Off-page or transformed text has unreliable overlay geometry.
-      if (
-        !item.hiddenObject &&
-        !item.hidden &&
-        !item.rotationDeg &&
-        !item.rtl &&
-        (!item.paintClip ||
-          ([item.paintClip.x, item.paintClip.w].every(Number.isFinite) &&
-            item.paintClip.w > 0 &&
-            rect.x >= item.paintClip.x &&
-            rect.x + rect.w <= item.paintClip.x + item.paintClip.w)) &&
-        !item.clipGroup?.clip &&
-        (item.clipGroup?.opacity === undefined ||
-          item.clipGroup.opacity === 1) &&
-        (item.opacity === undefined || item.opacity === 1) &&
-        insidePage(rect, page.width, page.height)
-      ) {
-        group.rects.push({ ...rect, page: page.pageIndex });
-      } else {
-        group.safe = false;
-      }
-      paragraphs.set(key, group);
+  const paragraphs: DocxCitationPage = new Map();
+  for (const page of pages) {
+    for (const [key, part] of page) {
+      const group = paragraphs.get(key);
+      if (group) {
+        group.text += part.text;
+        group.rects.push(...part.rects);
+        group.safe &&= part.safe;
+      } else paragraphs.set(key, { ...part, rects: [...part.rects] });
     }
   }
   const match = uniqueCitation([...paragraphs.values()], citation.quote);
