@@ -9,6 +9,7 @@ import {
   useFiles,
   useItems,
   useMaterials,
+  useMe,
   useWorkspace,
 } from '@/api/hooks';
 import type { Material } from '@/api/types';
@@ -287,13 +288,22 @@ function CreateGallery({
   sections: typeof SECTIONS;
   selected: CreateKind | null;
 }) {
+  // A blank Office file is made to be edited: none while /me says files are
+  // view-only (Q853 A).
+  const { data: me } = useMe({ errorBoundary: false });
+  const shown = me?.filesEditable
+    ? sections
+    : sections.flatMap((section) => {
+        const tiles = section.tiles.filter((tile) => !isBlankOffice(tile.kind));
+        return tiles.length ? [{ ...section, tiles }] : [];
+      });
   return (
     <>
       <SectionGallery
         className="min-h-0 flex-1"
         label={m.source_create_sections()}
         nav={false}
-        sections={sections.map((section) => ({
+        sections={shown.map((section) => ({
           content: (
             <div className="grid grid-cols-2 gap-1 sm:grid-cols-4">
               {section.tiles.map((tile) => (

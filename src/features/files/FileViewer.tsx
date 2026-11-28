@@ -248,7 +248,7 @@ function FileViewerContent({
     { errorBoundary: false }
   );
   const frozen = useAccountFrozen();
-  const { isPending: mePending } = useMe({ errorBoundary: false });
+  const { data: me, isPending: mePending } = useMe({ errorBoundary: false });
   // An Office file opens from its source session (sourceOpen.ts), never from
   // the published file's link.
   const office = file?.hasBytes ? officeFormatOf(file) : null;
@@ -310,15 +310,17 @@ function FileViewerContent({
   // A standalone file (no workspace) opens only for its owner, who edits it
   // unless their account is frozen (Epo 2026-10-27): its account state stands
   // in for a workspace's capabilities, so neither allows Edit before it loads.
+  // No file opens in Edit while /me says files are view-only (Q853 A).
   const standalone = !file.workspaceId;
   const canEdit =
     !trashed &&
+    !!me?.filesEditable &&
     (standalone
       ? !(mePending || frozen)
       : !!workspace?.capabilities.canEditContent);
   if (office) {
     // The capability picks View or Edit once, when the view mounts.
-    if (standalone ? mePending : workspacePending) return <FileLoading />;
+    if (mePending || (!standalone && workspacePending)) return <FileLoading />;
     return (
       <OfficeFileView
         canEdit={canEdit}

@@ -37,6 +37,7 @@ export function AppShell() {
   // account no longer has are deleted, and a deleted item's are offered (Q40).
   const { data: me } = useMe({ errorBoundary: false });
   const actorId = me?.id;
+  const filesEditable = !!me?.filesEditable;
   // The sweeps' code (drafts, device copies, Yjs) loads after sign-in once the
   // first page's chunks are in, and stays out of the app's entry (Q908). A
   // chunk that fails to load skips the sweep until the next boot.
@@ -48,14 +49,14 @@ export function AppShell() {
         import('@/features/collaboration/deletedEditsToast'),
       ])
         .then(([{ startDraftSweeps }, { offerDeletedEdits }]) =>
-          startDraftSweeps(actorId, api, offerDeletedEdits)
+          startDraftSweeps(actorId, api, offerDeletedEdits, filesEditable)
         )
         .catch(() => undefined);
       import('@/features/collaboration/deviceCopy')
         .then(({ startDeviceCopySweep }) => startDeviceCopySweep(actorId))
         .catch(() => undefined);
     });
-  }, [actorId]);
+  }, [actorId, filesEditable]);
   useFinishToasts();
   useKeyboardHeight();
   const themeDrawer = useThemeDrawer();

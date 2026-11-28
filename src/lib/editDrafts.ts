@@ -1688,6 +1688,9 @@ interface SweepOptions {
   cleanup?: boolean;
   /** False once the page signed in as someone else: the sweep stops. */
   current?: () => boolean;
+  /** False while /me says files are view-only (Q853 A): no file's room is
+   * asked for, and its drafts stay. */
+  files?: boolean;
   /** The load sweep met a deleted item's drafts (Epo 2026-11-20, Q40, Q41):
    * called once per item after the sweep, and the drafts stay. */
   onDeleted?: (drafts: DeletedDrafts) => void;
@@ -1998,7 +2001,12 @@ export async function sweepDrafts(
   api: SweepApi,
   options: SweepOptions = {}
 ): Promise<ReadonlySet<string> | null> {
-  const { cleanup = true, current = () => true, onDeleted } = options;
+  const {
+    cleanup = true,
+    current = () => true,
+    files = true,
+    onDeleted,
+  } = options;
   const locks = webLocks();
   const sweep = async () => {
     busySweep = false;
@@ -2015,6 +2023,7 @@ export async function sweepDrafts(
     };
     for (const [key, ids] of Object.entries(documents)) {
       if (!current() || outdated) return null;
+      if (!files && documentOf(key)?.kind === 'file') continue;
       const seen = ids.join(' ');
       if (!cleanup && settledRows.get(key) === seen) continue;
       // An editor or a page here holds it (also without Web Locks).
@@ -2063,9 +2072,11 @@ export async function sweepDrafts(
       clearTimeout(busyTimer);
       busyTimer = setTimeout(() => {
         if (!current() || outdated) return;
-        void sweepDrafts(actorId, api, { cleanup: false, current }).catch(
-          (error) => console.warn('Draft sweep failed:', error)
-        );
+        void sweepDrafts(actorId, api, {
+          cleanup: false,
+          current,
+          files,
+        }).catch((error) => console.warn('Draft sweep failed:', error));
       }, BUSY_RETRY_MS);
     }
     return kept;
@@ -2094,6 +2105,7 @@ export function loadSweepKept(
 let sweeping: {
   actorId: string;
   api: SweepApi;
+  files: boolean;
   onDeleted: (drafts: DeletedDrafts) => void;
 } | null = null;
 
@@ -2104,16 +2116,20 @@ let sweeping: {
  * of deleted items, Q40), when the browser comes back online and when the
  * tab becomes visible. A successful send is silent. The drafts worker starts
  * now, while the page is online: one that cannot load fails every request
- * for the page load.
+ * for the page load. `files` is /me's filesEditable (`SweepOptions`).
  */
 export function startDraftSweeps(
   actorId: string,
   api: SweepApi,
-  onDeleted: (drafts: DeletedDrafts) => void
+  onDeleted: (drafts: DeletedDrafts) => void,
+  files: boolean
 ) {
-  if (sweeping?.actorId === actorId) return;
+  if (sweeping?.actorId === actorId) {
+    sweeping.files = files;
+    return;
+  }
   const first = !sweeping;
-  sweeping = { actorId, api, onDeleted };
+  sweeping = { actorId, api, files, onDeleted };
   let loaded = (_kept: ReadonlySet<string> | null) => {};
   loadSweeps.set(
     actorId,
@@ -2136,6 +2152,7 @@ export function startDraftSweeps(
     const swept = sweepDrafts(target.actorId, target.api, {
       cleanup,
       current: () => sweeping === target,
+      files: target.files,
       onDeleted: target.onDeleted,
     }).catch((error) => {
       console.warn('Draft sweep failed:', error);
