@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 	"os"
 	"regexp"
 	"strings"
@@ -181,6 +182,7 @@ func TestGraceBlocksOnlyStorageGrowth(t *testing.T) {
 // content, comments, PDF marks and source edits are refused with the storage
 // code, while renaming, moving between topics and trashing go on.
 func TestViewOnlyAtTheStorageLimit(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	commentText := "hi"
@@ -364,6 +366,7 @@ func TestCollaborationFrozenSQLMatchesGo(t *testing.T) {
 // PDF marks and source edits are refused, while checkpoints of source edits
 // the room admitted before the freeze are saved.
 func TestFrozenEdges(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	frozenUser := newBlobTestUser(t, s, "frozen_edges")

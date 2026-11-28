@@ -148,6 +148,7 @@ func expectStatus(t *testing.T, rec *httptest.ResponseRecorder, want int, what s
 }
 
 func TestThumbnailCaptureStoresAnEditorsWebP(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	th := openThumbnailHarness(t)
 	th.file(t, "f_capture_deck", "ws_e2e_private", "deck.pptx", "slides")
 
@@ -217,6 +218,7 @@ func TestThumbnailCaptureRefusesAnotherWorkspace(t *testing.T) {
 // too wide or too tall. Chunks inside the RIFF size are checkThumbnailWebP's
 // unit tests (thumbnail_webp_test.go).
 func TestThumbnailCaptureRefusesBadBodies(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	th := openThumbnailHarness(t)
 	th.file(t, "f_capture_bodies", "ws_e2e_private", "deck.pptx", "slides")
 	png := append([]byte("\x89PNG\r\n\x1a\n"), webpCapture[8:]...)
@@ -250,6 +252,7 @@ func TestThumbnailCaptureRefusesBadBodies(t *testing.T) {
 // minimum interval per item). A second capture of a file within 60 s is
 // refused before the bucket; once the interval passed it lands.
 func TestThumbnailCaptureEnforcesTheInterval(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	th := openThumbnailHarness(t)
 	th.file(t, "f_capture_interval", "ws_e2e_private", "sheet.xlsx", "sheet")
 
@@ -275,6 +278,7 @@ func TestThumbnailCaptureEnforcesTheInterval(t *testing.T) {
 // A put that fails may still have written the object: its key goes to the
 // deletion outbox, and the file keeps no key (review T3 S6).
 func TestThumbnailCaptureQueuesAFailedPut(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	th := openThumbnailHarnessWith(t, failingPuts{blob.NewMemory()})
 	th.file(t, "f_capture_failed_put", "ws_e2e_private", "deck.pptx", "slides")
 
@@ -321,6 +325,7 @@ func (t *thumbnailSentryTransport) Close()                                {}
 // event, though its key is still queued for deletion. A put that fails while
 // the browser waits stays a reported 503.
 func TestThumbnailCaptureReportsOnlyLiveFailedPuts(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	previous := sentry.CurrentHub().Client()
 	defer sentry.CurrentHub().BindClient(previous)
 	transport := &thumbnailSentryTransport{}
@@ -369,6 +374,7 @@ func TestThumbnailCaptureReportsOnlyLiveFailedPuts(t *testing.T) {
 // Without a bucket a capture is refused before it claims the interval, so the
 // next capture once storage is back is not refused as too soon.
 func TestThumbnailCaptureWithoutABucketClaimsNothing(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	th := openThumbnailHarnessWith(t, nil)
 	th.file(t, "f_capture_no_bucket", "ws_e2e_private", "deck.pptx", "slides")
 

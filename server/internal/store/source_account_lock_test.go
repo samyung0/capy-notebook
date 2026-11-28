@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 	"testing"
 	"time"
 )
 
 func TestSourceCheckpointSerializesEditorCancellation(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

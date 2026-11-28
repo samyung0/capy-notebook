@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // runIndexCopies runs the copy worker until no index_copy job is due.
@@ -154,6 +155,7 @@ func TestCloneIndexCopyFallsBackOrEnds(t *testing.T) {
 // A clone's edits publish once its index has copied (Epo 2026-10-28, D4):
 // a refresh request waits while the copy job is queued, then goes through.
 func TestCloneEditsPublishOnceItsIndexCopied(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_copy_publish")

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 	"testing"
 	"time"
 )
@@ -102,6 +103,7 @@ func TestThumbnailCaptureRaisesOneTreeEvent(t *testing.T) {
 // upload), once any change is saved. An open session without a saved change
 // is not.
 func TestThumbnailStaleFollowsTheLastSavedChange(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "stale_owner")

@@ -15,6 +15,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 	"github.com/samyung0/capy-notebook/server/migrations"
 )
 
@@ -96,6 +97,7 @@ func sourceTestEdit(t *testing.T, s *Store, actor string, doc SourceSession, sta
 	return out
 }
 func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "source_owner")
@@ -146,6 +148,7 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 // another is refused (the collaboration server checks its originals against
 // the session's SHA).
 func TestUploadedSourceSHANamesTheFirstSessionAndBindsTheFirstSave(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "upload_sha_owner")
@@ -192,6 +195,7 @@ func TestUploadedSourceSHANamesTheFirstSessionAndBindsTheFirstSave(t *testing.T)
 // while the owner is suspended or pending deletion (Epo 2026-10-16). The
 // suspended owner's own session keeps the locked-account answer.
 func TestSourceAccessHidesTheOwnersAccountState(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	for _, state := range []string{"suspended", "deletion_pending"} {
@@ -222,6 +226,7 @@ func TestSourceAccessHidesTheOwnersAccountState(t *testing.T) {
 }
 
 func TestSourceRefreshManualIsOwnerOnly(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "source_refresh_owner_only")
@@ -427,6 +432,7 @@ func TestRetryFileProcessingRoutesPartialFiles(t *testing.T) {
 }
 
 func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	reg, err := models.New(ctx, s.Pool())
@@ -466,6 +472,7 @@ func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
 }
 
 func TestPendingOverflowNotifiesOwnerOnceUntilProcessed(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "source_overflow_notice")
@@ -510,6 +517,7 @@ func schedulerSource(t *testing.T, pattern string) string {
 // collaboration-rs/crates/sources/src/refresh.rs verbatim with its trigger
 // constants, which must equal Go admission's.
 func TestRefreshSchedulerQuery(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	find := func(pattern string) string { return schedulerSource(t, pattern) }
@@ -636,6 +644,7 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 }
 
 func TestSourceRefreshParseFeeAndSystemPayer(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	reg, err := models.New(ctx, s.Pool())
@@ -704,6 +713,7 @@ func TestSourceRefreshParseFeeAndSystemPayer(t *testing.T) {
 // A maintenance (system) publication rebases the editing state onto the
 // export at once; owner and automatic ones defer that (TestDeferredOffice...).
 func TestSourceRefreshRebasesNewerSavedOfficeState(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "source_refresh_owner")
@@ -885,6 +895,7 @@ func effectsCacheCleared(t *testing.T, s *Store, fileID, how string) {
 }
 
 func TestDeferredOfficePublicationAndRebuild(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "deferred_publish_owner")
@@ -1079,6 +1090,7 @@ func sourceTestPublishDeferred(t *testing.T, s *Store, workspaceID, fileID, jobI
 }
 
 func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	fileID, checkpoint, export := sourceTestDeferredPublication(t, s, newBlobTestUser(t, s, "deferred_clean_owner"))
@@ -1103,6 +1115,7 @@ func TestDeferredPublicationWithoutLaterEditsRebuildsToTheExport(t *testing.T) {
 // admission takes it as an automatic refresh that records the refusal, and
 // that republication clears it so its own rebuild lands.
 func TestRefusedRebuildMakesTheFileDue(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "refused_rebuild_owner")
@@ -1193,6 +1206,7 @@ func TestRefusedRebuildMakesTheFileDue(t *testing.T) {
 }
 
 func TestSourceEpochResetKeepsTheSaveAndRetiresTheOldEpoch(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "epoch_reset_owner")
@@ -1220,6 +1234,7 @@ func TestSourceEpochResetKeepsTheSaveAndRetiresTheOldEpoch(t *testing.T) {
 // candidate and provider session close with no refresh_error, and the saved
 // edits are due again, so a new refresh captures the new epoch and is claimed.
 func TestSourceEpochResetSupersedesItsRefresh(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	reg, err := models.New(ctx, s.Pool())
@@ -1323,6 +1338,7 @@ func TestSourceEpochResetSupersedesItsRefresh(t *testing.T) {
 // fresh one never fill both of the export pass's slots (the collaboration
 // service's EXPORT_JOBS_SQL, run verbatim).
 func TestStaleRefreshesNeverHoldTheExportQueue(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	reg, err := models.New(ctx, s.Pool())
@@ -1383,6 +1399,7 @@ func TestStaleRefreshesNeverHoldTheExportQueue(t *testing.T) {
 // saved edits queue again without another edit; any other error stays
 // (Epo 2026-10-14).
 func TestRestoreClearsTheTrashsRefreshError(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	reg, err := models.New(ctx, s.Pool())
@@ -1496,6 +1513,7 @@ func sourceTestAttempt(t *testing.T, s *Store, job string) int64 {
 }
 
 func TestSourceTextPublishesCapturedStateWithExactRemainingEffects(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "source_text_owner")
@@ -1546,6 +1564,7 @@ func TestSourceTextPublishesCapturedStateWithExactRemainingEffects(t *testing.T)
 // candidate content lacks a part: a descriptor row or a pipeline_identity
 // (parts design Q3).
 func TestSourceRefreshPublicationDerivesThePartialStatus(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	reg, err := models.New(ctx, s.Pool())
@@ -1607,6 +1626,7 @@ func TestSourceRefreshPublicationDerivesThePartialStatus(t *testing.T) {
 }
 
 func TestSourceCloneCopiesSavedEditsAndCaptionReferences(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "source_clone_owner")
@@ -1666,6 +1686,7 @@ func TestSourceCloneCopiesSavedEditsAndCaptionReferences(t *testing.T) {
 }
 
 func TestWorkspaceSourceIndexCountsAndSettings(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "index_counts_owner")
@@ -1729,6 +1750,7 @@ func TestWorkspaceSourceIndexCountsAndSettings(t *testing.T) {
 }
 
 func TestFileChangesQueueAndCancel(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "file_changes_owner")
@@ -1796,6 +1818,7 @@ func TestFileChangesQueueAndCancel(t *testing.T) {
 }
 
 func TestSourceExportLeaseExhaustionPreservesEdits(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "source_export_owner")
@@ -1839,6 +1862,7 @@ func TestSourceExportLeaseExhaustionPreservesEdits(t *testing.T) {
 // (human/backend-storage-quota.md, 2026-09-28): opening saves nothing, and a
 // refresh candidate is uncharged while transient.
 func TestSourceQuotaChargesEffectsAndStoredState(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	for _, tc := range []struct{ name, kind string }{{"lesson.docx", "doc"}, {"notes.txt", "txt"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			s := openAccessTestStore(t)
@@ -1898,6 +1922,7 @@ func TestSourceQuotaChargesEffectsAndStoredState(t *testing.T) {
 // An Office state is stored only as its change over seed(base), named by the
 // seed's hash; a text state is complete. The wrong kind is refused.
 func TestSourceCheckpointStateKind(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "source_state_kind")
@@ -2079,6 +2104,7 @@ func TestOfficeRebaseSeedExportMigration(t *testing.T) {
 // merges), ends an old epoch's room and gives up at once on invalid input,
 // so the three answers stay distinct.
 func TestSourceCheckpointConflictKinds(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "source_conflict_kinds")
@@ -2106,6 +2132,7 @@ func TestSourceCheckpointConflictKinds(t *testing.T) {
 // one leaves it, and an Office save or a preview no card would take is
 // refused.
 func TestTextSavesWriteTheFilePreview(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "preview_owner")
@@ -2222,6 +2249,7 @@ func TestTextSourceGrowthBudgetHasNoMargin(t *testing.T) {
 // the file then freezes at its size limit; only the source ceiling refuses
 // it.
 func TestSourceRefreshPublishesAnExportOverThePlanLimit(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "source_over_limit_owner")

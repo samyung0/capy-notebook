@@ -125,6 +125,7 @@ func openAccessTestStoreForPreview(t *testing.T) *store.Store {
 }
 
 func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
 	memory := blob.NewMemory()
@@ -206,6 +207,7 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 // uploaded before it, opens view only like an Office file at its size limit,
 // so its edit read carries a growth budget too, from its base alone.
 func TestTextSourceOverTheTextCapHasNoGrowthBudget(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
 	memory := blob.NewMemory()
@@ -261,6 +263,7 @@ func TestTextSourceOverTheTextCapHasNoGrowthBudget(t *testing.T) {
 // (seed_bytes) counts against the budget, as the room's estimate does
 // (review r3 S2).
 func TestTextSourceGrowthCountsItsStateOverTheSeed(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
 	memory := blob.NewMemory()
@@ -302,6 +305,7 @@ func TestTextSourceGrowthCountsItsStateOverTheSeed(t *testing.T) {
 // carries it. The editor read also says when the file's card is older than
 // its saved document.
 func TestSourceSessionEditorCarriesTheOwnersImageCap(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
 	memory := blob.NewMemory()
@@ -371,6 +375,7 @@ func TestSourceSessionEditorCarriesTheOwnersImageCap(t *testing.T) {
 // editor's resident layout worker, other than its own; an XLSX one offers
 // none.
 func TestDocxSourceTokenOffersAWorkerClientID(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
 	memory := blob.NewMemory()

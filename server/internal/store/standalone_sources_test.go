@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // standaloneSourceFile is a ready file with no workspace, its owner's alone.
@@ -32,6 +33,7 @@ func standaloneSourceFile(t *testing.T, s *Store, owner, name, kind string) File
 // the payer's alone, never another user's, a link holder's included, and
 // refused while the owner is suspended or pending deletion.
 func TestStandaloneSourceSessionIsItsOwnersAlone(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	for _, state := range []string{"suspended", "deletion_pending"} {
@@ -104,6 +106,7 @@ func TestStandaloneSourceSessionIsItsOwnersAlone(t *testing.T) {
 // An Office file with no workspace saves its room's edits and an agent's
 // edit, whose receipt names no workspace.
 func TestStandaloneSourceSavesEditsAndAgentReceipts(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_loose_save_owner")
@@ -133,6 +136,7 @@ func TestStandaloneSourceSavesEditsAndAgentReceipts(t *testing.T) {
 // saves the payer's edits there, and nobody else's, the new workspace's
 // editors included.
 func TestAStandaloneRoomsDrainSavesAsItsPayer(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_loose_drain_owner")
@@ -172,6 +176,7 @@ func TestAStandaloneRoomsDrainSavesAsItsPayer(t *testing.T) {
 // ingest in the payer's scope (no workspace, the retrieval default's
 // embedding space), and the publication takes only the payer's content.
 func TestStandaloneSourcePublishesAutomaticallyInItsOwnersScope(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	reg, err := models.New(ctx, s.Pool())
@@ -292,6 +297,7 @@ func TestStandalonePDFAnnotationsAreItsOwners(t *testing.T) {
 // cost, and a file an export-only publication left unindexed is reprocessed,
 // each through a system session that names no workspace.
 func TestStandaloneOfficeMaintenanceAndReprocess(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_loose_maintenance_owner")

@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 	"github.com/samyung0/capy-notebook/server/migrations"
 )
 
@@ -21,6 +22,7 @@ import (
 // live items stay, and the storage recount equals what the triggers booked.
 // Each run rolls back.
 func TestCutoverResetMigration(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "cutover_reset")

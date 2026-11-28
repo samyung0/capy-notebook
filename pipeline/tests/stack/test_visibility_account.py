@@ -10,6 +10,7 @@ from pipeline.retrieval import tools
 pytestmark = pytest.mark.stack
 
 
+@pytest.mark.files_view_only
 async def test_account_reads_carry_each_items_changes(stack, turn):
     """T8: a member workspace's DOCX another member edited and the user's own
     edited .md each come with their changes, through read_document and

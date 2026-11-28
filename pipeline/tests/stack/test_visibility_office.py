@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-pytestmark = pytest.mark.stack
+pytestmark = [pytest.mark.stack, pytest.mark.files_view_only]
 
 
 async def test_an_xlsx_cell_edit_reaches_search_and_the_office_read(stack, turn):

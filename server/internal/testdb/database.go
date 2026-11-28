@@ -44,3 +44,8 @@ func validateURL(marker, raw string) error {
 	}
 	return nil
 }
+
+// FilesViewOnly is the skip reason of every Go test that edits a file while
+// files are view-only (sourceupload.FilesEditable, Q853 A); un-skip them with
+// the switch.
+const FilesViewOnly = "File editing is off (Q853 A)"

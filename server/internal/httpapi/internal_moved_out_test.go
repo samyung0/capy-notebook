@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // Q468 (Epo 2026-10-28): a file this workspace's chat edited, now in a
@@ -19,6 +20,7 @@ import (
 // plain not found, so the answer never confirms it exists elsewhere. Fails
 // if the refusal ignores the receipt (always or never `moved_out`).
 func TestAFileEditedHereThenMovedOutAnswersMovedOut(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	h, st := openInternalHTTP(t)
 	ctx := context.Background()
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())

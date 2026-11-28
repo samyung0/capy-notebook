@@ -162,6 +162,24 @@ def _apply_migration(dsn: str) -> None:
         )
 
 
+# Tests that edit files are marked files_view_only and skipped while files are
+# view-only (server/internal/sourceupload/editing.go, Q853 A); un-skip them
+# with the switch.
+FILES_VIEW_ONLY = "File editing is off (Q853 A)"
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", f"files_view_only: edits files; skipped: {FILES_VIEW_ONLY}"
+    )
+
+
+def pytest_collection_modifyitems(items):
+    for item in items:
+        if item.get_closest_marker("files_view_only"):
+            item.add_marker(pytest.mark.skip(reason=FILES_VIEW_ONLY))
+
+
 @pytest.fixture(scope="session")
 def _test_infra():
     """Fresh Postgres/Redis containers, migrated, for integration tests."""

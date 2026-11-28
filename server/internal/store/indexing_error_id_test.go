@@ -10,6 +10,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // A failed row in the Indexing tab carries its error id (human frontend
@@ -18,6 +19,7 @@ import (
 // that is not failed carries none, and a save or a retry clears it
 // (migration 0105). Failed files carry theirs on the file rows.
 func TestIndexingTabFailedRowsCarryTheirErrorID(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	reg, err := models.New(ctx, s.Pool())

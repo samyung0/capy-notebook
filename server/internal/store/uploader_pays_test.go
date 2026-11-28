@@ -11,6 +11,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/planlimits"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // Uploader pays (Sam 2026-10-18): what a member uploads, reserves or creates
@@ -1162,6 +1163,7 @@ func TestCoEditorsDoNotSeeAPayersSuspension(t *testing.T) {
 // refused before it waits on the file row. Each case fails on the old
 // owner-only check.
 func TestSourceEditsFollowTheFilesPayer(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	member := newBlobTestUser(t, s, "u_b7_member")

@@ -3421,7 +3421,7 @@ _UNLISTED_FILE_CALLS = [
         },
     ),
     ("inspect_document", {"target": {"kind": "source_file", "id": "f_9"}}),
-    (
+    pytest.param(
         "edit_office_document",
         {
             "file_id": "f_9",
@@ -3434,6 +3434,7 @@ _UNLISTED_FILE_CALLS = [
                 }
             ],
         },
+        marks=pytest.mark.files_view_only,
     ),
     ("inspect_office_document", {"file_id": "f_9"}),
 ]
@@ -5713,6 +5714,7 @@ def _office_ctx(monkeypatch, post=None) -> ToolContext:
     return ctx
 
 
+@pytest.mark.files_view_only
 def test_the_office_tools_come_last_once_offered(monkeypatch):
     """Offered only once office_building is read, or once an earlier turn of
     the conversation was offered them (the gateway's officeTools), and then
@@ -5785,6 +5787,7 @@ async def test_reading_editing_appends_the_write_tools(monkeypatch):
     assert events[-1]["toolEvidence"]["editTools"] is True
 
 
+@pytest.mark.files_view_only
 async def test_an_office_edit_after_office_building_alone_needs_editing(monkeypatch):
     """UAT 2026-10-22: the agent read office_building alone, inspected and
     edited; the write was refused for the editing skill, as every write is.
@@ -5830,6 +5833,7 @@ async def test_an_office_edit_after_office_building_alone_needs_editing(monkeypa
     )
 
 
+@pytest.mark.files_view_only
 async def test_office_tools_need_the_office_building_skill(monkeypatch):
     ctx = _office_ctx(monkeypatch)
     ctx.skills_read = {skills.EDITING}
@@ -6685,6 +6689,7 @@ async def test_a_long_docx_read_shows_the_paragraphs_that_fit_and_where_to_go_on
     )
 
 
+@pytest.mark.files_view_only
 async def test_an_office_edit_over_256_kb_is_refused_before_it_leaves(monkeypatch):
     posts: list[str] = []
     ctx = _office_ctx(monkeypatch, post=lambda url, **_: posts.append(url))
@@ -6739,6 +6744,7 @@ def test_a_stale_office_band_shows_its_grid_to_copy():
     )
 
 
+@pytest.mark.files_view_only
 async def test_office_edits_and_creates_reach_their_routes(monkeypatch):
     """An edit goes to the edit route marked office, a stale range comes back as
     its TSV, and a create sends the call's other commands to the create route."""
@@ -6976,6 +6982,7 @@ async def test_a_turn_ending_with_commands_unapplied_closes_the_row_with_them(
     assert (block["outcome"], block["applied"], block["total"]) == ("succeeded", 30, 32)
 
 
+@pytest.mark.files_view_only
 async def test_an_office_edit_reads_what_the_engine_left_unapplied(monkeypatch):
     """The engine alone counts the limits (Epo 2026-10-22): its notice's first
     unapplied index is how many commands it applied, a create counting."""

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // TestHiddenFromMembers: a quiz hidden from members is listed and opened by
@@ -247,6 +248,7 @@ func TestClonesKeepTheHiddenFlag(t *testing.T) {
 // its id reads neither its session nor its room's access check, and sees a
 // visible file as before. Fails if sourceActorsAllowed stops checking hidden.
 func TestHiddenFileSourceSessionRefusesAViewer(t *testing.T) {
+	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "hidden-source-owner")

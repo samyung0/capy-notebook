@@ -187,6 +187,7 @@ def test_the_workspace_profile_shows_the_model_what_it_did_before():
     assert _hashed(snapshot) == json.loads(GOLDEN.read_text())
 
 
+@pytest.mark.files_view_only
 def test_the_account_profile_offers_the_account_tools():
     schemas = profiles.account.PROFILE.schemas(
         _account(library_catalog=CATALOG, edit_tools=True)
@@ -881,6 +882,7 @@ async def test_account_resolves_go_through_the_items_check(monkeypatch):
     ]
 
 
+@pytest.mark.files_view_only
 async def test_an_account_office_create_lands_where_the_user_named(monkeypatch):
     sent = {}
 
@@ -1343,9 +1345,10 @@ async def test_a_workspace_the_turn_creates_joins_its_list(monkeypatch):
         ("create_material", {"kind": "note", "title": "N", "content": "body"}),
         ("create_deck", {"title": "D"}),
         ("add_questions", {"title": "Q", "questions": []}),
-        (
+        pytest.param(
             "edit_office_document",
             {"commands": [{"type": "create", "format": "docx", "title": "Plan"}]},
+            marks=pytest.mark.files_view_only,
         ),
         ("create_topic", {"name": "Kinematics"}),
     ],
