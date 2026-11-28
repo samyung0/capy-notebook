@@ -1,0 +1,641 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Film controls</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;500;600;700;800&display=swap">
+<style>
+/* Tokens copied from src/styles/tokens/themes/capy.css (latte + mocha). */
+:root {
+  --page: #f7f7f7; --card: #ffffff; --item-hover: #eff1f1;
+  --fg: #222222; --fg2: #4b4b4b; --muted: #6b6b6b; --border: #d6d6d6; --divider: #e6e6e6;
+  --accent: #8c7bd9; --tint-bg: #ece6f6; --tint-fg: #5b4aa8;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.04), 0 4px 12px rgba(0,0,0,.05);
+  --font: "Fustat", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #0d1219; --card: #161d27; --item-hover: #1a222d;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --border: #323e52; --divider: rgba(255,255,255,.07);
+  --accent: #b5a1f8; --tint-bg: #31334b; --tint-fg: #c8b8fa;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.3); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --page: #0d1219; --card: #161d27; --item-hover: #1a222d;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --border: #323e52; --divider: rgba(255,255,255,.07);
+  --accent: #b5a1f8; --tint-bg: #31334b; --tint-fg: #c8b8fa;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.3); color-scheme: dark }
+
+* { box-sizing: border-box }
+body { margin: 0; background: var(--page); color: var(--fg); font: 500 14px/1.45 var(--font); padding: 28px 16px 80px }
+main { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px }
+h1 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -.02rem }
+h2 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -.02rem }
+h3 { margin: 0; font-size: 15px; font-weight: 700 }
+p { margin: 0 }
+a { color: var(--tint-fg) }
+.lede { color: var(--fg2); max-width: 78ch; display: flex; flex-direction: column; gap: 8px }
+.refs { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 12px }
+.ref { background: var(--card); border-radius: 10px; box-shadow: var(--shadow-card); padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; color: var(--fg2) }
+.ref b { color: var(--fg); font-size: 14px }
+.opt { display: flex; flex-direction: column; gap: 20px; border-top: 1px solid var(--divider); padding-top: 28px }
+.opt-head { display: flex; flex-direction: column; gap: 6px; max-width: 80ch }
+.k { font-size: 12px; font-weight: 800; letter-spacing: .06rem; color: var(--muted); text-transform: uppercase }
+.opt-head p { color: var(--fg2) }
+.board { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 28px; align-items: start }
+@media (max-width: 980px) { .board { grid-template-columns: minmax(0, 1fr) } }
+.col { display: flex; flex-direction: column; gap: 22px; min-width: 0 }
+.lbl { font-size: 11px; font-weight: 700; letter-spacing: .06rem; text-transform: uppercase; color: var(--muted); margin-bottom: 8px }
+.side { display: flex; flex-direction: column; gap: 8px; color: var(--fg2); font-size: 13.5px }
+.side b { color: var(--fg) }
+.side ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px }
+.side code, .lede code { font-size: 12px; background: var(--item-hover); padding: 0 4px; border-radius: 4px }
+
+/* A note page around the film */
+.note { background: var(--card); border-radius: 14px; box-shadow: var(--shadow-card); padding: 22px 28px 26px; display: flex; flex-direction: column; gap: 12px; max-width: 760px }
+.note .np { color: var(--fg2) }
+.note h4 { margin: 0; font-size: 17px; font-weight: 700 }
+.phones { display: flex; gap: 20px; flex-wrap: wrap }
+.phone { width: 360px; max-width: 100%; background: var(--card); border-radius: 22px; box-shadow: var(--shadow-card); padding: 18px 16px 22px; display: flex; flex-direction: column; gap: 10px }
+.phone h4 { margin: 0; font-size: 16px; font-weight: 700 }
+.phone .np { color: var(--fg2); font-size: 13.5px }
+
+/* The film and Capy's controls (the same over a drawn and a video film) */
+.film { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; overflow: hidden; outline: none; user-select: none }
+.film svg.pic { position: absolute; inset: 0; width: 100%; height: 100% }
+.ctl { position: absolute; left: 0; right: 0; bottom: 0; padding: 26px 12px 8px; background: linear-gradient(to top, rgba(0,0,0,.72), rgba(0,0,0,0)); color: #fff; display: flex; flex-direction: column; gap: 6px; font: 600 13px/1 var(--font) }
+.phone .ctl { padding: 22px 8px 6px; font-size: 12px }
+.bar { position: relative; display: flex; gap: 3px; height: 14px; align-items: center; cursor: pointer }
+.seg { position: relative; height: 4px; background: rgba(255,255,255,.28); flex-grow: 1; flex-basis: 0 }
+.seg i { position: absolute; inset: 0 auto 0 0; background: #fff; width: 0 }
+.bar:hover .seg { height: 6px }
+.seg.step-gap { margin-left: 4px }
+.knob { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #fff; pointer-events: none }
+.row { display: flex; align-items: center; gap: 4px; min-width: 0 }
+.ib { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; border: 0; background: none; color: #fff; padding: 0; cursor: pointer; border-radius: 6px; flex-shrink: 0 }
+.phone .ib { width: 32px; height: 32px }
+.ib:hover { background: rgba(255,255,255,.14) }
+.ib:disabled { opacity: .35; cursor: default; background: none }
+.ib svg { width: 20px; height: 20px }
+.ib.ready { background: rgba(255,255,255,.22) }
+.time { white-space: nowrap; padding: 0 6px; flex-shrink: 0 }
+.title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; color: rgba(255,255,255,.85) }
+.title b { color: #fff; font-weight: 700 }
+.sp { flex: 1 }
+/* B: the pager under the film */
+.pager { display: flex; align-items: center; gap: 8px; height: 40px; min-width: 0 }
+.pager .pt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; color: var(--fg2) }
+.pager .pt b { color: var(--fg) }
+.btn { height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--fg); font: 600 13.5px/1 var(--font); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; flex-shrink: 0 }
+.btn:disabled { opacity: .45; cursor: default }
+.btn svg { width: 16px; height: 16px }
+.btn.icon { width: 32px; padding: 0; justify-content: center }
+.btn.go { border-color: var(--accent); color: var(--tint-fg); background: var(--tint-bg) }
+/* C: the steps menu and markers */
+.tick { position: absolute; top: 50%; width: 3px; height: 12px; margin: -6px 0 0 -1px; background: #fff; border-radius: 1px; pointer-events: none }
+.stepbtn { height: 28px; border: 0; background: rgba(255,255,255,.16); color: #fff; border-radius: 6px; padding: 0 8px 0 10px; font: 600 12.5px/1 var(--font); display: inline-flex; align-items: center; gap: 4px; cursor: pointer; min-width: 0; max-width: 100% }
+.stepbtn span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.stepbtn svg { width: 16px; height: 16px; flex-shrink: 0 }
+.menu { position: absolute; left: 12px; bottom: 74px; width: min(300px, calc(100% - 24px)); background: #1d2633; color: #e6e9ef; border-radius: 8px; padding: 4px; box-shadow: 0 10px 34px rgba(0,0,0,.5); font: 500 13px/1.3 var(--font); display: none; z-index: 2 }
+.phone .menu { left: 8px; bottom: 66px }
+.menu.open { display: block }
+.menu button { width: 100%; display: flex; align-items: center; gap: 10px; border: 0; background: none; color: inherit; padding: 8px 10px; border-radius: 6px; font: inherit; text-align: left; cursor: pointer }
+.menu button:hover { background: rgba(255,255,255,.08) }
+.menu button.on { background: rgba(181,161,248,.18) }
+.menu .n { width: 18px; color: #9aa4b3; flex-shrink: 0 }
+.menu .tt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+.menu .d { color: #9aa4b3; flex-shrink: 0 }
+.hint { position: absolute; right: 12px; top: 12px; height: 32px; border: 0; background: rgba(255,255,255,.9); color: #111; font: 600 13px/1 var(--font); padding: 0 10px 0 12px; border-radius: 6px; display: none; align-items: center; gap: 6px; cursor: pointer }
+.hint svg { width: 16px; height: 16px }
+.waiting .hint { display: inline-flex }
+.qs { display: flex; flex-direction: column; gap: 10px; max-width: 86ch; color: var(--fg2) }
+.qs ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px }
+.qs b { color: var(--fg) }
+
+/* D: the course player (controls under the film, slides beside it) */
+.dp { display: flex; min-width: 0; background: var(--card); color: var(--fg) }
+.dmain { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; container: dmain / inline-size }
+.narrow-only { display: none !important }
+@container dmain (max-width: 520px) { .dbar .btn { padding: 0 9px } .dbar .btn.icon { padding: 0; width: 34px } .wide-only { display: none !important } .narrow-only { display: flex !important } .pop hr.narrow-only { display: block !important } }
+.dp:not(.wide) .cnt { display: none }
+.dp .film { cursor: pointer }
+.cap { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); max-width: 86%; background: rgba(0,0,0,.72); color: #fff; font: 600 15px/1.35 var(--font); padding: 5px 10px; border-radius: 4px; text-align: center; display: none }
+.dp.cc .cap { display: block }
+.phone .cap { font-size: 12.5px; bottom: 8px }
+.dline { position: relative; height: 16px; margin: 0 0 -6px; cursor: pointer; display: flex; align-items: center; touch-action: none }
+.dline::before { content: ""; position: absolute; left: 0; right: 0; top: 4px; height: 3px; background: var(--divider) }
+.dline i { position: absolute; left: 0; top: 4px; height: 3px; background: var(--accent); width: 0 }
+.dline::before, .dline i { top: 6px !important }
+.dline:hover::before, .dline:hover i, .dline.drag::before, .dline.drag i { height: 5px; top: 5px !important }
+.dline .dk { position: absolute; top: 7.5px; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--card); pointer-events: none; transition: transform .1s }
+.dline:hover .dk, .dline.drag .dk { transform: scale(1.25) }
+.dline .dt { position: absolute; top: 4px; width: 2px; height: 7px; background: var(--muted); margin-left: -1px }
+.dbar { display: flex; align-items: center; gap: 2px; padding: 8px 0 0; min-width: 0; position: relative }
+.dbar .btn { height: 36px; border-color: transparent; background: none }
+.dbar .btn svg { width: 22px; height: 22px }
+.dbar .btn.dark svg { width: 20px; height: 20px }
+/* Fustat's ink sits 1.5 px above a flex box's centre: text in the bar comes down to it */
+.dbar .t, .dbar .cn2, .cnt { position: relative; top: 1.5px }
+.dbar .btn:hover:not(:disabled) { background: var(--item-hover) }
+.dbar .btn.dark { background: var(--fg); border-color: var(--fg) }
+.dbar .btn.dark:hover:not(:disabled) { background: var(--fg2); border-color: var(--fg2) }
+.pop button .v { margin-left: auto; color: var(--muted); font-weight: 500 }
+.dbar .btn.icon { width: 36px }
+.phone .dbar .btn { padding: 0 9px }
+.phone .dbar .btn.icon { width: 34px; padding: 0 }
+.btn.dark { background: var(--fg); color: var(--card); border-color: var(--fg) }
+.btn.on { background: var(--tint-bg); color: var(--tint-fg); border-color: var(--accent) }
+.btn.ready { box-shadow: 0 0 0 3px var(--tint-bg) }
+.dtime { color: var(--muted); font-size: 13px; white-space: nowrap; padding: 0 4px }
+.cnt { color: var(--muted); font-size: 13.5px; white-space: nowrap; padding: 0 6px }
+.pop { position: absolute; bottom: 48px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 10px 34px rgba(0,0,0,.14); padding: 4px; display: none; z-index: 3; min-width: 170px }
+.pop.open { display: block }
+.pop .h { font-size: 11px; font-weight: 700; letter-spacing: .06rem; text-transform: uppercase; color: var(--muted); padding: 8px 10px 4px }
+.pop button { width: 100%; display: flex; align-items: center; gap: 10px; border: 0; background: none; color: var(--fg); padding: 8px 10px; border-radius: 6px; font: 500 13.5px/1.3 var(--font); text-align: left; cursor: pointer; white-space: nowrap }
+.pop button:hover { background: var(--item-hover) }
+.pop button.on { color: var(--tint-fg); font-weight: 700 }
+.pop hr { border: 0; border-top: 1px solid var(--divider); margin: 4px 0 }
+.dside { width: 260px; flex-shrink: 0; border-left: 1px solid var(--divider); margin-left: 20px; display: flex; flex-direction: column }
+.dp:not(.wide) .dside, .dp.collapsed .dside { display: none }
+.dside .sh { display: flex; align-items: center; justify-content: space-between; height: 40px; padding: 0 8px 0 16px; font-weight: 700 }
+.dside button.row { all: unset; box-sizing: border-box; display: flex; gap: 10px; align-items: baseline; padding: 0 16px; min-height: 52px; cursor: pointer; font: 500 14px/1.35 var(--font); color: var(--fg2) }
+.dside button.row:hover { background: var(--item-hover) }
+.dside button.row.on { background: var(--item-hover); color: var(--fg); font-weight: 700; box-shadow: inset 3px 0 0 var(--accent) }
+.dside .row .n { color: var(--muted); width: 16px; flex-shrink: 0; font-weight: 600; padding-top: 16px }
+.dside .row .tt { padding: 16px 0 }
+.dside .row .d { margin-left: auto; color: var(--muted); font-size: 12.5px; padding-top: 16px }
+.dp.wide .slbtn { display: none }
+.dp.wide:not(.collapsed) .expand { display: none }
+.dp:not(.wide) .expand { display: none }
+.wideboard { background: var(--card); border-radius: 14px; box-shadow: var(--shadow-card); padding: 20px 24px }
+.wideboard .vh { display: flex; align-items: center; gap: 10px; height: 36px; margin-bottom: 12px; font-weight: 600 }
+.wideboard .vh .m { color: var(--muted); font-weight: 500; font-size: 13px }
+@media (max-width: 600px) { .note { padding: 16px } .wideboard { padding: 16px } }
+.drawn-only { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px }
+</style>
+</head>
+<body>
+<main>
+  <header style="display:flex;flex-direction:column;gap:12px">
+    <h1>Film controls</h1>
+    <div class="lede">
+      <p>Every film gets Capy's own controls, drawn over the film, so a drawn film (ManimGX on a canvas) and a video film (<code>&lt;video&gt;</code>) look and work the same. The bar is split into the film's chapters: the scene's sections when it has several, otherwise one per animation, named by the line of code that played it, as ManimGX does now.</p>
+      <p>A through C keep the controls over the film; D, after your reference, puts them under it with the slides beside it. A film <b>with steps</b> stops at the end of each step and waits, like a slide. A film <b>without steps</b> plays straight through. Every player below works: press play, step through, click the bar. The note films are 28 s long.</p>
+    </div>
+  </header>
+
+  <section style="display:flex;flex-direction:column;gap:12px">
+    <h2>What other apps do</h2>
+    <div class="refs">
+      <div class="ref"><b>Manim Slides</b><span>The scene marks each slide with <code>next_slide()</code>. Playback stops at every slide; → next, ← previous, R replays, V plays it backwards, Space play/pause. Exports to reveal.js HTML. <a href="https://pypi.org/project/manim-slides/4.1.0">PyPI</a>, <a href="https://manim-slides.readthedocs.io/reference/sharing.html">sharing</a></span></div>
+      <div class="ref"><b>Motion Canvas</b><span><code>beginSlide('name')</code> pauses playback until Space. Presentation mode lists every slide in a side panel for jumping. <a href="https://motioncanvas.io/docs/presentation">docs</a></span></div>
+      <div class="ref"><b>YouTube</b><span>Chapters split the progress bar into segments; the current chapter's name sits next to the time, and dragging shows each chapter's title. Plays straight through. <a href="https://support.google.com/youtube/answer/12825599">help</a></span></div>
+      <div class="ref"><b>H5P Interactive Video</b><span>Bookmarks are thin marks on the seek bar with labels; an interaction can pause the video when it appears. <a href="https://h5p.org/node/691">tutorial</a></span></div>
+      <div class="ref"><b>PowerPoint</b><span>Bookmarks in a video clip are points to jump to or to trigger animations from; the deck itself moves one slide (or build) per click. <a href="https://support.microsoft.com/en-us/PowerPoint/add-bookmarks-to-points-of-interest-in-audio-and-video-clips">support</a></span></div>
+    </div>
+  </section>
+
+  <section class="opt" id="A">
+    <div class="opt-head">
+      <span class="k">Option A</span>
+      <h2>Step buttons in the bar</h2>
+      <p>YouTube's segmented bar with Manim Slides' stepping. Previous and Next step sit either side of play; when a step ends, Next lights up and play continues to the next step too.</p>
+    </div>
+    <div class="board">
+      <div class="col">
+        <div><div class="lbl">In a note · film with steps</div><div class="note"><h4>Area of a circle</h4><p class="np">Cut the circle into thin rings and unroll them.</p><div data-player="A" data-steps="1"></div><p class="np">The strips stack into a triangle of base 2πr and height r.</p></div></div>
+        <div><div class="lbl">In a note · film without steps</div><div class="note"><div data-player="A" data-steps="0"></div></div></div>
+        <div><div class="lbl">Phone, 360 px</div><div class="phones"><div class="phone"><h4>Area of a circle</h4><div data-player="A" data-steps="1" data-phone="1"></div><p class="np">The strips stack into a triangle.</p></div><div class="phone"><div data-player="A" data-steps="0" data-phone="1"></div></div></div></div>
+      </div>
+      <div class="side">
+        <b>How it works</b>
+        <ul>
+          <li>Keys: Space or K play/pause, → / ← next and previous step (or 5 s without steps), F full screen.</li>
+          <li>Between steps the bar has a wider gap; chapters inside a step keep the thin one.</li>
+          <li>The label reads “Step 2 of 4 · Cut it into rings”; without steps, the chapter's name (“Line 19”).</li>
+          <li>Closest to what viewers already know from YouTube; nothing outside the film.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="opt" id="B">
+    <div class="opt-head">
+      <span class="k">Option B</span>
+      <h2>A slide pager under the film</h2>
+      <p>The film reads like a deck. The bar on the film covers only the current step; a flat row under it moves between steps, like presenting slides. A film without steps has no pager and a full bar.</p>
+    </div>
+    <div class="board">
+      <div class="col">
+        <div><div class="lbl">In a note · film with steps</div><div class="note"><h4>Area of a circle</h4><p class="np">Cut the circle into thin rings and unroll them.</p><div data-player="B" data-steps="1"></div><p class="np">The strips stack into a triangle of base 2πr and height r.</p></div></div>
+        <div><div class="lbl">In a note · film without steps</div><div class="note"><div data-player="B" data-steps="0"></div></div></div>
+        <div><div class="lbl">Phone, 360 px</div><div class="phones"><div class="phone"><h4>Area of a circle</h4><div data-player="B" data-steps="1" data-phone="1"></div><p class="np">The strips stack into a triangle.</p></div><div class="phone"><div data-player="B" data-steps="0" data-phone="1"></div></div></div></div>
+      </div>
+      <div class="side">
+        <b>How it works</b>
+        <ul>
+          <li>The pager is the note's own row, outside the film: Previous, “2 / 4 · Cut it into rings”, Next. Next is tinted when the step has ended.</li>
+          <li>Time on the film counts within the step (0:03 / 0:07), so each step feels like one slide.</li>
+          <li>Same keys as A.</li>
+          <li>Costs a row of height in the note; on a canvas card the pager would sit inside the card.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="opt" id="C">
+    <div class="opt-head">
+      <span class="k">Option C</span>
+      <h2>Step marks and a Steps menu</h2>
+      <p>H5P's bookmarks with Motion Canvas' slide list. The bar stays one piece with a mark at each step; a Steps menu in the bar lists the steps with their lengths for jumping.</p>
+    </div>
+    <div class="board">
+      <div class="col">
+        <div><div class="lbl">In a note · film with steps</div><div class="note"><h4>Area of a circle</h4><p class="np">Cut the circle into thin rings and unroll them.</p><div data-player="C" data-steps="1"></div><p class="np">The strips stack into a triangle of base 2πr and height r.</p></div></div>
+        <div><div class="lbl">In a note · film without steps</div><div class="note"><div data-player="C" data-steps="0"></div></div></div>
+        <div><div class="lbl">Phone, 360 px</div><div class="phones"><div class="phone"><h4>Area of a circle</h4><div data-player="C" data-steps="1" data-phone="1"></div><p class="np">The strips stack into a triangle.</p></div><div class="phone"><div data-player="C" data-steps="0" data-phone="1"></div></div></div></div>
+      </div>
+      <div class="side">
+        <b>How it works</b>
+        <ul>
+          <li>The Steps button shows the current step and opens the list; a film without steps shows its chapters in the same menu (“Chapters”).</li>
+          <li>When a step ends the film waits and a Next step button appears in its corner (→ does the same).</li>
+          <li>Same keys as A. Fewest buttons; stepping is one menu away for mouse users.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="opt" id="D">
+    <div class="opt-head">
+      <span class="k">Option D</span>
+      <h2>Course player: controls under the film, slides beside it</h2>
+      <p>The layout from your reference (it matches iSpring's course player), without the presenter's camera. Nothing covers the film. A thin line over the bar shows how far into the slide it is; the slides list sits beside the film where there's room, and behind the slide count where there isn't. Click the film to play or pause. The bar's buttons have no border, only a hover; ⋮ holds Captions and the drawn-only Theme.</p>
+    </div>
+    <div class="col">
+      <div><div class="lbl">File viewer or full screen · film with slides</div><div class="wideboard"><div class="vh">area_of_a_circle.cmv<span class="m">· drawn film</span></div><div data-d="1" data-steps="1" data-drawn="1"></div></div></div>
+      <div class="board">
+        <div class="col">
+          <div><div class="lbl">In a note · film with slides (list behind “2 of 4”)</div><div class="note"><h4>Area of a circle</h4><p class="np">Cut the circle into thin rings and unroll them.</p><div data-d="1" data-steps="1" data-drawn="1"></div><p class="np">The strips stack into a triangle of base 2πr and height r.</p></div></div>
+          <div><div class="lbl">In a note · video film without slides</div><div class="note"><div data-d="1" data-steps="0" data-drawn="0"></div></div></div>
+          <div><div class="lbl">Phone, 360 px</div><div class="phones"><div class="phone"><h4>Area of a circle</h4><div data-d="1" data-steps="1" data-drawn="1" data-phone="1"></div><p class="np">The strips stack into a triangle.</p></div><div class="phone"><div data-d="1" data-steps="0" data-drawn="0" data-phone="1"></div></div></div></div>
+        </div>
+        <div class="side">
+          <b>How it works</b>
+          <ul>
+            <li>Slides are the scene's sections. The film stops at the end of each; Next (or →) plays the next, ‹ goes back to the start of this one or the one before.</li>
+            <li>Drag the knob (or press anywhere on the line) to seek; a playing film carries on from where it's let go. The line covers the current slide; on a film without slides it covers the whole film, with a mark per chapter, and the time shows beside the buttons.</li>
+            <li>1× opens 0.25× to 2×, ManimGX's own speeds. ⋮ › Captions shows the scene's captions (Manim's <code>add_subcaption</code>), here one per slide.</li>
+            <li>⋮ › Theme: <b>Film</b> (the scene's own colours) or <b>Paper</b> (the note's light page). Drawn films only; a video film has no Theme.</li>
+            <li>The list collapses with » on wide screens; the slide count opens it as a menu otherwise.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="opt" style="gap:12px">
+    <h2>Open questions</h2>
+    <div class="qs">
+      <ol>
+        <li><b>Where steps come from.</b> Recommended: the scene's sections (Manim CE's <code>self.next_section("Cut it into rings")</code>, which ManimGX already records), with the exporter's <code>--steps</code> flag making the film stop at each one. The other way is a Capy-only call like Manim Slides' <code>next_slide()</code>, which scenes written for plain Manim would lack.</li>
+        <li><b>Can a viewer play a stepped film straight through?</b> Manim Slides and Motion Canvas can't; YouTube never stops. A could add “Play through” to a ⋮ menu if wanted.</li>
+        <li><b>Sound and speed.</b> ManimGX films can carry sound; a volume button would appear only on films that have it. No speed control in any option yet.</li>
+      </ol>
+      <p><b>What it takes to build, any option:</b> ManimGX's fork adds a way to hide its own controls and hands Capy the chapters (a few lines in <code>web.rs</code>); the exporter writes the chapters and steps into the film's header so video films keep them (today only drawn films do); Capy draws the controls over both players.</p>
+    </div>
+  </section>
+</main>
+
+<script>
+const ICON = {
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/></svg>',
+  prev: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="5" width="2.5" height="14" rx="1"/><path d="M19 5.7v12.6a1 1 0 0 1-1.55.83l-9.2-6.3a1 1 0 0 1 0-1.66l9.2-6.3A1 1 0 0 1 19 5.7Z"/></svg>',
+  next: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="17.5" y="5" width="2.5" height="14" rx="1"/><path d="M5 5.7v12.6a1 1 0 0 0 1.55.83l9.2-6.3a1 1 0 0 0 0-1.66l-9.2-6.3A1 1 0 0 0 5 5.7Z"/></svg>',
+  full: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>',
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+  fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+};
+// One scene, 28 s: with steps (its sections) or as plain plays (named by line, as ManimGX does).
+const STEPS = [
+  { start: 0, end: 6, title: 'A circle of radius r' },
+  { start: 6, end: 13, title: 'Cut it into rings' },
+  { start: 13, end: 21, title: 'Unroll the rings' },
+  { start: 21, end: 28, title: 'Add up the strips' },
+];
+const PLAYS = [
+  { start: 0, end: 3, title: 'Line 12' }, { start: 3, end: 6, title: 'Line 15' },
+  { start: 6, end: 13, title: 'Line 19' }, { start: 13, end: 21, title: 'Line 27' },
+  { start: 21, end: 24, title: 'Line 34' }, { start: 24, end: 28, title: 'Line 36' },
+];
+const DURATION = 28;
+const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+const ease = (x) => x < 0 ? 0 : x > 1 ? 1 : x * x * (3 - 2 * x);
+
+// A drawn film's colours are data, so a theme can swap them (Paper: the note's own light page).
+const THEMES = {
+  film: { bg: '#000', ink: '#fff', ring: ['#89b4fa', '#74c7ec'], gold: '#f9e2af', red: '#f38ba8', alpha: '.55' },
+  paper: { bg: '#fbfaf6', ink: '#222', ring: ['#1e66f5', '#209fb5'], gold: '#b7791f', red: '#d20f39', alpha: '.35' },
+};
+function picture(t, theme = 'film') {
+  const P = THEMES[theme];
+  const cx = 420, cy = 390, R = 190, n = 10;
+  const p1 = ease(t / 5), p2 = ease((t - 6) / 6), p3 = ease((t - 13) / 7), p4 = ease((t - 21) / 5);
+  const colours = P.ring;
+  let s = '<rect width="1280" height="720" fill="' + P.bg + '"/>';
+  s += '<text x="64" y="92" fill="' + P.ink + '" font-family="Georgia, serif" font-size="46">The area of a circle</text>';
+  const circ = 2 * Math.PI * R;
+  if (p3 < 1) {
+    s += `<g opacity="${1 - p3 * 0.85}">`;
+    const rings = Math.round(p2 * n);
+    for (let i = n - 1; i >= 0; i--) {
+      if (n - i > rings) continue;
+      s += `<circle cx="${cx}" cy="${cy}" r="${(R * (i + 1)) / n}" fill="${colours[i % 2]}" fill-opacity="${P.alpha}"/>`;
+    }
+    s += `<circle cx="${cx}" cy="${cy}" r="${R}" fill="none" stroke="${P.gold}" stroke-width="5" stroke-dasharray="${circ}" stroke-dashoffset="${circ * (1 - p1)}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    if (p1 > 0.6) s += `<line x1="${cx}" y1="${cy}" x2="${cx + R}" y2="${cy}" stroke="${P.red}" stroke-width="4" opacity="${(p1 - 0.6) / 0.4}"/><text x="${cx + R / 2 - 10}" y="${cy - 14}" fill="${P.red}" font-family="Georgia, serif" font-style="italic" font-size="36" opacity="${(p1 - 0.6) / 0.4}">r</text>`;
+    s += '</g>';
+  }
+  // the strips: ring i becomes a strip of length 2πr_i, stacked into a triangle
+  const bx = 700, by = 600, H = 300, W = 520;
+  const shown = Math.round(p3 * n);
+  for (let i = 0; i < shown; i++) {
+    const w = (W * (n - i)) / n, h = H / n;
+    s += `<rect x="${bx}" y="${by - (i + 1) * h}" width="${w}" height="${h - 2}" fill="${colours[i % 2]}" fill-opacity=".75"/>`;
+  }
+  if (p3 >= 1) {
+    s += `<path d="M${bx} ${by} L${bx + W} ${by} L${bx} ${by - H} Z" fill="none" stroke="${P.gold}" stroke-width="4" opacity="${p4}"/>`;
+    s += `<text x="${bx + W / 2 - 40}" y="${by + 52}" fill="${P.gold}" font-family="Georgia, serif" font-size="34" opacity="${p4}">2πr</text>`;
+    s += `<text x="${bx - 46}" y="${by - H / 2}" fill="${P.red}" font-family="Georgia, serif" font-style="italic" font-size="34" opacity="${p4}">r</text>`;
+    s += `<text x="160" y="660" fill="${P.ink}" font-family="Georgia, serif" font-size="44" opacity="${ease((t - 23) / 3)}">½ · 2πr · r = πr²</text>`;
+  }
+  return s;
+}
+
+class Player {
+  constructor(el) {
+    this.el = el;
+    this.kind = el.dataset.player;
+    this.steps = el.dataset.steps === '1';
+    this.phone = el.dataset.phone === '1';
+    this.chapters = this.steps ? STEPS : PLAYS;
+    this.t = 0; this.playing = false; this.waiting = false; this.last = 0;
+    this.build();
+    this.render();
+  }
+  step(t = this.t) { return Math.max(0, this.chapters.findIndex((c) => t >= c.start && t < c.end) === -1 ? this.chapters.length - 1 : this.chapters.findIndex((c) => t >= c.start && t < c.end)); }
+  build() {
+    const { kind, steps, phone } = this;
+    const ib = (name, label) => `<button class="ib" data-a="${name}" aria-label="${label}">${ICON[name]}</button>`;
+    // B with steps: the bar covers one step; else the whole film
+    const scoped = kind === 'B' && steps;
+    const segs = kind === 'C' || scoped ? '<div class="seg"><i></i></div>' : this.chapters.map((c, i) => `<div class="seg${steps && i ? ' step-gap' : ''}" style="flex-grow:${c.end - c.start}"><i></i></div>`).join('');
+    const ticks = kind === 'C' ? this.chapters.slice(1).map((c) => `<span class="tick" style="left:${(c.start / DURATION) * 100}%"></span>`).join('') : '';
+    let row;
+    if (kind === 'A' && steps) row = `${ib('prev', 'Previous step')}${ib('play', 'Play')}${ib('next', 'Next step')}<span class="time"></span><span class="title"></span><span class="sp"></span>${ib('full', 'Full screen')}`;
+    else if (kind === 'C') row = `${ib('play', 'Play')}<span class="time"></span><button class="stepbtn" data-a="menu"><span></span>${ICON.down}</button><span class="sp"></span>${ib('full', 'Full screen')}`;
+    else row = `${ib('play', 'Play')}<span class="time"></span><span class="title"></span><span class="sp"></span>${ib('full', 'Full screen')}`;
+    const menu = kind === 'C' ? `<div class="menu">${this.chapters.map((c, i) => `<button data-go="${i}"><span class="n">${i + 1}</span><span class="tt">${c.title}</span><span class="d">${clock(c.end - c.start)}</span></button>`).join('')}</div>` : '';
+    const hint = kind === 'C' && steps ? `<button class="hint" data-a="next">Next step${ICON.fwd}</button>` : '';
+    const pager = kind === 'B' && steps ? `<div class="pager"><button class="btn icon" data-a="prev" aria-label="Previous step">${ICON.back}</button><span class="pt"></span><button class="btn" data-a="next">Next${ICON.fwd}</button></div>` : '';
+    this.el.innerHTML = `<div class="film" tabindex="0"><svg class="pic" viewBox="0 0 1280 720"></svg>${hint}${menu}<div class="ctl"><div class="bar">${segs}${ticks}<span class="knob"></span></div><div class="row">${row}</div></div></div>${pager}`;
+    this.film = this.el.querySelector('.film');
+    this.el.addEventListener('click', (e) => {
+      const go = e.target.closest('[data-go]');
+      if (go) { this.seek(this.chapters[+go.dataset.go].start); this.film.querySelector('.menu').classList.remove('open'); return; }
+      const a = e.target.closest('[data-a]')?.dataset.a;
+      if (a === 'play') this.toggle();
+      else if (a === 'prev') this.prevStep();
+      else if (a === 'next') this.nextStep();
+      else if (a === 'menu') this.film.querySelector('.menu').classList.toggle('open');
+    });
+    const bar = this.el.querySelector('.bar');
+    bar.addEventListener('click', (e) => {
+      const r = bar.getBoundingClientRect();
+      const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      if (scoped) { const c = this.chapters[this.step()]; this.seek(c.start + x * (c.end - c.start) * 0.999); }
+      else this.seek(x * DURATION * 0.999);
+    });
+    this.film.addEventListener('keydown', (e) => {
+      if (e.key === ' ' || e.key === 'k') { e.preventDefault(); this.toggle(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); this.steps ? this.nextStep() : this.seek(Math.min(DURATION - 0.01, this.t + 5)); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); this.steps ? this.prevStep() : this.seek(Math.max(0, this.t - 5)); }
+    });
+  }
+  seek(t) { this.t = t; this.waiting = false; this.render(); }
+  toggle() {
+    if (this.playing) { this.playing = false; this.render(); return; }
+    if (this.t >= DURATION - 0.02) this.t = 0;
+    if (this.waiting) { this.t = this.chapters[this.step()].end; this.waiting = false; }
+    this.play();
+  }
+  play() { this.playing = true; this.waiting = false; this.last = performance.now(); requestAnimationFrame((n) => this.tick(n)); this.render(); }
+  nextStep() {
+    const i = this.waiting ? this.step() + 1 : this.step() + 1;
+    if (i >= this.chapters.length) return;
+    this.t = this.chapters[i].start; this.play();
+  }
+  prevStep() {
+    const i = this.step();
+    const into = this.t - this.chapters[i].start;
+    const target = !this.waiting && into < 1 && i > 0 ? i - 1 : i;
+    this.t = this.chapters[target].start; this.waiting = false; this.play();
+  }
+  tick(now) {
+    if (!this.playing) return;
+    const dt = (now - this.last) / 1000; this.last = now;
+    const i = this.step();
+    let t = this.t + dt;
+    if (this.steps && t >= this.chapters[i].end - 0.001) { t = this.chapters[i].end - 0.001; this.playing = false; this.waiting = i < this.chapters.length - 1; }
+    if (t >= DURATION) { t = DURATION - 0.001; this.playing = false; }
+    this.t = t; this.render();
+    if (this.playing) requestAnimationFrame((n) => this.tick(n));
+  }
+  render() {
+    const { t, el, kind, steps } = this;
+    const i = this.step(), c = this.chapters[i];
+    this.film.querySelector('.pic').innerHTML = picture(t);
+    this.film.classList.toggle('waiting', this.waiting);
+    const playBtn = el.querySelector('[data-a="play"]');
+    playBtn.innerHTML = this.playing ? ICON.pause : ICON.play;
+    playBtn.setAttribute('aria-label', this.playing ? 'Pause' : 'Play');
+    const scoped = kind === 'B' && steps;
+    const segs = el.querySelectorAll('.seg i');
+    const bar = el.querySelector('.bar');
+    if (scoped) {
+      const x = (t - c.start) / (c.end - c.start);
+      segs[0].style.width = `${x * 100}%`;
+      el.querySelector('.knob').style.left = `${x * 100}%`;
+    } else if (segs.length === 1) {
+      segs[0].style.width = `${(t / DURATION) * 100}%`;
+      el.querySelector('.knob').style.left = `${(t / DURATION) * 100}%`;
+    } else {
+      this.chapters.forEach((ch, k) => { segs[k].style.width = `${Math.min(1, Math.max(0, (t - ch.start) / (ch.end - ch.start))) * 100}%`; });
+      const segEls = el.querySelectorAll('.seg');
+      const s = segEls[i], br = bar.getBoundingClientRect(), sr = s.getBoundingClientRect();
+      const x = br.width ? (sr.left - br.left + sr.width * Math.min(1, (t - c.start) / (c.end - c.start))) / br.width : t / DURATION;
+      el.querySelector('.knob').style.left = `${x * 100}%`;
+    }
+    const time = el.querySelector('.time');
+    time.textContent = scoped ? `${clock(t - c.start)} / ${clock(c.end - c.start)}` : `${clock(t)} / ${clock(DURATION)}`;
+    const title = el.querySelector('.title');
+    if (title) title.innerHTML = steps && kind === 'A' ? `<b>Step ${i + 1} of ${this.chapters.length}</b> · ${c.title}` : scoped ? '' : c.title;
+    const stepbtn = el.querySelector('.stepbtn span');
+    if (stepbtn) stepbtn.textContent = steps ? `Step ${i + 1} of ${this.chapters.length}` : c.title;
+    el.querySelectorAll('.menu button').forEach((b, k) => b.classList.toggle('on', k === i));
+    const pt = el.querySelector('.pt');
+    if (pt) pt.innerHTML = `<b>${i + 1} / ${this.chapters.length}</b> · ${c.title}`;
+    el.querySelectorAll('[data-a="next"]').forEach((b) => { b.disabled = i >= this.chapters.length - 1; b.classList.toggle(b.classList.contains('btn') ? 'go' : 'ready', this.waiting); });
+    el.querySelectorAll('[data-a="prev"]').forEach((b) => { b.disabled = i === 0 && t < 0.05; });
+  }
+}
+
+const CAPTIONS = ['Start with a circle of radius r.', 'Cut it into thin rings.', 'Unroll each ring into a strip.', 'The strips make a triangle: half of 2πr, times r.'];
+const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+class CoursePlayer {
+  constructor(el) {
+    Object.assign(this, { el, steps: el.dataset.steps === '1', drawn: el.dataset.drawn === '1', phone: el.dataset.phone === '1' });
+    this.chapters = this.steps ? STEPS : PLAYS;
+    Object.assign(this, { t: 0, playing: false, waiting: false, rate: 1, theme: 'film', cc: false, last: 0 });
+    this.build();
+    new ResizeObserver(([e]) => { this.root.classList.toggle('wide', this.steps && e.contentRect.width >= 860); }).observe(el);
+    this.render();
+  }
+  step(t = this.t) { const k = this.chapters.findIndex((c) => t >= c.start && t < c.end); return k === -1 ? this.chapters.length - 1 : k; }
+  build() {
+    const { steps, drawn, phone } = this;
+    const icon = (a, i, label, extra = '') => `<button class="btn icon ${extra}" data-a="${a}" aria-label="${label}">${i}</button>`;
+    const dots = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>';
+    const list = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>';
+    const collapse = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 17 5-5-5-5M13 17l5-5-5-5"/></svg>';
+    const left = `${icon('play', ICON.play, 'Play')}<button class="btn" data-a="speed"><span class="t">1×</span></button>${icon('full', ICON.full, 'Full screen', 'wide-only')}${icon('more', dots, 'More')}`;
+    const right = steps
+      ? `<span class="cnt"></span><button class="btn slbtn" data-a="list"><span class="cn2"></span>${ICON.down}</button>${icon('expand', list, 'Show slides', 'expand')}${icon('prev', ICON.back, 'Previous slide')}<button class="btn dark" data-a="next"><span class="t">Next</span>${ICON.fwd}</button>`
+      : '<span class="dtime"></span>';
+    const speed = `<div class="pop" data-pop="speed" style="left:40px">${RATES.map((r) => `<button data-rate="${r}">${r}×</button>`).join('')}</div>`;
+    const more = `<div class="pop" data-pop="more" style="left:80px"><button data-a="cc">Captions<span class="v"></span></button><button class="narrow-only" data-a="full">Full screen</button>${drawn ? '<hr><div class="h">Theme</div><button data-theme="film">Film</button><button data-theme="paper">Paper</button>' : ''}${steps ? '<hr><button data-a="replay">Replay this slide</button>' : ''}</div>`;
+    const slides = this.chapters.map((c, i) => `<button class="row" data-go="${i}"><span class="n">${i + 1}</span><span class="tt">${c.title}</span><span class="d">${clock(c.end - c.start)}</span></button>`).join('');
+    const listPop = steps ? `<div class="pop" data-pop="list" style="right:0;width:min(280px,100%)"><div class="h">Slides</div>${this.chapters.map((c, i) => `<button data-go="${i}">${i + 1}. ${c.title}</button>`).join('')}</div>` : '';
+    const ticks = steps ? '' : this.chapters.slice(1).map((c) => `<span class="dt" style="left:${(c.start / DURATION) * 100}%"></span>`).join('');
+    this.el.innerHTML = `<div class="dp"><div class="dmain"><div class="film" tabindex="0"><svg class="pic" viewBox="0 0 1280 720"></svg><div class="cap"></div></div><div class="dline"><i></i>${ticks}<span class="dk"></span></div><div class="dbar">${left}<span class="sp"></span>${right}${speed}${more}${listPop}</div></div>${steps ? `<aside class="dside"><div class="sh">Slides${icon('collapse', collapse, 'Hide slides')}</div>${slides}</aside>` : ''}</div>`;
+    this.root = this.el.querySelector('.dp');
+    this.film = this.el.querySelector('.film');
+    const closePops = (except) => this.el.querySelectorAll('.pop').forEach((p) => p !== except && p.classList.remove('open'));
+    this.el.addEventListener('click', (e) => {
+      const go = e.target.closest('[data-go]');
+      if (go) { closePops(); this.t = this.chapters[+go.dataset.go].start; this.play(); return; }
+      const rate = e.target.closest('[data-rate]');
+      if (rate) { this.rate = +rate.dataset.rate; closePops(); this.render(); return; }
+      const theme = e.target.closest('[data-theme]');
+      if (theme) { this.theme = theme.dataset.theme; closePops(); this.render(); return; }
+      if (e.target.closest('.film')) { closePops(); this.toggle(); return; }
+      const a = e.target.closest('[data-a]')?.dataset.a;
+      if (!a) return;
+      if (['speed', 'more', 'list'].includes(a)) {
+        const p = this.el.querySelector(`[data-pop="${a}"]`);
+        // a menu opens above the button that opened it
+        if (a !== 'list') p.style.left = `${e.target.closest('[data-a]').offsetLeft}px`;
+        closePops(p); p.classList.toggle('open'); return;
+      }
+      closePops();
+      if (a === 'play') this.toggle();
+      else if (a === 'next') this.nextStep();
+      else if (a === 'prev') this.prevStep();
+      else if (a === 'replay') { this.t = this.chapters[this.step()].start; this.play(); }
+      else if (a === 'cc') { this.cc = !this.cc; this.render(); }
+      else if (a === 'collapse') this.root.classList.add('collapsed');
+      else if (a === 'expand') this.root.classList.remove('collapsed');
+    });
+    // seek by pressing or dragging anywhere on the line (the knob follows); a playing film keeps
+    // playing from where it is let go
+    const line = this.el.querySelector('.dline');
+    const seekTo = (e) => {
+      const r = line.getBoundingClientRect(), x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      const c = this.chapters[this.dragStep ?? this.step()];
+      this.t = steps ? c.start + x * (c.end - c.start) * 0.999 : x * DURATION * 0.999;
+      this.waiting = false; this.render();
+    };
+    line.addEventListener('pointerdown', (e) => {
+      this.dragStep = this.step(); this.resume = this.playing; this.playing = false;
+      line.setPointerCapture(e.pointerId); line.classList.add('drag'); seekTo(e);
+    });
+    line.addEventListener('pointermove', (e) => { if (line.classList.contains('drag')) seekTo(e); });
+    const end = () => {
+      if (!line.classList.contains('drag')) return;
+      line.classList.remove('drag'); this.dragStep = undefined;
+      if (this.resume) this.play(); else this.render();
+    };
+    line.addEventListener('pointerup', end);
+    line.addEventListener('pointercancel', end);
+    this.film.addEventListener('keydown', (e) => {
+      if (e.key === ' ' || e.key === 'k') { e.preventDefault(); this.toggle(); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); steps ? this.nextStep() : (this.t = Math.min(DURATION - 0.01, this.t + 5), this.render()); }
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); steps ? this.prevStep() : (this.t = Math.max(0, this.t - 5), this.render()); }
+    });
+  }
+  toggle() {
+    if (this.playing) { this.playing = false; this.render(); return; }
+    if (this.t >= DURATION - 0.02) this.t = 0;
+    if (this.waiting) { this.t = this.chapters[this.step()].end; }
+    this.play();
+  }
+  play() { this.playing = true; this.waiting = false; this.last = performance.now(); requestAnimationFrame((n) => this.tick(n)); this.render(); }
+  nextStep() { const i = this.step() + 1; if (i < this.chapters.length) { this.t = this.chapters[i].start; this.play(); } }
+  prevStep() { const i = this.step(); const target = !this.waiting && this.t - this.chapters[i].start < 1 && i > 0 ? i - 1 : i; this.t = this.chapters[target].start; this.play(); }
+  tick(now) {
+    if (!this.playing) return;
+    const dt = ((now - this.last) / 1000) * this.rate; this.last = now;
+    const i = this.step();
+    let t = this.t + dt;
+    if (this.steps && t >= this.chapters[i].end - 0.001) { t = this.chapters[i].end - 0.001; this.playing = false; this.waiting = i < this.chapters.length - 1; }
+    if (t >= DURATION) { t = DURATION - 0.001; this.playing = false; }
+    this.t = t; this.render();
+    if (this.playing) requestAnimationFrame((n) => this.tick(n));
+  }
+  render() {
+    const { el, t, steps } = this;
+    const i = this.step(), c = this.chapters[i];
+    this.film.querySelector('.pic').innerHTML = picture(t, this.theme);
+    this.root.classList.toggle('cc', this.cc);
+    el.querySelector('.cap').textContent = CAPTIONS[STEPS.findIndex((x) => t >= x.start && t < x.end)] ?? CAPTIONS[3];
+    const play = el.querySelector('[data-a="play"]');
+    play.innerHTML = this.playing ? ICON.pause : ICON.play;
+    el.querySelector('[data-a="speed"] .t').textContent = `${this.rate}×`;
+    el.querySelectorAll('[data-pop="more"] [data-a="cc"] .v').forEach((v) => { v.textContent = this.cc ? 'On' : 'Off'; });
+    el.querySelectorAll('[data-rate]').forEach((b) => b.classList.toggle('on', +b.dataset.rate === this.rate));
+    el.querySelectorAll('[data-theme]').forEach((b) => b.classList.toggle('on', b.dataset.theme === this.theme));
+    const x = steps ? (t - c.start) / (c.end - c.start) : t / DURATION;
+    el.querySelector('.dline i').style.width = `${Math.min(1, x) * 100}%`;
+    el.querySelector('.dline .dk').style.left = `${Math.min(1, x) * 100}%`;
+    if (steps) {
+      el.querySelector('.cnt').textContent = `${i + 1} of ${this.chapters.length}`;
+      el.querySelector('.cn2').textContent = `${i + 1}/${this.chapters.length}`;
+      const next = el.querySelector('[data-a="next"]');
+      next.disabled = i >= this.chapters.length - 1;
+      next.classList.toggle('ready', this.waiting);
+      el.querySelector('[data-a="prev"]').disabled = i === 0 && t < 0.05;
+      el.querySelectorAll('[data-go]').forEach((b) => b.classList.toggle('on', +b.dataset.go === i));
+    } else el.querySelector('.dtime').textContent = `${clock(t)} / ${clock(DURATION)}`;
+  }
+}
+// each film starts a little way in, so the boards show something
+document.querySelectorAll('[data-player]').forEach((el, n) => {
+  const p = new Player(el);
+  p.t = p.steps ? [8.2, 13 - 0.001, 17][n % 3] : 9.5;
+  p.waiting = p.steps && Math.abs(p.t - (13 - 0.001)) < 0.01;
+  p.render();
+});
+document.querySelectorAll('[data-d]').forEach((el, n) => {
+  const p = new CoursePlayer(el);
+  p.t = p.steps ? [9, 13 - 0.001, 17][n % 3] : 9.5;
+  p.waiting = p.steps && Math.abs(p.t - (13 - 0.001)) < 0.01;
+  if (n === 0) p.cc = true;
+  if (n === 1) p.theme = 'paper';
+  p.render();
+});
+</script>
+</body>
+</html>

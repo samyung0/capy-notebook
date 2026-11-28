@@ -91,6 +91,14 @@ import {
   TABLE_END_NOTE,
 } from './editorSeed';
 import { errorMaterials } from './errorMaterials';
+import catenoidFilmUrl from './fixtures/films/catenoid.cmv?url';
+import circleAreaFilmUrl from './fixtures/films/circle_area.cmv?url';
+import descentFilmUrl from './fixtures/films/descent_3d.cmv?url';
+import eulerFilmUrl from './fixtures/films/euler_identity.cmv?url';
+import grabFilmUrl from './fixtures/films/grab_triangle.cmv?url';
+import mengerFilmUrl from './fixtures/films/menger.cmv?url';
+import shapesFilmUrl from './fixtures/films/shapes_to_play_with.cmv?url';
+import shapesVideoFilmUrl from './fixtures/films/shapes_video.cmv?url';
 import { markdownSamples } from './markdownSamples';
 import {
   nearLimitCards,
@@ -1067,13 +1075,33 @@ standaloneSeeds.forEach((seed, index) => {
     workspaceId: '',
   });
 });
-// Biology 101's films, for a note's Film and the canvas's (Epo 2026-11-27).
+// Biology 101's films, for a note's Film and the canvas's (Epo 2026-11-27), and
+// four exported from ManimGX's examples to try (Epo 2026-11-28): drawn 3D,
+// drawn 2D, and a video film.
 (
   [
-    ['f_bio_film', 'Derivative.cmv', drawnFilmUrl],
-    ['f_bio_film_video', 'Secant video.cmv', videoFilmUrl],
+    ['f_bio_film', 'Derivative.cmv', drawnFilmUrl, 640 * 1024],
+    ['f_bio_film_video', 'Secant video.cmv', videoFilmUrl, 640 * 1024],
+    ['f_bio_film_menger', 'Menger slice.cmv', mengerFilmUrl, 2_644_204],
+    ['f_bio_film_euler', "Euler's identity.cmv", eulerFilmUrl, 265_596],
+    ['f_bio_film_circle', 'Area of a circle.cmv', circleAreaFilmUrl, 1_042_168],
+    [
+      'f_bio_film_catenoid',
+      'Catenoid to helicoid.cmv',
+      catenoidFilmUrl,
+      1_403_158,
+    ],
+    ['f_bio_film_grab', 'Grab the triangle.cmv', grabFilmUrl, 28_585],
+    ['f_bio_film_descent', 'Gradient descent 3D.cmv', descentFilmUrl, 81_809],
+    ['f_bio_film_shapes', 'Shapes to play with.cmv', shapesFilmUrl, 107_683],
+    [
+      'f_bio_film_shapes_video',
+      'Shapes to play with (video).cmv',
+      shapesVideoFilmUrl,
+      551_491,
+    ],
   ] as const
-).forEach(([id, name, url], index) => {
+).forEach(([id, name, url, sizeBytes], index) => {
   fileLinks[id] = { url };
   files.push({
     addedAt: hours(3 + index),
@@ -1085,7 +1113,7 @@ standaloneSeeds.forEach((seed, index) => {
     name,
     position: 40 + index,
     revision: 1,
-    sizeBytes: 640 * 1024,
+    sizeBytes,
     status: 'ready',
     topicId: null,
     workspaceId: 'ws_bio',

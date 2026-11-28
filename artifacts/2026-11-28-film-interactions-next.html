@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Film interactions, next</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;500;600;700;800&display=swap">
+<style>
+/* Tokens copied from src/styles/tokens/themes/capy.css (latte + mocha). */
+:root {
+  --page: #f7f7f7; --card: #ffffff; --item-hover: #eff1f1;
+  --fg: #222222; --fg2: #4b4b4b; --muted: #6b6b6b; --border: #d6d6d6; --divider: #e6e6e6;
+  --accent: #8c7bd9; --tint-bg: #ece6f6; --tint-fg: #5b4aa8; --ok-bg: #e7f6ee; --ok-fg: #2f7d56; --warn-bg: #f7f0e5; --warn-fg: #a9772a;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.04), 0 4px 12px rgba(0,0,0,.05);
+  --font: "Fustat", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #0d1219; --card: #161d27; --item-hover: #1a222d;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --border: #323e52; --divider: rgba(255,255,255,.07);
+  --accent: #b5a1f8; --tint-bg: #31334b; --tint-fg: #c8b8fa; --ok-bg: #16301f; --ok-fg: #8fe3b9; --warn-bg: #2f2611; --warn-fg: #f4c878;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.3); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --page: #0d1219; --card: #161d27; --item-hover: #1a222d;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --border: #323e52; --divider: rgba(255,255,255,.07);
+  --accent: #b5a1f8; --tint-bg: #31334b; --tint-fg: #c8b8fa; --ok-bg: #16301f; --ok-fg: #8fe3b9; --warn-bg: #2f2611; --warn-fg: #f4c878;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.3); color-scheme: dark }
+
+* { box-sizing: border-box }
+body { margin: 0; background: var(--page); color: var(--fg); font: 500 14px/1.45 var(--font); padding: 28px 16px 80px }
+main { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px }
+h1 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -.02rem }
+h2 { margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -.02rem }
+h4 { margin: 0; font-size: 17px; font-weight: 700 }
+p { margin: 0 }
+code, pre { font: 500 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace }
+code { background: var(--item-hover); padding: 0 4px; border-radius: 4px }
+pre { margin: 0; background: var(--item-hover); padding: 10px 12px; border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere }
+.lede { color: var(--fg2); max-width: 82ch; display: flex; flex-direction: column; gap: 8px }
+.board { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 340px); gap: 28px; align-items: start }
+@media (max-width: 1000px) { .board { grid-template-columns: minmax(0, 1fr) } }
+.note { background: var(--card); border-radius: 14px; box-shadow: var(--shadow-card); padding: 22px 28px 26px; display: flex; flex-direction: column; gap: 12px }
+.note .np { color: var(--fg2) }
+@media (max-width: 600px) { .note { padding: 16px } }
+.panel { display: flex; flex-direction: column; gap: 12px; color: var(--fg2); font-size: 13.5px; position: sticky; top: 16px }
+.panel h3 { margin: 0; font-size: 16px; color: var(--fg) }
+.lbl { font-size: 11px; font-weight: 700; letter-spacing: .06rem; text-transform: uppercase; color: var(--muted) }
+.work { display: flex; gap: 6px; flex-wrap: wrap }
+.work span { font-size: 12.5px; font-weight: 600; padding: 3px 8px; border-radius: 6px; background: var(--item-hover); color: var(--fg2) }
+.work span.on { background: var(--tint-bg); color: var(--tint-fg) }
+.list { display: flex; flex-direction: column; border-top: 1px solid var(--divider) }
+.list button { all: unset; box-sizing: border-box; display: flex; gap: 10px; padding: 0 4px; min-height: 40px; align-items: center; border-bottom: 1px solid var(--divider); cursor: pointer; color: var(--fg2) }
+.list button:hover { background: var(--item-hover) }
+.list button.on { color: var(--fg); font-weight: 700 }
+.list .n { width: 18px; color: var(--muted) }
+.list .w { margin-left: auto; color: var(--muted); font-size: 12px; font-weight: 500 }
+
+/* Option D's player */
+.dp { display: flex; flex-direction: column; min-width: 0; position: relative; container: dp / inline-size }
+.film { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; overflow: hidden; user-select: none; touch-action: none; outline: none }
+.film > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block }
+.dline { position: relative; height: 16px; margin: 0 0 -6px; cursor: pointer }
+.dline::before { content: ""; position: absolute; left: 0; right: 0; top: 6px; height: 3px; background: var(--divider) }
+.dline i { position: absolute; left: 0; top: 6px; height: 3px; background: var(--accent); width: 0 }
+.dline .dk { position: absolute; top: 7.5px; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--card) }
+.dbar { display: flex; align-items: center; gap: 2px; padding-top: 8px; min-width: 0 }
+.btn { height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--fg); font: 600 13.5px/1 var(--font); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; flex-shrink: 0 }
+.btn:hover:not(:disabled) { background: var(--item-hover) }
+.btn:disabled { opacity: .45; cursor: default }
+.btn svg { width: 22px; height: 22px }
+.btn.icon { width: 36px; padding: 0; justify-content: center }
+.btn.dark { background: var(--fg); color: var(--card); border-color: var(--fg) }
+.btn.dark svg { width: 20px; height: 20px }
+.btn.dark:hover:not(:disabled) { background: var(--fg2) }
+.btn.ready { box-shadow: 0 0 0 3px var(--tint-bg) }
+.btn.bordered { border-color: var(--border); background: var(--card); height: 34px }
+.dbar .t, .cnt { position: relative; top: 1.5px }
+.cnt { color: var(--muted); font-size: 13.5px; white-space: nowrap; padding: 0 6px }
+.sp { flex: 1 }
+@container dp (max-width: 520px) { .btn { padding: 0 9px } .btn.icon { width: 34px; padding: 0 } .wide-only { display: none } }
+/* cues and chips on the film */
+.halo { position: absolute; border-radius: 50%; pointer-events: none; border: 1px solid rgba(181,161,248,.8); animation: pulse 3s ease-in-out infinite }
+@keyframes pulse { 0%, 100% { opacity: .12 } 50% { opacity: .5 } }
+.chips { position: absolute; top: 10px; right: 10px; display: flex; gap: 6px }
+.chip { height: 30px; border: 0; border-radius: 6px; padding: 0 10px; background: rgba(255,255,255,.92); color: #111; font: 600 12.5px/1 var(--font); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap }
+.chip svg { width: 15px; height: 15px }
+.chip[hidden] { display: none }
+.chip.dim { background: rgba(255,255,255,.16); color: #fff }
+.task { display: flex; align-items: center; gap: 10px; padding: 12px 0 0; flex-wrap: wrap }
+.task[hidden] { display: none }
+.task .q { flex: 1; min-width: 200px }
+.verdict { width: 100%; padding: 10px 12px; border-radius: 8px; font-weight: 600; display: none }
+.verdict.ok { display: block; background: var(--ok-bg); color: var(--ok-fg) }
+.verdict.no { display: block; background: var(--warn-bg); color: var(--warn-fg) }
+.later { display: flex; flex-direction: column; gap: 10px; color: var(--fg2); max-width: 86ch }
+.later ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px }
+.later b { color: var(--fg) }
+</style>
+</head>
+<body>
+<main>
+  <header style="display:flex;flex-direction:column;gap:12px">
+    <h1>Film interactions, once built</h1>
+    <div class="lede">
+      <p>One lesson film in option D's player, a slide per idea from the spike's "what could come next". Each slide waits at its end like any slide; everything on it can also be grabbed while it plays (that pauses it). The panel says what the scene's author would write and which part needs the work: <b>page</b> (Capy's player UI), <b>exporter</b> (cmv-manimgx) or <b>engine</b> (the ManimGX fork).</p>
+      <p>Already working in the fork today (see the demo videos): grabbing, turning and scaling tagged objects, orbiting and zooming any 3D view, spinning a tagged 3D object. Everything below builds on those.</p>
+    </div>
+  </header>
+
+  <div class="board">
+    <div class="note"><h4>Shapes you can play with</h4><p class="np">Step through with Next; try each slide's object.</p><div id="lesson"></div><p class="np">The film is a ManimGX scene: the shapes are drawn by the engine, the page only adds the outline, the halo and the task row.</p></div>
+    <aside class="panel" id="panel"></aside>
+  </div>
+
+  <section class="later">
+    <h2>Not in the lesson</h2>
+    <ul>
+      <li><b>Phone gestures</b> (page): one finger drags or orbits, two fingers turn and pinch to scale or zoom.</li>
+      <li><b>Keyboard</b> (page): Tab to a grabbable object, arrows move it, Shift-arrows turn it; in 3D, arrows orbit.</li>
+      <li><b>Results into study progress</b> (page and server): a checked task counts like a quiz question in Capy's study tracking.</li>
+      <li><b>Live recomputation</b> (needs the scene's Python): a label that recomputes for any position, not just precomputed stops. That's the same problem as sliders for scene parameters, set aside for later.</li>
+    </ul>
+  </section>
+</main>
+
+<script>
+const ICON = {
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/></svg>',
+  full: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>',
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+  fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  dots: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+  reset: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
+};
+const ease = (x) => (x < 0 ? 0 : x > 1 ? 1 : x * x * (3 - 2 * x));
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const TXT = (x, y, s, size = 34, fill = '#fff', extra = '') => `<text x="${x}" y="${y}" fill="${fill}" font-family="Georgia, serif" font-size="${size}" ${extra}>${s}</text>`;
+// film units: 1280 × 720; an axes box helper (world → film)
+const axes = (ox, oy, unit) => ({ X: (x) => ox + x * unit, Y: (y) => oy - y * unit, x: (X) => (X - ox) / unit, y: (Y) => (oy - Y) / unit });
+
+/* Each slide: a title, its 4 s intro, the objects a viewer can grab, how a drag moves them,
+   how it draws, and what the panel says. State lives in `s` and goes back to `init()` on play. */
+const SLIDES = [
+  {
+    title: 'Hit the target',
+    work: ['exporter', 'page'],
+    what: 'Brilliant-style: the author marks a target and a tolerance. When the slide waits, a task row asks for it; Check answers at once, and a wrong try leaves the object where it is to adjust.',
+    code: `p = Dot(LEFT * 3)\nring = Circle(0.3).move_to(RIGHT * 2 + UP)\ninteractive(p, move=True,\n  target=ring, tolerance=0.25,\n  label="Drag the dot")`,
+    task: 'Put the dot inside the ring.',
+    init: () => ({ p: [380, 460] }),
+    objects: (s) => [{ id: 'p', at: s.p, r: 30, label: 'Drag the dot' }],
+    drag: (s, id, q) => { s.p = q; },
+    draw: (s, t) => {
+      const a = ease(t / 2);
+      return `<circle cx="860" cy="300" r="40" fill="none" stroke="#a6e3a1" stroke-width="3" stroke-dasharray="8 7" opacity="${a}"/><circle cx="${s.p[0]}" cy="${s.p[1]}" r="18" fill="#f9e2af" opacity="${a}"/>`;
+    },
+    check: (s) => Math.hypot(s.p[0] - 860, s.p[1] - 300) < 34
+      ? ['ok', 'Correct, it’s inside the ring.']
+      : ['no', `Not yet: ${Math.round(Math.hypot(s.p[0] - 860, s.p[1] - 300) / 80 * 10) / 10} units away.`],
+  },
+  {
+    title: 'Along a curve',
+    work: ['exporter', 'page'],
+    what: 'The point can only travel along the parabola. The exporter writes the curve into the film; the page keeps the pose on it before calling pose(). The page knows where on the curve it is, so it can show x without the scene.',
+    code: `curve = axes.plot(lambda x: x**2 / 4)\np = Dot(curve.point_from_proportion(.5))\ninteractive(p, move=True, along=curve)`,
+    init: () => ({ x: 0.5 }),
+    objects: (s) => { const A = axes(640, 560, 90); return [{ id: 'p', at: [A.X(s.x), A.Y(s.x * s.x / 4)], r: 30, label: 'Slide the point along the curve' }]; },
+    drag: (s, id, q) => { const A = axes(640, 560, 90); s.x = clamp(A.x(q[0]), -4, 4); },
+    draw: (s, t) => {
+      const A = axes(640, 560, 90), a = ease(t / 2);
+      let d = ''; for (let i = 0; i <= 64; i++) { const x = -4 + i / 8; d += `${i ? 'L' : 'M'}${A.X(x)} ${A.Y(x * x / 4)}`; }
+      return `<line x1="160" y1="560" x2="1120" y2="560" stroke="#7f849c" stroke-width="2"/><line x1="640" y1="120" x2="640" y2="600" stroke="#7f849c" stroke-width="2"/><path d="${d}" fill="none" stroke="#89b4fa" stroke-width="4" opacity="${a}"/><circle cx="${A.X(s.x)}" cy="${A.Y(s.x * s.x / 4)}" r="16" fill="#f9e2af" opacity="${a}"/>${TXT(100, 250, `x = ${s.x.toFixed(2)}`, 34, '#f9e2af', `opacity="${a}"`)}${TXT(100, 200, 'y = x² / 4', 34, '#89b4fa', `opacity="${a}"`)}`;
+    },
+  },
+  {
+    title: 'Snap to the grid',
+    work: ['exporter', 'page', 'engine'],
+    what: 'The point snaps to whole numbers and can’t leave the axes. Snapping in the scene’s own units needs one small engine call that maps canvas pixels to the scene’s coordinates; the region is written by the exporter.',
+    code: `p = Dot(axes.c2p(1, 1))\ninteractive(p, move=True,\n  snap=1, within=axes)`,
+    init: () => ({ x: 1, y: 1 }),
+    objects: (s) => { const A = axes(640, 380, 70); return [{ id: 'p', at: [A.X(s.x), A.Y(s.y)], r: 28, label: 'Drag the point' }]; },
+    drag: (s, id, q) => { const A = axes(640, 380, 70); s.x = clamp(Math.round(A.x(q[0])), -6, 6); s.y = clamp(Math.round(A.y(q[1])), -3, 3); },
+    draw: (s, t) => {
+      const A = axes(640, 380, 70), a = ease(t / 2);
+      let g = '';
+      for (let x = -6; x <= 6; x++) g += `<line x1="${A.X(x)}" y1="${A.Y(-3)}" x2="${A.X(x)}" y2="${A.Y(3)}" stroke="#313244" stroke-width="${x ? 1.5 : 2.5}"/>`;
+      for (let y = -3; y <= 3; y++) g += `<line x1="${A.X(-6)}" y1="${A.Y(y)}" x2="${A.X(6)}" y2="${A.Y(y)}" stroke="#313244" stroke-width="${y ? 1.5 : 2.5}"/>`;
+      return `<g opacity="${a}">${g}<circle cx="${A.X(s.x)}" cy="${A.Y(s.y)}" r="15" fill="#f38ba8"/>${TXT(A.X(s.x) + 22, A.Y(s.y) - 18, `(${s.x}, ${s.y})`, 28, '#f38ba8')}</g>`;
+    },
+  },
+  {
+    title: 'Turn about a pivot',
+    work: ['exporter', 'engine'],
+    what: 'The hand turns about its tail, not its middle. The exporter writes the pivot; the engine turns the records about it (today it turns about the bounding box’s centre). Snapping every 15° is optional, on the page.',
+    code: `hand = Arrow(ORIGIN, RIGHT * 2)\ninteractive(hand, rotate=True,\n  pivot=hand.get_start(), step=15)`,
+    init: () => ({ a: -0.6 }),
+    objects: (s) => [{ id: 'h', at: [640 + 110 * Math.cos(s.a), 390 + 110 * Math.sin(s.a)], r: 70, label: 'Turn the hand' }],
+    drag: (s, id, q) => { const raw = Math.atan2(q[1] - 390, q[0] - 640), st = Math.PI / 12; s.a = Math.round(raw / st) * st; },
+    draw: (s, t) => {
+      const a = ease(t / 2), L = 220, ex = 640 + L * Math.cos(s.a), ey = 390 + L * Math.sin(s.a);
+      const deg = Math.round(((-s.a * 180) / Math.PI + 360) % 360);
+      let ticks = ''; for (let k = 0; k < 24; k++) { const th = (k * Math.PI) / 12; ticks += `<line x1="${640 + 250 * Math.cos(th)}" y1="${390 + 250 * Math.sin(th)}" x2="${640 + 262 * Math.cos(th)}" y2="${390 + 262 * Math.sin(th)}" stroke="#585b70" stroke-width="2"/>`; }
+      return `<g opacity="${a}">${ticks}<line x1="640" y1="390" x2="${ex}" y2="${ey}" stroke="#f9e2af" stroke-width="8" stroke-linecap="round"/><circle cx="640" cy="390" r="12" fill="#fff"/>${TXT(940, 160, `${deg}°`, 44, '#f9e2af')}</g>`;
+    },
+  },
+  {
+    title: 'Labels follow',
+    work: ['exporter', 'engine'],
+    what: 'The label rides with its triangle. The exporter records that the label follows the triangle; the engine gives followers the same pose. Rigid only: the label moves, it doesn’t change.',
+    code: `tri = Triangle()\nname = MathTex("A").next_to(tri, UP)\ninteractive(tri, move=True, rotate=True,\n  followers=[name])`,
+    init: () => ({ dx: 0, dy: 0 }),
+    objects: (s) => [{ id: 't', at: [560 + s.dx, 420 + s.dy], r: 110, label: 'Drag the triangle' }],
+    drag: (s, id, q, from) => { s.dx = from.dx + q[0] - from.q[0]; s.dy = from.dy + q[1] - from.q[1]; },
+    draw: (s, t) => {
+      const a = ease(t / 2), x = s.dx, y = s.dy;
+      return `<g opacity="${a}"><polygon points="${460 + x},${500 + y} ${680 + x},${500 + y} ${560 + x},${320 + y}" fill="#89b4fa" fill-opacity=".5" stroke="#89b4fa" stroke-width="4"/>${TXT(548 + x, 296 + y, 'A', 40, '#fff', 'font-style="italic"')}${TXT(900, 600, 'the axes stay put', 28, '#7f849c')}</g>`;
+    },
+  },
+  {
+    title: 'Precomputed stops',
+    work: ['exporter', 'page'],
+    what: 'Things that depend on the drag (the rectangle’s width, its area) can change if the exporter renders the slide once per stop. The drag snaps between the 8 stops and the page shows that stop’s frame. Costs about 8× this slide’s size.',
+    code: `w = ValueTracker(3)\nrect = always_redraw(lambda: Rectangle(\n  width=w.get_value(), height=2))\ninteractive(w, values=range(1, 9),\n  handle=rect.get_right())`,
+    init: () => ({ w: 3 }),
+    objects: (s) => [{ id: 'w', at: [300 + s.w * 90, 400], r: 34, label: 'Drag the edge' }],
+    drag: (s, id, q) => { s.w = clamp(Math.round((q[0] - 300) / 90), 1, 8); },
+    draw: (s, t, ui) => {
+      const a = ease(t / 2), X = 300 + s.w * 90;
+      let stops = ''; if (ui.dragging) for (let k = 1; k <= 8; k++) stops += `<line x1="${300 + k * 90}" y1="510" x2="${300 + k * 90}" y2="528" stroke="#b5a1f8" stroke-width="3"/>`;
+      return `<g opacity="${a}"><rect x="300" y="310" width="${X - 300}" height="180" fill="#a6e3a1" fill-opacity=".35" stroke="#a6e3a1" stroke-width="4"/><circle cx="${X}" cy="400" r="12" fill="#fff"/>${stops}${TXT(300, 270, `Area = ${s.w} × 2 = ${s.w * 2}`, 40, '#fff')}</g>`;
+    },
+  },
+  {
+    title: 'Spin and step in 3D',
+    work: ['page', 'engine'],
+    what: 'Flick the cube and it keeps turning, slowing down (page). X, Y and Z turn it a quarter about that axis (one small engine call that turns about an axis). Orbiting the whole view works as in the spike.',
+    code: `cube = Cube()\ninteractive(cube, rotate=True)`,
+    init: () => ({ rx: -0.5, ry: 0.6, rz: 0, vx: 0, vy: 0 }),
+    objects: () => [{ id: 'c', at: [640, 390], r: 170, label: 'Flick the cube' }],
+    drag: (s, id, q, from) => { const p = from.last ?? from.q; s.vy = (q[0] - p[0]) * 0.01; s.vx = (q[1] - p[1]) * 0.01; from.last = q; s.ry = from.ry + (q[0] - from.q[0]) * 0.01; s.rx = from.rx + (q[1] - from.q[1]) * 0.01; },
+    draw: (s, t) => {
+      const a = ease(t / 2), V = [];
+      for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) V.push([x, y, z]);
+      const P = V.map(([x, y, z]) => {
+        const y1 = y * Math.cos(s.rx) - z * Math.sin(s.rx), z1 = y * Math.sin(s.rx) + z * Math.cos(s.rx);
+        const x2 = x * Math.cos(s.ry) + z1 * Math.sin(s.ry);
+        return [640 + 110 * (x2 * Math.cos(s.rz) - y1 * Math.sin(s.rz)), 390 + 110 * (x2 * Math.sin(s.rz) + y1 * Math.cos(s.rz))];
+      });
+      let e = '';
+      V.forEach((v, i) => V.forEach((w, j) => { if (j > i && v.filter((c, k) => c !== w[k]).length === 1) e += `<line x1="${P[i][0]}" y1="${P[i][1]}" x2="${P[j][0]}" y2="${P[j][1]}" stroke="#cba6f7" stroke-width="4"/>`; }));
+      return `<g opacity="${a}">${e}</g>`;
+    },
+    keys: true,
+  },
+];
+const SLIDE_LEN = 4;
+const TOTAL = SLIDES.length * SLIDE_LEN;
+
+class Lesson {
+  constructor(el, panel) {
+    Object.assign(this, { el, panel, t: 0, playing: false, waiting: false, last: 0, drag: null, hover: null, grabbed: new Set(), dragging: false });
+    this.states = SLIDES.map((sl) => sl.init());
+    const b = (a, i, label, cls = '') => `<button class="btn icon ${cls}" data-a="${a}" aria-label="${label}">${i}</button>`;
+    el.innerHTML = `<div class="dp"><div class="film" tabindex="0"><svg viewBox="0 0 1280 720"></svg><div class="chips"><button class="chip dim" data-k="x" hidden>X</button><button class="chip dim" data-k="y" hidden>Y</button><button class="chip dim" data-k="z" hidden>Z</button><button class="chip" data-a="reset" hidden>${ICON.reset}Reset</button></div></div><div class="dline"><i></i><span class="dk"></span></div><div class="dbar">${b('play', ICON.play, 'Play')}<button class="btn"><span class="t">1×</span></button>${b('full', ICON.full, 'Full screen', 'wide-only')}${b('more', ICON.dots, 'More')}<span class="sp"></span><button class="btn" data-a="list"><span class="t cn2"></span>${ICON.down}</button>${b('prev', ICON.back, 'Previous slide')}<button class="btn dark" data-a="next"><span class="t">Next</span>${ICON.fwd}</button></div><div class="task" hidden><span class="q"></span><button class="btn bordered" data-a="check">Check</button><div class="verdict"></div></div></div>`;
+    this.film = el.querySelector('.film'); this.svg = this.film.querySelector('svg');
+    el.addEventListener('click', (e) => {
+      const a = e.target.closest('[data-a]')?.dataset.a, k = e.target.closest('[data-k]')?.dataset.k;
+      if (k) { this.quarter(k); return; }
+      if (a === 'play') this.toggle();
+      else if (a === 'next') this.go(this.slide() + 1, true);
+      else if (a === 'prev') this.go(this.slide(), true);
+      else if (a === 'reset') { this.resetSlide(); this.render(); }
+      else if (a === 'check') this.check();
+    });
+    const xy = (e) => { const r = this.film.getBoundingClientRect(); return [((e.clientX - r.left) / r.width) * 1280, ((e.clientY - r.top) / r.height) * 720]; };
+    this.film.addEventListener('pointermove', (e) => {
+      const q = xy(e);
+      if (this.drag) { SLIDES[this.slide()].drag(this.state(), this.drag.id, q, this.drag.from); this.drag.moved = true; this.render(); return; }
+      const h = this.pick(q); if (h !== this.hover) { this.hover = h; this.render(); }
+    });
+    this.film.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.chip')) return;
+      const q = xy(e), id = this.pick(q);
+      if (!id) { this.toggle(); return; }
+      this.playing = false; this.grabbed.add(this.slide()); if (SLIDES[this.slide()].keys) Object.assign(this.state(), { vx: 0, vy: 0 });
+      this.drag = { id, from: { ...this.state(), q } }; this.dragging = true;
+      this.film.setPointerCapture(e.pointerId); this.render();
+    });
+    const end = () => { if (!this.drag) return; this.drag = null; this.dragging = false; this.spinLoop(); this.render(); };
+    this.film.addEventListener('pointerup', end); this.film.addEventListener('pointercancel', end);
+    this.film.addEventListener('keydown', (e) => { if (SLIDES[this.slide()].keys && 'xyz'.includes(e.key)) this.quarter(e.key); });
+    this.el.querySelector('.dline').addEventListener('pointerdown', (e) => {
+      const r = e.currentTarget.getBoundingClientRect(), x = clamp((e.clientX - r.left) / r.width, 0, 1), i = this.slide();
+      this.t = i * SLIDE_LEN + x * SLIDE_LEN * 0.999; this.waiting = false; this.resetSlide(); this.render();
+    });
+    new ResizeObserver(() => this.render()).observe(el);
+    this.t = SLIDE_LEN - 0.001; this.waiting = true;
+    this.render();
+  }
+  slide() { return Math.min(SLIDES.length - 1, Math.floor(this.t / SLIDE_LEN)); }
+  state() { return this.states[this.slide()]; }
+  local() { return this.t - this.slide() * SLIDE_LEN; }
+  pick(q) { for (const o of SLIDES[this.slide()].objects(this.state())) if (Math.hypot(q[0] - o.at[0], q[1] - o.at[1]) < o.r) return o.id; return null; }
+  moved() { const i = this.slide(); return JSON.stringify(this.states[i]) !== JSON.stringify(SLIDES[i].init()); }
+  resetSlide() { const i = this.slide(); this.states[i] = SLIDES[i].init(); const v = this.el.querySelector('.verdict'); v.className = 'verdict'; }
+  go(i, play) { if (i < 0 || i >= SLIDES.length) return; this.t = i * SLIDE_LEN; this.resetSlide(); if (play) this.play(); else this.render(); }
+  toggle() { if (this.playing) { this.playing = false; this.render(); return; } this.resetSlide(); if (this.waiting) { this.go(this.slide() + 1, true); return; } this.play(); }
+  play() { this.playing = true; this.waiting = false; this.last = performance.now(); requestAnimationFrame((n) => this.tick(n)); this.render(); }
+  tick(now) {
+    if (!this.playing) return;
+    const i = this.slide(); let t = this.t + (now - this.last) / 1000; this.last = now;
+    if (t >= (i + 1) * SLIDE_LEN - 0.001) { t = (i + 1) * SLIDE_LEN - 0.001; this.playing = false; this.waiting = true; }
+    this.t = t; this.render(); if (this.playing) requestAnimationFrame((n) => this.tick(n));
+  }
+  // a flicked cube keeps turning, slowing down
+  spinLoop() {
+    const s = this.state(); if (!SLIDES[this.slide()].keys) return;
+    const step = () => { if (this.drag || (Math.abs(s.vx) + Math.abs(s.vy) < 0.001)) return; s.rx += s.vx; s.ry += s.vy; s.vx *= 0.95; s.vy *= 0.95; this.render(); requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  }
+  quarter(axis) {
+    const s = this.state(), key = `r${axis}`, to = s[key] + Math.PI / 2, from = s[key], t0 = performance.now();
+    this.playing = false; this.grabbed.add(this.slide()); s.vx = s.vy = 0;
+    const step = (n) => { const k = ease((n - t0) / 350); s[key] = from + (to - from) * k; this.render(); if (k < 1) requestAnimationFrame(step); };
+    requestAnimationFrame(step);
+  }
+  check() {
+    const v = this.el.querySelector('.verdict'), [cls, text] = SLIDES[this.slide()].check(this.state());
+    v.className = `verdict ${cls}`; v.textContent = text;
+  }
+  render() {
+    const i = this.slide(), sl = SLIDES[i], s = this.state(), lt = this.local();
+    this.svg.innerHTML = `<rect width="1280" height="720" fill="#000"/>${TXT(64, 92, sl.title, 44)}${sl.draw(s, lt, { dragging: this.dragging })}`;
+    const k = this.film.clientWidth / 1280;
+    this.film.querySelectorAll('.halo').forEach((n) => n.remove());
+    const objs = sl.objects(s);
+    if (!this.playing && !this.grabbed.has(i) && !this.drag) for (const o of objs) {
+      const h = document.createElement('span'), d = 2 * o.r * k;
+      h.className = 'halo'; Object.assign(h.style, { left: `${o.at[0] * k - d / 2}px`, top: `${o.at[1] * k - d / 2}px`, width: `${d}px`, height: `${d}px` });
+      this.film.append(h);
+    }
+    this.film.style.cursor = this.drag ? 'grabbing' : this.hover ? 'grab' : 'default';
+    this.film.querySelector('[data-a="reset"]').hidden = !this.moved();
+    this.film.querySelectorAll('[data-k]').forEach((c) => { c.hidden = !sl.keys; });
+    const task = this.el.querySelector('.task'); task.hidden = !sl.task; if (sl.task) task.querySelector('.q').textContent = sl.task;
+    this.el.querySelector('[data-a="play"]').innerHTML = this.playing ? ICON.pause : ICON.play;
+    const x = lt / SLIDE_LEN;
+    this.el.querySelector('.dline i').style.width = `${x * 100}%`;
+    this.el.querySelector('.dline .dk').style.left = `${x * 100}%`;
+    this.el.querySelector('.cn2').textContent = `${i + 1}/${SLIDES.length}`;
+    const next = this.el.querySelector('[data-a="next"]'); next.disabled = i >= SLIDES.length - 1; next.classList.toggle('ready', this.waiting);
+    this.panelFor(i);
+  }
+  panelFor(i) {
+    if (this.shown === i) return; this.shown = i;
+    const sl = SLIDES[i], all = ['page', 'exporter', 'engine'];
+    this.panel.innerHTML = `<span class="lbl">Slide ${i + 1} of ${SLIDES.length}</span><h3>${sl.title}</h3><p>${sl.what}</p><span class="lbl">The author writes</span><pre>${sl.code}</pre><span class="lbl">Work it needs</span><div class="work">${all.map((w) => `<span class="${sl.work.includes(w) ? 'on' : ''}">${w[0].toUpperCase() + w.slice(1)}</span>`).join('')}</div><span class="lbl">All slides</span><div class="list">${SLIDES.map((x, k) => `<button class="${k === i ? 'on' : ''}" data-go="${k}"><span class="n">${k + 1}</span>${x.title}<span class="w">${x.work.join(' · ')}</span></button>`).join('')}</div>`;
+    this.panel.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => this.go(+b.dataset.go, false)));
+  }
+}
+window.lesson = new Lesson(document.getElementById('lesson'), document.getElementById('panel'));
+</script>
+</body>
+</html>

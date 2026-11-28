@@ -120,7 +120,13 @@ function video(film: Film) {
   const units = film.chunks.flatMap((_, c) =>
     film.segments(c).flatMap((s) => s.colour)
   );
-  const mp4 = muxMp4(units, film.meta.width, film.meta.height, film.meta.fps);
+  const mp4 = muxMp4(
+    units,
+    film.meta.width,
+    film.meta.height,
+    film.meta.fps,
+    film.sound()
+  );
   post({ mp4: mp4.buffer as ArrayBuffer, type: 'video' }, [
     mp4.buffer as ArrayBuffer,
   ]);

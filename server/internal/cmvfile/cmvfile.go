@@ -11,7 +11,10 @@
 // then the chunks. A chunk is a zstd draw part (drawn films only) and a video
 // part: a segment count (u8), then per segment its track, first frame and unit
 // count (u32 each), the unit sizes (u32 each, twice as many for a track with
-// alpha) and the H.264 Annex-B units, the first of each a keyframe.
+// alpha) and the H.264 Annex-B units, the first of each a keyframe. A video
+// film's sound (AAC in ADTS frames) may follow the last chunk, where the
+// header's "sound" says; "slides" and "captions" are [start, end, text]
+// rows.
 package cmvfile
 
 import (
@@ -81,7 +84,31 @@ type header struct {
 		Name string `json:"name"`
 		Take int    `json:"take"`
 	} `json:"engine"`
-	Q map[string]float64 `json:"q"`
+	Q     map[string]float64 `json:"q"`
+	Sound *struct {
+		Type   string `json:"type"`
+		Offset int64  `json:"offset"`
+		Bytes  int64  `json:"bytes"`
+	} `json:"sound"`
+	Slides   []row `json:"slides"`
+	Captions []row `json:"captions"`
+}
+
+// row is a chapter's or a caption's [start, end, text].
+type row struct{}
+
+func (*row) UnmarshalJSON(b []byte) error {
+	var r []any
+	if err := json.Unmarshal(b, &r); err != nil || len(r) != 3 {
+		return fmt.Errorf("not a [start, end, text] row")
+	}
+	_, s := r[0].(float64)
+	_, e := r[1].(float64)
+	_, t := r[2].(string)
+	if !s || !e || !t {
+		return fmt.Errorf("not a [start, end, text] row")
+	}
+	return nil
 }
 
 // Check reads a film of size bytes and returns its header, or an *Invalid.
@@ -159,7 +186,14 @@ func Check(r io.ReaderAt, size int64) (Meta, error) {
 		at += draw + video
 		frame += frames
 	}
-	if body+at != size || frame != m.Frames {
+	end := at
+	if h.Sound != nil {
+		if m.Form != "video" || h.Sound.Type != "audio/aac" || h.Sound.Offset != at || h.Sound.Bytes < 1 {
+			return Meta{}, invalid("a video film's sound follows its last chunk")
+		}
+		end += h.Sound.Bytes
+	}
+	if body+end != size || frame != m.Frames {
 		return Meta{}, invalid("the chunks don't add up to the film")
 	}
 	return m, nil

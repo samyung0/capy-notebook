@@ -21,6 +21,8 @@ export interface FilmTrack {
 }
 
 export interface FilmMeta {
+  /** Captions, [start, end, text] in seconds. */
+  captions?: [number, number, string][];
   chunks: number;
   form: FilmForm;
   fps: number;
@@ -28,6 +30,12 @@ export interface FilmMeta {
   height: number;
   q?: Record<string, number>;
   scene?: string;
+  /** The slides (the scene's sections, if it has several), [start, end,
+   * title] in seconds. */
+  slides?: [number, number, string][];
+  /** A video film's sound: AAC in ADTS frames after its last chunk, `offset`
+   * bytes after the first chunk's start (the chunk offsets' base). */
+  sound?: { bytes: number; offset: number; type: 'audio/aac' };
   tracks: FilmTrack[];
   width: number;
 }
@@ -87,6 +95,9 @@ export interface DrawSink {
     block: number
   ): void;
   note(json: string): void;
+  /** The records interactive objects make in the frames after this: runs of
+   * (first record, records, object id). */
+  owners(runs: Uint32Array): void;
   path(
     key: number,
     points: Coded<Float64Array>,
@@ -96,6 +107,15 @@ export interface DrawSink {
   points(key: number, vertices: Coded<Float32Array>): void;
   rows(key: number, rows: Coded<Float32Array>): void;
   sound(file: Uint8Array): void;
+  /** Frame `frame` with object `object` at its stop `index` (outside the film's time). */
+  stop(
+    object: number,
+    index: number,
+    frame: number,
+    view: Uint8Array,
+    records: Uint8Array,
+    cameras: CameraView[]
+  ): void;
   texture(
     key: number,
     width: number,
@@ -127,10 +147,12 @@ const OP = {
   GROW: 7,
   MESH: 3,
   NOTE: 9,
+  OWNERS: 14,
   PATH: 1,
   POINTS: 2,
   ROWS: 5,
   SOUND: 10,
+  STOP: 15,
   TEXTURE: 6,
   VIDEO_FRAME: 12,
 } as const;
@@ -283,6 +305,14 @@ export class Film {
     this.body = body;
     this.chunks = chunks;
     this.meta = meta;
+  }
+
+  /** A video film's sound (ADTS), if it has one. */
+  sound(): Uint8Array | undefined {
+    const sound = this.meta.sound;
+    if (!sound) return;
+    const at = this.body + sound.offset;
+    return this.bytes.subarray(at, at + sound.bytes);
   }
 
   /** Chunk c's H.264 segments. */
@@ -602,6 +632,45 @@ export class Film {
         case OP.SOUND:
           sink.sound(inp.string());
           break;
+        case OP.OWNERS: {
+          const runs = new Uint32Array(3 * inp.u32());
+          for (let i = 0; i < runs.length; i++) runs[i] = inp.u32();
+          sink.owners(runs);
+          break;
+        }
+        case OP.STOP: {
+          const object = inp.u32();
+          const index = inp.u32();
+          const frame = inp.u32();
+          if (inp.u8() !== ALONE) throw new Error('a stop is coded alone');
+          const r = inp.ints();
+          const view = new Uint32Array(r.a.length);
+          for (let i = 0; i < r.a.length; i++) view[i] = unordered(r.a[i] ?? 0);
+          const records = this.recordsArray(inp);
+          const cameras: CameraView[] = [];
+          for (let k = inp.u32(); k > 0; k--) {
+            const id = inp.u32();
+            const width = inp.u32();
+            const height = inp.u32();
+            const cameraView = inp.string();
+            cameras.push([
+              id,
+              width,
+              height,
+              cameraView,
+              this.recordsArray(inp).bytes,
+            ]);
+          }
+          sink.stop(
+            object,
+            index,
+            frame,
+            new Uint8Array(view.buffer),
+            records.bytes,
+            cameras
+          );
+          break;
+        }
         case OP.END:
           sink.end(inp.u8() !== 0);
           break;

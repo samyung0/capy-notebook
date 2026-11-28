@@ -35,6 +35,14 @@ func TestCheckReadsBothForms(t *testing.T) {
 	}
 }
 
+// video-sound.cmv is the exporter's 7-slide demo as a video film: slides,
+// captions and its AAC sound after the last chunk.
+func TestCheckReadsAVideoFilmsSound(t *testing.T) {
+	if _, err := check(film(t, "video-sound.cmv")); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCheckRefusesBrokenFilms(t *testing.T) {
 	drawn := film(t, "drawn.cmv")
 	video := film(t, "video.cmv")

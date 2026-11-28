@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grabbable film objects</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;500;600;700;800&display=swap">
+<style>
+/* Tokens copied from src/styles/tokens/themes/capy.css (latte + mocha). */
+:root {
+  --page: #f7f7f7; --card: #ffffff; --item-hover: #eff1f1;
+  --fg: #222222; --fg2: #4b4b4b; --muted: #6b6b6b; --border: #d6d6d6; --divider: #e6e6e6;
+  --accent: #8c7bd9; --tint-bg: #ece6f6; --tint-fg: #5b4aa8; --ok-bg: #e7f6ee; --ok-fg: #2f7d56; --warn-bg: #f7f0e5; --warn-fg: #a9772a;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.04), 0 4px 12px rgba(0,0,0,.05);
+  --font: "Fustat", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --page: #0d1219; --card: #161d27; --item-hover: #1a222d;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --border: #323e52; --divider: rgba(255,255,255,.07);
+  --accent: #b5a1f8; --tint-bg: #31334b; --tint-fg: #c8b8fa; --ok-bg: #16301f; --ok-fg: #8fe3b9; --warn-bg: #2f2611; --warn-fg: #f4c878;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.3); color-scheme: dark } }
+:root[data-theme="dark"] {
+  --page: #0d1219; --card: #161d27; --item-hover: #1a222d;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3; --border: #323e52; --divider: rgba(255,255,255,.07);
+  --accent: #b5a1f8; --tint-bg: #31334b; --tint-fg: #c8b8fa; --ok-bg: #16301f; --ok-fg: #8fe3b9; --warn-bg: #2f2611; --warn-fg: #f4c878;
+  --shadow-card: 0 1px 2px rgba(0,0,0,.3); color-scheme: dark }
+
+* { box-sizing: border-box }
+body { margin: 0; background: var(--page); color: var(--fg); font: 500 14px/1.45 var(--font); padding: 28px 16px 80px }
+main { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 40px }
+h1 { margin: 0; font-size: 28px; font-weight: 800; letter-spacing: -.02rem }
+h2 { margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -.02rem }
+h4 { margin: 0; font-size: 17px; font-weight: 700 }
+p { margin: 0 }
+a { color: var(--tint-fg) }
+code { font-size: 12px; background: var(--item-hover); padding: 0 4px; border-radius: 4px }
+.lede { color: var(--fg2); max-width: 80ch; display: flex; flex-direction: column; gap: 8px }
+.refs { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px }
+.ref { background: var(--card); border-radius: 10px; box-shadow: var(--shadow-card); padding: 14px 16px; display: flex; flex-direction: column; gap: 4px; font-size: 13.5px; color: var(--fg2) }
+.ref b { color: var(--fg); font-size: 14px }
+.opt { display: flex; flex-direction: column; gap: 20px; border-top: 1px solid var(--divider); padding-top: 28px }
+.opt-head { display: flex; flex-direction: column; gap: 6px; max-width: 82ch }
+.opt-head p { color: var(--fg2) }
+.k { font-size: 12px; font-weight: 800; letter-spacing: .06rem; color: var(--muted); text-transform: uppercase }
+.board { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 28px; align-items: start }
+@media (max-width: 980px) { .board { grid-template-columns: minmax(0, 1fr) } }
+.col { display: flex; flex-direction: column; gap: 22px; min-width: 0 }
+.lbl { font-size: 11px; font-weight: 700; letter-spacing: .06rem; text-transform: uppercase; color: var(--muted); margin-bottom: 8px }
+.side { display: flex; flex-direction: column; gap: 8px; color: var(--fg2); font-size: 13.5px }
+.side b { color: var(--fg) }
+.side ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 5px }
+.note { background: var(--card); border-radius: 14px; box-shadow: var(--shadow-card); padding: 22px 28px 26px; display: flex; flex-direction: column; gap: 12px; max-width: 760px }
+.note .np { color: var(--fg2) }
+.phone { width: 360px; max-width: 100%; background: var(--card); border-radius: 22px; box-shadow: var(--shadow-card); padding: 18px 16px 22px; display: flex; flex-direction: column; gap: 10px }
+@media (max-width: 600px) { .note { padding: 16px } }
+
+/* Option D's player, as picked */
+.dp { display: flex; flex-direction: column; min-width: 0; position: relative; container: dp / inline-size }
+.film { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; overflow: hidden; user-select: none; touch-action: none; outline: none }
+.film > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block }
+.dline { position: relative; height: 16px; margin: 0 0 -6px; cursor: pointer; touch-action: none }
+.dline::before { content: ""; position: absolute; left: 0; right: 0; top: 6px; height: 3px; background: var(--divider) }
+.dline i { position: absolute; left: 0; top: 6px; height: 3px; background: var(--accent); width: 0 }
+.dline .dk { position: absolute; top: 7.5px; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--card) }
+.dbar { display: flex; align-items: center; gap: 2px; padding-top: 8px; min-width: 0 }
+.btn { height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid transparent; background: none; color: var(--fg); font: 600 13.5px/1 var(--font); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: pointer; flex-shrink: 0 }
+.btn:hover:not(:disabled) { background: var(--item-hover) }
+.btn:disabled { opacity: .45; cursor: default }
+.btn svg { width: 22px; height: 22px }
+.btn.dark svg { width: 20px; height: 20px }
+/* Fustat's ink sits 1.5 px above a flex box's centre: text in the bar comes down to it */
+.dbar .t, .cnt { position: relative; top: 1.5px }
+.btn.icon { width: 36px; padding: 0; justify-content: center }
+.btn.dark { background: var(--fg); color: var(--card); border-color: var(--fg) }
+.btn.dark:hover:not(:disabled) { background: var(--fg2) }
+.btn.ready { box-shadow: 0 0 0 3px var(--tint-bg) }
+.btn.bordered { border-color: var(--border); background: var(--card) }
+.cnt { color: var(--muted); font-size: 13.5px; white-space: nowrap; padding: 0 6px }
+.sp { flex: 1 }
+@container dp (max-width: 520px) { .btn { padding: 0 9px } .btn.icon { width: 34px; padding: 0 } .wide-only { display: none } }
+
+/* Grabbing */
+.film.can { cursor: grab }
+.film.dragging { cursor: grabbing }
+.ol { position: absolute; border: 1.5px dashed rgba(255,255,255,.85); border-radius: 4px; pointer-events: none; display: none }
+.ol.on { display: block }
+.ol.solid { border-style: solid; border-color: #b5a1f8 }
+.halo { position: absolute; border-radius: 50%; pointer-events: none; border: 1px solid rgba(181,161,248,.8); animation: pulse 3s ease-in-out infinite }
+@keyframes pulse { 0%, 100% { opacity: .12 } 50% { opacity: .5 } }
+.handle { position: absolute; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: #b5a1f8; box-shadow: 0 0 0 3px rgba(0,0,0,.45); pointer-events: none }
+.chips { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 8px; pointer-events: none }
+.chip { pointer-events: auto; height: 30px; border: 0; border-radius: 6px; padding: 0 10px; background: rgba(255,255,255,.92); color: #111; font: 600 12.5px/1 var(--font); display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap }
+.chip svg { width: 15px; height: 15px }
+.chip[hidden] { display: none }
+/* The challenge row (Later) */
+.task { display: flex; align-items: center; gap: 10px; padding: 12px 0 2px; flex-wrap: wrap }
+.task .q { flex: 1; min-width: 200px; color: var(--fg) }
+.verdict { width: 100%; padding: 10px 12px; border-radius: 8px; font-weight: 600; display: none }
+.verdict.ok { display: block; background: var(--ok-bg); color: var(--ok-fg) }
+.verdict.no { display: block; background: var(--warn-bg); color: var(--warn-fg) }
+.qs ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; color: var(--fg2) }
+.qs b { color: var(--fg) }
+</style>
+</head>
+<body>
+<main>
+  <header style="display:flex;flex-direction:column;gap:12px">
+    <h1>Grabbable film objects</h1>
+    <div class="lede">
+      <p>The scene's author marks objects as grabbable (<code>interactive(triangle, move=True, rotate=True, label="Drag or turn the triangle")</code>). In the player (option D), grabbing one <b>pauses the film</b>; it stays where it was left until the film plays on, then goes back to where the scene has it. Only the grabbed object moves: the base and height lines here are separate objects and stay put, since making them follow needs the scene's own logic.</p>
+      <p>Try it: play the film, grab the triangle or (from slide 3) the top vertex. Drag to move, Shift-drag to turn (two fingers on a phone). Below: how grabbable objects are shown (G2 picked), turning a 3D view, then a Brilliant-style check for later.</p>
+    </div>
+  </header>
+
+  <section style="display:flex;flex-direction:column;gap:12px">
+    <h2>What other apps do</h2>
+    <div class="refs">
+      <div class="ref"><b>Desmos</b><span>Draggable points carry a halo; a point is draggable when its coordinates are free variables. <a href="https://help.desmos.com/hc/en-us/articles/202529069-Sliders-and-Movable-Points">help</a></span></div>
+      <div class="ref"><b>GeoGebra</b><span>Free objects can be dragged with the Move tool; dependent objects follow what they're built from. <a href="https://geogebra.github.io/docs/manual/en/Free_Dependent_and_Auxiliary_Objects">manual</a></span></div>
+      <div class="ref"><b>PhET</b><span>Cues are mostly visual rather than text; keyboard users grab with Enter or Space and move with the arrow keys. <a href="https://phet.colorado.edu/id/accessibility/research">research</a></span></div>
+      <div class="ref"><b>Brilliant</b><span>Interactive problems answer straight away, so a wrong try becomes a chance to revise; correct answers turn green with a tick. <a href="https://brilliant.org/resources/choosing-brilliant/how-brilliant-teaches-math/">how it teaches</a>, <a href="https://brilliant.org/help/features/how-do-i-use-interactives-on-brilliant/">help</a></span></div>
+    </div>
+  </section>
+
+  <section class="opt">
+    <div class="opt-head"><span class="k">G1</span><h2>Shown on hover</h2><p>Nothing marks a grabbable object until the pointer is over it: then a dashed outline, the author's label and a grab cursor. The cleanest film; on a phone, nothing tells you until you touch it.</p></div>
+    <div class="board"><div class="col">
+      <div><div class="lbl">In a note</div><div class="note"><h4>Triangles on one base</h4><div data-g="G1"></div><p class="np">Sliding the top vertex keeps the base and the height, so the area stays the same.</p></div></div>
+      <div><div class="lbl">Phone, 360 px</div><div class="phone"><div data-g="G1" data-phone="1"></div></div></div>
+    </div>
+    <div class="side"><b>Details</b><ul>
+      <li>Once something has moved, a <b>Reset</b> chip appears in the film's corner; Play (or Next) puts everything back too.</li>
+      <li>A click on an object grabs; a click anywhere else plays or pauses as before.</li>
+      <li>Keyboard: Tab to an object, arrows move it, Shift-arrows turn it (PhET's pattern).</li>
+    </ul></div></div>
+  </section>
+
+  <section class="opt">
+    <div class="opt-head"><span class="k">G2</span><h2>Cued when it stops</h2><p>While the film plays nothing shows. When it is paused, or waiting at the end of a slide, grabbable objects get a faint, slow halo (Desmos' halo); the author's label shows on hover, as in G1.</p></div>
+    <div class="board"><div class="col">
+      <div><div class="lbl">In a note · waiting at the end of slide 3</div><div class="note"><h4>Triangles on one base</h4><div data-g="G2" data-start="18"></div></div></div>
+      <div><div class="lbl">Phone, 360 px</div><div class="phone"><div data-g="G2" data-phone="1" data-start="18"></div></div></div>
+    </div>
+    <div class="side"><b>Details</b><ul>
+      <li>The halo stops once the viewer has grabbed something in this film, so it doesn't nag.</li>
+      <li>Works on phones, where there is no hover.</li>
+      <li>Picked (Epo, 2026-11-28).</li>
+    </ul></div></div>
+  </section>
+
+  <section class="opt">
+    <div class="opt-head"><span class="k">G3</span><h2>Always marked</h2><p>Every grabbable object carries a small handle the whole time, like GeoGebra's free points. Nobody misses it, but it sits on the author's picture even while it plays.</p></div>
+    <div class="board"><div class="col">
+      <div><div class="lbl">In a note</div><div class="note"><h4>Triangles on one base</h4><div data-g="G3" data-start="14"></div></div></div>
+    </div>
+    <div class="side"><b>Details</b><ul><li>Handles sit at each object's centre; the label shows on hover.</li></ul></div></div>
+  </section>
+
+  <section class="opt">
+    <div class="opt-head"><span class="k">3D</span><h2>Turning a 3D view</h2><p>Any 3D scene can be turned, with nothing tagged: drag the empty film to orbit the camera, wheel or pinch to zoom. The scene keeps its own animation under the viewer's angle; the title and the formula are fixed to the frame and stay put. An object tagged <code>rotate=True</code> (the sphere, on slide 3) spins on its own when dragged instead. Like grabbing, it pauses the film; Reset view, Play, Next or a seek put the scene's own camera back.</p></div>
+    <div class="board"><div class="col">
+      <div><div class="lbl">In a note · gradient descent on a loss surface</div><div class="note"><h4>Gradient descent</h4><div data-o="1"></div><p class="np">Each step moves against the gradient, so the dot runs down the steepest way.</p></div></div>
+      <div><div class="lbl">Phone, 360 px</div><div class="phone"><div data-o="1" data-start="9"></div></div></div>
+    </div>
+    <div class="side"><b>Details</b><ul>
+      <li>No cue for orbiting beyond the cursor (a grab hand over a 3D film); a tagged object gets G2's faint halo when the film stops.</li>
+      <li>Phone: one finger orbits, two fingers pinch to zoom; a drag that starts on the sphere spins it.</li>
+      <li>Double-click (double-tap) also resets the view.</li>
+      <li>In the engine this is the viewer's turn applied to each frame's camera, which ManimGX keeps apart from fixed-in-frame text; the subagent is building it now.</li>
+    </ul></div></div>
+  </section>
+
+  <section class="opt">
+    <div class="opt-head"><span class="k">Later</span><h2>A Brilliant-style check</h2><p>The author adds a target to a slide: <code>interactive(vertex, move=True, target=dot, label="…")</code>. When the film waits at that slide, a task row under the film asks for it; Check answers at once, and a wrong try keeps the object where it is so the viewer can adjust. Exporter and page work; the engine part is the same <code>pose</code> and <code>bounds</code>.</p></div>
+    <div class="board"><div class="col">
+      <div><div class="lbl">In a note · slide 3, with a target</div><div class="note"><h4>Triangles on one base</h4><div data-g="G2" data-task="1" data-start="18"></div></div></div>
+    </div>
+    <div class="side"><b>Details</b><ul>
+      <li>The target (dashed ring) is part of the scene; Check compares where the viewer left the object with it, within a tolerance the author sets.</li>
+      <li>Next stays available: a task never blocks the film.</li>
+      <li>Results could feed Capy's study progress, like a quiz question.</li>
+    </ul></div></div>
+  </section>
+
+  <section class="opt qs" style="gap:12px">
+    <h2>Open questions</h2>
+    <ol>
+      
+      <li><b>Turning and scaling:</b> Shift-drag on a computer and two fingers on a phone, or a visible turn handle on the outline (not drawn here)? Wheel or pinch would scale only objects marked <code>scale=True</code>.</li>
+      <li><b>Where it goes back:</b> on Play, Next, a seek or Reset. Anything else (for example keeping the viewer's pose until the next slide)?</li>
+    </ol>
+  </section>
+</main>
+
+<script>
+const ICON = {
+  play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5Z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4.5" height="16" rx="1"/><rect x="13.5" y="4" width="4.5" height="16" rx="1"/></svg>',
+  full: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>',
+  back: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M11 6l-6 6 6 6"/></svg>',
+  fwd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+  dots: '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>',
+  reset: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
+  hand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5M14 10V4a2 2 0 0 0-4 0v6M10 10.5V6a2 2 0 0 0-4 0v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>',
+};
+const clock = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+const ease = (x) => (x < 0 ? 0 : x > 1 ? 1 : x * x * (3 - 2 * x));
+const SLIDES = [
+  { start: 0, end: 6, title: 'A triangle' },
+  { start: 6, end: 12, title: 'Its base and height' },
+  { start: 12, end: 18, title: 'Slide the top vertex' },
+  { start: 18, end: 24, title: 'Same base, same height' },
+];
+const DURATION = 24;
+// The scene in film units (1280 × 720): where the scene puts each object at time t.
+const B0 = [300, 560], B1 = [720, 560], APEX_Y = 250;
+const apexX = (t) => 420 + 260 * ease((t - 12.5) / 4.5);
+const OBJECTS = {
+  tri: { label: 'Drag or turn the triangle', from: 0, rotate: true },
+  apex: { label: 'Drag the top vertex', from: 12 },
+};
+function scene(t) {
+  const a = [apexX(t), APEX_Y];
+  const pts = [B0, B1, a];
+  const cx = (B0[0] + B1[0] + a[0]) / 3, cy = (B0[1] + B1[1] + a[1]) / 3;
+  return { a, pts, centre: { tri: [cx, cy], apex: a } };
+}
+const TARGET = [880, 250];
+
+class GrabPlayer {
+  constructor(el) {
+    Object.assign(this, { el, kind: el.dataset.g, phone: el.dataset.phone === '1', task: el.dataset.task === '1' });
+    Object.assign(this, { t: +(el.dataset.start ?? 2), playing: false, waiting: false, last: 0, grabbed: false, hover: null, drag: null });
+    this.poses = { tri: this.zero(), apex: this.zero() };
+    if (this.t === 18) { this.t = 17.999; this.waiting = true; }
+    this.build();
+    this.render();
+  }
+  zero() { return { dx: 0, dy: 0, angle: 0 }; }
+  step() { const k = SLIDES.findIndex((s) => this.t >= s.start && this.t < s.end); return k === -1 ? SLIDES.length - 1 : k; }
+  moved() { return Object.values(this.poses).some((p) => p.dx || p.dy || p.angle); }
+  build() {
+    const b = (a, i, label, cls = '') => `<button class="btn icon ${cls}" data-a="${a}" aria-label="${label}">${i}</button>`;
+    const task = this.task ? `<div class="task"><span class="q">Move the top vertex onto the ring. What happens to the area?</span><button class="btn bordered" data-a="check">Check</button><div class="verdict"></div></div>` : '';
+    this.el.innerHTML = `<div class="dp"><div class="film" tabindex="0"><svg viewBox="0 0 1280 720"></svg><div class="ol"></div><div class="chips"><span class="sp"></span><button class="chip" data-a="reset" hidden>${ICON.reset}Reset</button></div></div><div class="dline"><i></i><span class="dk"></span></div><div class="dbar">${b('play', ICON.play, 'Play')}<button class="btn"><span class="t">1×</span></button>${b('full', ICON.full, 'Full screen', 'wide-only')}${b('more', ICON.dots, 'More')}<span class="sp"></span><span class="cnt"></span>${b('prev', ICON.back, 'Previous slide')}<button class="btn dark" data-a="next"><span class="t">Next</span>${ICON.fwd}</button></div>${task}</div>`;
+    this.film = this.el.querySelector('.film');
+    this.svg = this.film.querySelector('svg');
+    this.el.addEventListener('click', (e) => {
+      const a = e.target.closest('[data-a]')?.dataset.a;
+      if (a === 'play') this.toggle();
+      else if (a === 'next') { const i = this.step() + 1; if (i < SLIDES.length) { this.t = SLIDES[i].start; this.resetPoses(); this.play(); } }
+      else if (a === 'prev') { this.t = SLIDES[this.step()].start; this.resetPoses(); this.play(); }
+      else if (a === 'reset') { this.resetPoses(); this.render(); }
+      else if (a === 'check') this.check();
+    });
+    const toFilm = (e) => { const r = this.film.getBoundingClientRect(); return [((e.clientX - r.left) / r.width) * 1280, ((e.clientY - r.top) / r.height) * 720]; };
+    this.film.addEventListener('pointermove', (e) => {
+      const p = toFilm(e);
+      if (this.drag) {
+        const pose = this.poses[this.drag.id];
+        if (this.drag.turn) {
+          const c = this.drag.c;
+          pose.angle = this.drag.angle0 + Math.atan2(p[1] - c[1], p[0] - c[0]) - this.drag.a0;
+        } else { pose.dx = this.drag.dx0 + p[0] - this.drag.p0[0]; pose.dy = this.drag.dy0 + p[1] - this.drag.p0[1]; }
+        this.render();
+        return;
+      }
+      const hit = this.pick(p);
+      if (hit !== this.hover) { this.hover = hit; this.render(); }
+    });
+    this.film.addEventListener('pointerleave', () => { if (!this.drag && this.hover) { this.hover = null; this.render(); } });
+    this.film.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.chip')) return;
+      const p = toFilm(e), id = this.pick(p);
+      if (!id) { this.toggle(); return; }
+      // grabbing pauses the film
+      this.playing = false; this.grabbed = true;
+      const pose = this.poses[id], c = this.centre(id);
+      this.drag = { id, p0: p, dx0: pose.dx, dy0: pose.dy, turn: e.shiftKey && OBJECTS[id].rotate, c, a0: Math.atan2(p[1] - c[1], p[0] - c[0]), angle0: pose.angle };
+      this.film.setPointerCapture(e.pointerId);
+      this.render();
+    });
+    const end = () => { if (this.drag) { this.drag = null; this.render(); } };
+    this.film.addEventListener('pointerup', end);
+    this.film.addEventListener('pointercancel', end);
+    const line = this.el.querySelector('.dline');
+    line.addEventListener('pointerdown', (e) => {
+      const r = line.getBoundingClientRect(), x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), s = SLIDES[this.step()];
+      this.t = s.start + x * (s.end - s.start) * 0.999; this.waiting = false; this.resetPoses(); this.render();
+    });
+  }
+  centre(id) { const s = scene(this.t), p = this.poses[id], c = s.centre[id]; return [c[0] + p.dx, c[1] + p.dy]; }
+  // the object's points as drawn, pose applied (turned about the scene's centre, then moved)
+  drawn(id) {
+    const s = scene(this.t), p = this.poses[id], c = s.centre[id];
+    const pts = id === 'tri' ? s.pts : [s.a];
+    return pts.map(([x, y]) => {
+      const u = x - c[0], v = y - c[1], cs = Math.cos(p.angle), sn = Math.sin(p.angle);
+      return [c[0] + u * cs - v * sn + p.dx, c[1] + u * sn + v * cs + p.dy];
+    });
+  }
+  bounds(id) {
+    const pts = this.drawn(id), pad = id === 'apex' ? 26 : 14;
+    const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+    return [Math.min(...xs) - pad, Math.min(...ys) - pad, Math.max(...xs) + pad, Math.max(...ys) + pad];
+  }
+  live() { return Object.keys(OBJECTS).filter((id) => this.t >= OBJECTS[id].from); }
+  pick([x, y]) {
+    for (const id of this.live().reverse()) {
+      const [x0, y0, x1, y1] = this.bounds(id);
+      if (id === 'apex') { const [cx, cy] = this.drawn(id)[0]; if (Math.hypot(x - cx, y - cy) < 34) return id; continue; }
+      if (x >= x0 && x <= x1 && y >= y0 && y <= y1) return id;
+    }
+    return null;
+  }
+  resetPoses() { for (const k in this.poses) this.poses[k] = this.zero(); const v = this.el.querySelector('.verdict'); if (v) v.className = 'verdict'; }
+  toggle() {
+    if (this.playing) { this.playing = false; this.render(); return; }
+    this.resetPoses();
+    if (this.t >= DURATION - 0.02) this.t = 0;
+    if (this.waiting) this.t = SLIDES[this.step()].end;
+    this.play();
+  }
+  play() { this.playing = true; this.waiting = false; this.last = performance.now(); requestAnimationFrame((n) => this.tick(n)); this.render(); }
+  tick(now) {
+    if (!this.playing) return;
+    const i = this.step();
+    let t = this.t + (now - this.last) / 1000; this.last = now;
+    if (t >= SLIDES[i].end - 0.001) { t = SLIDES[i].end - 0.001; this.playing = false; this.waiting = i < SLIDES.length - 1; }
+    this.t = t; this.render();
+    if (this.playing) requestAnimationFrame((n) => this.tick(n));
+  }
+  check() {
+    const v = this.el.querySelector('.verdict');
+    const [x, y] = this.drawn('apex')[0];
+    const off = Math.hypot(x - TARGET[0], y - TARGET[1]);
+    if (off < 30) { v.className = 'verdict ok'; v.textContent = 'Correct. The base and the height didn’t change, so the area is the same.'; }
+    else { v.className = 'verdict no'; v.textContent = this.poses.apex.dx || this.poses.apex.dy ? 'Not quite: the vertex isn’t on the ring yet. Keep the height the same as you slide it.' : 'Drag the top vertex first.'; }
+  }
+  render() {
+    const { t } = this, i = this.step(), s = SLIDES[i];
+    const sc = scene(t);
+    const p1 = ease(t / 4), p2 = ease((t - 6) / 3), p4 = ease((t - 18.5) / 3);
+    // the scene: base and height lines are their own objects (they don't follow a grab)
+    const tri = this.drawn('tri'), apex = this.drawn('apex')[0];
+    let g = '<rect width="1280" height="720" fill="#000"/><text x="64" y="92" fill="#fff" font-family="Georgia, serif" font-size="44">Triangles on one base</text>';
+    if (this.task && t >= 12) g += `<circle cx="${TARGET[0]}" cy="${TARGET[1]}" r="22" fill="none" stroke="#a6e3a1" stroke-width="3" stroke-dasharray="6 6"/>`;
+    g += `<polygon points="${tri.map((q) => q.join(',')).join(' ')}" fill="#89b4fa" fill-opacity="${0.55 * p1}" stroke="#89b4fa" stroke-width="4" stroke-opacity="${p1}"/>`;
+    if (t >= 6) {
+      g += `<line x1="${B0[0]}" y1="${B0[1] + 24}" x2="${B1[0]}" y2="${B1[1] + 24}" stroke="#f9e2af" stroke-width="4" opacity="${p2}"/><text x="${(B0[0] + B1[0]) / 2 - 8}" y="${B0[1] + 66}" fill="#f9e2af" font-family="Georgia, serif" font-style="italic" font-size="34" opacity="${p2}">b</text>`;
+      g += `<line x1="${sc.a[0]}" y1="${APEX_Y}" x2="${sc.a[0]}" y2="${B0[1]}" stroke="#f38ba8" stroke-width="3" stroke-dasharray="10 8" opacity="${p2}"/><text x="${sc.a[0] + 14}" y="${(APEX_Y + B0[1]) / 2}" fill="#f38ba8" font-family="Georgia, serif" font-style="italic" font-size="34" opacity="${p2}">h</text>`;
+      g += `<text x="900" y="180" fill="#fff" font-family="Georgia, serif" font-size="38" opacity="${p2}">Area = ½ b h</text>`;
+    }
+    if (t >= 12) g += `<circle cx="${apex[0]}" cy="${apex[1]}" r="11" fill="#f9e2af"/>`;
+    if (t >= 18) g += `<text x="820" y="660" fill="#fff" font-family="Georgia, serif" font-size="34" opacity="${p4}">same b, same h → same area</text>`;
+    this.svg.innerHTML = g;
+
+    // grab cues
+    const live = this.live(), k = this.film.clientWidth / 1280;
+    this.film.querySelectorAll('.halo, .handle').forEach((n) => n.remove());
+    const stopped = !this.playing;
+    if (this.kind === 'G2' && stopped && !this.grabbed && !this.drag) for (const id of live) {
+      const [x0, y0, x1, y1] = this.bounds(id), d = Math.max(x1 - x0, y1 - y0) * k + 10;
+      const c = this.centre(id), h = document.createElement('span');
+      h.className = 'halo'; Object.assign(h.style, { left: `${c[0] * k - d / 2}px`, top: `${c[1] * k - d / 2}px`, width: `${d}px`, height: `${d}px` });
+      if (id === 'tri') h.style.borderRadius = '12px';
+      this.film.append(h);
+    }
+    if (this.kind === 'G3') for (const id of live) {
+      const c = this.centre(id), h = document.createElement('span');
+      h.className = 'handle'; Object.assign(h.style, { left: `${c[0] * k}px`, top: `${c[1] * k}px` });
+      this.film.append(h);
+    }
+    const show = this.drag?.id ?? this.hover;
+    const ol = this.film.querySelector('.ol');
+    if (show) {
+      const [x0, y0, x1, y1] = this.bounds(show);
+      Object.assign(ol.style, { left: `${x0 * k}px`, top: `${y0 * k}px`, width: `${(x1 - x0) * k}px`, height: `${(y1 - y0) * k}px` });
+      ol.className = `ol on${this.drag ? ' solid' : ''}`;
+    } else ol.className = 'ol';
+    this.film.classList.toggle('can', !!this.hover && !this.drag);
+    this.film.classList.toggle('dragging', !!this.drag);
+    this.film.querySelector('[data-a="reset"]').hidden = !this.moved();
+
+    // D's bar
+    this.el.querySelector('[data-a="play"]').innerHTML = this.playing ? ICON.pause : ICON.play;
+    const x = (t - s.start) / (s.end - s.start);
+    this.el.querySelector('.dline i').style.width = `${x * 100}%`;
+    this.el.querySelector('.dline .dk').style.left = `${x * 100}%`;
+    this.el.querySelector('.cnt').textContent = `${i + 1} of ${SLIDES.length}`;
+    const next = this.el.querySelector('[data-a="next"]');
+    next.disabled = i >= SLIDES.length - 1; next.classList.toggle('ready', this.waiting);
+  }
+}
+document.querySelectorAll('[data-g]').forEach((el) => { const p = new GrabPlayer(el); new ResizeObserver(() => p.render()).observe(el); });
+
+// ── The 3D scene: a loss surface, a dot running down it, then a sphere to spin ──
+const SLIDES3 = [
+  { start: 0, end: 6, title: 'A bowl-shaped loss' },
+  { start: 6, end: 14, title: 'Follow the slope down' },
+  { start: 14, end: 20, title: 'Spin the sphere' },
+];
+const D3 = 20;
+const loss = (x, y) => 0.12 * x * x + 0.35 * y * y;
+const PATH = (() => { const p = [[2.7, 2.5]]; for (let i = 0; i < 40; i++) { const [x, y] = p[p.length - 1]; p.push([x - 0.25 * 0.24 * x, y - 0.25 * 0.7 * y]); } return p; })();
+const SPHERE = [3.4, -3.4, 1.6];
+class OrbitPlayer {
+  constructor(el) {
+    el.player = this; // (for checking the mock)
+    Object.assign(this, { el, t: +(el.dataset.start ?? 3), playing: false, waiting: false, last: 0, view: { yaw: 0, pitch: 0, zoom: 1 }, spin: { yaw: 0, pitch: 0 }, grabbed: false, drag: null, hoverSphere: false });
+    const b = (a, i, label, cls = '') => `<button class="btn icon ${cls}" data-a="${a}" aria-label="${label}">${i}</button>`;
+    el.innerHTML = `<div class="dp"><div class="film"><svg viewBox="0 0 1280 720"></svg><div class="chips"><span class="sp"></span><button class="chip" data-a="reset" hidden>${ICON.reset}Reset view</button></div></div><div class="dline"><i></i><span class="dk"></span></div><div class="dbar">${b('play', ICON.play, 'Play')}<button class="btn"><span class="t">1×</span></button>${b('full', ICON.full, 'Full screen', 'wide-only')}${b('more', ICON.dots, 'More')}<span class="sp"></span><span class="cnt"></span>${b('prev', ICON.back, 'Previous slide')}<button class="btn dark" data-a="next"><span class="t">Next</span>${ICON.fwd}</button></div></div>`;
+    this.film = el.querySelector('.film'); this.svg = this.film.querySelector('svg');
+    el.addEventListener('click', (e) => {
+      const a = e.target.closest('[data-a]')?.dataset.a;
+      if (a === 'play') this.toggle();
+      else if (a === 'next') { const i = this.step() + 1; if (i < SLIDES3.length) { this.t = SLIDES3[i].start; this.resetView(); this.play(); } }
+      else if (a === 'prev') { this.t = SLIDES3[this.step()].start; this.resetView(); this.play(); }
+      else if (a === 'reset') { this.resetView(); this.render(); }
+    });
+    const xy = (e) => { const r = this.film.getBoundingClientRect(); return [((e.clientX - r.left) / r.width) * 1280, ((e.clientY - r.top) / r.height) * 720]; };
+    this.film.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('.chip')) return;
+      const p = xy(e);
+      this.playing = false; this.grabbed = true;
+      this.drag = { p, onSphere: this.onSphere(p), moved: false };
+      this.film.setPointerCapture(e.pointerId); this.render();
+    });
+    this.film.addEventListener('pointermove', (e) => {
+      const p = xy(e);
+      if (!this.drag) { const h = this.onSphere(p); if (h !== this.hoverSphere) { this.hoverSphere = h; this.render(); } return; }
+      const dx = p[0] - this.drag.p[0], dy = p[1] - this.drag.p[1]; this.drag.p = p;
+      if (Math.abs(dx) + Math.abs(dy) > 0) this.drag.moved = true;
+      if (this.drag.onSphere) { this.spin.yaw += dx * 0.01; this.spin.pitch += dy * 0.01; }
+      else { this.view.yaw += dx * 0.006; this.view.pitch = Math.max(-0.9, Math.min(0.6, this.view.pitch - dy * 0.004)); }
+      this.render();
+    });
+    const end = () => { if (this.drag) { this.drag = null; this.render(); } };
+    this.film.addEventListener('pointerup', end); this.film.addEventListener('pointercancel', end);
+    this.film.addEventListener('dblclick', () => { this.resetView(); this.render(); });
+    this.film.addEventListener('wheel', (e) => { e.preventDefault(); this.playing = false; this.view.zoom = Math.max(0.5, Math.min(2.5, this.view.zoom * Math.exp(-e.deltaY * 0.0015))); this.render(); }, { passive: false });
+    this.el.querySelector('.dline').addEventListener('pointerdown', (e) => {
+      const r = e.currentTarget.getBoundingClientRect(), x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), s = SLIDES3[this.step()];
+      this.t = s.start + x * (s.end - s.start) * 0.999; this.waiting = false; this.resetView(); this.render();
+    });
+    new ResizeObserver(() => this.render()).observe(el);
+    this.render();
+  }
+  step() { const k = SLIDES3.findIndex((s) => this.t >= s.start && this.t < s.end); return k === -1 ? SLIDES3.length - 1 : k; }
+  changed() { const v = this.view, s = this.spin; return v.yaw || v.pitch || v.zoom !== 1 || s.yaw || s.pitch; }
+  resetView() { this.view = { yaw: 0, pitch: 0, zoom: 1 }; this.spin = { yaw: 0, pitch: 0 }; }
+  toggle() { if (this.playing) { this.playing = false; this.render(); return; } this.resetView(); if (this.t >= D3 - 0.02) this.t = 0; if (this.waiting) this.t = SLIDES3[this.step()].end; this.play(); }
+  play() { this.playing = true; this.waiting = false; this.last = performance.now(); requestAnimationFrame((n) => this.tick(n)); this.render(); }
+  tick(now) {
+    if (!this.playing) return;
+    const i = this.step(); let t = this.t + (now - this.last) / 1000; this.last = now;
+    if (t >= SLIDES3[i].end - 0.001) { t = SLIDES3[i].end - 0.001; this.playing = false; this.waiting = i < SLIDES3.length - 1; }
+    this.t = t; this.render(); if (this.playing) requestAnimationFrame((n) => this.tick(n));
+  }
+  // the scene's camera (slowly circling) with the viewer's turn on top
+  camera() { return { yaw: -0.75 + 0.05 * this.t + this.view.yaw, elev: 0.95 + this.view.pitch, scale: 62 * this.view.zoom }; }
+  project([x, y, z], c = this.camera()) {
+    const cy = Math.cos(c.yaw), sy = Math.sin(c.yaw), x1 = x * cy - y * sy, y1 = x * sy + y * cy;
+    const sx = x1, syv = z * Math.cos(c.elev) + y1 * Math.sin(c.elev);
+    return [640 + c.scale * sx, 430 - c.scale * syv, y1 * Math.cos(c.elev) - z * Math.sin(c.elev)];
+  }
+  sphereRadiusPx() { return 1.1 * this.camera().scale; }
+  onSphere(p) { if (this.t < 14) return false; const c = this.project(SPHERE); return Math.hypot(p[0] - c[0], p[1] - c[1]) < this.sphereRadiusPx(); }
+  render() {
+    const { t } = this, c = this.camera(), i = this.step(), s = SLIDES3[i];
+    const p1 = ease(t / 4), p3 = ease((t - 14) / 2);
+    let g = '<rect width="1280" height="720" fill="#000"/>';
+    // the surface as a wireframe, coloured by height
+    const N = 14, L = 3;
+    const col = (z) => `hsl(${220 - Math.min(1, z / 4) * 190}, 80%, ${55 + Math.min(1, z / 4) * 10}%)`;
+    for (let k = 0; k <= N; k++) {
+      const u = -L + (2 * L * k) / N;
+      for (const dir of [0, 1]) {
+        let d = '';
+        for (let j = 0; j <= 30; j++) {
+          const v = -L + (2 * L * j) / 30, x = dir ? u : v, y = dir ? v : u, q = this.project([x, y, loss(x, y)], c);
+          d += `${j ? 'L' : 'M'}${q[0].toFixed(1)} ${q[1].toFixed(1)}`;
+        }
+        g += `<path d="${d}" fill="none" stroke="${col(loss(dir ? u : 0, dir ? 0 : u) + 1)}" stroke-width="1.6" opacity="${0.75 * p1}"/>`;
+      }
+    }
+    // gradient descent: the path so far and the dot
+    if (t >= 6) {
+      const n = Math.min(PATH.length - 1, Math.floor(((t - 6) / 7) * (PATH.length - 1)));
+      const pts = PATH.slice(0, n + 1).map(([x, y]) => this.project([x, y, loss(x, y) + 0.05], c));
+      g += `<polyline points="${pts.map((q) => q.slice(0, 2).map((v) => v.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="#f9e2af" stroke-width="3"/>`;
+      const d = pts[pts.length - 1]; g += `<circle cx="${d[0]}" cy="${d[1]}" r="10" fill="#f38ba8" stroke="#fff" stroke-width="2"/>`;
+    }
+    // the sphere (tagged rotate=True): its own spin, then the scene's camera
+    if (t >= 14) {
+      const sc = this.spin, auto = (t - 14) * 0.6, R = 1.1;
+      const rot = ([x, y, z]) => {
+        let a = sc.yaw + auto, X = x * Math.cos(a) - y * Math.sin(a), Y = x * Math.sin(a) + y * Math.cos(a);
+        const b = sc.pitch, Y2 = Y * Math.cos(b) - z * Math.sin(b), Z2 = Y * Math.sin(b) + z * Math.cos(b);
+        return [X + SPHERE[0], Y2 + SPHERE[1], Z2 + SPHERE[2]];
+      };
+      const ctr = this.project(SPHERE, c);
+      g += `<circle cx="${ctr[0]}" cy="${ctr[1]}" r="${R * c.scale}" fill="#cba6f7" fill-opacity="${0.18 * p3}"/>`;
+      for (let m = 0; m < 8; m++) {
+        let d = ''; const ph = (m / 8) * Math.PI;
+        for (let j = 0; j <= 24; j++) { const th = (j / 24) * Math.PI * 2, q = this.project(rot([R * Math.cos(th) * Math.cos(ph), R * Math.cos(th) * Math.sin(ph), R * Math.sin(th)]), c); d += `${j ? 'L' : 'M'}${q[0].toFixed(1)} ${q[1].toFixed(1)}`; }
+        g += `<path d="${d}" fill="none" stroke="#cba6f7" stroke-width="1.4" opacity="${0.8 * p3}"/>`;
+      }
+      for (const lat of [-0.6, 0, 0.6]) {
+        let d = ''; const r = R * Math.cos(lat), z = R * Math.sin(lat);
+        for (let j = 0; j <= 24; j++) { const th = (j / 24) * Math.PI * 2, q = this.project(rot([r * Math.cos(th), r * Math.sin(th), z]), c); d += `${j ? 'L' : 'M'}${q[0].toFixed(1)} ${q[1].toFixed(1)}`; }
+        g += `<path d="${d}" fill="none" stroke="#f5c2e7" stroke-width="1.4" opacity="${0.8 * p3}"/>`;
+      }
+    }
+    // fixed in frame: they don't turn with the view
+    g += '<text x="64" y="92" fill="#fff" font-family="Georgia, serif" font-size="44">Gradient descent</text>';
+    g += `<text x="64" y="140" fill="#c0c8d4" font-family="Georgia, serif" font-style="italic" font-size="30" opacity="${p1}">loss = 0.12x² + 0.35y²</text>`;
+    this.svg.innerHTML = g;
+    // the cue: G2's faint halo on the tagged sphere when stopped; a grab cursor over the film
+    this.film.querySelectorAll('.halo').forEach((n) => n.remove());
+    const k = this.film.clientWidth / 1280;
+    if (!this.playing && !this.grabbed && t >= 14) {
+      const ctr = this.project(SPHERE, c), d = 2 * this.sphereRadiusPx() * k + 12, h = document.createElement('span');
+      h.className = 'halo'; Object.assign(h.style, { left: `${ctr[0] * k - d / 2}px`, top: `${ctr[1] * k - d / 2}px`, width: `${d}px`, height: `${d}px` });
+      this.film.append(h);
+    }
+    this.film.style.cursor = this.drag ? 'grabbing' : 'grab';
+    this.film.querySelector('[data-a="reset"]').hidden = !this.changed();
+    this.el.querySelector('[data-a="play"]').innerHTML = this.playing ? ICON.pause : ICON.play;
+    const x = (t - s.start) / (s.end - s.start);
+    this.el.querySelector('.dline i').style.width = `${x * 100}%`;
+    this.el.querySelector('.dline .dk').style.left = `${x * 100}%`;
+    this.el.querySelector('.cnt').textContent = `${i + 1} of ${SLIDES3.length}`;
+    const next = this.el.querySelector('[data-a="next"]'); next.disabled = i >= SLIDES3.length - 1; next.classList.toggle('ready', this.waiting);
+  }
+}
+document.querySelectorAll('[data-o]').forEach((el) => new OrbitPlayer(el));
+</script>
+</body>
+</html>

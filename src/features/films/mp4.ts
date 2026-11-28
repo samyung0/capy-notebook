@@ -1,8 +1,9 @@
 /**
  * A video film as an MP4 file the browser's own <video> plays: its H.264
  * units (Annex-B, every frame, no B-frames) moved as they are into one track,
- * the parameter sets into its avcC and each unit length-prefixed. Nothing is
- * decoded or encoded.
+ * the parameter sets into its avcC and each unit length-prefixed; its sound
+ * (AAC in ADTS frames) into a second, each frame without its ADTS header.
+ * Nothing is decoded or encoded.
  */
 
 const NAL_IDR = 5;
@@ -99,14 +100,64 @@ class Boxes {
   }
 }
 
+/** AAC's sampling rates by their ADTS index. */
+const AAC_RATES = [
+  96_000, 88_200, 64_000, 48_000, 44_100, 32_000, 24_000, 22_050, 16_000,
+  12_000, 11_025, 8000, 7350,
+];
+
+interface Aac {
+  channels: number;
+  /** AudioSpecificConfig: object type, rate index, channels. */
+  config: [number, number];
+  frames: Uint8Array[];
+  rate: number;
+}
+
+/** ADTS frames as raw AAC frames and their stream's setup. */
+export function adtsFrames(adts: Uint8Array): Aac {
+  const frames: Uint8Array[] = [];
+  let setup: Omit<Aac, 'frames'> | undefined;
+  for (let at = 0; at + 7 <= adts.length; ) {
+    const b = adts.subarray(at, at + 7);
+    if (b[0] !== 0xff || ((b[1] ?? 0) & 0xf0) !== 0xf0)
+      throw new Error('the sound is not ADTS');
+    const header = (b[1] ?? 0) & 1 ? 7 : 9; // protection absent: no CRC
+    const length =
+      (((b[3] ?? 0) & 3) << 11) | ((b[4] ?? 0) << 3) | ((b[5] ?? 0) >> 5);
+    if (length <= header) throw new Error('an ADTS frame is too short');
+    if (!setup) {
+      const type = ((b[2] ?? 0) >> 6) + 1;
+      const index = ((b[2] ?? 0) >> 2) & 15;
+      const channels = (((b[2] ?? 0) & 1) << 2) | ((b[3] ?? 0) >> 6);
+      const rate = AAC_RATES[index];
+      if (!rate) throw new Error('the sound has an unknown sampling rate');
+      setup = {
+        channels,
+        config: [
+          (type << 3) | (index >> 1),
+          ((index & 1) << 7) | (channels << 3),
+        ],
+        rate,
+      };
+    }
+    frames.push(adts.subarray(at + header, at + length));
+    at += length;
+  }
+  if (!setup) throw new Error('the sound has no frames');
+  return { ...setup, frames };
+}
+
 const MATRIX = [0x1_00_00, 0, 0, 0, 0x1_00_00, 0, 0, 0, 0x40_00_00_00];
 
-/** The MP4 of `units` (one per frame, in order) at `fps`. */
+/** The MP4 of `units` (one per frame, in order) at `fps`, with `sound`
+ * (ADTS) if it has one. */
 export function muxMp4(
   units: Uint8Array[],
   width: number,
   height: number,
-  fps: number
+  fps: number,
+  sound?: Uint8Array
 ): Uint8Array {
   let sps: Uint8Array | undefined;
   let pps: Uint8Array | undefined;
@@ -139,7 +190,17 @@ export function muxMp4(
   const timescale = Math.round(fps * 1000);
   const delta = 1000;
   const duration = samples.length * delta;
-  const mdatSize = 8 + samples.reduce((n, s) => n + s.length, 0);
+  const aac = sound ? adtsFrames(sound) : undefined;
+  const videoBytes = samples.reduce((n, s) => n + s.length, 0);
+  const audioBytes = aac?.frames.reduce((n, f) => n + f.length, 0) ?? 0;
+  const mdatSize = 8 + videoBytes + audioBytes;
+  // the movie's length, in its (the video's) timescale
+  const length = aac
+    ? Math.max(
+        duration,
+        Math.round((aac.frames.length * 1024 * timescale) / aac.rate)
+      )
+    : duration;
 
   const ftyp = new Boxes();
   ftyp.box('ftyp', (b) => {
@@ -152,9 +213,9 @@ export function muxMp4(
     const out = new Boxes();
     out.box('moov', (m) => {
       m.full('mvhd', 0, 0, (b) => {
-        b.u32(0, 0, timescale, duration, 0x1_00_00);
+        b.u32(0, 0, timescale, length, 0x1_00_00);
         b.u16(0x1_00, 0);
-        b.u32(0, 0, ...MATRIX, 0, 0, 0, 0, 0, 0, 2);
+        b.u32(0, 0, ...MATRIX, 0, 0, 0, 0, 0, 0, aac ? 3 : 2);
       });
       m.box('trak', (t) => {
         t.full('tkhd', 0, 3, (b) => {
@@ -222,6 +283,7 @@ export function muxMp4(
           });
         });
       });
+      if (aac) m.bytes(audioTrak(aac, length, mdatData + videoBytes));
     });
     return out.join();
   };
@@ -236,5 +298,72 @@ export function muxMp4(
   out.u32(mdatSize);
   out.ascii('mdat');
   for (const s of samples) out.bytes(s);
+  for (const f of aac?.frames ?? []) out.bytes(f);
+  return out.join();
+}
+
+/** The sound's track, `length` long in the movie's timescale: its frames in
+ * one chunk at `at`, 1024 samples each. */
+function audioTrak(aac: Aac, length: number, at: number): Uint8Array {
+  const { channels, config, frames, rate } = aac;
+  const duration = frames.length * 1024;
+  const out = new Boxes();
+  out.box('trak', (t) => {
+    t.full('tkhd', 0, 3, (b) => {
+      b.u32(0, 0, 2, 0, length, 0, 0);
+      b.u16(0, 1, 0x1_00, 0); // alternate group 1, full volume
+      b.u32(...MATRIX, 0, 0);
+    });
+    t.box('mdia', (md) => {
+      md.full('mdhd', 0, 0, (b) => {
+        b.u32(0, 0, rate, duration);
+        b.u16(0x55_c4, 0); // und
+      });
+      md.full('hdlr', 0, 0, (b) => {
+        b.u32(0);
+        b.ascii('soun');
+        b.u32(0, 0, 0);
+        b.ascii('SoundHandler');
+        b.u8(0);
+      });
+      md.box('minf', (mi) => {
+        mi.full('smhd', 0, 0, (b) => b.u16(0, 0));
+        mi.box('dinf', (d) =>
+          d.full('dref', 0, 0, (b) => {
+            b.u32(1);
+            b.full('url ', 0, 1, () => undefined);
+          })
+        );
+        mi.box('stbl', (s) => {
+          s.full('stsd', 0, 0, (b) => {
+            b.u32(1);
+            b.box('mp4a', (a) => {
+              a.u8(0, 0, 0, 0, 0, 0);
+              a.u16(1); // data reference
+              a.u32(0, 0);
+              a.u16(channels, 16, 0, 0);
+              a.u32(rate * 0x1_00_00);
+              a.full('esds', 0, 0, (e) => {
+                // ES descriptor › decoder config (AAC, audio) › its
+                // AudioSpecificConfig; then the sync-layer config
+                e.u8(0x03, 25, 0, 2, 0);
+                e.u8(0x04, 17, 0x40, 0x15, 0, 0, 0);
+                e.u32(0, 0);
+                e.u8(0x05, 2, ...config);
+                e.u8(0x06, 1, 0x02);
+              });
+            });
+          });
+          s.full('stts', 0, 0, (b) => b.u32(1, frames.length, 1024));
+          s.full('stsc', 0, 0, (b) => b.u32(1, 1, frames.length, 1));
+          s.full('stsz', 0, 0, (b) => {
+            b.u32(0, frames.length);
+            b.words(frames.map((f) => f.length));
+          });
+          s.full('stco', 0, 0, (b) => b.u32(1, at));
+        });
+      });
+    });
+  });
   return out.join();
 }

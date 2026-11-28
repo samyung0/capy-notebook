@@ -140,10 +140,10 @@ License: MIT, Copyright (c) 2020-2024 Paweł Kuna.
 
 ## ManimGX web player (vendored build)
 
-`public/vendor/manimgx/0.1.1-capy.1/` holds ManimGX's player for the page,
+`public/vendor/manimgx/0.1.1-capy.2/` holds ManimGX's player for the page,
 built from Capy's fork https://github.com/samyung0/manimgx, branch
-`capy/gpu-memory` (ManimGX 0.1.1, https://github.com/academa-labs/manimgx,
-with fixes to its GPU memory), the way its 0.1.1 Pyodide wheel builds it:
+`capy/interactive` (ManimGX 0.1.1, https://github.com/academa-labs/manimgx,
+with fixes to its GPU memory and the calls Capy's film controls need), the way its 0.1.1 Pyodide wheel builds it:
 `_engine.web()` (`engine.js`, `engine.wasm`) and `_engine.face_fonts()`
 (`font0.ttf`..`font23.ttf`, unchanged from 0.1.1). License: MIT, `LICENSE`
 there; the crates compiled into it are listed with their licenses in
