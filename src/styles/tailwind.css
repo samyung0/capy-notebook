@@ -1003,3 +1003,15 @@ html[data-page-frame]
   > :not([data-slot="hover-actions"]) {
   mask-image: linear-gradient(to left, transparent 2.25rem, #000 3.25rem);
 }
+
+/* A grabbable object's cue on a stopped film (FilmPlayer): a faint, slow
+   pulse, quiet enough not to pull the eye from the film (Epo 2026-11-28). */
+@keyframes film-halo {
+  0%,
+  100% {
+    opacity: 0.12;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}

@@ -140,11 +140,12 @@ License: MIT, Copyright (c) 2020-2024 Paweł Kuna.
 
 ## ManimGX web player (vendored build)
 
-`public/vendor/manimgx/0.1.1/` holds ManimGX's player for the page as its
-0.1.1 Pyodide wheel (`manimgx-0.1.1-cp313-abi3-pyemscripten_2026_0_wasm32.whl`)
-builds it: `_engine.web()` (`engine.js`, `engine.wasm`) and
-`_engine.face_fonts()` (`font0.ttf`..`font23.ttf`), unmodified
-(https://github.com/academa-labs/manimgx). License: MIT, `LICENSE` there; the
-crates compiled into it are listed with their licenses in
+`public/vendor/manimgx/0.1.1-capy.2/` holds ManimGX's player for the page,
+built from Capy's fork https://github.com/samyung0/manimgx, branch
+`capy/interactive` (ManimGX 0.1.1, https://github.com/academa-labs/manimgx,
+with fixes to its GPU memory and the calls Capy's film controls need), the way its 0.1.1 Pyodide wheel builds it:
+`_engine.web()` (`engine.js`, `engine.wasm`) and `_engine.face_fonts()`
+(`font0.ttf`..`font23.ttf`, unchanged from 0.1.1). License: MIT, `LICENSE`
+there; the crates compiled into it are listed with their licenses in
 `LICENSE-THIRD-PARTY` (the Pyodide build carries no x264); the Noto and Source
 Han fonts are under the SIL Open Font License 1.1, `LICENSE-FONTS-OFL-1.1.txt`.

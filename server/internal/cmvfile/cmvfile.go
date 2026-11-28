@@ -11,7 +11,10 @@
 // then the chunks. A chunk is a zstd draw part (drawn films only) and a video
 // part: a segment count (u8), then per segment its track, first frame and unit
 // count (u32 each), the unit sizes (u32 each, twice as many for a track with
-// alpha) and the H.264 Annex-B units, the first of each a keyframe.
+// alpha) and the H.264 Annex-B units, the first of each a keyframe. A video
+// film's sound (AAC in ADTS frames) may follow the last chunk, where the
+// header's "sound" says; "slides" and "captions" are [start, end, text]
+// rows.
 package cmvfile
 
 import (
@@ -81,7 +84,58 @@ type header struct {
 		Name string `json:"name"`
 		Take int    `json:"take"`
 	} `json:"engine"`
-	Q map[string]float64 `json:"q"`
+	Q     map[string]float64 `json:"q"`
+	Sound *struct {
+		Type   string `json:"type"`
+		Offset int64  `json:"offset"`
+		Bytes  int64  `json:"bytes"`
+	} `json:"sound"`
+	Slides   []row `json:"slides"`
+	Captions []row `json:"captions"`
+}
+
+// row is a slide's or a caption's [start, end, text], in seconds.
+type row struct{ start, end float64 }
+
+func (w *row) UnmarshalJSON(b []byte) error {
+	var r []any
+	if err := json.Unmarshal(b, &r); err != nil || len(r) != 3 {
+		return fmt.Errorf("not a [start, end, text] row")
+	}
+	s, okS := r[0].(float64)
+	e, okE := r[1].(float64)
+	_, okT := r[2].(string)
+	if !okS || !okE || !okT || s < 0 || e <= s {
+		return fmt.Errorf("not a [start, end, text] row")
+	}
+	w.start, w.end = s, e
+	return nil
+}
+
+// inOrder is whether rows follow one another without overlapping.
+func inOrder(rows []row) bool {
+	for i := 1; i < len(rows); i++ {
+		if rows[i].start < rows[i-1].end-1e-6 {
+			return false
+		}
+	}
+	return true
+}
+
+// adtsWhole is whether b is AAC in ADTS frames, end to end: each starts with
+// the sync word and its stated length lands on the next.
+func adtsWhole(b []byte) bool {
+	for at := 0; at < len(b); {
+		if at+7 > len(b) || b[at] != 0xff || b[at+1]&0xf0 != 0xf0 {
+			return false
+		}
+		n := int(b[at+3]&0x03)<<11 | int(b[at+4])<<3 | int(b[at+5])>>5
+		if n < 7 || at+n > len(b) {
+			return false
+		}
+		at += n
+	}
+	return len(b) > 0
 }
 
 // Check reads a film of size bytes and returns its header, or an *Invalid.
@@ -159,7 +213,21 @@ func Check(r io.ReaderAt, size int64) (Meta, error) {
 		at += draw + video
 		frame += frames
 	}
-	if body+at != size || frame != m.Frames {
+	end := at
+	if h.Sound != nil {
+		if m.Form != "video" || h.Sound.Type != "audio/aac" || h.Sound.Offset != at || h.Sound.Bytes < 1 {
+			return Meta{}, invalid("a video film's sound follows its last chunk")
+		}
+		sound, err := read(r, body+at, h.Sound.Bytes, size)
+		if err != nil {
+			return Meta{}, err
+		}
+		if !adtsWhole(sound) {
+			return Meta{}, invalid("the sound is not whole AAC frames")
+		}
+		end += h.Sound.Bytes
+	}
+	if body+end != size || frame != m.Frames {
 		return Meta{}, invalid("the chunks don't add up to the film")
 	}
 	return m, nil
@@ -178,6 +246,9 @@ func (h *header) check() error {
 	}
 	if h.Frames < 1 || h.Chunks < 1 {
 		return invalid("no frames or no chunks")
+	}
+	if !inOrder(h.Slides) {
+		return invalid("the slides overlap or are out of order")
 	}
 	if len(h.Tracks) > MaxTracks {
 		return invalid("too many tracks")

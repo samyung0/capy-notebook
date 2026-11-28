@@ -112,4 +112,25 @@ describe('CMV films', () => {
     expect(view.getUint32(stss + 12)).toBe(1); // sync samples: the first
     expect(view.getUint32(stss + 8)).toBe(1);
   });
+
+  it("muxes a video film's sound as an AAC track that starts with the picture", () => {
+    const film = fixture('video-sound');
+    const units = film.chunks.flatMap((_, c) =>
+      film.segments(c).flatMap((s) => s.colour)
+    );
+    const { fps, height, width } = film.meta;
+    const mp4 = muxMp4(units, width, height, fps, film.sound());
+    const view = new DataView(mp4.buffer);
+    const text = new TextDecoder('latin1').decode(mp4);
+    expect(text.split('trak').length - 1).toBe(2);
+    expect(text).toContain('mp4a');
+    // the edit list starts the sound past the encoder's 1024 priming samples
+    const elst = text.indexOf('elst');
+    expect(view.getUint32(elst + 16)).toBe(1024);
+    // every ADTS frame is a sample: 1024 samples each, at 48 kHz, ~28 s
+    const audio = text.lastIndexOf('stts');
+    const frames = view.getUint32(audio + 12);
+    expect(view.getUint32(audio + 16)).toBe(1024);
+    expect((frames * 1024) / 48_000).toBeCloseTo(film.meta.frames / fps, 0);
+  });
 });

@@ -22,10 +22,33 @@ export class Player {
         return ret;
     }
     /**
+     * Object `id`'s bounds in the frame shown, as drawn (posed): [x0, y0, x1, y1], pixels from
+     * the canvas's top left; none if it isn't in that frame.
+     * @param {number} id
+     * @returns {Float32Array | undefined}
+     */
+    bounds(id) {
+        const ret = wasm.player_bounds(this.__wbg_ptr, id);
+        let v1;
+        if (ret[0] !== 0) {
+            v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+            wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        }
+        return v1;
+    }
+    /**
      * The press was called off (`pointercancel`: a finger's pan scrolled the page).
      */
     cancel() {
         wasm.player_cancel(this.__wbg_ptr);
+    }
+    /**
+     * The film's captions: `[[start, end, text], …]` (seconds), for a page showing them itself.
+     * @returns {Array<any>}
+     */
+    captions() {
+        const ret = wasm.player_captions(this.__wbg_ptr);
+        return ret;
     }
     /**
      * The cursor over it, as CSS names it.
@@ -59,6 +82,14 @@ export class Player {
     get duration() {
         const ret = wasm.player_duration(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Show the player's own controls (and what it flashes, and its keys' list), or not: a page
+     * drawing its own. Captions still show.
+     * @param {boolean} show
+     */
+    face(show) {
+        wasm.player_face(this.__wbg_ptr, show);
     }
     /**
      * Take in the next bytes of its director's stream.
@@ -100,6 +131,24 @@ export class Player {
         wasm.player_hide(this.__wbg_ptr, hidden);
     }
     /**
+     * While playing, stop the clock at `t` seconds: paused there, at the last frame that begins
+     * before `t` (for a slide's end, its own last frame, not the next slide's first; `time` then
+     * reads that frame's start, within the slide). None (or no argument): no hold. A play from
+     * the hold, or past it, runs on; a seek back before it and a play stop there again.
+     * @param {number | null} [t]
+     */
+    holdAt(t) {
+        wasm.player_holdAt(this.__wbg_ptr, !isLikeNone(t), isLikeNone(t) ? 0 : t);
+    }
+    /**
+     * Whether the frame shown is a 3D view's (`orbit` and `zoom` turn only those).
+     * @returns {boolean}
+     */
+    is3d() {
+        const ret = wasm.player_is3d(this.__wbg_ptr);
+        return ret !== 0;
+    }
+    /**
      * A key pressed, as `KeyboardEvent` has it. Whether the player took it.
      * @param {string} key
      * @param {boolean} ctrl
@@ -136,9 +185,52 @@ export class Player {
         PlayerFinalization.register(this, this.__wbg_ptr, this);
         return this;
     }
+    /**
+     * The director's interactive objects in the frame shown (drawn in it, or with stops that
+     * stand for it): `{id, label, move, rotate, scale, …}`, the three what its viewer may do to
+     * it, and the rest as the director's note has it (points in scene units: see `objects` in
+     * the take's notes): `pivot` [x, y, z], `followers` [ids] and `follows` (id), which the
+     * player keeps itself, and `along`, `within`, `snap`, `step`, `target`, `tolerance`,
+     * `values`, `handles`, `at`, which its page does.
+     * @returns {Array<any>}
+     */
+    objects() {
+        const ret = wasm.player_objects(this.__wbg_ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return takeFromExternrefTable0(ret[0]);
+    }
+    /**
+     * The viewer's turn of a 3D view's camera, on top of the scene's own in every frame drawn
+     * until `resetView()`: `yaw` radians round the world's up (z), `pitch` round the camera's
+     * own right, about the scene camera's focus. Each call replaces the last; the zoom stays.
+     * @param {number} yaw
+     * @param {number} pitch
+     */
+    orbit(yaw, pitch) {
+        wasm.player_orbit(this.__wbg_ptr, yaw, pitch);
+    }
     pause() {
         wasm.player_pause(this.__wbg_ptr);
     }
+    /**
+     * The topmost interactive object at (x, y), pixels from the canvas's top left: its id, or
+     * none. Each of its shapes as the convex hull of its control points or vertices as they
+     * show, grown by its stroke (a box, for a shape of thousands): a click in a notch of a
+     * concave shape, or just off a curve inside its control polygon, takes it too.
+     * @param {number} x
+     * @param {number} y
+     * @returns {number | undefined}
+     */
+    pick(x, y) {
+        const ret = wasm.player_pick(this.__wbg_ptr, x, y);
+        return ret === Number.MAX_SAFE_INTEGER ? undefined : ret;
+    }
+    /**
+     * Play from the time shown (from the start, at the end). Called from a click or a key, it
+     * lets the page sound: the film's sound plays with it.
+     */
     play() {
         wasm.player_play(this.__wbg_ptr);
     }
@@ -158,6 +250,22 @@ export class Player {
         wasm.player_pointer(this.__wbg_ptr, x, y);
     }
     /**
+     * Hold object `id` moved by (dx, dy) canvas pixels, turned by `angle` radians (clockwise on
+     * the screen) and scaled by `scale`, about its centre in the frame shown, until `reset()`:
+     * each call replaces its pose. In 3D it moves in the picture's plane and turns about the
+     * line of sight. Whether it is in the frame shown. The page pauses the film first.
+     * @param {number} id
+     * @param {number} dx
+     * @param {number} dy
+     * @param {number} angle
+     * @param {number} scale
+     * @returns {boolean}
+     */
+    pose(id, dx, dy, angle, scale) {
+        const ret = wasm.player_pose(this.__wbg_ptr, id, dx, dy, angle, scale);
+        return ret !== 0;
+    }
+    /**
      * The pointer pressed (a finger, if `touch`) at (x, y), pixels from the canvas's top left.
      * Whether the player took it.
      * @param {number} x
@@ -170,12 +278,32 @@ export class Player {
         return ret !== 0;
     }
     /**
+     * How fast it plays: 1 as made, 2 twice as fast.
+     * @returns {number}
+     */
+    get rate() {
+        const ret = wasm.player_rate(this.__wbg_ptr);
+        return ret;
+    }
+    /**
      * The pointer let go. Whether the player took it.
      * @returns {boolean}
      */
     release() {
         const ret = wasm.player_release(this.__wbg_ptr);
         return ret !== 0;
+    }
+    /**
+     * Let the viewer's turn and zoom go: the scene's own camera again.
+     */
+    resetView() {
+        wasm.player_resetView(this.__wbg_ptr);
+    }
+    /**
+     * Let every pose go, and a stop shown: the objects drawn as the film has them.
+     */
+    reset() {
+        wasm.player_reset(this.__wbg_ptr);
     }
     /**
      * The canvas's size on the page, pixels (the screen's own), and its pixels per point.
@@ -200,10 +328,64 @@ export class Player {
         return v1;
     }
     /**
+     * @param {number} rate
+     */
+    set rate(rate) {
+        const ret = wasm.player_set_rate(this.__wbg_ptr, rate);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
      * @param {number} t
      */
     set time(t) {
         wasm.player_set_time(this.__wbg_ptr, t);
+    }
+    /**
+     * The film's slides, for a page that steps through them: `[[start, end, title], …]`
+     * (seconds), its sections if it has several, else none.
+     * @returns {Array<any>}
+     */
+    slides() {
+        const ret = wasm.player_slides(this.__wbg_ptr);
+        return ret;
+    }
+    /**
+     * Turn object `id` in 3D about its own centre as a trackball does, by a drag of (dx, dy)
+     * canvas pixels since the last call (a drag right turns its front right, down turns it
+     * down; across the object, about two radians): on top of its pose, until `reset()`.
+     * Whether it is in the frame shown.
+     * @param {number} id
+     * @param {number} dx
+     * @param {number} dy
+     * @returns {boolean}
+     */
+    spin(id, dx, dy) {
+        const ret = wasm.player_spin(this.__wbg_ptr, id, dx, dy);
+        return ret !== 0;
+    }
+    /**
+     * Show object `id`'s stop `index` (its frame with the object at its `values[index]`, as the
+     * director drew it) instead of the film's frame; none: the film's frame again. Until
+     * `reset()`. Whether the film has that stop.
+     * @param {number} id
+     * @param {number | null} [index]
+     * @returns {boolean}
+     */
+    stop(id, index) {
+        const ret = wasm.player_stop(this.__wbg_ptr, id, isLikeNone(index) ? Number.MAX_SAFE_INTEGER : (index) >>> 0);
+        return ret !== 0;
+    }
+    /**
+     * Show the film as on paper (`true`: a light ground, dark ink, its hues kept) or as it was
+     * made. Its colors turn (each shape's paint, gradients, the background), before light: a lit
+     * surface's base color turns, and it is lit as made, its lit side the lighter. Images and
+     * textures keep their pixels.
+     * @param {boolean} paper
+     */
+    theme(paper) {
+        wasm.player_theme(this.__wbg_ptr, paper);
     }
     /**
      * The time shown, seconds.
@@ -212,6 +394,68 @@ export class Player {
     get time() {
         const ret = wasm.player_time(this.__wbg_ptr);
         return ret;
+    }
+    /**
+     * Where the scene's point (x, y, z) (z: 0 if none) shows on the canvas, through the camera of
+     * the frame shown: [x, y], pixels from its top left. None: nothing shown yet, or it is
+     * behind the camera.
+     * @param {number} x
+     * @param {number} y
+     * @param {number | null} [z]
+     * @returns {Float32Array | undefined}
+     */
+    toCanvas(x, y, z) {
+        const ret = wasm.player_toCanvas(this.__wbg_ptr, x, y, !isLikeNone(z), isLikeNone(z) ? 0 : z);
+        let v1;
+        if (ret[0] !== 0) {
+            v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+            wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        }
+        return v1;
+    }
+    /**
+     * Where (x, y), canvas pixels from its top left, is in the scene, through the camera of the
+     * frame shown: [x, y, z], scene units, on the scene's plane at height `z` (0 if none; a 2D
+     * film's plane). None: nothing shown yet, or that plane is edge on there.
+     * @param {number} x
+     * @param {number} y
+     * @param {number | null} [z]
+     * @returns {Float32Array | undefined}
+     */
+    toScene(x, y, z) {
+        const ret = wasm.player_toScene(this.__wbg_ptr, x, y, !isLikeNone(z), isLikeNone(z) ? 0 : z);
+        let v1;
+        if (ret[0] !== 0) {
+            v1 = getArrayF32FromWasm0(ret[0], ret[1]).slice();
+            wasm.__wbindgen_free(ret[0], ret[1] * 4, 4);
+        }
+        return v1;
+    }
+    /**
+     * Turn the whole scene of a 3D view by `angle` radians about the world's axis `axis` (0, 1,
+     * 2: x, y, z) through the camera's focus, on top of the turns before it (as `turn` does an
+     * object), until `resetView()`; the orbit and zoom stay.
+     * @param {number} axis
+     * @param {number} angle
+     */
+    turnView(axis, angle) {
+        const ret = wasm.player_turnView(this.__wbg_ptr, axis, angle);
+        if (ret[1]) {
+            throw takeFromExternrefTable0(ret[0]);
+        }
+    }
+    /**
+     * Turn object `id` by `angle` radians about the world's axis `axis` (0, 1, 2: x, y, z)
+     * through its pivot or centre, on top of its pose and spin, its followers with it, until
+     * `reset()`. Whether it is in the frame shown (false for an axis past 2).
+     * @param {number} id
+     * @param {number} axis
+     * @param {number} angle
+     * @returns {boolean}
+     */
+    turn(id, axis, angle) {
+        const ret = wasm.player_turn(this.__wbg_ptr, id, axis, angle);
+        return ret !== 0;
     }
     /**
      * When to draw it next: 0, at the next animation frame; milliseconds from now; −1, once
@@ -234,6 +478,14 @@ export class Player {
     wheel(dx, dy) {
         const ret = wasm.player_wheel(this.__wbg_ptr, dx, dy);
         return ret !== 0;
+    }
+    /**
+     * The viewer's zoom of a 3D view: `factor` times closer than the scene's camera (1: as it
+     * is). Each call replaces the last; the turn stays.
+     * @param {number} factor
+     */
+    zoom(factor) {
+        wasm.player_zoom(this.__wbg_ptr, factor);
     }
 }
 if (Symbol.dispose) Player.prototype[Symbol.dispose] = Player.prototype.free;
@@ -408,6 +660,12 @@ function __wbg_get_imports() {
         __wbg_destination_72de671caa9ee77c: function(arg0) {
             const ret = arg0.destination;
             return ret;
+        },
+        __wbg_destroy_249478e98a7943d5: function(arg0) {
+            arg0.destroy();
+        },
+        __wbg_destroy_637537007d9eaa44: function(arg0) {
+            arg0.destroy();
         },
         __wbg_disconnect_fcd65f6d96a2b0c6: function() { return handleError(function (arg0) {
             arg0.disconnect();
@@ -701,7 +959,7 @@ function __wbg_get_imports() {
                     const a = state0.a;
                     state0.a = 0;
                     try {
-                        return wasm_bindgen__convert__closures_____invoke__h3239ffb5f5c46bfe(a, state0.b, arg0, arg1);
+                        return wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___js_sys_4636cb1d2cd77980___Function_fn_wasm_bindgen_ec29c5025a8190___JsValue_____wasm_bindgen_ec29c5025a8190___sys__Undefined___js_sys_4636cb1d2cd77980___Function_fn_wasm_bindgen_ec29c5025a8190___JsValue_____wasm_bindgen_ec29c5025a8190___sys__Undefined_______true_(a, state0.b, arg0, arg1);
                     } finally {
                         state0.a = a;
                     }
@@ -732,10 +990,18 @@ function __wbg_get_imports() {
             const ret = Array.of(arg0, arg1);
             return ret;
         },
+        __wbg_of_d9a05aa72bb023a2: function(arg0, arg1, arg2) {
+            const ret = Array.of(arg0, arg1, arg2);
+            return ret;
+        },
         __wbg_onSubmittedWorkDone_1190213cee1ecf7e: function(arg0) {
             const ret = arg0.onSubmittedWorkDone();
             return ret;
         },
+        __wbg_parse_6937a9050adfb0e1: function() { return handleError(function (arg0, arg1) {
+            const ret = JSON.parse(getStringFromWasm0(arg0, arg1));
+            return ret;
+        }, arguments); },
         __wbg_performanceTime_46fa87a5ad6a0b45: function(arg0) {
             const ret = arg0.performanceTime;
             return ret;
@@ -1433,23 +1699,23 @@ function __wbg_get_imports() {
             arg0.writeTexture(arg1, getArrayU8FromWasm0(arg2, arg3), arg4, arg5);
         }, arguments); },
         __wbindgen_generic_0000000000000001: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 216, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h281e3d7e15efdc6a);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 238, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___wasm_bindgen_ec29c5025a8190___JsValue__core_f0fd674eaa06beef___result__Result_____wasm_bindgen_ec29c5025a8190___JsError___true_);
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("GPUDevice")], shim_idx: 452, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h1348314d7df1d350);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("GPUDevice")], shim_idx: 474, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___wasm_bindgen_ec29c5025a8190___sys__JsNullable_wgpu_a424aa182c24af20___backend__webgpu__webgpu_sys__gen_GpuAdapter__GpuAdapter___core_f0fd674eaa06beef___result__Result_____wasm_bindgen_ec29c5025a8190___JsError___true_);
             return ret;
         },
         __wbindgen_generic_0000000000000003: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("any")], shim_idx: 452, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h1348314d7df1d350_29);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("any")], shim_idx: 474, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___wasm_bindgen_ec29c5025a8190___sys__JsNullable_wgpu_a424aa182c24af20___backend__webgpu__webgpu_sys__gen_GpuAdapter__GpuAdapter___core_f0fd674eaa06beef___result__Result_____wasm_bindgen_ec29c5025a8190___JsError___true__51);
             return ret;
         },
         __wbindgen_generic_0000000000000004: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("undefined")], shim_idx: 452, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
-            const ret = makeMutClosure(arg0, arg1, wasm_bindgen__convert__closures_____invoke__h1348314d7df1d350_30);
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [NamedExternref("undefined")], shim_idx: 474, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            const ret = makeMutClosure(arg0, arg1, wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___wasm_bindgen_ec29c5025a8190___sys__JsNullable_wgpu_a424aa182c24af20___backend__webgpu__webgpu_sys__gen_GpuAdapter__GpuAdapter___core_f0fd674eaa06beef___result__Result_____wasm_bindgen_ec29c5025a8190___JsError___true__52);
             return ret;
         },
         __wbindgen_generic_0000000000000005: function(arg0) {
@@ -1484,36 +1750,36 @@ function __wbg_get_imports() {
 }
 
 const lAudioContext = (typeof AudioContext !== 'undefined' ? AudioContext : (typeof webkitAudioContext !== 'undefined' ? webkitAudioContext : undefined));
-function wasm_bindgen__convert__closures_____invoke__h281e3d7e15efdc6a(arg0, arg1, arg2) {
-    const ret = wasm.wasm_bindgen__convert__closures_____invoke__h281e3d7e15efdc6a(arg0, arg1, arg2);
+function wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___wasm_bindgen_ec29c5025a8190___JsValue__core_f0fd674eaa06beef___result__Result_____wasm_bindgen_ec29c5025a8190___JsError___true_(arg0, arg1, arg2) {
+    const ret = wasm.wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___wasm_bindgen_ec29c5025a8190___JsValue__core_f0fd674eaa06beef___result__Result_____wasm_bindgen_ec29c5025a8190___JsError___true_(arg0, arg1, arg2);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
 
-function wasm_bindgen__convert__closures_____invoke__h1348314d7df1d350(arg0, arg1, arg2) {
-    const ret = wasm.wasm_bindgen__convert__closures_____invoke__h1348314d7df1d350(arg0, arg1, arg2);
+function wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___wasm_bindgen_ec29c5025a8190___sys__JsNullable_wgpu_a424aa182c24af20___backend__webgpu__webgpu_sys__gen_GpuAdapter__GpuAdapter___core_f0fd674eaa06beef___result__Result_____wasm_bindgen_ec29c5025a8190___JsError___true_(arg0, arg1, arg2) {
+    const ret = wasm.wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___wasm_bindgen_ec29c5025a8190___sys__JsNullable_wgpu_a424aa182c24af20___backend__webgpu__webgpu_sys__gen_GpuAdapter__GpuAdapter___core_f0fd674eaa06beef___result__Result_____wasm_bindgen_ec29c5025a8190___JsError___true_(arg0, arg1, arg2);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
 
-function wasm_bindgen__convert__closures_____invoke__h1348314d7df1d350_29(arg0, arg1, arg2) {
-    const ret = wasm.wasm_bindgen__convert__closures_____invoke__h1348314d7df1d350_29(arg0, arg1, arg2);
+function wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___wasm_bindgen_ec29c5025a8190___sys__JsNullable_wgpu_a424aa182c24af20___backend__webgpu__webgpu_sys__gen_GpuAdapter__GpuAdapter___core_f0fd674eaa06beef___result__Result_____wasm_bindgen_ec29c5025a8190___JsError___true__51(arg0, arg1, arg2) {
+    const ret = wasm.wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___wasm_bindgen_ec29c5025a8190___sys__JsNullable_wgpu_a424aa182c24af20___backend__webgpu__webgpu_sys__gen_GpuAdapter__GpuAdapter___core_f0fd674eaa06beef___result__Result_____wasm_bindgen_ec29c5025a8190___JsError___true__51(arg0, arg1, arg2);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
 
-function wasm_bindgen__convert__closures_____invoke__h1348314d7df1d350_30(arg0, arg1, arg2) {
-    const ret = wasm.wasm_bindgen__convert__closures_____invoke__h1348314d7df1d350_30(arg0, arg1, arg2);
+function wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___wasm_bindgen_ec29c5025a8190___sys__JsNullable_wgpu_a424aa182c24af20___backend__webgpu__webgpu_sys__gen_GpuAdapter__GpuAdapter___core_f0fd674eaa06beef___result__Result_____wasm_bindgen_ec29c5025a8190___JsError___true__52(arg0, arg1, arg2) {
+    const ret = wasm.wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___wasm_bindgen_ec29c5025a8190___sys__JsNullable_wgpu_a424aa182c24af20___backend__webgpu__webgpu_sys__gen_GpuAdapter__GpuAdapter___core_f0fd674eaa06beef___result__Result_____wasm_bindgen_ec29c5025a8190___JsError___true__52(arg0, arg1, arg2);
     if (ret[1]) {
         throw takeFromExternrefTable0(ret[0]);
     }
 }
 
-function wasm_bindgen__convert__closures_____invoke__h3239ffb5f5c46bfe(arg0, arg1, arg2, arg3) {
-    wasm.wasm_bindgen__convert__closures_____invoke__h3239ffb5f5c46bfe(arg0, arg1, arg2, arg3);
+function wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___js_sys_4636cb1d2cd77980___Function_fn_wasm_bindgen_ec29c5025a8190___JsValue_____wasm_bindgen_ec29c5025a8190___sys__Undefined___js_sys_4636cb1d2cd77980___Function_fn_wasm_bindgen_ec29c5025a8190___JsValue_____wasm_bindgen_ec29c5025a8190___sys__Undefined_______true_(arg0, arg1, arg2, arg3) {
+    wasm.wasm_bindgen_ec29c5025a8190___convert__closures_____invoke___js_sys_4636cb1d2cd77980___Function_fn_wasm_bindgen_ec29c5025a8190___JsValue_____wasm_bindgen_ec29c5025a8190___sys__Undefined___js_sys_4636cb1d2cd77980___Function_fn_wasm_bindgen_ec29c5025a8190___JsValue_____wasm_bindgen_ec29c5025a8190___sys__Undefined_______true_(arg0, arg1, arg2, arg3);
 }
 
 
@@ -1678,6 +1944,11 @@ function debugString(val) {
     return className;
 }
 
+function getArrayF32FromWasm0(ptr, len) {
+    ptr = ptr >>> 0;
+    return getFloat32ArrayMemory0().subarray(ptr / 4, ptr / 4 + len);
+}
+
 function getArrayJsValueViewFromWasm0(ptr, len) {
     ptr = ptr >>> 0;
     const mem = getDataViewMemory0();
@@ -1704,6 +1975,14 @@ function getDataViewMemory0() {
         cachedDataViewMemory0 = new DataView(wasm.memory.buffer);
     }
     return cachedDataViewMemory0;
+}
+
+let cachedFloat32ArrayMemory0 = null;
+function getFloat32ArrayMemory0() {
+    if (cachedFloat32ArrayMemory0 === null || cachedFloat32ArrayMemory0.byteLength === 0) {
+        cachedFloat32ArrayMemory0 = new Float32Array(wasm.memory.buffer);
+    }
+    return cachedFloat32ArrayMemory0;
 }
 
 function getStringFromWasm0(ptr, len) {
@@ -1862,6 +2141,7 @@ function __wbg_finalize_init(instance, module) {
     wasm = instance.exports;
     wasmModule = module;
     cachedDataViewMemory0 = null;
+    cachedFloat32ArrayMemory0 = null;
     cachedUint32ArrayMemory0 = null;
     cachedUint8ArrayMemory0 = null;
     wasm.__wbindgen_start();

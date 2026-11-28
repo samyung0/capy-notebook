@@ -19,11 +19,13 @@ const OP = {
   GROW: 6,
   MESH: 3,
   NOTE: 9,
+  OWNERS: 15,
   PATH: 1,
   POINTS: 2,
   ROWS: 4,
   SOUND: 10,
   START: 14,
+  STOP: 16,
   TEXTURE: 5,
 } as const;
 
@@ -464,9 +466,44 @@ export class TakeWriter implements DrawSink {
     this.finish(at);
   }
 
+  stop(
+    object: number,
+    index: number,
+    frame: number,
+    view: Uint8Array,
+    records: Uint8Array,
+    cameras: CameraView[]
+  ) {
+    // coded alone: no frame's base
+    const main = this.array(KIND.Records, records).key;
+    const keys = cameras.map(([, , , , r]) => this.array(KIND.Records, r).key);
+    const at = this.begin(OP.STOP);
+    this.out.u32(object);
+    this.out.u32(index);
+    this.out.u32(frame);
+    this.out.string(view);
+    this.out.u64(main);
+    this.out.u32(cameras.length);
+    cameras.forEach(([id, width, height, cameraView], i) => {
+      this.out.u64(id);
+      this.out.u32(width);
+      this.out.u32(height);
+      this.out.string(cameraView);
+      this.out.u64(keys[i] ?? 0);
+    });
+    this.finish(at);
+  }
+
   note(json: string) {
     const at = this.begin(OP.NOTE);
     this.out.string(new TextEncoder().encode(json));
+    this.finish(at);
+  }
+
+  owners(runs: Uint32Array) {
+    const at = this.begin(OP.OWNERS);
+    this.out.u32(runs.length / 3);
+    for (const x of runs) this.out.u32(x);
     this.finish(at);
   }
 
