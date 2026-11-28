@@ -2919,9 +2919,14 @@ Blank DOCX/XLSX and edit thumbnail captures, as forbidden (read as not found);
 every session it serves reads (`access: read`), and `/api/me` says
 `filesEditable: false`, which the browser follows. Chat's file edits are in
 [agentic-retrieval](agentic-retrieval.md#tools). Uploads, View, Download, PDF
-marks, renames, moves, trash and clones are unchanged, and materials stay
-editable. Jobs and maintenance publications of edits saved before the switch
-still finish. The rest of this section is editing while the switch is on.
+marks (staff marked copies included, Q862 A), renames, moves, trash and
+clones are unchanged, and materials stay editable. The starter workspace gets
+no blank Word file (Q860 A, `starter.go`). Jobs and maintenance publications
+of edits saved before the switch still finish; the switch takes no deploy
+step (Q859 B), so other edits saved before it stay unprocessed and a file
+room's unsaved edits at deploy are lost, and the browser offers no Process
+for a file (`IndexingTab.tsx`, `ChatPanel.tsx`). The rest of this section is
+editing while the switch is on.
 
 Source collaboration uses the containing workspace's current owner/editor or
 shared editor permission. Tokens bind a file and editing epoch. The gateway

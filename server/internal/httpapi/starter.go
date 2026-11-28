@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -16,7 +17,8 @@ type starterProvisioner struct {
 }
 
 // CreateDefaultWorkspace provisions the starter workspace once, then adds a
-// topic holding a blank Word file and the welcome note (Epo 2026-10-29).
+// topic holding a blank Word file and the welcome note (Epo 2026-10-29); the
+// Word file only while files are editable (Q860 A).
 // Sample content never fails the account's first request: a failure is
 // reported and leaves the workspace as far as it got.
 func (p starterProvisioner) CreateDefaultWorkspace(ctx context.Context, userID string) error {
@@ -40,6 +42,9 @@ func (a *api) fillStarterWorkspace(ctx context.Context, userID string, ws store.
 	}
 	if _, err := a.s.CreateStarterNote(ctx, userID, ws, topic.ID); err != nil {
 		return err
+	}
+	if !sourceupload.FilesEditable {
+		return nil
 	}
 	_, err = a.addBlankOfficeFile(ctx, userID, ws.ID, "docx", sample.Document+".docx", &topic.ID)
 	return err
