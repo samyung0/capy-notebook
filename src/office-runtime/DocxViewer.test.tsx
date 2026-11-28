@@ -562,6 +562,10 @@ it('decodes no page for a citation it does not have', async () => {
   });
   await settle();
   await act(async () => present());
+  // Past the idle time a search would take.
+  const idle = () =>
+    act(() => new Promise((resolve) => setTimeout(resolve, 600)));
+  await idle();
   expect(decode).not.toHaveBeenCalled();
 
   // A cited open, its quote found, then the citation cleared.
@@ -584,6 +588,7 @@ it('decodes no page for a citation it does not have', async () => {
   await act(async () =>
     root.render(viewer(new Uint8Array([2]), { citation: null }))
   );
+  await idle();
   expect(decode).toHaveBeenCalledTimes(read);
   decode.mockRestore();
   await act(async () => root.unmount());
