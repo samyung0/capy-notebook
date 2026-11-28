@@ -106,6 +106,9 @@ const AAC_RATES = [
   12_000, 11_025, 8000, 7350,
 ];
 
+/** Samples an AAC encoder leads with (ffmpeg's and most others'). */
+const PRIMING = 1024;
+
 interface Aac {
   channels: number;
   /** AudioSpecificConfig: object type, rate index, channels. */
@@ -283,7 +286,8 @@ export function muxMp4(
           });
         });
       });
-      if (aac) m.bytes(audioTrak(aac, length, mdatData + videoBytes));
+      if (aac)
+        m.bytes(audioTrak(aac, length, timescale, mdatData + videoBytes));
     });
     return out.join();
   };
@@ -304,16 +308,27 @@ export function muxMp4(
 
 /** The sound's track, `length` long in the movie's timescale: its frames in
  * one chunk at `at`, 1024 samples each. */
-function audioTrak(aac: Aac, length: number, at: number): Uint8Array {
+function audioTrak(
+  aac: Aac,
+  length: number,
+  timescale: number,
+  at: number
+): Uint8Array {
   const { channels, config, frames, rate } = aac;
   const duration = frames.length * 1024;
+  // the encoder's priming samples (an AAC encoder leads with one frame of
+  // silence, about 21 ms) are cut by an edit list, so sound and picture line up
+  const primed = Math.round((PRIMING * timescale) / rate);
   const out = new Boxes();
   out.box('trak', (t) => {
     t.full('tkhd', 0, 3, (b) => {
-      b.u32(0, 0, 2, 0, length, 0, 0);
+      b.u32(0, 0, 2, 0, length - primed, 0, 0);
       b.u16(0, 1, 0x1_00, 0); // alternate group 1, full volume
       b.u32(...MATRIX, 0, 0);
     });
+    t.box('edts', (e) =>
+      e.full('elst', 0, 0, (b) => b.u32(1, length - primed, PRIMING, 0x1_00_00))
+    );
     t.box('mdia', (md) => {
       md.full('mdhd', 0, 0, (b) => {
         b.u32(0, 0, rate, duration);

@@ -51,7 +51,8 @@ object at one of its stops.
 
 - **Video film**: every frame as H.264. The worker moves the units into an
   MP4 (`mp4.ts`, no decoding), its sound (ADTS frames without their
-  headers) into a second track, for a `<video>` under Capy's controls.
+  headers) into a second track whose edit list skips the encoder's 1024
+  priming samples, for a `<video>` under Capy's controls.
 - **Drawn film**: what the engine was asked to draw. The worker decodes each
   chunk (`cmv.ts`, surfaces refined as ManimGX does in `surface.ts`) and writes
   it as ManimGX take messages (`take.ts`), which the player is fed a chunk at
@@ -101,7 +102,14 @@ move with it (a label), `target=` and `tolerance=` where its viewer is asked
 to put it (the label and Check under the bar, then Correct or how far off),
 and `values=` with `handle=` for something that depends on a value (the
 exporter draws the section's last frame once per value; dragging the handle
-shows the nearest one). Grabbing pauses the film; playing, a seek, Next or Reset (a chip
+shows the nearest one). On a phone two fingers pinch a held object to
+scale it and turn it, or zoom a 3D view; a finger on a film with something to
+hold (or a 3D view) is the film's, on any other it scrolls the page. From the
+keyboard, Tab on a stopped film picks each tagged object in turn (outlined,
+its label read out) and leaves the film past the last; arrows move it,
+Shift-arrows turn it, + and − scale it, a 3D object's arrows spin it and X, Y,
+Z turn it, a values object's arrows step its stops, Escape lets go. Grabbing
+pauses the film; playing, a seek, Next or Reset (a chip
 at the film's top right once anything moved) puts everything back. While
 the film is stopped and untouched, each tagged object has a faint, slow halo
 (Epo picked cue G2 and asked for it quiet, `artifacts/2026-11-28-film-grab-

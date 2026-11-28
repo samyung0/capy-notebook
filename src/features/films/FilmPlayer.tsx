@@ -287,6 +287,20 @@ export function FilmPlayer({
           className="relative overflow-hidden bg-black outline-none"
           onKeyDown={(event) => {
             const key = event.key;
+            // Tab picks a tagged object of a stopped drawn film, past the
+            // last it leaves the film; the one picked takes the keys
+            const held =
+              drawn && !playing
+                ? key === 'Tab'
+                  ? drawn.select(event.shiftKey ? -1 : 1)
+                  : drawn.key(key, event.shiftKey)
+                : false;
+            if (held) {
+              event.preventDefault();
+              refresh();
+              return;
+            }
+            if (key === 'Tab') return;
             if (key === ' ' || key === 'k') toggle();
             else if (key === 'ArrowRight' && steps) go(Math.min(last, i + 1));
             else if (key === 'ArrowRight')
@@ -316,6 +330,23 @@ export function FilmPlayer({
                 }}
               />
             ))}
+          {shown
+            .filter((o) => o.id === drawn?.selected)
+            .map(({ box, id }) => (
+              <span
+                className="pointer-events-none absolute rounded-md ring-2 ring-action-accent"
+                key={id}
+                style={{
+                  height: box[3] - box[1] + 12,
+                  left: box[0] - 6,
+                  top: box[1] - 6,
+                  width: box[2] - box[0] + 12,
+                }}
+              />
+            ))}
+          <span aria-live="polite" className="sr-only">
+            {shown.find((o) => o.id === drawn?.selected)?.label}
+          </span>
           {caption && (
             <span
               className={cn(
@@ -366,7 +397,9 @@ export function FilmPlayer({
           </div>
         </div>
         <div
-          className="group relative -mb-1.5 h-4 cursor-pointer touch-none"
+          // 28px tall for a finger, reaching 6px over the film; the line itself
+          // shows 3px high where a 16px row would put it
+          className="group relative z-1 -mt-1.5 -mb-3 h-7 cursor-pointer touch-none"
           onPointerCancel={() => {
             seeking.current = null;
             refresh();
@@ -387,13 +420,13 @@ export function FilmPlayer({
             else refresh();
           }}
         >
-          <span className="absolute inset-x-0 top-1.5 h-0.75 bg-divider group-hover:top-1.25 group-hover:h-1.25" />
+          <span className="absolute inset-x-0 top-3 h-0.75 bg-divider group-hover:top-2.75 group-hover:h-1.25" />
           <span
-            className="absolute top-1.5 left-0 h-0.75 bg-action-accent group-hover:top-1.25 group-hover:h-1.25"
+            className="absolute top-3 left-0 h-0.75 bg-action-accent group-hover:top-2.75 group-hover:h-1.25"
             style={{ width: progress }}
           />
           <span
-            className="pointer-events-none absolute top-1.75 -mt-1.5 -ml-1.5 size-3 rounded-full bg-action-accent shadow-[0_0_0_2px_var(--color-surface)] transition-transform group-hover:scale-125"
+            className="pointer-events-none absolute top-3.25 -mt-1.5 -ml-1.5 size-3 rounded-full bg-action-accent shadow-[0_0_0_2px_var(--color-surface)] transition-transform group-hover:scale-125"
             style={{ left: progress }}
           />
         </div>

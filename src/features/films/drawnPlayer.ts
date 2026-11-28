@@ -26,6 +26,13 @@ const ORBIT = 0.006;
 const HANDLE = 24;
 /** A flicked 3D object keeps this much of its spin each frame. */
 const FRICTION = 0.94;
+/** Arrow keys as steps across and down. */
+const ARROWS: Record<string, [number, number]> = {
+  ArrowDown: [0, 1],
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+};
 
 interface Pose {
   angle: number;
@@ -40,6 +47,18 @@ type Drag =
   | { kind: 'orbit'; from: [number, number]; x: number; y: number }
   | { id: number; kind: 'spin'; x: number; y: number }
   | { id: number; kind: 'stops'; x: number; y: number }
+  | {
+      /** The object pinched (its pose then), or the 3D view (its zoom). */
+      from: Pose | number;
+      id?: number;
+      kind: 'pinch';
+      /** The two fingers' distance, angle and midpoint when they met. */
+      span: number;
+      tilt: number;
+      mid: [number, number];
+      x: number;
+      y: number;
+    }
   | {
       /** Its centre (or pivot) when taken, canvas pixels. */
       centre: [number, number];
@@ -108,6 +127,9 @@ export class DrawnPlayer implements FilmControl {
   private paper = false;
   /** Grabbed or turned since the film last played or was sought. */
   touched = false;
+  /** The tagged object the keyboard holds (Tab picks it). */
+  selected: number | undefined;
+  private touchAction = '';
   private onDrawn: (() => void) | undefined;
   /** The film's own width: the canvas never draws more pixels than it was
    * exported at (a Retina or full-screen canvas would cost several times the
@@ -227,6 +249,7 @@ export class DrawnPlayer implements FilmControl {
   play() {
     if (this.failed) return;
     this.letGo();
+    this.selected = undefined;
     this.player.play();
     this.active = performance.now();
     this.after();
@@ -332,20 +355,144 @@ export class DrawnPlayer implements FilmControl {
     this.onChange();
   }
 
+  /** Picks the next (or previous) tagged object for the keyboard; none past
+   * either end, so Tab leaves the film. Whether one is picked. */
+  select(direction: 1 | -1): boolean {
+    const list = this.shown();
+    const at = list.findIndex((o) => o.id === this.selected);
+    const next =
+      at === -1 ? (direction === 1 ? 0 : list.length - 1) : at + direction;
+    this.selected = list[next]?.id;
+    this.onChange();
+    return this.selected !== undefined;
+  }
+
+  /** A key for the object the keyboard holds: arrows move it (Shift-arrows,
+   * or arrows on one that only turns, turn it), + and − scale it; on a 3D
+   * object arrows spin it and X, Y, Z turn it a quarter; on a values object
+   * arrows step its stops; Escape lets go. Whether the key was used. */
+  key(key: string, shift: boolean): boolean {
+    const id = this.selected;
+    const it = this.object(id);
+    if (id === undefined || !it) return false;
+    if (key === 'Escape') {
+      this.selected = undefined;
+      this.onChange();
+      return true;
+    }
+    const arrow = ARROWS[key];
+    const ratio = this.canvas.width / Math.max(1, this.canvas.clientWidth);
+    if (it.handles) {
+      if (!arrow) return false;
+      const step = arrow[0] + -arrow[1]; // right and up go on
+      const at = this.stops.get(id) ?? this.valueIndex(it);
+      const next = Math.min(
+        (it.values?.length ?? 1) - 1,
+        Math.max(0, at + step)
+      );
+      this.stops.set(id, next);
+      this.player.stop(id, next);
+    } else if (this.is3d && it.rotate) {
+      const axis = 'xyz'.indexOf(key.toLowerCase());
+      if (axis !== -1) {
+        this.quarter(id, axis as 0 | 1 | 2);
+        return true;
+      }
+      if (!arrow) return false;
+      this.player.spin(id, arrow[0] * 20 * ratio, arrow[1] * 20 * ratio);
+      this.spun = true;
+    } else {
+      const from = this.poses.get(id) ?? STILL;
+      if ((key === '+' || key === '=' || key === '-') && it.scale) {
+        const factor = key === '-' ? 1 / 1.1 : 1.1;
+        this.setPose(id, {
+          ...from,
+          scale: Math.min(4, Math.max(0.25, from.scale * factor)),
+        });
+      } else if (arrow && it.rotate && (shift || !it.move)) {
+        const step = ((it.step ?? 15) * Math.PI) / 180;
+        const turn = arrow[0] + arrow[1]; // right and down turn clockwise
+        const angle = Math.round((from.angle + turn * step) / step) * step;
+        this.setPose(id, { ...from, angle });
+      } else if (arrow && it.move) {
+        const b = this.player.bounds(id);
+        if (!b) return false;
+        const centre: [number, number] = [(b[0] + b[2]) / 2, (b[1] + b[3]) / 2];
+        // a snapped object steps a whole grid step; others 10 CSS pixels
+        const by = it.snap ? this.snapPixels(it, centre) : 10 * ratio;
+        const [x, y] = this.keep(it, [
+          centre[0] + arrow[0] * by,
+          centre[1] + arrow[1] * by,
+        ]);
+        this.setPose(id, {
+          ...from,
+          dx: from.dx + x - centre[0],
+          dy: from.dy + y - centre[1],
+        });
+      } else return false;
+    }
+    this.hold();
+    this.after();
+    this.onChange();
+    return true;
+  }
+
+  /** Canvas pixels one grid step of `it` takes at `centre`. */
+  private snapPixels(it: FilmObject, centre: [number, number]): number {
+    const s = this.player.toScene(centre[0], centre[1]);
+    const a = s && this.player.toCanvas(s[0] ?? 0, s[1] ?? 0, s[2]);
+    const b =
+      s && this.player.toCanvas((s[0] ?? 0) + (it.snap ?? 1), s[1] ?? 0, s[2]);
+    return a && b ? near(a, b) : 10;
+  }
+
+  private object(id: number | undefined): FilmObject | undefined {
+    return id === undefined
+      ? undefined
+      : this.player.objects().find((o) => o.id === id);
+  }
+
+  private setPose(id: number, next: Pose) {
+    this.poses.set(id, next);
+    this.player.pose(id, next.dx, next.dy, next.angle, next.scale);
+  }
+
+  /** Where an object taken to `want` (canvas pixels) may be: on its curve,
+   * inside its rectangle, on its grid, all in the scene's units. */
+  private keep(it: FilmObject, want: [number, number]): [number, number] {
+    if (!(it.along || it.within || it.snap)) return want;
+    const s = this.player.toScene(want[0], want[1]);
+    if (!s) return want;
+    let p: [number, number] = [s[0] ?? 0, s[1] ?? 0];
+    if (it.along) p = onLine(it.along, p);
+    if (it.snap) {
+      const snap = it.snap;
+      p = [Math.round(p[0] / snap) * snap, Math.round(p[1] / snap) * snap];
+    }
+    if (it.within) {
+      const [x0, y0, x1, y1] = it.within;
+      p = [Math.min(x1, Math.max(x0, p[0])), Math.min(y1, Math.max(y0, p[1]))];
+    }
+    const c = this.player.toCanvas(p[0], p[1], s[2]);
+    return c ? [c[0] ?? want[0], c[1] ?? want[1]] : want;
+  }
+
+  /** The stop of a values object's film frame: its value's nearest. */
+  private valueIndex(object: FilmObject): number {
+    const { value, values = [] } = object;
+    if (value === undefined) return 0;
+    return values.reduce(
+      (best, v, k) =>
+        Math.abs(v - value) < Math.abs((values[best] ?? 0) - value) ? k : best,
+      0
+    );
+  }
+
   /** A values object's handle shown now, canvas pixels: its stop's, or the
    * film's own value's. */
   private handle(object: FilmObject): Float32Array | undefined {
-    const { handles = [], value, values = [] } = object;
-    let index = this.stops.get(object.id);
-    if (index === undefined && value !== undefined)
-      index = values.reduce(
-        (best, v, k) =>
-          Math.abs(v - value) < Math.abs((values[best] ?? 0) - value)
-            ? k
-            : best,
-        0
-      );
-    const point = handles[index ?? 0];
+    const index = this.stops.get(object.id) ?? this.valueIndex(object);
+    const point = object.handles?.[index];
     return point && this.player.toCanvas(point[0], point[1], point[2]);
   }
 
@@ -415,40 +562,12 @@ export class DrawnPlayer implements FilmControl {
         },
         { ...options, signal }
       );
-    const object = (id: number | undefined) =>
-      id === undefined ? undefined : player.objects().find((o) => o.id === id);
-    const pose = (id: number, next: Pose) => {
-      this.poses.set(id, next);
-      player.pose(id, next.dx, next.dy, next.angle, next.scale);
-    };
     // the values object whose shown handle is under (x, y), canvas pixels
     const valuesAt = (x: number, y: number) =>
       player.objects().find((o) => {
         const h = o.handles && this.handle(o);
         return h && near(h, [x, y]) / ratio() < HANDLE;
       });
-    // where an object dragged to `want` (canvas pixels) may be: on its curve,
-    // inside its rectangle, on its grid, all in the scene's units
-    const keep = (it: FilmObject, want: [number, number]): [number, number] => {
-      if (!(it.along || it.within || it.snap)) return want;
-      const s = player.toScene(want[0], want[1]);
-      if (!s) return want;
-      let p: [number, number] = [s[0] ?? 0, s[1] ?? 0];
-      if (it.along) p = onLine(it.along, p);
-      if (it.snap) {
-        const snap = it.snap;
-        p = [Math.round(p[0] / snap) * snap, Math.round(p[1] / snap) * snap];
-      }
-      if (it.within) {
-        const [x0, y0, x1, y1] = it.within;
-        p = [
-          Math.min(x1, Math.max(x0, p[0])),
-          Math.min(y1, Math.max(y0, p[1])),
-        ];
-      }
-      const c = player.toCanvas(p[0], p[1], s[2]);
-      return c ? [c[0] ?? want[0], c[1] ?? want[1]] : want;
-    };
     // a 3D object let go while spinning keeps turning, slowing down
     let velocity: [number, number] = [0, 0];
     const flick = (id: number) => {
@@ -461,10 +580,75 @@ export class DrawnPlayer implements FilmControl {
       };
       this.flick = requestAnimationFrame(step);
     };
-    let pressed: number | null = null; // one pointer at a time
+    let pressed: number | null = null; // one pointer at a time, or two fingers
+    const fingers = new Map<number, [number, number]>();
+    // two fingers on the film: a pinch scales and turns what the first held,
+    // or zooms a 3D view
+    const pinch = (e: PointerEvent): boolean => {
+      const drag = this.drag;
+      const [a, b] = [...fingers.values()];
+      if (e.pointerType !== 'touch' || fingers.size !== 2 || !drag || !a || !b)
+        return false;
+      const id =
+        drag.kind === 'pose'
+          ? drag.id
+          : drag.kind === 'click'
+            ? player.pick((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+            : undefined;
+      const it = this.object(id);
+      const view = id === undefined || !it;
+      if (view && !this.is3d) return false;
+      canvas.setPointerCapture(e.pointerId);
+      this.drag = {
+        from: view ? this.view[2] : (this.poses.get(it.id) ?? STILL),
+        id: view ? undefined : it.id,
+        kind: 'pinch',
+        mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2],
+        span: Math.max(1, near(a, b)),
+        tilt: Math.atan2(b[1] - a[1], b[0] - a[0]),
+        x: a[0],
+        y: a[1],
+      };
+      this.hold();
+      return true;
+    };
+    const pinched = (drag: Extract<Drag, { kind: 'pinch' }>) => {
+      const [a, b] = [...fingers.values()];
+      if (!(a && b)) return;
+      const k = near(a, b) / drag.span;
+      if (typeof drag.from === 'number') {
+        this.view[2] = Math.min(4, Math.max(0.4, drag.from * k));
+        player.zoom(this.view[2]);
+        return;
+      }
+      const it = this.object(drag.id);
+      if (drag.id === undefined || !it) return;
+      const next = { ...drag.from };
+      if (it.scale)
+        next.scale = Math.min(4, Math.max(0.25, drag.from.scale * k));
+      if (it.rotate) {
+        next.angle =
+          drag.from.angle + Math.atan2(b[1] - a[1], b[0] - a[0]) - drag.tilt;
+        if (it.step) {
+          const step = (it.step * Math.PI) / 180;
+          next.angle = Math.round(next.angle / step) * step;
+        }
+      }
+      if (it.move) {
+        next.dx += (a[0] + b[0]) / 2 - drag.mid[0];
+        next.dy += (a[1] + b[1]) / 2 - drag.mid[1];
+      }
+      this.setPose(drag.id, next);
+    };
     on('pointermove', (e) => {
       const [x, y] = at(e);
+      if (fingers.has(e.pointerId)) fingers.set(e.pointerId, [x, y]);
       const drag = this.drag;
+      if (drag?.kind === 'pinch') {
+        pinched(drag);
+        this.onChange();
+        return;
+      }
       if (!drag || e.pointerId !== pressed) {
         const hover = player.pick(x, y) ?? valuesAt(x, y)?.id;
         if (hover !== this.hover) {
@@ -475,10 +659,7 @@ export class DrawnPlayer implements FilmControl {
           hover !== undefined || this.is3d ? 'grab' : 'pointer';
         return;
       }
-      if (drag.kind === 'click') {
-        // a drag on a 2D film's empty space does nothing
-        return;
-      }
+      if (drag.kind === 'click') return; // a 2D film's empty space
       if (drag.kind === 'orbit') {
         const k = ORBIT / ratio();
         this.view[0] = drag.from[0] - (x - drag.x) * k;
@@ -493,7 +674,7 @@ export class DrawnPlayer implements FilmControl {
         velocity = [x - drag.x, y - drag.y];
         [drag.x, drag.y] = [x, y];
       } else if (drag.kind === 'stops') {
-        const it = object(drag.id);
+        const it = this.object(drag.id);
         const handles = (it?.handles ?? []).map((h) =>
           player.toCanvas(h[0], h[1], h[2])
         );
@@ -507,7 +688,7 @@ export class DrawnPlayer implements FilmControl {
           player.stop(drag.id, index);
         }
       } else if (drag.turn) {
-        const it = object(drag.id);
+        const it = this.object(drag.id);
         const [cx, cy] = drag.centre;
         let angle =
           drag.from.angle +
@@ -517,13 +698,13 @@ export class DrawnPlayer implements FilmControl {
           const step = (it.step * Math.PI) / 180;
           angle = Math.round(angle / step) * step;
         }
-        pose(drag.id, { ...drag.from, angle });
+        this.setPose(drag.id, { ...drag.from, angle });
       } else {
-        const it = object(drag.id);
+        const it = this.object(drag.id);
         const [cx, cy] = drag.centre;
         const want: [number, number] = [cx + x - drag.x, cy + y - drag.y];
-        const [tx, ty] = it ? keep(it, want) : want;
-        pose(drag.id, {
+        const [tx, ty] = it ? this.keep(it, want) : want;
+        this.setPose(drag.id, {
           ...drag.from,
           dx: drag.from.dx + tx - cx,
           dy: drag.from.dy + ty - cy,
@@ -532,14 +713,20 @@ export class DrawnPlayer implements FilmControl {
       this.onChange();
     });
     on('pointerdown', (e) => {
-      if (pressed !== null || e.button !== 0 || !e.isPrimary) return;
+      if (e.pointerType === 'touch') fingers.set(e.pointerId, at(e));
+      if (pressed !== null) {
+        if (pinch(e)) this.onChange();
+        return;
+      }
+      if (e.button !== 0 || !e.isPrimary) return;
       pressed = e.pointerId;
+      this.selected = undefined;
       this.box.focus({ preventScroll: true });
       canvas.setPointerCapture(e.pointerId);
       const [x, y] = at(e);
       cancelAnimationFrame(this.flick);
       const id = player.pick(x, y);
-      const it = object(id);
+      const it = this.object(id);
       const is3d = this.is3d;
       const values = id === undefined ? valuesAt(x, y) : undefined;
       if (values) {
@@ -574,6 +761,14 @@ export class DrawnPlayer implements FilmControl {
       this.onChange();
     });
     const end = (e: PointerEvent, cancelled: boolean) => {
+      fingers.delete(e.pointerId);
+      if (this.drag?.kind === 'pinch') {
+        // either finger lifting ends the pinch; the other does nothing more
+        this.drag = null;
+        pressed = null;
+        this.onChange();
+        return;
+      }
       if (e.pointerId !== pressed) return;
       pressed = null;
       const drag = this.drag;
@@ -605,7 +800,7 @@ export class DrawnPlayer implements FilmControl {
       (e) => {
         const [x, y] = at(e);
         const id = player.pick(x, y);
-        const it = object(id);
+        const it = this.object(id);
         // pixels, lines (as a window's), pages
         const unit = [1, 20, canvas.clientHeight][e.deltaMode] ?? 1;
         const factor = Math.exp(-e.deltaY * unit * 0.002);
@@ -613,7 +808,7 @@ export class DrawnPlayer implements FilmControl {
           e.preventDefault();
           this.hold();
           const from = this.poses.get(id) ?? STILL;
-          pose(id, {
+          this.setPose(id, {
             ...from,
             scale: Math.min(4, Math.max(0.25, from.scale * factor)),
           });
@@ -686,6 +881,14 @@ export class DrawnPlayer implements FilmControl {
     this.onDrawn = undefined;
     // a still frame's objects (their halos, FilmPlayer) may have moved
     if (!this.player.playing) this.onChange();
+    // a finger on a film with something to hold (or a 3D view) is the
+    // film's; on any other it scrolls the page
+    const touch =
+      this.player.is3d() || this.player.objects().length > 0 ? 'none' : 'pan-y';
+    if (touch !== this.touchAction) {
+      this.touchAction = touch;
+      this.canvas.style.touchAction = touch;
+    }
     this.after();
   }
 }
