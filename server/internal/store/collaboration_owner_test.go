@@ -3,12 +3,13 @@ package store
 import (
 	"context"
 	"errors"
-	"github.com/samyung0/capy-notebook/server/internal/testdb"
 	"os"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
 // pushOverQuota puts a user into over_quota_grace the way production does: a
@@ -182,7 +183,6 @@ func TestGraceBlocksOnlyStorageGrowth(t *testing.T) {
 // content, comments, PDF marks and source edits are refused with the storage
 // code, while renaming, moving between topics and trashing go on.
 func TestViewOnlyAtTheStorageLimit(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	commentText := "hi"
@@ -231,10 +231,17 @@ func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 				if who == owner {
 					wantFull = StorageFullSelf
 				}
+				// While files are view-only every session reads with no
+				// reason given and every room refuses (Q853 A).
+				if !sourceupload.FilesEditable {
+					wantFull = ""
+				}
 				if err != nil || session.Access != "read" || session.StorageFull != wantFull {
 					t.Fatalf("%s source session = %q %q %v, want read for %q", who, session.Access, session.StorageFull, err, wantFull)
 				}
-				want("source edit", s.CheckSourceAccess(ctx, who, text.ID, session.Epoch, true))
+				if sourceupload.FilesEditable {
+					want("source edit", s.CheckSourceAccess(ctx, who, text.ID, session.Epoch, true))
+				}
 				title := "Renamed by " + who
 				if _, err := s.UpdateMaterial(ctx, note.ID, MaterialPatch{Title: &title, UpdatedBy: who}); err != nil {
 					t.Fatalf("rename by %s: %v", who, err)
@@ -364,9 +371,9 @@ func TestCollaborationFrozenSQLMatchesGo(t *testing.T) {
 // trashing a whole set and transferring a workspace stay open; accepting an
 // invite, recording study progress, deleting one flashcard, saving or deleting
 // PDF marks and source edits are refused, while checkpoints of source edits
-// the room admitted before the freeze are saved.
+// the room admitted before the freeze are saved. While files are view-only
+// every room and save refuses (Q853 A), so those lines wait for the switch.
 func TestFrozenEdges(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	frozenUser := newBlobTestUser(t, s, "frozen_edges")
@@ -437,6 +444,9 @@ func TestFrozenEdges(t *testing.T) {
 		if session.Access != "read" {
 			t.Fatalf("%s source session access = %q, want read", actor, session.Access)
 		}
+		if !sourceupload.FilesEditable {
+			continue
+		}
 		wantOverQuotaLock(t, "source edit", s.CheckSourceAccess(ctx, actor, text.ID, session.Epoch, true))
 		if err := s.CheckSourceAccess(ctx, actor, text.ID, session.Epoch, false); err != nil {
 			t.Fatalf("%s source read: %v", actor, err)
@@ -444,14 +454,16 @@ func TestFrozenEdges(t *testing.T) {
 	}
 	// A checkpoint saves edits the room admitted before the frozen editor's
 	// freeze (frozen is enforced at admission only) in a healthy owner's room.
-	healthyWS, healthyText := sourceTestFile(t, s, inviter, "healthy.txt", "txt")
-	addWorkspaceEditor(t, s, healthyWS.ID, frozenUser)
-	session, err := s.SourceSession(ctx, inviter, healthyText.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.SaveSourceCheckpoint(ctx, healthyText.ID, sourceTestSave(session, frozenUser, "admitted")); err != nil {
-		t.Fatalf("checkpoint of edits admitted before the freeze: %v", err)
+	if sourceupload.FilesEditable {
+		healthyWS, healthyText := sourceTestFile(t, s, inviter, "healthy.txt", "txt")
+		addWorkspaceEditor(t, s, healthyWS.ID, frozenUser)
+		session, err := s.SourceSession(ctx, inviter, healthyText.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.SaveSourceCheckpoint(ctx, healthyText.ID, sourceTestSave(session, frozenUser, "admitted")); err != nil {
+			t.Fatalf("checkpoint of edits admitted before the freeze: %v", err)
+		}
 	}
 
 	_, err = s.AcceptWorkspaceInvite(ctx, inviteID, frozenUser)

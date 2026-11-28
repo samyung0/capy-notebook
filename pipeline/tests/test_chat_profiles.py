@@ -187,7 +187,6 @@ def test_the_workspace_profile_shows_the_model_what_it_did_before():
     assert _hashed(snapshot) == json.loads(GOLDEN.read_text())
 
 
-@pytest.mark.files_view_only
 def test_the_account_profile_offers_the_account_tools():
     schemas = profiles.account.PROFILE.schemas(
         _account(library_catalog=CATALOG, edit_tools=True)
@@ -224,10 +223,18 @@ def test_the_account_profile_offers_the_account_tools():
             _account(library_catalog=CATALOG, office_tools=True, edit_tools=True)
         )
     }
+    # The Office edit only while files are editable (Go's contract, Q854 A).
+    editable = "edit_office_document" in contract.DEFINITIONS
+    assert ("edit_office_document" in office) == editable
+    assert "inspect_office_document" in office
     # Every tool that creates takes where it lands (Epo 2026-10-28, T2).
     for name, schema in [
         *((n, by_name[n]) for n in ("create_material", "create_deck", "add_questions")),
-        ("edit_office_document", office["edit_office_document"]),
+        *(
+            [("edit_office_document", office["edit_office_document"])]
+            if editable
+            else []
+        ),
     ]:
         assert "workspace_id" in schema["parameters"]["properties"]
         # Go's definition stays as it is.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { FILES_VIEW_ONLY } from '../../helpers/filesViewOnly';
+import { FILES_EDITABLE } from '../../helpers/filesViewOnly';
 import { cleanupClerkActor } from './accounts';
 import { verify } from './evidence';
 import {
@@ -98,8 +98,6 @@ async function objects(run: UatRun, keys: string[]) {
 test('account deletion: an owner with an Office file, a note image, a member and a cloned note deletes the account; members get 404 through the grace, the Clerk deletion purges the content and reaps the owner-only objects, and the clone keeps its object and charge', async ({
   run,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(1_200_000);
   const { owner } = run;
   const workspaceId = await notesWorkspace(run, 'deletion');
@@ -145,10 +143,12 @@ test('account deletion: an owner with an Office file, a note image, a member and
     [cloner, 'read'],
   ] as const) {
     for (const path of reads) await api(actor, path);
-    for (const path of [noteToken, fileToken])
+    for (const path of FILES_EDITABLE ? [noteToken, fileToken] : [noteToken])
       expect(
         object(await api(actor, path, 'POST', undefined, 201)).access
       ).toBe(access);
+    // While files are view-only a file has no room token (Q853 A).
+    if (!FILES_EDITABLE) await api(actor, fileToken, 'POST', undefined, 404);
     assert(await listed(actor, workspaceId));
   }
 

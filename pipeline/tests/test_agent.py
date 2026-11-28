@@ -5714,7 +5714,6 @@ def _office_ctx(monkeypatch, post=None) -> ToolContext:
     return ctx
 
 
-@pytest.mark.files_view_only
 def test_the_office_tools_come_last_once_offered(monkeypatch):
     """Offered only once office_building is read, or once an earlier turn of
     the conversation was offered them (the gateway's officeTools), and then
@@ -5729,9 +5728,13 @@ def test_the_office_tools_come_last_once_offered(monkeypatch):
     before = names()
     assert not set(tools.OFFICE_TOOLS) & set(before)
     ctx.office_tools = True
-    assert names() == before + list(tools.OFFICE_TOOLS)
+    # The Office edit is registered only while files are editable (Q854 A).
+    offered = [name for name in tools.OFFICE_TOOLS if name in tools.REGISTRY]
+    assert offered[0] == "inspect_office_document"
+    assert names() == before + offered
 
 
+@pytest.mark.view_only_refusals
 def test_chat_offers_no_file_edit_while_files_are_view_only(monkeypatch):
     """Q854 A: Go's contract leaves edit_office_document out, so no turn is
     offered it, office_building offering the Office read alone; edit_document

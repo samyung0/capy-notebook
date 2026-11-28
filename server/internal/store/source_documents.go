@@ -562,11 +562,17 @@ type SourceCheckpointSaved struct {
 	Replayed bool `json:"replayed,omitempty"`
 }
 
+// SaveSourceCheckpoint saves a room's checkpoint; while files are view-only
+// every save is refused (Q853 A).
 func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in SourceCheckpoint) (SourceCheckpointSaved, error) {
-	var out SourceCheckpointSaved
 	if !sourceupload.FilesEditable {
-		return out, ErrForbidden
+		return SourceCheckpointSaved{}, ErrForbidden
 	}
+	return s.saveSourceCheckpoint(ctx, fileID, in)
+}
+
+func (s *Store) saveSourceCheckpoint(ctx context.Context, fileID string, in SourceCheckpoint) (SourceCheckpointSaved, error) {
+	var out SourceCheckpointSaved
 	var effects []json.RawMessage
 	if len(in.Update) == 0 || len(in.Update) > 100<<20 || in.NetTokens < 0 || json.Unmarshal(in.PendingEffects, &effects) != nil || effects == nil {
 		return out, ErrInvalidCheckpoint

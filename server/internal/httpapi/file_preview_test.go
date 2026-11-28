@@ -12,6 +12,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/blob"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
@@ -124,8 +125,9 @@ func openAccessTestStoreForPreview(t *testing.T) *store.Store {
 	return st
 }
 
+// While files are view-only (Q853 A) the view half runs alone: a file with
+// edits saved before the switch opens in View with them.
 func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
 	memory := blob.NewMemory()
@@ -158,8 +160,14 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 	if err := st.Pool().QueryRow(ctx, `SELECT count(*) FROM source_documents WHERE file_id=$1`, file.ID).Scan(&rows); err != nil || rows != 0 {
 		t.Fatalf("view created %d source_documents rows err=%v", rows, err)
 	}
-	// The editor read creates the row; a saved checkpoint ahead of the index then rides along.
-	if editor := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil); editor.Code != http.StatusOK {
+	// The editor read creates the row (while files are view-only, one opened
+	// before the switch did); a saved checkpoint ahead of the index then
+	// rides along.
+	if !sourceupload.FilesEditable {
+		if _, err := st.SourceSession(ctx, "u_owner", file.ID); err != nil {
+			t.Fatal(err)
+		}
+	} else if editor := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session", "u_owner", nil); editor.Code != http.StatusOK {
 		t.Fatalf("editor session = %d body=%s", editor.Code, editor.Body.String())
 	}
 	if published := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session?view=true", "u_owner", nil); published.Code != http.StatusOK ||
@@ -178,6 +186,9 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 		bytes.Contains(edited.Body.Bytes(), []byte(`pendingEffects`)) ||
 		bytes.Contains(edited.Body.Bytes(), []byte(`growthBudgetBytes`)) {
 		t.Fatalf("edited view session = %d body=%s", edited.Code, edited.Body.String())
+	}
+	if !sourceupload.FilesEditable {
+		return
 	}
 	// An Office editor takes its document from the room's sync: the editor
 	// read carries no state, and leaves the effects server-side. It carries
@@ -207,7 +218,7 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 // uploaded before it, opens view only like an Office file at its size limit,
 // so its edit read carries a growth budget too, from its base alone.
 func TestTextSourceOverTheTextCapHasNoGrowthBudget(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
 	memory := blob.NewMemory()
@@ -263,7 +274,7 @@ func TestTextSourceOverTheTextCapHasNoGrowthBudget(t *testing.T) {
 // (seed_bytes) counts against the budget, as the room's estimate does
 // (review r3 S2).
 func TestTextSourceGrowthCountsItsStateOverTheSeed(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
 	memory := blob.NewMemory()
@@ -305,7 +316,7 @@ func TestTextSourceGrowthCountsItsStateOverTheSeed(t *testing.T) {
 // carries it. The editor read also says when the file's card is older than
 // its saved document.
 func TestSourceSessionEditorCarriesTheOwnersImageCap(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
 	memory := blob.NewMemory()
@@ -375,7 +386,7 @@ func TestSourceSessionEditorCarriesTheOwnersImageCap(t *testing.T) {
 // editor's resident layout worker, other than its own; an XLSX one offers
 // none.
 func TestDocxSourceTokenOffersAWorkerClientID(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
 	memory := blob.NewMemory()

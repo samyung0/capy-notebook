@@ -51,7 +51,7 @@ func maintenanceTestPause(t *testing.T, s *Store) {
 }
 
 func TestOfficeEditingPause(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "office_pause")
@@ -97,8 +97,10 @@ func TestOfficeEditingPause(t *testing.T) {
 	}
 }
 
+// Publish-all publishes every unpublished Office edit, those saved before
+// files went view-only included (Q853 A): sourceTestEdit seeds them
+// through the save's body, which the switch does not gate.
 func TestPublishAllOfficeSourcesRoutesSpecialGroupsExportOnly(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "publish_all_owner")
@@ -170,7 +172,6 @@ func TestPublishAllOfficeSourcesRoutesSpecialGroupsExportOnly(t *testing.T) {
 // The drain runs with editing live: system republishes only, oldest first,
 // capped by Limit, leaving export-only files to the window.
 func TestDrainRepublishesOldestAndLeavesExportOnly(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "drain_owner")
@@ -265,7 +266,6 @@ func TestAnnounceOfficeMaintenance(t *testing.T) {
 // A trashed file's rebuild never runs in the collaboration service, so
 // publish-all performs it; readiness waited on it until then.
 func TestPublishAllRebuildsTrashedDeferredPublication(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	file, _, export := sourceTestDeferredPublication(t, s, newBlobTestUser(t, s, "trashed_rebuild_owner"))
@@ -305,7 +305,6 @@ func TestPublishAllRebuildsTrashedDeferredPublication(t *testing.T) {
 }
 
 func TestExportOnlyPublication(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "export_only_owner")
@@ -386,7 +385,7 @@ func TestExportOnlyPublication(t *testing.T) {
 // editing stays on its base until the rebuild). The file stays unmarked and
 // its room is left alone.
 func TestStoreOnlyAutomaticExport(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "store_only_export")
@@ -461,7 +460,7 @@ func TestStoreOnlyAutomaticExport(t *testing.T) {
 // publication would certainly refuse (the new bytes against a source row with
 // nothing left), and the publication refuses the net growth it then charges.
 func TestStoreOnlyExportIsQuotaGated(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "store_only_quota")
@@ -523,7 +522,7 @@ func TestStoreOnlyExportIsQuotaGated(t *testing.T) {
 // first parse's fee), after finalize it becomes that parse at once and the
 // export's own publication is refused.
 func TestProcessDuringExportOnlyIsKept(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "export_process")
@@ -596,7 +595,7 @@ func TestProcessDuringExportOnlyIsKept(t *testing.T) {
 // A maintenance republish publishes an over-quota (frozen) owner's edits end
 // to end, where the owner's own refresh is refused.
 func TestBlockedOwnerMaintenanceRepublish(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "frozen_owner")
@@ -668,7 +667,6 @@ func TestBlockedOwnerMaintenanceRepublish(t *testing.T) {
 // An export that fails for a trashed file is recorded rather than left to its
 // lease: the maintenance window exports trashed files.
 func TestFailedTrashedExportParks(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "trashed_export_failure")
@@ -701,7 +699,7 @@ func TestFailedTrashedExportParks(t *testing.T) {
 // locked owner's file with due edits comes through the refresh branch without
 // the flag, so Go's refusal parks it instead of deferring a reprocess forever.
 func TestReprocessSelection(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "reprocess_owner")
@@ -821,7 +819,7 @@ func TestReprocessSelection(t *testing.T) {
 // Readiness counts only Office publication and reprocess work, and fails until
 // the pause is on.
 func TestOfficeReadiness(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "office_readiness")
@@ -879,7 +877,6 @@ func TestOfficeReadiness(t *testing.T) {
 // is not paused, then drops every state of the reset formats under a new
 // epoch. Each run rolls back.
 func TestOfficeWindowResetTemplate(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "reset_template")
@@ -937,7 +934,7 @@ func TestOfficeWindowResetTemplate(t *testing.T) {
 // artifacts. Other formats keep their state.
 // The run rolls back.
 func TestDocxEngineRoundReset(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "docx_round_reset")
@@ -1015,7 +1012,7 @@ func TestDocxEngineRoundReset(t *testing.T) {
 // taken over once, counting its files, including a refresh candidate's copy;
 // text and complete states name none. The claim hands the copy's kind over.
 func TestOfficeSeeds(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	reg, err := models.New(ctx, s.Pool())

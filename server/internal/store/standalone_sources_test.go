@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
@@ -33,7 +34,6 @@ func standaloneSourceFile(t *testing.T, s *Store, owner, name, kind string) File
 // the payer's alone, never another user's, a link holder's included, and
 // refused while the owner is suspended or pending deletion.
 func TestStandaloneSourceSessionIsItsOwnersAlone(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	for _, state := range []string{"suspended", "deletion_pending"} {
@@ -46,10 +46,10 @@ func TestStandaloneSourceSessionIsItsOwnersAlone(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if doc.WorkspaceID != "" || doc.Access != "write" || doc.OwnerID != owner || doc.Format != "text" {
-				t.Fatalf("owner's session = %+v, want a writable text session with no workspace", doc.BrowserSourceSession)
+			if doc.WorkspaceID != "" || doc.Access != editAccess() || doc.OwnerID != owner || doc.Format != "text" {
+				t.Fatalf("owner's session = %+v, want an editor's text session with no workspace", doc.BrowserSourceSession)
 			}
-			if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); err != nil {
+			if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); !errors.Is(err, roomAnswer(nil)) {
 				t.Fatalf("owner's edit admission = %v", err)
 			}
 
@@ -69,16 +69,16 @@ func TestStandaloneSourceSessionIsItsOwnersAlone(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if linked, err := s.SourceSession(ctx, other, inShared.ID); err != nil || linked.Access != "write" {
+			if linked, err := s.SourceSession(ctx, other, inShared.ID); err != nil || linked.Access != editAccess() {
 				t.Fatalf("link holder's session in the shared workspace = %+v, %v", linked.BrowserSourceSession, err)
 			}
 			if _, err := s.SourceSession(ctx, other, file.ID); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("other user's session = %v, want not found", err)
 			}
-			if err := s.CheckSourceAccess(ctx, other, file.ID, doc.Epoch, false); !errors.Is(err, ErrNotFound) {
+			if err := s.CheckSourceAccess(ctx, other, file.ID, doc.Epoch, false); !errors.Is(err, roomAnswer(ErrNotFound)) {
 				t.Fatalf("other user's access = %v, want not found", err)
 			}
-			if _, err := s.SaveSourceCheckpoint(ctx, file.ID, sourceTestSave(doc, other, "theirs")); !errors.Is(err, ErrNotFound) {
+			if _, err := s.SaveSourceCheckpoint(ctx, file.ID, sourceTestSave(doc, other, "theirs")); !errors.Is(err, roomAnswer(ErrNotFound)) {
 				t.Fatalf("other user's save = %v, want not found", err)
 			}
 
@@ -88,7 +88,7 @@ func TestStandaloneSourceSessionIsItsOwnersAlone(t *testing.T) {
 				if _, err := s.SourceSession(ctx, owner, file.ID); !errors.As(err, &locked) || locked.State != AccountSuspended {
 					t.Fatalf("suspended owner's session = %v, want the suspended account", err)
 				}
-				if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); !errors.As(err, &locked) {
+				if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); sourceupload.FilesEditable && !errors.As(err, &locked) {
 					t.Fatalf("suspended owner's access = %v, want the suspended account", err)
 				}
 				return
@@ -96,7 +96,7 @@ func TestStandaloneSourceSessionIsItsOwnersAlone(t *testing.T) {
 			if _, err := s.SourceSession(ctx, owner, file.ID); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("deletion-pending owner's session = %v, want not found", err)
 			}
-			if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); !errors.Is(err, ErrNotFound) {
+			if err := s.CheckSourceAccess(ctx, owner, file.ID, doc.Epoch, true); !errors.Is(err, roomAnswer(ErrNotFound)) {
 				t.Fatalf("deletion-pending owner's access = %v, want not found", err)
 			}
 		})
@@ -106,7 +106,7 @@ func TestStandaloneSourceSessionIsItsOwnersAlone(t *testing.T) {
 // An Office file with no workspace saves its room's edits and an agent's
 // edit, whose receipt names no workspace.
 func TestStandaloneSourceSavesEditsAndAgentReceipts(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_loose_save_owner")
@@ -136,7 +136,7 @@ func TestStandaloneSourceSavesEditsAndAgentReceipts(t *testing.T) {
 // saves the payer's edits there, and nobody else's, the new workspace's
 // editors included.
 func TestAStandaloneRoomsDrainSavesAsItsPayer(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_loose_drain_owner")
@@ -176,7 +176,7 @@ func TestAStandaloneRoomsDrainSavesAsItsPayer(t *testing.T) {
 // ingest in the payer's scope (no workspace, the retrieval default's
 // embedding space), and the publication takes only the payer's content.
 func TestStandaloneSourcePublishesAutomaticallyInItsOwnersScope(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	reg, err := models.New(ctx, s.Pool())
@@ -297,7 +297,7 @@ func TestStandalonePDFAnnotationsAreItsOwners(t *testing.T) {
 // cost, and a file an export-only publication left unindexed is reprocessed,
 // each through a system session that names no workspace.
 func TestStandaloneOfficeMaintenanceAndReprocess(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	testdb.SkipWhileFilesViewOnly(t)
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_loose_maintenance_owner")

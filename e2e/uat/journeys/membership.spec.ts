@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
-import { FILES_VIEW_ONLY } from '../../helpers/filesViewOnly';
+import { FILES_EDITABLE } from '../../helpers/filesViewOnly';
 import { openWorkspaceSharing } from '../../helpers/workspace';
 import { m } from '../../i18n';
 import {
@@ -263,8 +263,6 @@ function keepTyping(page: Page) {
 test('membership: an editor demoted to viewer has open note, Office and quiz editors turn read-only and keeps reading; an editor removed while typing sees its note unavailable with one lost-access toast; removed, loses the workspace, its tokens and its open room, deletes what it uploaded and comes back only through the signed link; a second editor stays connected and editable throughout', async ({
   run,
 }) => {
-  // biome-ignore lint/suspicious/noSkippedTests: files are view-only (Q853 A).
-  test.skip(true, FILES_VIEW_ONLY);
   test.setTimeout(1_200_000);
   const workspaceId = await notesWorkspace(run, 'membership');
   const marker = `UAT${randomUUID().replaceAll('-', '')}`;
@@ -300,6 +298,14 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
   const noteToken = `/api/materials/${noteId}/collaboration-token`;
   const fileToken = `/api/files/${fileId}/collaboration-token`;
   const quizToken = `/api/materials/${quizId}/collaboration-token`;
+  // While files are view-only a file has no room token and no editor (Q853
+  // A): its token answers 404 and the DOCX steps wait for the switch.
+  const tokens = FILES_EDITABLE
+    ? [noteToken, fileToken, quizToken]
+    : [noteToken, quizToken];
+  const noFileToken = async (actor: Actor) => {
+    if (!FILES_EDITABLE) await api(actor, fileToken, 'POST', undefined, 404);
+  };
 
   // 1. Editor: write tokens; a DOCX sentence and a note line saved from the
   // browser, both editors left open (the DOCX in a second tab).
@@ -307,16 +313,21 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
     object(await api(member, `/api/workspaces/${workspaceId}`))
   ).toMatchObject({ capabilities: { canEdit: true }, role: 'editor' });
   assert(await listed(member, workspaceId));
-  for (const path of [noteToken, fileToken, quizToken])
+  for (const path of tokens)
     expect(object(await api(member, path, 'POST', undefined, 201)).access).toBe(
       'write'
     );
-  const office: Actor = { ...member, page: await member.context.newPage() };
-  const frame = await openEditor(run, office, workspaceId, fileId, 'docx');
-  await editOffice(office, frame, 'docx', true);
-  await savedFacts(run, fileId, [SENTENCE]);
-  // Saved before the demotion below closes this connection.
-  await saved(office.page);
+  await noFileToken(member);
+  const office: Actor | undefined = FILES_EDITABLE
+    ? { ...member, page: await member.context.newPage() }
+    : undefined;
+  if (office) {
+    const frame = await openEditor(run, office, workspaceId, fileId, 'docx');
+    await editOffice(office, frame, 'docx', true);
+    await savedFacts(run, fileId, [SENTENCE]);
+    // Saved before the demotion below closes this connection.
+    await saved(office.page);
+  }
   const editor = await openNote(run, member, workspaceId, noteId);
   await lineAfter(member.page, editor, body);
   await member.page.keyboard.type(memberLine);
@@ -352,13 +363,9 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
   };
   const noteRooms = watchRooms(run, bystander.page);
   const officeRooms = watchRooms(run, bystanderOffice.page);
-  const bystanderFrame = await openEditor(
-    run,
-    bystanderOffice,
-    workspaceId,
-    fileId,
-    'docx'
-  );
+  const bystanderFrame = FILES_EDITABLE
+    ? await openEditor(run, bystanderOffice, workspaceId, fileId, 'docx')
+    : undefined;
   const bystanderEditor = await openNote(run, bystander, workspaceId, noteId);
   const bystanderTypes = async (after: string, line: string) => {
     await lineAfter(bystander.page, bystanderEditor, after);
@@ -403,10 +410,11 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
   // re-read turns the page view-only first. The member still reads but cannot
   // write.
   const noteReadOnly = browserReadToken(member.page, noteToken, 'either');
-  const officeReadOnly = browserReadToken(office.page, fileToken, 'own');
+  const officeReadOnly =
+    office && browserReadToken(office.page, fileToken, 'own');
   expect(await changeMember(run, workspaceId, member, 'viewer')).toBe(204);
   await Promise.all([noteReadOnly, officeReadOnly]);
-  for (const page of [member.page, office.page])
+  for (const page of office ? [member.page, office.page] : [member.page])
     await expect(page.getByText(m.editor_read_only_strip())).toBeVisible();
   await expect(member.page.locator('[contenteditable="true"]')).toHaveCount(0);
   await expect(
@@ -431,10 +439,11 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
   expect(read.capabilities).toMatchObject({ canEdit: false, canView: true });
   assert(JSON.stringify(read.content).includes(memberLine));
   await api(member, `/api/files/${fileId}`);
-  for (const path of [noteToken, fileToken, quizToken])
+  for (const path of tokens)
     expect(object(await api(member, path, 'POST', undefined, 201)).access).toBe(
       'read'
     );
+  await noFileToken(member);
   // A viewer's content write: the material's 403 (sharing e2e).
   await api(
     member,
@@ -443,7 +452,7 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
     { title: `Viewer ${marker}` },
     403
   );
-  await office.page.close();
+  await office?.page.close();
   await quizTab.close();
   await bystanderTypes(bystanderLine, `Demoted ${marker}`);
   await expect(member.page.getByText(`Demoted ${marker}`)).toBeVisible({
@@ -539,20 +548,24 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
 
   // What the member saved while an editor stays.
   assert((await contentText(run, noteId)).includes(memberLine));
-  await savedFacts(run, fileId, [SENTENCE]);
+  if (FILES_EDITABLE) await savedFacts(run, fileId, [SENTENCE]);
 
   // The bystander heard no close through it all, with no strip and no
   // lost-access toast (one copy for both), and still edits both, with its
   // write tokens.
   await bystanderTypes(`Demoted ${marker}`, `Removed ${marker}`);
-  const input = bystanderFrame.getByRole('textbox', { name: 'Document input' });
-  await input.focus();
-  await input.press('ControlOrMeta+End');
-  await input.press('Enter');
-  await input.pressSequentially(bystanderSentence);
-  await saveOffice(bystanderOffice.page, 'docx');
-  await savedFacts(run, fileId, [SENTENCE, bystanderSentence]);
-  for (const rooms of [noteRooms, officeRooms]) {
+  if (bystanderFrame) {
+    const input = bystanderFrame.getByRole('textbox', {
+      name: 'Document input',
+    });
+    await input.focus();
+    await input.press('ControlOrMeta+End');
+    await input.press('Enter');
+    await input.pressSequentially(bystanderSentence);
+    await saveOffice(bystanderOffice.page, 'docx');
+    await savedFacts(run, fileId, [SENTENCE, bystanderSentence]);
+  }
+  for (const rooms of bystanderFrame ? [noteRooms, officeRooms] : [noteRooms]) {
     expect(rooms.frames).toBeGreaterThan(0);
     expect(rooms.closes).toEqual([]);
   }
@@ -561,10 +574,11 @@ test('membership: an editor demoted to viewer has open note, Office and quiz edi
     await expect(page.getByText(m.editor_access_lost())).toHaveCount(0);
   }
   await expect(bystanderEditor).toBeVisible();
-  for (const path of [noteToken, fileToken])
+  for (const path of tokens.filter((path) => path !== quizToken))
     expect(
       object(await api(bystander, path, 'POST', undefined, 201)).access
     ).toBe('write');
+  await noFileToken(bystander);
   expect(await membership(run, workspaceId, bystander.id)).toEqual([
     { role: 'editor' },
   ]);

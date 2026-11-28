@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
-	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // Seeded reach (e2e/fixtures/seed.sql): u_editor edits ws_e2e_private and
@@ -140,8 +140,10 @@ func TestAccountChatStreamSendsItsScope(t *testing.T) {
 	}
 }
 
+// While files are view-only no file is editable (Q853 A); the read rules
+// stay.
 func TestInternalDocumentAccess(t *testing.T) {
-	t.Skip(testdb.FilesViewOnly)
+	editable := sourceupload.FilesEditable
 	h, st := openInternalHTTP(t)
 	standalone := fmt.Sprintf("f_acct_%d", time.Now().UnixNano())
 	if _, err := st.Pool().Exec(t.Context(), `INSERT INTO files (id, user_id, created_by, name, kind, size_bytes, status)
@@ -170,7 +172,7 @@ func TestInternalDocumentAccess(t *testing.T) {
 	got := ask("u_viewer", "f_e2e_private", "f_e2e_edit", "f_e2e_link", standalone)
 	want := []row{
 		{"source_file", "f_e2e_private", "ws_e2e_private", "E2E Private Workspace", true, false},
-		{"source_file", "f_e2e_edit", "ws_e2e_edit", "E2E Editable Link Workspace", true, true},
+		{"source_file", "f_e2e_edit", "ws_e2e_edit", "E2E Editable Link Workspace", true, editable},
 		{"source_file", "f_e2e_link", "", "", false, false},
 		{"source_file", standalone, "", "", false, false},
 	}
@@ -178,7 +180,7 @@ func TestInternalDocumentAccess(t *testing.T) {
 		t.Fatalf("viewer access = %+v, want %+v", got, want)
 	}
 	got = ask("u_editor", "f_e2e_private", "f_e2e_edit", standalone)
-	if !got[0].CanEdit || got[1].CanRead || !got[2].CanRead || !got[2].CanEdit || got[2].WorkspaceID != "" {
+	if got[0].CanEdit != editable || got[1].CanRead || !got[2].CanRead || got[2].CanEdit != editable || got[2].WorkspaceID != "" {
 		t.Fatalf("editor access = %+v", got)
 	}
 	if rec := doInternal(t, h, http.MethodPost, "/api/internal/documents/access", "", map[string]any{"actorUserId": "u_editor"}); rec.Code != http.StatusUnauthorized {
