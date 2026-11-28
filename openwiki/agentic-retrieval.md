@@ -4404,14 +4404,24 @@ While files are view-only (Epo 2026-11-28, Q854 A; `sourceupload.FilesEditable`)
 chat edits no file: Go leaves `edit_office_document` out of its definitions, so
 the generated contract has none and the pipeline registers none
 (`tools.py`); `/api/internal/documents/edit` answers every file target and
-`/api/internal/documents/office/create` with `unsupported_format` ("This file
-type cannot be edited.") before the authority; a chat Undo of an earlier file
-edit is refused; file rows say `editable` false (account rows with "You can view
-this but not edit it.") and an account read's Access line `canEdit` false; and
-read_skill's office_building line says "(it offers inspect_office_document)".
-Reads, `edit_document` on materials and the deck tools are unchanged; the rest
-of the model-read text about editing files waits for Epo's wording. The rows
-below describe the tools with the switch on.
+`/api/internal/documents/office/create` with `unsupported_format` ("Files are
+view-only: they cannot be edited, so nothing was changed. Edit only study
+materials."; a PDF keeps "Cannot edit PDF files.") before the authority; a chat
+Undo of an earlier file edit is refused for its remaining 24 h (Q861 A); file
+rows say `editable` false (account rows with "You can view this but not edit
+it.") and an account read's Access line `canEdit` false. The model-read text
+says files are view-only (Epo 2026-11-28, Q858 A), each text keyed on the
+switch so turning it on brings the editing text back: the `editing` skill
+(its scope line and the files precaution), read_skill's `editing` and
+`office_building` lines, the `office_building` skill (the read alone, without
+the edit commands, the create and the limits), the `edit_document`,
+`inspect_document` and `inspect_office_document` descriptions, Go's
+`officeToolsMessage`, `write_slide` on a stored deck, account chat's
+`ACCOUNT_NO_EDIT` and its Access-line rule (`skills.py`, `account_chat.py`,
+`tools.py`, `agenttools.go`, `internal_documents.go`); the pipeline reads the
+switch as `contract.FILES_EDITABLE`. Reads, `edit_document` on materials and
+the deck tools are unchanged. The rows below describe the tools with the
+switch on.
 
 | Tool | Side effects | Notes |
 | --- | --- | --- |
@@ -6791,8 +6801,10 @@ While files are view-only (Q853 A) no file is edited or refreshed: Go refuses
 room saves and every refresh request, the room service's automatic ones
 included (a due file then carries a `refresh_error`); jobs queued before the
 switch, maintenance publications and the reads of saved changes (pending
-evidence, `resolve_source_change`) still run. The rest of this section is the
-switch on.
+evidence, `resolve_source_change`) still run. The switch takes no deploy step
+(Q859 B): edits saved before it stay unprocessed, and the Indexing tab and
+chat's "not processed" notice offer no Process for a file (notes keep theirs).
+The rest of this section is the switch on.
 
 `source_documents` separates the live durable editing checkpoint from the
 published source/index checkpoint. The indexed baseline is versioned semantic

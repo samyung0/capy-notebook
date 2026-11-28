@@ -899,6 +899,15 @@ func chatTool(def Definition) Definition {
 	return def
 }
 
+// filesText is model-read text that depends on the files switch (Q858 A):
+// editable while files can be edited, viewOnly while they are view-only.
+func filesText(editable, viewOnly string) string {
+	if sourceupload.FilesEditable {
+		return editable
+	}
+	return viewOnly
+}
+
 // Definitions returns every tool the contract knows. Python binds a local
 // handler to each name it implements; a definition with no handler is simply
 // not offered to the model. edit_office_document is left out while files are
@@ -1283,8 +1292,9 @@ func Definitions() []Definition {
 			Name:      "inspect_document",
 			Scopes:    both,
 			Retention: RetainNone,
-			Description: "Read a document's current content as editable targets with stable " +
-				"ids. Inspect before editing; never take edit positions from search results. A quiz's " +
+			Description: filesText("Read a document's current content as editable targets with stable ids.",
+				"Read a document's current content with stable ids, a study material's as editable targets.") +
+				" Inspect before editing; never take edit positions from search results. A quiz's " +
 				"answers, solutions and marking schemes appear only when the user may edit it.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to inspect."),
@@ -1306,8 +1316,9 @@ func Definitions() []Definition {
 				"Any note block may be removed or replaced, media included; the only media an edit " +
 				"adds are library figures. A block rewritten as one of its own type keeps its " +
 				"caption and width (a diagram its theme too); an image swapped for a different " +
-				"picture or figure takes the new one's caption. PDFs cannot be edited. Quiz " +
-				"questions are added and replaced with the question tools.",
+				"picture or figure takes the new one's caption. " +
+				filesText("PDFs cannot be edited.", "Files (PDF, Word, Excel, PowerPoint, text) cannot be edited; only study materials can.") +
+				" Quiz questions are added and replaced with the question tools.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),
 				"commands": map[string]any{
@@ -1368,12 +1379,14 @@ func Definitions() []Definition {
 			Name:      "inspect_office_document",
 			Scopes:    both,
 			Retention: RetainNone,
-			Description: "Read a Word, Excel or PowerPoint file as editable targets, as the " +
+			Description: filesText("Read a Word, Excel or PowerPoint file as editable targets, as the ",
+				"Read a Word, Excel or PowerPoint file, as the ") +
 				"office_building skill describes. XLSX: without range, its sheets (id, name, used " +
 				"range); with sheet and range, each cell's input and shown value, at most 2,000 " +
 				"cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and " +
-				"table cells, the body's and then the headers', footers' and notes', which take replace_text " +
-				"only; the first page also lists the file's paragraph styles. " +
+				"table cells, the body's and then the headers', footers' and notes'" +
+				filesText(", which take replace_text only", "") +
+				"; the first page also lists the file's paragraph styles. " +
 				"PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, " +
 				"first line), the first page also listing the PowerPoint's layouts; with slide, count of that " +
 				"slide's shapes and paragraphs from start, each shape followed by its paragraphs with their " +

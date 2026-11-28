@@ -299,7 +299,7 @@ func (a *api) internalCreateOfficeDocument(w http.ResponseWriter, r *http.Reques
 	}
 	// Chat makes no Word or Excel file while files are view-only (Q854 A).
 	if !sourceupload.FilesEditable {
-		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "unsupported_format", "message": "This file type cannot be edited."})
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "unsupported_format", "message": filesViewOnlyMessage})
 		return
 	}
 	var req internalOfficeCreateReq

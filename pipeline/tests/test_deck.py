@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from pipeline.retrieval import capture, deck, library, skills, tools
+from pipeline.retrieval import capture, contract, deck, library, skills, tools
 from pipeline.retrieval.tools import ToolContext
 
 _EDITOR = frozenset(
@@ -228,9 +228,18 @@ async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks
     }
     assert "f_deck" in last.text()
 
-    # The stored PPTX is the document now.
+    # The stored PPTX is the document now; while files are view-only it is
+    # not edited (Q858 A).
     again = await _write(ctx, rid, 1, _slide(), call="c_again")
-    assert again.refused and "edit_office_document" in again.text()
+    assert (
+        again.refused
+        and (
+            "edit_office_document"
+            if contract.FILES_EDITABLE
+            else "which is now a view-only file: make a new one."
+        )
+        in again.text()
+    )
     assert len(posts) == 1
 
 

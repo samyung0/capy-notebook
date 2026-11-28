@@ -51,7 +51,9 @@ from pipeline.retrieval.usage_extract import NormalizedUsage
 # schemas/owner_office_progress), add_questions without hints (Epo 2026-11-15;
 # schemas/owner and schemas/owner_office alone), edit_office_document
 # unoffered and read_skill's office_building line while files are view-only
-# (Epo 2026-11-28, Q854 A; the schemas keys alone).
+# (Epo 2026-11-28, Q854 A; the schemas keys alone), and the text about files
+# saying they are view-only (Epo 2026-11-28, Q858 A; the schemas keys and
+# skills/editing and skills/office_building alone).
 GOLDEN = Path(__file__).parent / "fixtures" / "workspace_chat_golden.json"
 
 OWNER = frozenset(
@@ -224,7 +226,7 @@ def test_the_account_profile_offers_the_account_tools():
         )
     }
     # The Office edit only while files are editable (Go's contract, Q854 A).
-    editable = "edit_office_document" in contract.DEFINITIONS
+    editable = contract.FILES_EDITABLE
     assert ("edit_office_document" in office) == editable
     assert "inspect_office_document" in office
     # Every tool that creates takes where it lands (Epo 2026-10-28, T2).

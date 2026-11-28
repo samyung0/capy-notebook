@@ -5755,7 +5755,7 @@ def test_chat_offers_no_file_edit_while_files_are_view_only(monkeypatch):
     assert "edit_office_document" not in tools.REGISTRY
     assert (
         "- office_building: read before reading a Word, Excel or PowerPoint file "
-        "(it offers inspect_office_document);"
+        "(it offers inspect_office_document)."
     ) in skills.catalog("note")
 
 

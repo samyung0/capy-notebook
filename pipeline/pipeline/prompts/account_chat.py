@@ -6,6 +6,7 @@ prompt there is unchanged. Epo tunes this text in the playground.
 
 from __future__ import annotations
 
+from ..retrieval.contract import FILES_EDITABLE
 from ..retrieval.limits import (
     BUILD_TOOLS_PER_TURN,
     PLANNING_RESPONSES,
@@ -15,6 +16,14 @@ from ..retrieval.limits import (
 from . import chat
 from .locale import response_language_rule
 from .skills import swapped
+
+# While files are view-only (Q853 A) the Access line's canEdit is false for
+# every file (Q858 A).
+_DOCUMENT_PERMISSIONS = (
+    "- read_document, capture_page, inspect_document and inspect_office_document return an Access line: the file's workspaceId and workspaceName (both empty when file is outside of a workspace) and canEdit; read_document's also says what the item is. Read the permission there before editing; when canEdit is false, do not edit the file and tell the learner they can only view it."
+    if FILES_EDITABLE
+    else "- read_document, capture_page, inspect_document and inspect_office_document return an Access line: the file's workspaceId and workspaceName (both empty when file is outside of a workspace) and canEdit (always false for a file: files are view-only); read_document's also says what the item is. Read the permission there before editing; when canEdit is false, do not edit the item and tell the learner they can only view it."
+)
 
 SYSTEM_PROMPT = f"""You are a study assistant. You answer the learner's questions and build study materials for them, grounded in their files. This chat is not in one workspace: it reaches the files and materials of every workspace the learner owns or is a member of, and their own files outside of a workspace.
 
@@ -35,7 +44,7 @@ Grounding:
 - When you cite or name a source, say where it lives: the learner's files span several workspaces, and two files of the same name may be different files.
 
 Document permissions:
-- read_document, capture_page, inspect_document and inspect_office_document return an Access line: the file's workspaceId and workspaceName (both empty when file is outside of a workspace) and canEdit; read_document's also says what the item is. Read the permission there before editing; when canEdit is false, do not edit the file and tell the learner they can only view it.
+{_DOCUMENT_PERMISSIONS}
 
 Sources:
 - A learner message starts with a Your files only line when the switch is first set or changes; the latest line holds until the next.

@@ -2937,10 +2937,15 @@ NO_PERMISSION = (
     "lack permission."
 )
 # Account chat's refusal for one item or workspace the user only views (Epo
-# 2026-10-28): other files and workspaces may still be editable.
+# 2026-10-28): other files and workspaces may still be editable; while files
+# are view-only, other materials (Q858 A).
 ACCOUNT_NO_EDIT = (
     "The user can view this but not edit it there, so nothing was changed. Do "
     "not try this edit again; other files and workspaces may still be "
+    "editable. Tell the user."
+    if contract.FILES_EDITABLE
+    else "The user can view this but not edit it there, so nothing was changed. "
+    "Do not try this edit again; other materials and workspaces may still be "
     "editable. Tell the user."
 )
 
@@ -4512,10 +4517,14 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
     ctx.decks[rid] = record
     if record.get("file"):
+        # While files are view-only the stored file is not edited (Q858 A).
         return _refused(
             f"PowerPoint {rid} is stored as file {record['file']}, which is now the document: "
             "edit it with edit_office_document (the office_building skill), or make "
-            "a new one.",
+            "a new one."
+            if contract.FILES_EDITABLE
+            else f"PowerPoint {rid} is stored as file {record['file']}, which is now a "
+            "view-only file: make a new one.",
             code="unavailable_target",
         )
     prepared = await write_sources(ctx, "write_slide", args)

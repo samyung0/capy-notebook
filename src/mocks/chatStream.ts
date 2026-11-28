@@ -27,10 +27,11 @@ import {
 type MockTool = Extract<ActivityBlock, { kind: 'tool' }>;
 
 /** Go's answer to a chat edit of a file while files are view-only
- * (internal_documents.go's not-editable refusal). */
+ * (internal_documents.go's filesViewOnlyMessage). */
 const FILE_EDIT_REFUSED = {
   code: 'unsupported_format',
-  message: 'This file type cannot be edited.',
+  message:
+    'Files are view-only: they cannot be edited, so nothing was changed. Edit only study materials.',
 };
 type MockStep = Pick<MockTool, 'capture' | 'detail' | 'name'>;
 

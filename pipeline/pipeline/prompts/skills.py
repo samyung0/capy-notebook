@@ -5,11 +5,15 @@ call. ``retrieval/skills.py`` offers them; Epo tunes this text in the playground
 
 from __future__ import annotations
 
-from ..retrieval.contract import OFFICE_SHAPE_TEXT
+from ..retrieval.contract import FILES_EDITABLE, OFFICE_SHAPE_TEXT
 from ..retrieval.limits import WRITE_ERROR_GRACE, WRITE_ERROR_GRACE_MAX
 
+# While files are view-only (Q853 A) the text about files says so (Q858 A);
+# each text below that names files has both, picked by FILES_EDITABLE.
 EDITING_WHEN = (
     "read before any write: creating materials, adding to them, or editing a file"
+    if FILES_EDITABLE
+    else "read before any write: creating materials or adding to them"
 )
 NOTE_BUILDING_WHEN = (
     "read together with editing, in the same response, before writing a note or "
@@ -21,14 +25,28 @@ DECK_BUILDING_WHEN = (
 )
 OFFICE_BUILDING_WHEN = (
     "read before reading a Word, Excel or PowerPoint file (it offers "
-    "inspect_office_document); to edit or create one, read "
+    "inspect_office_document and edit_office_document); to edit or create one, read "
     "it together with editing, in the same response"
+    if FILES_EDITABLE
+    else "read before reading a Word, Excel or PowerPoint file (it offers "
+    "inspect_office_document)"
+)
+
+_EDITING_SCOPE = (
+    "build study materials, add to them and edit files"
+    if FILES_EDITABLE
+    else "build study materials and add to them"
+)
+_FILES_PRECAUTION = (
+    "- Be careful about editing existing files. Edit the learner's own source files only when asked. Such an edit takes no excerpt_ids."
+    if FILES_EDITABLE
+    else "- The learner's files (PDF, Word, Excel, PowerPoint, text) are view-only: never edit them; edit only study materials."
 )
 
 # The general guideline for every write (Epo 2026-10-14): the build plan, the
 # quiz and flashcards formats, and how to edit; no Mermaid (Epo 2026-10-25). A note's and
 # a deck's own instructions are note_building and deck_building.
-_EDITING = f"""How to write to the workspace: build study materials, add to them and edit files.
+_EDITING = f"""How to write to the workspace: {_EDITING_SCOPE}.
 
 Plan:
 - You must identify the requirement first before building: the learning scope and learner's level, as "I want to learn physics" lacks both: check what is missing and offer a default they can accept rather than an open question.
@@ -50,7 +68,7 @@ Precautions:
 - After you read a document you see its most recent changes. Edits not yet in search show up as hints with the user's message, and a search passage whose document has newer edits says so: read that document before relying on the passage.
 - In a note, change plain wording with replace_text. Rewrite a block that has formatting or math ($…$ in inspect_document) with replace_block, writing the whole block as note markdown (a heading keeps its #).
 - Keep changes other people made to a document unless the learner asks otherwise.
-- Be careful about editing existing files. Edit the learner's own source files only when asked. Such an edit takes no excerpt_ids.
+{_FILES_PRECAUTION}
 
 Quizzes: add_questions writes multiple-choice, short-answer and open (written-answer, with a markscheme) questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; options are shown shuffled, so never refer to an option by its letter or position (A, B, "the first", "all of the above") in a question, option or explanation; add_question_media puts a chart, a plot or a library figure under a question's text; edit_document remove_question removes one. Results list the question ids these tools take.
 
@@ -60,15 +78,9 @@ When done, answer briefly on what was made.
 ALWAYS read the document again to see if you need to adjust the visuals to meet the user preferences."""
 
 # Reading, editing and creating Office files (Epo 2026-10-20): required for
-# every Office read and write, and what offers the two Office tools.
-_OFFICE_BUILDING = """How to read, edit and create Word (DOCX), Excel (XLSX) and PowerPoint (PPTX) files with inspect_office_document and edit_office_document. Editing or creating one also needs the editing skill: read it with read_skill before the first edit_office_document call.
-
-Read:
-- XLSX: the sheet list first (no range), then the ranges you need, at most 2,000 cells a read. A cell shows its input, then → its shown value when that differs (a formula's result).
-- DOCX: paragraphs with their target ids, each with its style (unless the default) and list, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column; tracked-deleted text is left out. After the body come the headers', footers' and notes' paragraphs under == part == lines; they take replace_text only. A paragraph marked locked (with why: a picture, a field, tracked changes, the table or content control before it) refuses replace_text and format_text, and delete_paragraph unless it only follows a table; one marked content control or table cannot be an anchor. The first page lists the paragraph styles by id and name. A command copies an id whole, as the read shows it.
-- PPTX: without slide, the slides count at a time from start, each with its layout and its first shapes (id, kind, placeholder type, first line of text) and how many more it holds; the first page lists the PowerPoint's layouts. With slide (its number), that slide's shapes and paragraphs count at a time from start, each shape with its name and box in points from the slide's top left corner and then its paragraphs with their target ids, levels and table cells; the first page also gives the slide's speaker notes, cut past a length with a marker. A shape marked equation takes no edits.
-- Pictures, charts, equations and drawn shapes: a DOCX read lists them under their paragraph, a PPTX slide read on their shapes (the PowerPoint read gives a picture's alt text and a chart's type and title), the XLSX sheet list under their sheet with their anchor cells. A picture shows its alt text and pixel size, or why it is not viewable (then only its alt text is known); a chart its type, title and each series' cell references and first points as [idx, category, value]; an equation or drawn shape its text.
-- ids (any format, at most 4 a call, copied whole from a read): each picture comes back as an image on the next message, counting toward the message's images and usable as a slide figure by the capture number its line names; each chart with every point; an id not found is named. These files have no page view: capture_page does not take them.
+# every Office read and write, and what offers the Office tools. While files
+# are view-only it teaches the read alone (Q858 A).
+_OFFICE_EDITING = """
 
 Edit, one file a call; one stale expectation refuses the whole call:
 - set_range writes a rectangle of cells: expected holds the range's inputs exactly as the read shows them ("" for an empty cell), values the new inputs ("=..." for a formula, "" to clear), both in the range's shape.
@@ -92,6 +104,28 @@ Create: a new Excel or Word file is a create command first, without file_id, fol
 Limits: edit_office_document's description lists a call's limits, per command kind (commands, cells, paragraphs, table cells, formatted spans, list and alignment paragraphs, rows, sheets, slides, text boxes, shape text); past one, the commands before it apply and the rest come back unapplied, by index, to send in another call. A call's commands are at most 256 KB; a larger call is refused, so split it.""".format(
     shape_paragraphs=f"{OFFICE_SHAPE_TEXT['paragraphs']:,}",
     shape_characters=f"{OFFICE_SHAPE_TEXT['characters']:,}",
+)
+_OFFICE_BUILDING = """{intro}
+
+Read:
+- XLSX: the sheet list first (no range), then the ranges you need, at most 2,000 cells a read. A cell shows its input, then → its shown value when that differs (a formula's result).
+- DOCX: paragraphs with their target ids, each with its style (unless the default) and list, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column; tracked-deleted text is left out. After the body come the headers', footers' and notes' paragraphs under == part == lines{replace_only}. A paragraph marked locked (with why: a picture, a field, tracked changes, the table or content control before it){locked}. The first page lists the paragraph styles by id and name. A command copies an id whole, as the read shows it.
+- PPTX: without slide, the slides count at a time from start, each with its layout and its first shapes (id, kind, placeholder type, first line of text) and how many more it holds; the first page lists the PowerPoint's layouts. With slide (its number), that slide's shapes and paragraphs count at a time from start, each shape with its name and box in points from the slide's top left corner and then its paragraphs with their target ids, levels and table cells; the first page also gives the slide's speaker notes, cut past a length with a marker.{equation}
+- Pictures, charts, equations and drawn shapes: a DOCX read lists them under their paragraph, a PPTX slide read on their shapes (the PowerPoint read gives a picture's alt text and a chart's type and title), the XLSX sheet list under their sheet with their anchor cells. A picture shows its alt text and pixel size, or why it is not viewable (then only its alt text is known); a chart its type, title and each series' cell references and first points as [idx, category, value]; an equation or drawn shape its text.
+- ids (any format, at most 4 a call, copied whole from a read): each picture comes back as an image on the next message, counting toward the message's images and usable as a slide figure by the capture number its line names; each chart with every point; an id not found is named. These files have no page view: capture_page does not take them.{editing}""".format(
+    intro=(
+        "How to read, edit and create Word (DOCX), Excel (XLSX) and PowerPoint (PPTX) files with inspect_office_document and edit_office_document. Editing or creating one also needs the editing skill: read it with read_skill before the first edit_office_document call."
+        if FILES_EDITABLE
+        else "How to read Word (DOCX), Excel (XLSX) and PowerPoint (PPTX) files with inspect_office_document. These files are view-only: they cannot be edited, and chat makes no Word or Excel file; a PowerPoint is made with create_deck (the deck_building skill)."
+    ),
+    replace_only="; they take replace_text only" if FILES_EDITABLE else "",
+    locked=(
+        " refuses replace_text and format_text, and delete_paragraph unless it only follows a table; one marked content control or table cannot be an anchor"
+        if FILES_EDITABLE
+        else ""
+    ),
+    equation=" A shape marked equation takes no edits." if FILES_EDITABLE else "",
+    editing=_OFFICE_EDITING if FILES_EDITABLE else "",
 )
 
 _EDITING_LIBRARY = """

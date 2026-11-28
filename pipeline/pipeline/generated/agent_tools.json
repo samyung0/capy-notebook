@@ -1080,7 +1080,7 @@
     {
       "name": "inspect_document",
       "version": 1,
-      "description": "Read a document's current content as editable targets with stable ids. Inspect before editing; never take edit positions from search results. A quiz's answers, solutions and marking schemes appear only when the user may edit it.",
+      "description": "Read a document's current content with stable ids, a study material's as editable targets. Inspect before editing; never take edit positions from search results. A quiz's answers, solutions and marking schemes appear only when the user may edit it.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1143,7 +1143,7 @@
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math, and a Mermaid block a learner added as one ```mermaid fence, expecting the source inspect shows as its text. Any note block may be removed or replaced, media included; the only media an edit adds are library figures. A block rewritten as one of its own type keeps its caption and width (a diagram its theme too); an image swapped for a different picture or figure takes the new one's caption. PDFs cannot be edited. Quiz questions are added and replaced with the question tools.",
+      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly; replace_block rewrites a note block with formatting or math, and a Mermaid block a learner added as one ```mermaid fence, expecting the source inspect shows as its text. Any note block may be removed or replaced, media included; the only media an edit adds are library figures. A block rewritten as one of its own type keeps its caption and width (a diagram its theme too); an image swapped for a different picture or figure takes the new one's caption. Files (PDF, Word, Excel, PowerPoint, text) cannot be edited; only study materials can. Quiz questions are added and replaced with the question tools.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1537,7 +1537,7 @@
     {
       "name": "inspect_office_document",
       "version": 1,
-      "description": "Read a Word, Excel or PowerPoint file as editable targets, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and table cells, the body's and then the headers', footers' and notes', which take replace_text only; the first page also lists the file's paragraph styles. PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, first line), the first page also listing the PowerPoint's layouts; with slide, count of that slide's shapes and paragraphs from start, each shape followed by its paragraphs with their target ids, the first page also giving the slide's speaker notes. Reads also list pictures, charts with their first points, equations and drawn shapes' text. The cheap read: with ids, the pictures come back as images and the charts with every point.",
+      "description": "Read a Word, Excel or PowerPoint file, as the office_building skill describes. XLSX: without range, its sheets (id, name, used range); with sheet and range, each cell's input and shown value, at most 2,000 cells a read. DOCX: count paragraphs from start with their target ids, styles, lists and table cells, the body's and then the headers', footers' and notes'; the first page also lists the file's paragraph styles. PPTX: without slide, count slides from start with their layouts and first shapes (id, kind, first line), the first page also listing the PowerPoint's layouts; with slide, count of that slide's shapes and paragraphs from start, each shape followed by its paragraphs with their target ids, the first page also giving the slide's speaker notes. Reads also list pictures, charts with their first points, equations and drawn shapes' text. The cheap read: with ids, the pictures come back as images and the charts with every point.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
