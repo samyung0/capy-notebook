@@ -5,6 +5,7 @@ import {
   type InfiniteData,
   infiniteQueryOptions,
   keepPreviousData,
+  matchQuery,
   queryOptions,
   useInfiniteQuery,
   useMutation,
@@ -658,7 +659,8 @@ async function recheckWorkspace(
 /** The one SSE connection a signed-in tab holds: notifications always, plus
  * ingest progress and tree changes for the workspace being viewed. Redis
  * Pub/Sub and Postgres NOTIFY replay nothing, so every connect refetches the
- * lists the stream feeds; while disconnected there is no polling, only the
+ * lists the stream feeds that answered before it (`reconcile`); while
+ * disconnected there is no polling, only the
  * banner and a backoff reconnect. Under MSW (the dev mock has no event
  * stream) it hears the mock's notification and ingest events instead, and
  * nothing connects or is refused. */
@@ -726,7 +728,12 @@ export function useEventStream(wsId: string) {
 
     const setStatus = (status: EventStreamState['status']) =>
       qc.setQueryData<EventStreamState>(qk.eventStream, { status });
-    const reconcile = (streamWs: string) => {
+    /** The lists this stream feeds, read again once it connects, as it
+     * replays nothing missed. A list that answered since `since`, when this
+     * connection started connecting, already holds what it would read (Epo
+     * 2026-11-28, Q917): a workspace opens with its page's own reads, not a
+     * second round. A read still in flight is waited on, not sent again. */
+    const reconcile = (streamWs: string, since: number) => {
       const keys: QueryKey[] = [
         qk.notifications,
         qk.notificationUnread,
@@ -738,11 +745,19 @@ export function useEventStream(wsId: string) {
       if (streamWs) {
         keys.push(qk.files(wsId), qk.materials(wsId), qk.topics(wsId));
       }
-      for (const queryKey of keys) {
-        void qc.refetchQueries({ queryKey, type: 'active' });
-      }
-      // The running marks, whose events this stream carries.
-      void qc.refetchQueries({ predicate: isConversationList, type: 'active' });
+      // One call, so a query under two keys (the unread count, under the
+      // notifications) is read once.
+      void qc.refetchQueries(
+        {
+          predicate: (query) =>
+            query.state.dataUpdatedAt < since &&
+            // The running marks, whose events this stream carries.
+            (isConversationList(query) ||
+              keys.some((queryKey) => matchQuery({ queryKey }, query))),
+          type: 'active',
+        },
+        { cancelRefetch: false }
+      );
     };
     // One ingest raises several tree events seconds apart and a bulk write
     // raises one per transaction, so a trailing debounce per kind collapses a
@@ -780,6 +795,7 @@ export function useEventStream(wsId: string) {
     };
     const connect = async () => {
       if (stopped) return;
+      const since = Date.now();
       controller = new AbortController();
       const streamWs = refused ? '' : wsId;
       let clean = false;
@@ -795,7 +811,7 @@ export function useEventStream(wsId: string) {
           delay = 1000;
           if (streamWs) shown = true;
           setStatus('connected');
-          reconcile(streamWs);
+          reconcile(streamWs, since);
         });
         clean = true;
       } catch (error) {
