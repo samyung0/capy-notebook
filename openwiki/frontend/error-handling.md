@@ -716,14 +716,14 @@ canvas list (`[...qk.canvases, wsId]`). Neither Redis Pub/Sub nor Postgres
 NOTIFY replays missed events, so every successful connection refetches the
 active notification list, unread count, billing, To do and standalone files,
 the workspace's file, material and topic lists, and the conversation lists
-(`reconcile`). Only those whose last answer is older than the moment this
-connection started connecting are read again (Epo 2026-11-28, Q917): a
-workspace opens with its page's own reads, which answer while the stream
-connects, instead of a second round about 300 ms later. A read still in flight is
-waited on, not sent again, and one call covers every key, so the unread count
-(also under the notifications' key) is read once. An event that lands between a
-list's read and the stream subscribing shows at that list's next read (focus,
-its next change). A connection that succeeds after a failed attempt (a redeploy, a
+(`reconcile`), the page's own reads included, once the stream is open (the
+server subscribes before it answers). A change made while the stream connected
+shows only through this read: on UAT a card saved as the page came back from
+Stripe published its event before the stream subscribed, after the page had
+read billing (Epo 2026-11-28, Q918, undoing Q917's skip of lists that answered
+while the stream connected). A read still in flight is sent again, as it may
+predate the subscription, and one call covers every key, so the unread count
+(also under the notifications' key) is read once. A connection that succeeds after a failed attempt (a redeploy, a
 dropped network) also refetches every active query in error, so the error
 states above recover without Retry. There is no polling while disconnected; the workspace lists keep only
 `refetchOnWindowFocus`. A list read carries the client-only `ingestPct` over

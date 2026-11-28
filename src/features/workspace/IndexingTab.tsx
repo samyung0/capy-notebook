@@ -1,6 +1,7 @@
 import { type ReactNode, useState } from 'react';
 import {
   useFiles,
+  useMe,
   useRetryFileProcessing,
   useRetryingFileIds,
   useUpdateWorkspace,
@@ -115,6 +116,12 @@ function FileChanges({
   const { mutate: cancel, isPending: cancelling } =
     useCancelFileChanges(workspaceId);
   const busy = processing || cancelling;
+  // While files are view-only Go refuses a file's Process (Q853 A), so only
+  // notes offer it; a file's row keeps its status.
+  const { data: me } = useMe({ errorBoundary: false });
+  const processes = (row: ChangeRow) =>
+    (row.note || !!me?.filesEditable) &&
+    (row.state === 'waiting' || row.state === 'failed');
   // Notes are listed like files and processed now the same way (Epo
   // 2026-10-21); a queued note job has no Cancel.
   const rows: ChangeRow[] = [
@@ -137,9 +144,7 @@ function FileChanges({
       state: change.state,
     })),
   ].sort((a, b) => STATE_ORDER[a.state] - STATE_ORDER[b.state]);
-  const processable = rows.filter(
-    (row) => row.state === 'waiting' || row.state === 'failed'
-  );
+  const processable = rows.filter(processes);
   const processRows = (targets: ChangeRow[]) =>
     process({
       fileIds: targets.filter((row) => !row.note).map((row) => row.id),
@@ -186,7 +191,7 @@ function FileChanges({
                   {m.action_cancel()}
                 </Button>
               )}
-              {owner && (row.state === 'waiting' || row.state === 'failed') && (
+              {owner && processes(row) && (
                 <Button
                   className="col-start-3 row-span-2 row-start-1"
                   disabled={busy}

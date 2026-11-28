@@ -49,7 +49,13 @@ from pipeline.retrieval.usage_extract import NormalizedUsage
 # the owner schemas and skills/editing keys alone, read_study_progress removed
 # (Epo 2026-11-04; schemas/owner_office alone, which was
 # schemas/owner_office_progress), add_questions without hints (Epo 2026-11-15;
-# schemas/owner and schemas/owner_office alone).
+# schemas/owner and schemas/owner_office alone), edit_office_document
+# unoffered and read_skill's office_building line while files are view-only
+# (Epo 2026-11-28, Q854 A; the schemas keys alone), and the text about files
+# saying they are view-only (Epo 2026-11-28, Q858 A; the schemas keys and
+# skills/editing and skills/office_building alone), and the view-only
+# office_building without its locked-paragraph sentence (Epo 2026-11-28,
+# Q865 A; skills/office_building alone).
 GOLDEN = Path(__file__).parent / "fixtures" / "workspace_chat_golden.json"
 
 OWNER = frozenset(
@@ -221,10 +227,18 @@ def test_the_account_profile_offers_the_account_tools():
             _account(library_catalog=CATALOG, office_tools=True, edit_tools=True)
         )
     }
+    # The Office edit only while files are editable (Go's contract, Q854 A).
+    editable = contract.FILES_EDITABLE
+    assert ("edit_office_document" in office) == editable
+    assert "inspect_office_document" in office
     # Every tool that creates takes where it lands (Epo 2026-10-28, T2).
     for name, schema in [
         *((n, by_name[n]) for n in ("create_material", "create_deck", "add_questions")),
-        ("edit_office_document", office["edit_office_document"]),
+        *(
+            [("edit_office_document", office["edit_office_document"])]
+            if editable
+            else []
+        ),
     ]:
         assert "workspace_id" in schema["parameters"]["properties"]
         # Go's definition stays as it is.
@@ -879,6 +893,7 @@ async def test_account_resolves_go_through_the_items_check(monkeypatch):
     ]
 
 
+@pytest.mark.files_view_only
 async def test_an_account_office_create_lands_where_the_user_named(monkeypatch):
     sent = {}
 
@@ -1341,9 +1356,10 @@ async def test_a_workspace_the_turn_creates_joins_its_list(monkeypatch):
         ("create_material", {"kind": "note", "title": "N", "content": "body"}),
         ("create_deck", {"title": "D"}),
         ("add_questions", {"title": "Q", "questions": []}),
-        (
+        pytest.param(
             "edit_office_document",
             {"commands": [{"type": "create", "format": "docx", "title": "Plan"}]},
+            marks=pytest.mark.files_view_only,
         ),
         ("create_topic", {"name": "Kinematics"}),
     ],

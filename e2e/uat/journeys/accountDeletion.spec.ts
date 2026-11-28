@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { FILES_EDITABLE } from '../../helpers/filesViewOnly';
 import { cleanupClerkActor } from './accounts';
 import { verify } from './evidence';
 import {
@@ -142,10 +143,12 @@ test('account deletion: an owner with an Office file, a note image, a member and
     [cloner, 'read'],
   ] as const) {
     for (const path of reads) await api(actor, path);
-    for (const path of [noteToken, fileToken])
+    for (const path of FILES_EDITABLE ? [noteToken, fileToken] : [noteToken])
       expect(
         object(await api(actor, path, 'POST', undefined, 201)).access
       ).toBe(access);
+    // While files are view-only a file has no room token (Q853 A).
+    if (!FILES_EDITABLE) await api(actor, fileToken, 'POST', undefined, 404);
     assert(await listed(actor, workspaceId));
   }
 

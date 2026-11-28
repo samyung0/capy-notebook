@@ -51,7 +51,7 @@ func TestIndexingTabFailedRowsCarryTheirErrorID(t *testing.T) {
 	}
 
 	// A failed pipeline job: its last attempt's trace.
-	job, err := s.RequestSourceRefresh(ctx, owner, file.ID, false)
+	job, err := sourceTestRefresh(ctx, s, owner, file.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestIndexingTabFailedRowsCarryTheirErrorID(t *testing.T) {
 	fileRow("waiting", "")
 
 	// An export failure the gateway records: that request's trace.
-	if job, err = s.RequestSourceRefresh(ctx, owner, file.ID, false); err != nil {
+	if job, err = sourceTestRefresh(ctx, s, owner, file.ID, false); err != nil {
 		t.Fatal(err)
 	}
 	candidate, err := s.ClaimSourceRefresh(ctx, file.ID, job.JobID)

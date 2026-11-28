@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // itemCloneMember adds userID to workspaceID with role.
@@ -49,6 +50,7 @@ func itemCloneIndex(t *testing.T, s *Store, workspaceID, fileID, hash string) st
 // under fresh chunk ids and names its thumbnail copy after the new file; a
 // clone into the source's own workspace shares the source's index.
 func TestFileCloneCarriesSavedEditsIndexAndThumbnail(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_file_clone_owner")
@@ -132,6 +134,7 @@ const cloneSavedRowsSQL = `(SELECT string_agg(convert_from(u.update,'UTF8'), ','
 // totals, so it opens on the same document, and its payer is charged the
 // copied storage, as reconciliation recounts it.
 func TestFileCloneCarriesUnfoldedSaves(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_clone_rows_owner")

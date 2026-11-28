@@ -5,6 +5,7 @@ import { users } from '../fixtures/seed';
 import { uploadSourceFile } from '../helpers/api';
 import { collaborationLink } from '../helpers/collaboration';
 import { expectEditorLive } from '../helpers/editor';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { openWorkspaceMaterial } from '../helpers/workspace';
 import { m } from '../i18n';
 
@@ -237,6 +238,7 @@ test('a text source edited offline in a closed tab reaches a co-editor from anot
   ownerPage,
   seed,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   const body = 'Stored drafts source';
   const fileId = await uploadText(

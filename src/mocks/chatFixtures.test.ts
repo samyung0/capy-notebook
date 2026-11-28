@@ -8,7 +8,11 @@ import {
   it,
   vi,
 } from 'vitest';
-import { type StreamStart, streamChat } from '@/api/chatStream';
+import {
+  type StreamStart,
+  streamChat,
+  type ToolEndEvent,
+} from '@/api/chatStream';
 import type { WireMessage } from '@/api/types';
 import { chartFigure, plotFigure } from '@/features/workspace/chat/answer';
 import {
@@ -18,7 +22,7 @@ import {
 } from '@/features/workspace/chat/markdownSegments';
 import { extractQuestions } from '@/features/workspace/chat/questions';
 import { chatFixtures } from './chatFixtures';
-import { chatMessages, conversations } from './db';
+import { chatMessages, conversations, FILES_EDITABLE } from './db';
 import { handlers } from './handlers';
 import { getMockScenarioHandlers } from './scenarios';
 
@@ -202,3 +206,32 @@ it.each([
     }
   }
 );
+
+it("refuses the mock turn's file edits as Go does while files are view-only (Q854 A)", async ({
+  skip,
+}) => {
+  skip(FILES_EDITABLE, 'files are editable');
+  for (const scenario of [undefined, 'chat-office-cut'] as const) {
+    if (scenario) server.use(...getMockScenarioHandlers(scenario));
+    const ends = new Map<string, ToolEndEvent>();
+    const names = new Map<string, string>();
+    await streamChat(
+      'ws_bio',
+      { text: 'Edit my files', workspaceOnly: false },
+      {
+        onToolEnd: (callId, event) => ends.set(callId, event),
+        onToolStart: (callId, name) => names.set(callId, name),
+      }
+    );
+    const edits = [...names]
+      .filter(([, name]) => name.startsWith('edit_'))
+      .map(([callId]) => ends.get(callId));
+    expect(edits.length).toBeGreaterThan(0);
+    for (const end of edits)
+      expect(end).toMatchObject({
+        effects: undefined,
+        error: { code: 'unsupported_format' },
+        outcome: 'refused',
+      });
+  }
+});

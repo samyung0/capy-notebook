@@ -61,7 +61,10 @@ following the room on a read token. `view` remains only as what an editor drops
 to when the room turns read-only (frozen, full, an unsupported block), under its
 strip. `?mode=` on a material's link is dropped and the saved per-item mode is
 gone, so old links open as any link does; the question bank keeps its own Edit
-button. Office and text files keep theirs: they remember their last View/Edit in
+button. Office and text files keep theirs, while `/api/me` says
+`filesEditable` (Q853 A: false while files are view-only, when every file opens
+in View with no Edit, no edit session and no room token, and the draft sweep
+asks for no file's room): they remember their last View/Edit in
 localStorage, keyed by item kind and ID, take `mode=view|edit` from the URL, and
 the header toggle shows the mode it switches to; a successful toggle replaces
 that query parameter and a failed transition keeps the editor and URL as they were.
@@ -3052,6 +3055,13 @@ design, option d), and the nudge's release file on 2026-10-17.
   47, so source tabs from before it (protocol 46) reload; `MIN_MATERIAL`
   stays 46 and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names
   "client protocol 46 -> 47, source 45 -> 47".
+  The lower View peak pin (pin f5b9d09d8: the WASM engines grow linear
+  memory in steps of at most 8 MiB, and DOCX layout keeps compact measure
+  input and drawing data, so DOCX View opens with a lower memory peak, Q846 A
+  a1+g+h, Q863 A) raised `CLIENT_PROTOCOL` to 48 and `MIN_SOURCE` to 48, so
+  source tabs from before it (protocol 47) reload; `MIN_MATERIAL` stays 46
+  and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names "client
+  protocol 47 -> 48, source 47 -> 48".
 
 #### When to bump
 

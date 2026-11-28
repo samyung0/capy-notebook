@@ -162,6 +162,32 @@ def _apply_migration(dsn: str) -> None:
         )
 
 
+# Go's sourceupload.FilesEditable (Q853 A) decides which tests run: those
+# marked files_view_only edit files and are skipped while it is off, those
+# marked view_only_refusals check what it refuses and are skipped while it is
+# on. Python reads it from the contract Go generates (contract.FILES_EDITABLE).
+FILES_VIEW_ONLY = "File editing is off (Q853 A)"
+
+
+def pytest_configure(config):
+    config.addinivalue_line(
+        "markers", "files_view_only: edits files; skipped while files are view-only"
+    )
+    config.addinivalue_line(
+        "markers", "view_only_refusals: skipped while files are editable"
+    )
+
+
+def pytest_collection_modifyitems(items):
+    from pipeline.retrieval.contract import FILES_EDITABLE as editable
+
+    for item in items:
+        if not editable and item.get_closest_marker("files_view_only"):
+            item.add_marker(pytest.mark.skip(reason=FILES_VIEW_ONLY))
+        if editable and item.get_closest_marker("view_only_refusals"):
+            item.add_marker(pytest.mark.skip(reason="files are editable"))
+
+
 @pytest.fixture(scope="session")
 def _test_infra():
     """Fresh Postgres/Redis containers, migrated, for integration tests."""

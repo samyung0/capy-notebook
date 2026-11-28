@@ -37,7 +37,12 @@ func (s *Store) SetOfficeEditingPaused(ctx context.Context, paused bool) error {
 
 // AssertOfficeEditable refuses an Office file while the pause is on. Text
 // sources and missing files pass; the caller's own read answers for those.
+// While files are view-only it refuses every file: the browser's edit session
+// and room token, and the chat's file edits and their Undo.
 func (s *Store) AssertOfficeEditable(ctx context.Context, fileID string) error {
+	if !sourceupload.FilesEditable {
+		return ErrForbidden
+	}
 	var name, kind string
 	var paused bool
 	err := s.pool.QueryRow(ctx, `SELECT name,kind,EXISTS(SELECT 1 FROM office_editing_pause) FROM files WHERE id=$1`, fileID).Scan(&name, &kind, &paused)

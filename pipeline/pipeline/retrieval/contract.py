@@ -39,6 +39,10 @@ OPERATIONS: frozenset[str] = frozenset(CONTRACT["operations"])
 OUTCOMES: frozenset[str] = frozenset(CONTRACT["outcomes"])
 ERROR_CODES: frozenset[str] = frozenset(CONTRACT["errorCodes"])
 DEFINITIONS: dict[str, dict[str, Any]] = {t["name"]: t for t in CONTRACT["tools"]}
+# Go's sourceupload.FilesEditable (Q853 A): the contract offers
+# edit_office_document only while files are editable (Q854 A), and the
+# model-read text about files follows it (Q858 A).
+FILES_EDITABLE: bool = "edit_office_document" in DEFINITIONS
 # The note format the materials skill quotes.
 FORMATS: dict[str, str] = CONTRACT["formats"]
 # The chart and plot schemas add_question_media checks media against.

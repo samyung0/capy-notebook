@@ -7,6 +7,8 @@ import (
 	"net/url"
 	"os"
 	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
 const disposableMarker = "CAPY_GO_DISPOSABLE_DATABASE"
@@ -43,4 +45,26 @@ func validateURL(marker, raw string) error {
 		return fmt.Errorf("disposable DATABASE_URL requires Docker's mapped port")
 	}
 	return nil
+}
+
+// FilesViewOnly is the skip reason of every Go test that edits a file while
+// files are view-only (sourceupload.FilesEditable, Q853 A).
+const FilesViewOnly = "File editing is off (Q853 A)"
+
+// SkipWhileFilesViewOnly skips a test (or the rest of one) that edits a file
+// while sourceupload.FilesEditable is off; with the switch on it runs.
+func SkipWhileFilesViewOnly(t testing.TB) {
+	t.Helper()
+	if !sourceupload.FilesEditable {
+		t.Skip(FilesViewOnly)
+	}
+}
+
+// SkipWhileFilesEditable skips a check of the view-only refusals once
+// sourceupload.FilesEditable is back on.
+func SkipWhileFilesEditable(t testing.TB) {
+	t.Helper()
+	if sourceupload.FilesEditable {
+		t.Skip("files are editable")
+	}
 }

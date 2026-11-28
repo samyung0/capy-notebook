@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 	"github.com/samyung0/capy-notebook/server/migrations"
 )
 
@@ -104,6 +105,7 @@ func chargeTestEffectBytes(t *testing.T, s *Store) int64 {
 // published capture, through a refused rebuild and a republication, and the
 // rebuild's state is charged as stored again.
 func TestDeferredPublicationChargesCapturedEditsOnce(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "deferred_charge_owner")
@@ -161,6 +163,7 @@ func TestDeferredPublicationChargesCapturedEditsOnce(t *testing.T) {
 // the text it published is charged in the file only, round after round, while
 // Yjs history and edits after the capture stay charged in the state.
 func TestTextPublicationChargesPublishedTextOnce(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "text_charge_owner")

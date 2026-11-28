@@ -10,6 +10,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -211,6 +212,10 @@ func (a *api) internalDocumentAccess(w http.ResponseWriter, r *http.Request) {
 		if row.CanRead && row.Kind == agenttools.KindSourceFile {
 			item := fileListItem(documentListItem{}, row.Title, row.FileKind)
 			rows[i].Format, rows[i].Editable = item.Format, item.Editable && row.CanEdit
+		}
+		// A read's Access line says canEdit: no file while files are view-only.
+		if row.Kind == agenttools.KindSourceFile && !sourceupload.FilesEditable {
+			rows[i].CanEdit = false
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": rows})

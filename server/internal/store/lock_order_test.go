@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // holdWorkspaceThenAccount plays a source checkpoint or access check
@@ -134,6 +135,7 @@ func TestIngestJobPayloadStaysOnItsTransaction(t *testing.T) {
 // A writer's recheck reads; it must not queue behind a workspace write (a
 // checkpoint or a note save holding the workspace and the account).
 func TestSourceAccessCheckTakesNoLocks(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()

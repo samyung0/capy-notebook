@@ -1,4 +1,5 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { officeEditMenu, officeFrame } from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
@@ -770,6 +771,7 @@ test('a note whose draft send leaves its group shows the steps in the merge view
 test('edits from a room that moved on wait in the merge view until kept or applied', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(150_000);
   const editor = await openNote(page);
   const strip = page.locator('[data-testid="save-banner"][data-kind="review"]');
@@ -911,6 +913,7 @@ async function copiedDocx(page: Page) {
 test('a DOCX edited offline in a closed tab opens copy-only after its room moved on', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   const reopened = await closeDocxOffline(page, ' Typed before the move.');
   // A discard moves the room to the next epoch while the tab is closed.
@@ -933,6 +936,7 @@ test('a DOCX edited offline in a closed tab opens copy-only after its room moved
 test('a DOCX draft past the 7-day expiry shows once copy-only, then goes', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   const reopened = await closeDocxOffline(page, ' Typed long ago.');
   await reopened.evaluate(async (id) => {
@@ -1027,6 +1031,7 @@ test('an editor refused as outdated stays read-only with its edits kept, which t
 test('a source refused as outdated keeps its stored edits and leaves without a prompt', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   await page.goto('/workspaces/ws_scenarios?file=mock-scenario-text&mode=edit');
   const input = page.getByRole('textbox', { name: m.source_edit_raw() });

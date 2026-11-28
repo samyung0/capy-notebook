@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { expect, type Page, test } from '@playwright/test';
 import { unzipSync } from 'fflate';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import {
   officeEditMenu,
   officeMenu,
@@ -10,6 +11,9 @@ import {
 } from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
+
+// Every test here edits a file.
+skipWhileFilesViewOnly();
 
 /** PLAN_LIMITS.free.imageMaxBytes: the mock Office sessions carry the Free cap. */
 const FREE_IMAGE_MAX_BYTES = 2_097_152;

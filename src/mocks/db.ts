@@ -190,6 +190,11 @@ function dateAt(dayOffset: number, hour: number, minute = 0): string {
   return d.toISOString();
 }
 
+/** Go's sourceupload.FilesEditable, mirrored so dev and e2e match it (Q853
+ * A): /me's filesEditable, and while it is false the handlers refuse a file's
+ * edit session, room token, Blank, thumbnail capture and Process as Go does. */
+export const FILES_EDITABLE = false;
+
 // The account lifecycle lives in `accountStatus`; handlers compose /me from both.
 export const user: Omit<User, 'account'> = {
   avatarIconId: 'avataaars-01',
@@ -202,6 +207,7 @@ export const user: Omit<User, 'account'> = {
   chatSteps: 'verbose',
   classLabel: 'Grade 11 · Science',
   email: 'kate@capynotebook.app',
+  filesEditable: FILES_EDITABLE,
   id: 'u_1',
   locale: 'en',
   name: 'Kate Malone',

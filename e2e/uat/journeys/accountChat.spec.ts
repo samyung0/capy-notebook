@@ -14,6 +14,7 @@
 // them (pipeline/tests/stack, Q534).
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { FILES_EDITABLE } from '../../helpers/filesViewOnly';
 import { type Citation, citations, scripted } from './chat';
 import {
   api,
@@ -248,8 +249,15 @@ test('account chat: search, list, read and write across workspaces and no worksp
       ],
       'Scripted account writes ran.',
     ],
-    { 5: 'refused', 8: 'refused' }
+    // The owner's own text file takes its edit only while files are
+    // editable (Q854 A).
+    { ...(FILES_EDITABLE ? {} : { 4: 'refused' }), 5: 'refused', 8: 'refused' }
   );
+  if (!FILES_EDITABLE)
+    assert.equal(
+      (second.ends[4]?.error as { code?: string } | undefined)?.code,
+      'unsupported_format'
+    );
   const inWorkspace = created(second.ends[6]);
   const noWorkspace = created(second.ends[7]);
   for (const [id, expected] of [

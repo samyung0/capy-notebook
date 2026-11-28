@@ -137,8 +137,6 @@ it('authenticates every connection, reconciles on connect, applies stream events
     workspaces.subscribe(() => {}),
   ];
   await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(3));
-  // Read a minute before the stream connects.
-  await vi.advanceTimersByTimeAsync(60_000);
   const { fetchStream, requests, send, streams } = fakeStreamFetch();
   useEventStream(pending.workspaceId);
   const cleanup = state.effects.at(-1)?.();
@@ -227,70 +225,63 @@ it('authenticates every connection, reconciles on connect, applies stream events
   expect(requests.at(-1)?.init.signal?.aborted).toBe(true);
 });
 
-// Q917: a workspace opens with its page's own reads, which answer after the
-// stream starts connecting; what answered before is read once, the unread
-// count included (it sits under the notifications' key too).
-it('a connect reads again, once each, only the lists that answered before it started connecting', async () => {
+// Q918, from UAT: the page read billing while the stream connected, the
+// webhook saved the card and published its event before the stream
+// subscribed, and only the connect's own read could bring the card. Every
+// list is read again once the stream opens, the unread count once (it sits
+// under the notifications' key too).
+it('a connect reads every list again once open, so a change made while it connected shows', async () => {
   vi.useFakeTimers();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   state.client = client;
-  let answerMaterials = (_: unknown[]) => {};
-  const materialsAnswer = new Promise<unknown[]>((resolve) => {
-    answerMaterials = resolve;
-  });
+  let card: string | null = null;
   const get = vi
     .spyOn(api, 'get')
     .mockImplementation(
       async <T>(path: string) =>
-        (path.endsWith('/materials')
-          ? materialsAnswer
-          : path.endsWith('unread-count')
-            ? { count: 0 }
-            : []) as T
+        (path.endsWith('unread-count') ? { count: 0 } : { card }) as T
     );
   const reads = (end: string) =>
     get.mock.calls.filter(([path]) => path.endsWith(end)).length;
+  // The stream answers once `open` is called.
+  const { fetchStream } = fakeStreamFetch();
+  let open = () => {};
+  const opened = new Promise<void>((resolve) => {
+    open = resolve;
+  });
+  vi.stubGlobal('fetch', async (url: string, init: RequestInit) => {
+    await opened;
+    return fetchStream(url, init);
+  });
+  useEventStream(pending.workspaceId);
+  const cleanup = state.effects.at(-1)?.();
   const fresh = { staleTime: Number.POSITIVE_INFINITY };
-  const ws = pending.workspaceId;
+  const billing = new QueryObserver(client, {
+    ...fresh,
+    queryFn: () => api.get<{ card: string | null }>('/billing'),
+    queryKey: qk.billing,
+  });
   const unsubscribe = [
-    new QueryObserver(client, { ...filesQuery(ws), ...fresh }),
+    billing.subscribe(() => {}),
     new QueryObserver(client, {
       ...fresh,
       queryFn: () => api.get('/notifications/unread-count'),
       queryKey: qk.notificationUnread,
-    }),
-  ].map((observer) => observer.subscribe(() => {}));
-  await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
-  await vi.advanceTimersByTimeAsync(60_000);
-  // The page being opened reads its materials as the stream connects.
-  unsubscribe.push(
-    new QueryObserver(client, { ...materialsQuery(ws), ...fresh }).subscribe(
-      () => {}
-    )
-  );
-  const { fetchStream, streams } = fakeStreamFetch();
-  useEventStream(ws);
-  const cleanup = state.effects.at(-1)?.();
+    }).subscribe(() => {}),
+  ];
   try {
     await vi.waitFor(() =>
-      expect(client.getQueryData(qk.eventStream)).toEqual({
-        status: 'connected',
-      })
+      expect(billing.getCurrentResult().data).toEqual({ card: null })
     );
-    answerMaterials([]);
-    await vi.waitFor(() => expect(reads('/files')).toBe(2));
-    await vi.waitFor(() => expect(reads('unread-count')).toBe(2));
-    expect(reads('/materials')).toBe(1);
-
-    // The next connect starts after every one of them answered.
-    streams[0].close();
-    await vi.advanceTimersByTimeAsync(1000);
-    await vi.waitFor(() => expect(fetchStream).toHaveBeenCalledTimes(2));
-    await vi.waitFor(() => expect(reads('/materials')).toBe(2));
-    await vi.waitFor(() => expect(reads('/files')).toBe(3));
-    expect(reads('unread-count')).toBe(3);
+    card = 'visa-0341';
+    open();
+    await vi.waitFor(() =>
+      expect(billing.getCurrentResult().data).toEqual({ card: 'visa-0341' })
+    );
+    expect(reads('/billing')).toBe(2);
+    expect(reads('unread-count')).toBe(2);
   } finally {
     cleanup?.();
     for (const stop of unsubscribe) stop();
@@ -516,8 +507,6 @@ it('a role change, or a removal from a workspace still readable, reads the works
   const page = openWorkspace();
   const { fetchStream, send } = page.stream;
   try {
-    // The files list answered a minute before the stream connects.
-    await vi.advanceTimersByTimeAsync(60_000);
     page.start();
     await vi.waitFor(() => expect(fetchStream).toHaveBeenCalledTimes(1));
     // The connect's own refetch of the lists.

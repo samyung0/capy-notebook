@@ -17,6 +17,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/integrations"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -187,7 +188,7 @@ func (a *api) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
 	if account, err = a.s.WithStorageUsage(ctx, account); err != nil {
 		return nil, hErr(err)
 	}
-	return &meOutput{Body: apimodel.User{User: u, Account: account}}, nil
+	return &meOutput{Body: apimodel.User{User: u, Account: account, FilesEditable: sourceupload.FilesEditable}}, nil
 }
 
 func (a *api) updateMe(ctx context.Context, in *updateMeInput) (*meOutput, error) {

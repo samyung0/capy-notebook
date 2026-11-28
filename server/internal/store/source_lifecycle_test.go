@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 func testRefreshRequest(t *testing.T, s *Store, owner, actor string) (Workspace, File, SourceSession, SourceProcessResult) {
@@ -46,6 +47,7 @@ func testRefreshFinalize(t *testing.T, s *Store, doc SourceSession, job SourcePr
 }
 
 func TestSourceLostFinalizeAcknowledgmentPreservesAcceptedWork(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "finalize_owner")
@@ -65,6 +67,7 @@ func TestSourceLostFinalizeAcknowledgmentPreservesAcceptedWork(t *testing.T) {
 }
 
 func TestSourceAccountCancellationAllowsManualRetry(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "cancel_owner")

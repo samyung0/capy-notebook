@@ -802,7 +802,8 @@ export function ChatPanel({
             role="status"
           >
             <p>{m.source_pending_context()}</p>
-            {canReprocess && workspaceId && (
+            {/* Go refuses a file's Process while files are view-only (Q853 A). */}
+            {canReprocess && workspaceId && me?.filesEditable && (
               <ProcessChangesButton
                 fileIds={pendingSources.fileIds}
                 workspaceId={workspaceId}

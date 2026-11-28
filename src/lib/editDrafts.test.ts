@@ -227,6 +227,26 @@ describe('the draft store', () => {
     expect(await readDrafts('u_other:file:gone')).toHaveLength(1);
   });
 
+  it("asks for no file's room while files are view-only, and keeps its drafts (Q853 A)", async () => {
+    await putDrafts([
+      draft('note', { key: 'u_view:material:note' }),
+      draft('doc', { key: 'u_view:file:doc' }),
+    ]);
+    const checked: string[] = [];
+    await sweepDrafts(
+      'u_view',
+      {
+        post: async (path) => {
+          checked.push(path);
+          return { access: 'read', room: ROOM, token: 't', url: 'ws://c' };
+        },
+      },
+      { files: false }
+    );
+    expect(checked).toEqual(['/materials/note/collaboration-token']);
+    expect(await readDrafts('u_view:file:doc')).toHaveLength(1);
+  });
+
   // Q39-Q41: a deleted item's drafts stay for its toast, a lost one's go
   // silently (counted), and one the server could not answer waits.
   it("offers a deleted item's drafts and keeps them, drops a lost one's, and leaves an unanswered one", async () => {

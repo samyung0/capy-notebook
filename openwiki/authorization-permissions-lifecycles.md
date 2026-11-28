@@ -2907,6 +2907,27 @@ and [30-day lifecycle implementation](../server/internal/store/account_lifecycle
 
 ## Source editing and private PDF marks
 
+**Files are view-only** (Epo 2026-11-28, Q852 A, Q853 A). While
+`sourceupload.FilesEditable`
+([editing.go](../server/internal/sourceupload/editing.go)) is false nobody
+edits a file (DOCX, XLSX, PPTX, text, CSV): Go issues no edit session or source
+room token (`AssertOfficeEditable`), refuses every source-room join and writer
+recheck (`CheckSourceAccess`, so a token issued before the switch is refused
+too), room saves (`SaveSourceCheckpoint`), edit-driven processing
+(`RequestSourceRefresh`, the room service's automatic requests included),
+Blank DOCX/XLSX and edit thumbnail captures, as forbidden (read as not found);
+every session it serves reads (`access: read`), and `/api/me` says
+`filesEditable: false`, which the browser follows. Chat's file edits are in
+[agentic-retrieval](agentic-retrieval.md#tools). Uploads, View, Download, PDF
+marks (staff marked copies included, Q862 A), renames, moves, trash and
+clones are unchanged, and materials stay editable. The starter workspace gets
+no blank Word file (Q860 A, `starter.go`). Jobs and maintenance publications
+of edits saved before the switch still finish; the switch takes no deploy
+step (Q859 B), so other edits saved before it stay unprocessed and a file
+room's unsaved edits at deploy are lost, and the browser offers no Process
+for a file (`IndexingTab.tsx`, `ChatPanel.tsx`). The rest of this section is
+editing while the switch is on.
+
 Source collaboration uses the containing workspace's current owner/editor or
 shared editor permission. Tokens bind a file and editing epoch. The gateway
 rechecks access, account state and source identity when opening a room, saving

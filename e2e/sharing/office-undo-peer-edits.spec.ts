@@ -9,7 +9,11 @@ import type {
 import { expect, test } from '../fixtures/actors';
 import { seed } from '../fixtures/seed';
 import { uploadSourceFile } from '../helpers/api';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { officeEditMenu, officeTab } from '../helpers/office';
+
+// Every test here edits a file.
+skipWhileFilesViewOnly();
 
 /*
  * Undo in an Office room, in two browsers on the real stack (Q549, Q624): one
