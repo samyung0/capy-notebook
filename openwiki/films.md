@@ -15,7 +15,7 @@ exporter is queued in `todo-queue.md`.
 | Check | `server/internal/cmvfile` | Header, chunk index and video framing only; under a millisecond on a 2.6 MB film. Mirrors `cmv.validate` in the exporter. |
 | Upload | `sourceupload` kind `film` (`.cmv`), `checkSourceBytes` | A refused film is a 400 `invalid_film` with the reason. Stored only: no ingest job, ready at once, counted in quota like any file. Drive imports refuse a film (`unsupported_file`): the import worker runs no film check. |
 | Viewer | `src/features/films` (`FilmView`, from `FileViewer`) | A worker reads the film; video films play in `<video>`, drawn films on ManimGX's player, both under Capy's own controls (`FilmPlayer`, below). |
-| Engine | `public/vendor/manimgx/0.1.1-capy.2/`, loaded by `public/films/engine-frame.html` | ManimGX's web player (wasm-bindgen JS, 2.0 MB WebAssembly) and its 24 fonts, built from Capy's fork https://github.com/samyung0/manimgx, branch `capy/interactive`: 0.1.1 plus fixes to its GPU memory (it destroys the buffers and textures it replaces or evicts, keeps uploaded images instead of uploading them again each frame and counts them in its budget, grows its buffers by half and moves them on the GPU; `bench/manim/reports/2026-11-27-manimgx-memory.md`), and what Capy's controls need: its face hidden, tagged objects picked, posed, spun and turned (about a pivot, with followers), a 3D view orbited and zoomed, stops shown, scene ↔ canvas mapping, a rate, the Paper theme (`engine.ts` types each call). (`THIRD-PARTY-NOTICES.md`; earlier builds are in git history). Each drawn film loads its own copy in a hidden same-origin frame (`loadEngine`), removed with the film: the engine keeps one GPU device and a WebAssembly heap that only grows for its realm's life, so a page-wide engine kept 1.7 GB of GPU memory after every film had gone. |
+| Engine | `public/vendor/manimgx/0.1.1-capy.2/`, loaded by `public/films/engine-frame.html` | ManimGX's web player (wasm-bindgen JS, 2.0 MB WebAssembly) and its 24 fonts, built from Capy's fork https://github.com/samyung0/manimgx, branch `capy/interactive`: 0.1.1 plus fixes to its GPU memory (it destroys the buffers and textures it replaces or evicts, keeps uploaded images instead of uploading them again each frame and counts them in its budget, grows its buffers by half and moves them on the GPU; `bench/manim/reports/2026-11-27-manimgx-memory.md`), and what Capy's controls need: its face hidden, tagged objects picked, posed, spun and turned (about a pivot, with followers), a 3D view orbited and zoomed, stops shown, scene ↔ canvas mapping, a rate, the Paper theme, a hold at a slide's end, and sound started by the page's own Play (`engine.ts` types each call). (`THIRD-PARTY-NOTICES.md`; earlier builds are in git history). Each drawn film loads its own copy in a hidden same-origin frame (`loadEngine`), removed with the film: the engine keeps one GPU device and a WebAssembly heap that only grows for its realm's life, so a page-wide engine kept 1.7 GB of GPU memory after every film had gone. |
 
 ## In notes and on the canvas
 
@@ -47,7 +47,9 @@ an index of one-second chunks, then the chunks, then a video film's sound
 zstd draw part (drawn films) and a video part (H.264 Annex-B segments, each
 led by a keyframe). A drawn film's STOP op (15; take op 16) is a frame
 outside its time: the frame a section ended on, drawn again with a values
-object at one of its stops.
+object at one of its stops. The server's check (`server/internal/cmvfile`)
+refuses slides that end before they start or overlap, and a sound that isn't
+whole ADTS frames end to end.
 
 - **Video film**: every frame as H.264. The worker moves the units into an
   MP4 (`mp4.ts`, no decoding), its sound (ADTS frames without their
@@ -68,7 +70,9 @@ under a drawn film and a video film (`control.ts` makes both a
 `FilmControl`): a thin progress line with a knob, then play, speed, full
 screen and ⋮ on the left. A film with sections (two or more) plays as slides:
 the line covers the current slide, the film stops at each slide's end with
-Next ringed, the right side has the slide count, back and Next, and the
+Next ringed (a drawn film on the slide's own last frame, the engine's
+`holdAt`; a video film where the page pauses it), Play at the last slide's
+end starts again from the first, the right side has the slide count, back and Next, and the
 slides are listed beside the film when the player is 860 px or wider
 (hideable), else in a "2/4" menu. A film without sections shows its time
 instead. Space or k plays and pauses; the arrows step slides, or 5 s.
@@ -79,8 +83,9 @@ filled.
 
 Slides and captions come from the header, for both forms. Captions are off
 until ⋮ › Captions turns them on; the page draws them over the film. A drawn
-film also has ⋮ › Theme, Film or Paper (the engine turns every pixel's
-lightness over, keeping hues).
+film also has ⋮ › Theme, Film or Paper (the engine turns every drawn
+colour's lightness over, keeping hues, before lighting; images and lit
+surfaces keep their own shading).
 
 ### Grabbing tagged objects
 
@@ -151,7 +156,10 @@ a drawn film's canvas never draws more pixels than the film was exported at
 canvas would hold about 600 MB for a picture no sharper than the export), and
 a drawn film paused and untouched for 60 s rests: its player and engine go,
 its last picture stays, and a click on it, or any of its controls, wakes it
-where it was (`DrawnPlayer` `onRest`, `FilmView`). Its take stays
+where it was, at its speed and theme (`DrawnPlayer` `onRest`, `FilmView`).
+Any use of the film (keys, X/Y/Z, seeking, the theme) counts as a touch, and
+a film whose viewer has moved something never rests, so waking never loses
+their arrangement. Its take stays
 in the page meanwhile (tens of MB), so waking converts nothing again.
 
 Measurements, both forms on 48 examples and 68 real scenes, and playback cost:

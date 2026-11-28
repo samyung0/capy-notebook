@@ -35,11 +35,14 @@ export type FilmFit = 'contain' | 'viewer' | 'width';
 const clock = (t: number) =>
   `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
-/** The slide `t` is in: the last one past the film's end. */
-const slideAt = (chapters: Chapter[], t: number) => {
-  const i = chapters.findIndex((c) => t >= c.start && t < c.end);
-  return i === -1 ? chapters.length - 1 : i;
-};
+/** The slide `t` is in: the last one begun (in a gap, the one before it;
+ * before the first, the first). */
+const slideAt = (chapters: Chapter[], t: number) =>
+  chapters.reduce((at, c, k) => (t >= c.start ? k : at), 0);
+
+/** How near a slide's end (seconds) counts as at it: a drawn film holds on
+ * the slide's last frame, a frame before its end. */
+const AT_END = 0.1;
 
 /**
  * A film with Capy's controls under it (option D of the film controls mock,
@@ -85,6 +88,7 @@ export function FilmPlayer({
     distance: number;
     hit: boolean;
     id: number;
+    version: number;
   } | null>(null);
   // where a slide that plays stops: its end
   const stopAt = useRef<number | null>(null);
@@ -139,16 +143,17 @@ export function FilmPlayer({
   const slide = chapters[i];
   const last = chapters.length - 1;
   const waiting =
-    steps && !playing && i < last && !!slide && time >= slide.end - 0.01;
+    steps && !playing && i < last && !!slide && time >= slide.end - AT_END;
 
   const play = (from?: number) => {
     if (from !== undefined) control.time = from;
-    const t = control.time;
-    if (!steps && t >= duration - 0.02) control.time = 0;
+    // at the end of the film (or of its last slide), from the start again
+    const end = steps ? (chapters[last]?.end ?? duration) : duration;
+    if (control.time >= end - AT_END) control.time = chapters[0]?.start ?? 0;
     stopAt.current = steps
-      ? (chapters[slideAt(chapters, t)]?.end ?? null)
+      ? (chapters[slideAt(chapters, control.time)]?.end ?? null)
       : null;
-    control.play();
+    control.play(stopAt.current ?? undefined);
     refresh();
   };
   const go = (k: number) => {
@@ -255,8 +260,6 @@ export function FilmPlayer({
         ]
       : []),
   ];
-  const barButton = cn('h-9 px-3', narrow && 'px-2.25');
-  const barIcon = cn('size-9 p-0 [&>svg]:size-5.5', narrow && 'size-8.5');
 
   const shown = drawn && !drawn.playing ? drawn.shown() : [];
   const cue = drawn && !drawn.playing && !drawn.touched && !drawn.grabbing;
@@ -265,7 +268,10 @@ export function FilmPlayer({
     : undefined;
   // a tagged object with a target: asked for under the bar while stopped
   const task = shown.find((o) => o.target);
-  const said = verdict && !playing && verdict.id === task?.id ? verdict : null;
+  const said =
+    verdict && verdict.id === task?.id && verdict.version === drawn?.version
+      ? verdict
+      : null;
   // tagged 3D objects that turn: X, Y and Z turn the first a quarter
   const turner = drawn?.is3d ? shown.find((o) => o.rotate) : undefined;
 
@@ -286,6 +292,8 @@ export function FilmPlayer({
           aria-label={name}
           className="relative overflow-hidden bg-black outline-none"
           onKeyDown={(event) => {
+            // its buttons (Reset, X/Y/Z) take their own keys
+            if (event.target !== event.currentTarget) return;
             const key = event.key;
             // Tab picks a tagged object of a stopped drawn film, past the
             // last it leaves the film; the one picked takes the keys
@@ -385,7 +393,6 @@ export function FilmPlayer({
                 iconLeft="refresh"
                 onClick={() => {
                   drawn.reset();
-                  setVerdict(null);
                   refresh();
                 }}
                 size="sm"
@@ -399,6 +406,10 @@ export function FilmPlayer({
         <div
           // 28px tall for a finger, reaching 6px over the film; the line itself
           // shows 3px high where a 16px row would put it
+          aria-label={steps && slide ? slide.title : name}
+          aria-valuemax={100}
+          aria-valuemin={0}
+          aria-valuenow={Math.round(Math.min(1, Math.max(0, x)) * 100)}
           className="group relative z-1 -mt-1.5 -mb-3 h-7 cursor-pointer touch-none"
           onPointerCancel={() => {
             seeking.current = null;
@@ -419,6 +430,8 @@ export function FilmPlayer({
             if (resume) play();
             else refresh();
           }}
+          role="slider"
+          tabIndex={-1}
         >
           <span className="absolute inset-x-0 top-3 h-0.75 bg-divider group-hover:top-2.75 group-hover:h-1.25" />
           <span
@@ -432,7 +445,7 @@ export function FilmPlayer({
         </div>
         <div className="flex min-w-0 items-center gap-0.5 pt-2">
           <IconButton
-            className={barIcon}
+            className={cn('size-9 p-0 [&>svg]:size-5.5', narrow && 'size-8.5')}
             icon={playing ? 'pause' : 'play'}
             label={playing ? m.film_pause() : m.film_play()}
             onClick={toggle}
@@ -452,7 +465,7 @@ export function FilmPlayer({
             trigger={
               <Button
                 aria-label={m.film_speed()}
-                className={barButton}
+                className={cn('h-9 px-3', narrow && 'px-2.25')}
                 variant="ghost-hover"
               >
                 <span className="relative top-[1.5px]">{control.rate}×</span>
@@ -461,7 +474,10 @@ export function FilmPlayer({
           />
           {!narrow && (
             <IconButton
-              className={barIcon}
+              className={cn(
+                'size-9 p-0 [&>svg]:size-5.5',
+                narrow && 'size-8.5'
+              )}
               icon="maximize"
               label={m.film_full_screen()}
               onClick={fullScreen}
@@ -475,7 +491,10 @@ export function FilmPlayer({
               side="top"
               trigger={
                 <IconButton
-                  className={barIcon}
+                  className={cn(
+                    'size-9 p-0 [&>svg]:size-5.5',
+                    narrow && 'size-8.5'
+                  )}
                   icon="moreHorizontal"
                   label={m.film_more()}
                   variant="ghost-hover"
@@ -502,7 +521,7 @@ export function FilmPlayer({
                   trigger={
                     <Button
                       aria-label={m.film_slides()}
-                      className={barButton}
+                      className={cn('h-9 px-3', narrow && 'px-2.25')}
                       iconRight="chevronDown"
                       variant="ghost-hover"
                     >
@@ -515,7 +534,10 @@ export function FilmPlayer({
               )}
               {canWide && listHidden && (
                 <IconButton
-                  className={barIcon}
+                  className={cn(
+                    'size-9 p-0 [&>svg]:size-5.5',
+                    narrow && 'size-8.5'
+                  )}
                   icon="list"
                   label={m.film_show_slides()}
                   onClick={() => setListHidden(false)}
@@ -523,7 +545,10 @@ export function FilmPlayer({
                 />
               )}
               <IconButton
-                className={barIcon}
+                className={cn(
+                  'size-9 p-0 [&>svg]:size-5.5',
+                  narrow && 'size-8.5'
+                )}
                 disabled={i === 0 && time < 0.05}
                 icon="navigationBack"
                 label={m.film_previous_slide()}
@@ -532,7 +557,8 @@ export function FilmPlayer({
               />
               <Button
                 className={cn(
-                  barButton,
+                  'h-9 px-3',
+                  narrow && 'px-2.25',
                   waiting && 'ring-3 ring-tint-accent-1'
                 )}
                 disabled={i >= last}
@@ -567,7 +593,12 @@ export function FilmPlayer({
             <Button
               onClick={() => {
                 const result = drawn?.check(task.id);
-                if (result) setVerdict({ ...result, id: task.id });
+                if (result && drawn)
+                  setVerdict({
+                    ...result,
+                    id: task.id,
+                    version: drawn.version,
+                  });
               }}
               size="sm"
               variant="outline"
@@ -582,7 +613,10 @@ export function FilmPlayer({
           <div className="flex h-10 items-center justify-between pr-2 pl-4 font-bold">
             {m.film_slides()}
             <IconButton
-              className={barIcon}
+              className={cn(
+                'size-9 p-0 [&>svg]:size-5.5',
+                narrow && 'size-8.5'
+              )}
               icon="panelRight"
               label={m.film_hide_slides()}
               onClick={() => setListHidden(true)}

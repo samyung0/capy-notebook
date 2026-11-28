@@ -71,6 +71,10 @@ export interface EnginePlayer {
   free(): void;
   fullscreen(on: boolean): void;
   hide(hidden: boolean): void;
+  /** While playing, stops the clock at `t` seconds, on the last frame that
+   * begins before it (a slide's end shows that slide's last frame); none
+   * clears it. A play from the hold, or past it, runs on. */
+  holdAt(t?: number): void;
   /** Whether the frame shown is a 3D view's. */
   is3d(): boolean;
   key(key: string, ctrl: boolean, alt: boolean, meta: boolean): boolean;

@@ -13,7 +13,9 @@ export interface Chapter {
 export interface FilmControl {
   readonly duration: number;
   pause(): void;
-  play(): void;
+  /** Plays on; with `until` (a slide's end) a drawn film stops on that
+   * slide's last frame. FilmPlayer stops a video film there itself. */
+  play(until?: number): void;
   readonly playing: boolean;
   rate: number;
   /** Seconds; setting it seeks. */

@@ -52,7 +52,9 @@ export default function FilmView({
   const [resting, setResting] = useState(false);
   // a play asked for while it rested (or before its player was up)
   const wantPlay = useRef(false);
+  // its speed and theme, kept while it rests
   const rate = useRef(1);
+  const paper = useRef(false);
   // FilmPlayer's play-or-pause, for a click on the film
   const toggle = useRef<(() => void) | null>(null);
   // the drawn player's poses and hover changed: FilmPlayer draws again
@@ -66,6 +68,7 @@ export default function FilmView({
     let src: string | undefined;
     let meta: FilmMeta | undefined;
     takes.current = [];
+    paper.current = false;
     setState({ phase: 'loading' });
     setPoster(null);
     setResting(false);
@@ -133,6 +136,7 @@ export default function FilmView({
             }
           );
           player.current.rate = rate.current;
+          if (paper.current) player.current.theme = true;
         } catch {
           setState({ phase: 'failed' });
           return;
@@ -148,7 +152,10 @@ export default function FilmView({
     );
     return () => {
       cancelled = true;
-      if (player.current) resumeAt.set(url, player.current.destroy());
+      if (player.current) {
+        paper.current = player.current.theme;
+        resumeAt.set(url, player.current.destroy());
+      }
       player.current = null;
       release?.();
     };
@@ -165,8 +172,8 @@ export default function FilmView({
         return meta.frames / meta.fps;
       },
       pause: () => player.current?.pause(),
-      play: () => {
-        if (player.current) player.current.play();
+      play: (until) => {
+        if (player.current) player.current.play(until);
         else {
           wantPlay.current = true;
           wake();

@@ -3,6 +3,7 @@ package cmvfile
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -46,6 +47,17 @@ func TestCheckReadsAVideoFilmsSound(t *testing.T) {
 func TestCheckRefusesBrokenFilms(t *testing.T) {
 	drawn := film(t, "drawn.cmv")
 	video := film(t, "video.cmv")
+	sound := film(t, "video-sound.cmv")
+	soundBytes := func() int {
+		var h struct {
+			Sound struct{ Bytes int } `json:"sound"`
+		}
+		n := binary.LittleEndian.Uint32(sound[4:])
+		if err := json.Unmarshal(sound[8:8+n], &h); err != nil {
+			t.Fatal(err)
+		}
+		return h.Sound.Bytes
+	}()
 	headerEnd := 8 + int(binary.LittleEndian.Uint32(drawn[4:]))
 	cases := map[string][]byte{
 		"magic":     append([]byte("CMV1"), drawn[4:]...),
@@ -54,6 +66,14 @@ func TestCheckRefusesBrokenFilms(t *testing.T) {
 		// 99 fps, past the 60 allowed (the same length, so the film still adds up)
 		"fps":    bytes.Replace(drawn, []byte(`"fps":10.0`), []byte(`"fps":99.0`), 1),
 		"header": append(append(append([]byte{}, drawn[:8]...), bytes.Repeat([]byte{' '}, headerEnd-8)...), drawn[headerEnd:]...),
+		// the sound's first ADTS sync word broken
+		"sound": func() []byte {
+			out := append([]byte{}, sound...)
+			out[len(out)-soundBytes] = 0
+			return out
+		}(),
+		// a slide that ends before it starts
+		"slide": bytes.Replace(sound, []byte(`"slides":[[0.0,`), []byte(`"slides":[[9e9,`), 1),
 		// The video film's first unit is its keyframe; a non-IDR NAL type replaces it.
 		"keyframe": func() []byte {
 			out := append([]byte{}, video...)

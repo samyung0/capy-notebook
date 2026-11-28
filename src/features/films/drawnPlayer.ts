@@ -44,7 +44,14 @@ const STILL: Pose = { angle: 0, dx: 0, dy: 0, scale: 1 };
 
 type Drag =
   | { kind: 'click'; x: number; y: number }
-  | { kind: 'orbit'; from: [number, number]; x: number; y: number }
+  | {
+      from: [number, number];
+      kind: 'orbit';
+      /** Playing when pressed: a still release then leaves it paused. */
+      playing: boolean;
+      x: number;
+      y: number;
+    }
   | { id: number; kind: 'spin'; x: number; y: number }
   | { id: number; kind: 'stops'; x: number; y: number }
   | {
@@ -127,6 +134,9 @@ export class DrawnPlayer implements FilmControl {
   private paper = false;
   /** Grabbed or turned since the film last played or was sought. */
   touched = false;
+  /** Goes up whenever anything is posed, stepped, turned or let go: a Check
+   * holds for the version it was made at. */
+  version = 0;
   /** The tagged object the keyboard holds (Tab picks it). */
   selected: number | undefined;
   private touchAction = '';
@@ -179,7 +189,8 @@ export class DrawnPlayer implements FilmControl {
     );
     this.wire();
     this.rest = setInterval(() => {
-      if (this.player.playing) this.active = performance.now();
+      // what the viewer arranged stays: a moved film never rests
+      if (this.player.playing || this.moved) this.active = performance.now();
       else if (performance.now() - this.active > REST_MS) this.onRest();
     }, 5000);
   }
@@ -212,6 +223,7 @@ export class DrawnPlayer implements FilmControl {
   }
 
   set theme(paper: boolean) {
+    this.active = performance.now();
     this.paper = paper;
     this.player.theme(paper);
     this.after();
@@ -240,16 +252,18 @@ export class DrawnPlayer implements FilmControl {
 
   /** Seeks; the viewer's poses go. */
   set time(t: number) {
+    this.active = performance.now();
     this.letGo();
     this.player.time = t;
     this.after();
   }
 
-  /** Plays on; the viewer's poses go. */
-  play() {
+  /** Plays on, up to `until` if given; the viewer's poses go. */
+  play(until?: number) {
     if (this.failed) return;
     this.letGo();
     this.selected = undefined;
+    this.player.holdAt(until);
     this.player.play();
     this.active = performance.now();
     this.after();
@@ -358,6 +372,7 @@ export class DrawnPlayer implements FilmControl {
   /** Picks the next (or previous) tagged object for the keyboard; none past
    * either end, so Tab leaves the film. Whether one is picked. */
   select(direction: 1 | -1): boolean {
+    this.active = performance.now();
     const list = this.shown();
     const at = list.findIndex((o) => o.id === this.selected);
     const next =
@@ -453,6 +468,7 @@ export class DrawnPlayer implements FilmControl {
   }
 
   private setPose(id: number, next: Pose) {
+    this.version++;
     this.poses.set(id, next);
     this.player.pose(id, next.dx, next.dy, next.angle, next.scale);
   }
@@ -497,6 +513,7 @@ export class DrawnPlayer implements FilmControl {
   }
 
   private letGo() {
+    this.version++;
     this.touched = false;
     cancelAnimationFrame(this.flick);
     if (!this.moved) return;
@@ -511,6 +528,8 @@ export class DrawnPlayer implements FilmControl {
 
   /** The viewer took hold: the film pauses. */
   private hold() {
+    this.version++;
+    this.active = performance.now();
     this.player.pause();
     this.touched = true;
   }
@@ -721,7 +740,6 @@ export class DrawnPlayer implements FilmControl {
       if (e.button !== 0 || !e.isPrimary) return;
       pressed = e.pointerId;
       this.selected = undefined;
-      this.box.focus({ preventScroll: true });
       canvas.setPointerCapture(e.pointerId);
       const [x, y] = at(e);
       cancelAnimationFrame(this.flick);
@@ -734,7 +752,13 @@ export class DrawnPlayer implements FilmControl {
         this.hold();
       } else if (id === undefined || !it) {
         this.drag = is3d
-          ? { from: [this.view[0], this.view[1]], kind: 'orbit', x, y }
+          ? {
+              from: [this.view[0], this.view[1]],
+              kind: 'orbit',
+              playing: player.playing,
+              x,
+              y,
+            }
           : { kind: 'click', x, y };
         if (is3d) this.hold();
       } else if (is3d && it.rotate) {
@@ -778,9 +802,10 @@ export class DrawnPlayer implements FilmControl {
         const [x, y] = at(e);
         const still = Math.hypot(x - drag.x, y - drag.y) / ratio() < CLICK_SLOP;
         if (drag.kind === 'click' && still) this.onToggle();
+        // the press paused a playing film: that was the click
         if (drag.kind === 'orbit' && still) {
           this.touched = this.moved;
-          this.onToggle();
+          if (!drag.playing) this.onToggle();
         }
         if (drag.kind === 'spin' && !still) flick(drag.id);
       }
