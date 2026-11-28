@@ -9680,6 +9680,9 @@ components:
           $ref: "#/components/schemas/Customization"
         email:
           type: string
+        filesEditable:
+          description: Files (Office, text, CSV) can be edited and made blank; false while every file is view-only (Q853 A)
+          type: boolean
         id:
           type: string
         locale:
@@ -9699,6 +9702,7 @@ components:
           $ref: "#/components/schemas/SubscriptionStatus"
       required:
         - account
+        - filesEditable
         - id
         - name
         - email

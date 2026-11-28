@@ -12,11 +12,13 @@ package agenttools
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
 // ContractVersion changes whenever a tool definition, input schema, operation
@@ -899,9 +901,10 @@ func chatTool(def Definition) Definition {
 
 // Definitions returns every tool the contract knows. Python binds a local
 // handler to each name it implements; a definition with no handler is simply
-// not offered to the model.
+// not offered to the model. edit_office_document is left out while files are
+// view-only (Q854 A).
 func Definitions() []Definition {
-	return []Definition{
+	defs := []Definition{
 		chatTool(Definition{
 			Name:        "search_workspace",
 			Scopes:      workspaceOnly,
@@ -1416,4 +1419,8 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpDocumentEdit},
 		}),
 	}
+	if !sourceupload.FilesEditable {
+		defs = slices.DeleteFunc(defs, func(def Definition) bool { return def.Name == "edit_office_document" })
+	}
+	return defs
 }

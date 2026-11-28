@@ -13,6 +13,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -136,7 +137,9 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 // be edited.
 func fileListItem(item documentListItem, name, kind string) documentListItem {
 	item.Title, item.Format = name, kind
-	if format := store.SourceEditFormat(name, kind); format != "" {
+	if format := store.SourceEditFormat(name, kind); format != "" && !sourceupload.FilesEditable {
+		item.Format, item.Reason = format, viewOnlyReason
+	} else if format != "" {
 		item.Format, item.Editable = format, true
 	} else if kind == "pdf" {
 		item.Reason = pdfRefusal
@@ -781,7 +784,8 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 			return
 		}
 		format := store.SourceEditFormat(file.Name, string(file.Kind))
-		if format == "" {
+		// While files are view-only no file is edited (Q854 A).
+		if format == "" || !sourceupload.FilesEditable {
 			message := "This file type cannot be edited."
 			if file.Kind == "pdf" {
 				message = pdfRefusal
