@@ -25,6 +25,8 @@ export interface User {
   classLabel?: string;
   customization?: Customization;
   email: string;
+  /** Files (Office, text, CSV) can be edited and made blank; false while every file is view-only (Q853 A) */
+  filesEditable: boolean;
   id: string;
   locale: string;
   name: string;

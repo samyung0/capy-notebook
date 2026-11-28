@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/questions"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // Every input schema must be a closed object so unknown model arguments are
@@ -222,6 +224,10 @@ func TestRetentionBetweenMessages(t *testing.T) {
 			"resolve_source_change", "inspect_document", "list_trashed_files", "inspect_office_document",
 		},
 	}
+	// edit_office_document is not offered while files are view-only (Q854 A).
+	if !sourceupload.FilesEditable {
+		want[RetainFull] = slices.DeleteFunc(want[RetainFull], func(name string) bool { return name == "edit_office_document" })
+	}
 	got := map[ResultRetention][]string{}
 	for _, def := range Definitions() {
 		got[def.Retention] = append(got[def.Retention], def.Name)
@@ -239,6 +245,7 @@ func TestRetentionBetweenMessages(t *testing.T) {
 // service appends them once office_building is read); edit_document keeps no
 // Office command (Epo 2026-10-15, 2026-10-20, 2026-10-21).
 func TestOfficeFilesHaveTheirOwnTools(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	defs := Definitions()
 	names := []string{defs[len(defs)-2].Name, defs[len(defs)-1].Name}
 	if !slices.Equal(names, []string{"inspect_office_document", "edit_office_document"}) {
@@ -316,6 +323,7 @@ func TestExpandedQuestionsAreValid(t *testing.T) {
 // Marshal fills set_shape_text's and add_text_box's paragraph bounds and the
 // contract's officeShapeText from the engine's limits.json (review L2).
 func TestMarshalTakesTheShapeTextBoundsFromTheEngine(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	table := []byte(`{"commands":50,"shapeText":{"paragraphs":7,"characters":1234},` +
 		`"formats":{"pptx":[{"count":"slides added","limit":20,"commands":["add_slide"]}]}}`)
 	out, err := Marshal(table)

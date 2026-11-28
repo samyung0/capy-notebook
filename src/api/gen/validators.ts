@@ -6800,6 +6800,7 @@ export const GetMeResponse = zod.object({
   "theme": zod.enum(['latte', 'frappe', 'mocha'])
 }).optional(),
   "email": zod.string(),
+  "filesEditable": zod.boolean().describe('Files (Office, text, CSV) can be edited and made blank; false while every file is view-only (Q853 A)'),
   "id": zod.string(),
   "locale": zod.string(),
   "name": zod.string(),
@@ -6890,6 +6891,7 @@ export const UpdateMeResponse = zod.object({
   "theme": zod.enum(['latte', 'frappe', 'mocha'])
 }).optional(),
   "email": zod.string(),
+  "filesEditable": zod.boolean().describe('Files (Office, text, CSV) can be edited and made blank; false while every file is view-only (Q853 A)'),
   "id": zod.string(),
   "locale": zod.string(),
   "name": zod.string(),

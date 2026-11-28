@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { strFromU8, unzipSync } from 'fflate';
+import { skipWhileFilesViewOnly } from '../../helpers/filesViewOnly';
 import {
   fileRow,
   fixture,
@@ -27,6 +28,7 @@ import { test } from './runtime';
 test('docx refusal: a held publication publishes, its rebuild refuses a TOC-link edit and the automatic republication publishes and rebuilds it', async ({
   run,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(2_400_000);
   const workspaceId = await workspace(run, 'refusal');
   const marker = `UAT_${randomUUID().replaceAll('-', '')}`;

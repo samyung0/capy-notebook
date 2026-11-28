@@ -10,6 +10,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -294,6 +295,11 @@ var officeTitleUnsafe = regexp.MustCompile(`[\\/\x00-\x1f]+`)
 func (a *api) internalCreateOfficeDocument(w http.ResponseWriter, r *http.Request) {
 	if !a.pipelineSecretOK(r) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"message": "unauthorized"})
+		return
+	}
+	// Chat makes no Word or Excel file while files are view-only (Q854 A).
+	if !sourceupload.FilesEditable {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "unsupported_format", "message": filesViewOnlyMessage})
 		return
 	}
 	var req internalOfficeCreateReq

@@ -13,6 +13,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -136,7 +137,9 @@ func (a *api) internalListDocuments(w http.ResponseWriter, r *http.Request) {
 // be edited.
 func fileListItem(item documentListItem, name, kind string) documentListItem {
 	item.Title, item.Format = name, kind
-	if format := store.SourceEditFormat(name, kind); format != "" {
+	if format := store.SourceEditFormat(name, kind); format != "" && !sourceupload.FilesEditable {
+		item.Format, item.Reason = format, viewOnlyReason
+	} else if format != "" {
 		item.Format, item.Editable = format, true
 	} else if kind == "pdf" {
 		item.Reason = pdfRefusal
@@ -240,8 +243,18 @@ func officeIDs(raw []string) ([]string, string) {
 }
 
 // officeToolsMessage answers an Office file sent to the general document
-// tools (Epo 2026-10-20).
-const officeToolsMessage = `Office files are read and edited with inspect_office_document and edit_office_document, offered after read_skill("office_building").`
+// tools (Epo 2026-10-20); while files are view-only it names the read alone
+// (Q858 A).
+func officeToolsMessage() string {
+	if sourceupload.FilesEditable {
+		return `Office files are read and edited with inspect_office_document and edit_office_document, offered after read_skill("office_building").`
+	}
+	return `Office files are read with inspect_office_document, offered after read_skill("office_building").`
+}
+
+// filesViewOnlyMessage answers a chat edit or create of a file while files
+// are view-only (Q858 A).
+const filesViewOnlyMessage = "Files are view-only: they cannot be edited, so nothing was changed. Edit only study materials."
 
 // documentInWorkspace answers false, with the refusal written, for a
 // document outside the request's workspace. A file there that this
@@ -366,7 +379,7 @@ func (a *api) internalInspectDocument(w http.ResponseWriter, r *http.Request) {
 		}
 		// Office files have their own tools (Epo 2026-10-20).
 		if office := format != "text"; office != (req.Office != nil) {
-			message := officeToolsMessage
+			message := officeToolsMessage()
 			if !office {
 				message = "inspect_office_document reads Word, Excel and PowerPoint files; read this file with inspect_document."
 			}
@@ -781,17 +794,20 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 			return
 		}
 		format := store.SourceEditFormat(file.Name, string(file.Kind))
-		if format == "" {
+		// While files are view-only no file is edited (Q854 A).
+		if format == "" || !sourceupload.FilesEditable {
 			message := "This file type cannot be edited."
 			if file.Kind == "pdf" {
 				message = pdfRefusal
+			} else if !sourceupload.FilesEditable {
+				message = filesViewOnlyMessage
 			}
 			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"code": "unsupported_format", "message": message})
 			return
 		}
 		// Office files have their own tool (Epo 2026-10-20).
 		if office := format != "text"; office != req.Office {
-			message := officeToolsMessage
+			message := officeToolsMessage()
 			if !office {
 				message = officeOnlyMessage
 			}

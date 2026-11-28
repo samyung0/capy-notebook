@@ -261,8 +261,8 @@ func TestHiddenFileSourceSessionRefusesAViewer(t *testing.T) {
 	if _, err := s.SourceSession(ctx, viewer, file.ID); err != nil {
 		t.Fatalf("the viewer cannot read the visible file: %v", err)
 	}
-	if err := s.CheckSourceAccess(ctx, viewer, file.ID, doc.Epoch, false); err != nil {
-		t.Fatalf("the viewer's room refused on the visible file: %v", err)
+	if err := s.CheckSourceAccess(ctx, viewer, file.ID, doc.Epoch, false); !errors.Is(err, roomAnswer(nil)) {
+		t.Fatalf("the viewer's room on the visible file: %v", err)
 	}
 	if err := s.SetItemHidden(ctx, owner, agenttools.KindSourceFile, file.ID, true); err != nil {
 		t.Fatal(err)
@@ -270,15 +270,15 @@ func TestHiddenFileSourceSessionRefusesAViewer(t *testing.T) {
 	if _, err := s.SourceSession(ctx, viewer, file.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("the viewer's session on the hidden file = %v, want not found", err)
 	}
-	if err := s.CheckSourceAccess(ctx, viewer, file.ID, doc.Epoch, false); !errors.Is(err, ErrNotFound) {
+	if err := s.CheckSourceAccess(ctx, viewer, file.ID, doc.Epoch, false); !errors.Is(err, roomAnswer(ErrNotFound)) {
 		t.Fatalf("the viewer's room on the hidden file = %v, want not found", err)
 	}
 	for _, reader := range []string{owner, editor} {
 		if _, err := s.SourceSession(ctx, reader, file.ID); err != nil {
 			t.Fatalf("%s cannot read the hidden file: %v", reader, err)
 		}
-		if err := s.CheckSourceAccess(ctx, reader, file.ID, doc.Epoch, false); err != nil {
-			t.Fatalf("%s's room refused on the hidden file: %v", reader, err)
+		if err := s.CheckSourceAccess(ctx, reader, file.ID, doc.Epoch, false); !errors.Is(err, roomAnswer(nil)) {
+			t.Fatalf("%s's room on the hidden file: %v", reader, err)
 		}
 	}
 }

@@ -15,9 +15,24 @@ import {
   mockChatModel,
 } from './chatFixtures';
 import { mockUndoPayload, rememberUndo } from './chatUndo';
-import { chatMessages, conversations, files, materials, uid } from './db';
+import {
+  chatMessages,
+  conversations,
+  FILES_EDITABLE,
+  files,
+  materials,
+  uid,
+} from './db';
 
 type MockTool = Extract<ActivityBlock, { kind: 'tool' }>;
+
+/** Go's answer to a chat edit of a file while files are view-only
+ * (internal_documents.go's filesViewOnlyMessage). */
+const FILE_EDIT_REFUSED = {
+  code: 'unsupported_format',
+  message:
+    'Files are view-only: they cannot be edited, so nothing was changed. Edit only study materials.',
+};
 type MockStep = Pick<MockTool, 'capture' | 'detail' | 'name'>;
 
 /** An effect with a fresh undo ref, for the mock Undo endpoint to answer. */
@@ -170,6 +185,24 @@ export function mockChatStream(fixture?: ChatFixture) {
               if (stopped()) {
                 tool.outcome = 'cancelled';
                 return false;
+              }
+              // Go refuses a chat edit of a file while files are view-only
+              // (Q854 A), with its not-editable answer and no effect.
+              if (
+                !FILES_EDITABLE &&
+                step.name?.startsWith('edit_') &&
+                effects?.some(({ resource }) => resource.kind === 'source_file')
+              ) {
+                tool.outcome = 'refused';
+                tool.error = FILE_EDIT_REFUSED;
+                send({
+                  callId: tool.callId,
+                  endedAt: tool.endedAt,
+                  error: tool.error,
+                  outcome: tool.outcome,
+                  type: 'tool_end',
+                });
+                return true;
               }
               tool.outcome = 'succeeded';
               tool.effects = effects;

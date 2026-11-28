@@ -1023,7 +1023,25 @@ export const generateHandler = (own: boolean) =>
     });
   });
 
+/** Go's refusal of a file edit while files are view-only: ErrForbidden, which
+ * reads as not found. */
+const viewOnlyAnswer = () => new HttpResponse(null, { status: 404 });
+
 export const handlers = [
+  ...(db.FILES_EDITABLE
+    ? []
+    : [
+        http.post('/api/files/:id/collaboration-token', viewOnlyAnswer),
+        http.get('/api/files/:id/source-session', ({ request }) =>
+          new URL(request.url).searchParams.get('view') === 'true'
+            ? undefined
+            : viewOnlyAnswer()
+        ),
+        http.post('/api/files/:id/process-changes', viewOnlyAnswer),
+        http.post('/api/files/:id/thumbnail', viewOnlyAnswer),
+        http.post('/api/workspaces/:id/files/blank', viewOnlyAnswer),
+        http.post('/api/files/blank', viewOnlyAnswer),
+      ]),
   http.post('/api/materials/:id/collaboration-token', deletedAnswer),
   http.get('/api/materials/:id', deletedAnswer),
   http.post('/api/files/:id/collaboration-token', deletedAnswer),

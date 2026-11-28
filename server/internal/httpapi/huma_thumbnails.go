@@ -14,6 +14,7 @@ import (
 	"golang.org/x/image/webp"
 
 	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -44,6 +45,10 @@ func (a *api) registerThumbnails(api huma.API) {
 // nothing; a capture within store.ThumbnailCaptureInterval of the file's last
 // one is refused. Nothing here retries: the browser drops a failed capture.
 func (a *api) captureFileThumbnail(ctx context.Context, in *captureThumbnailInput) (*Empty, error) {
+	// Captures follow edits: none while files are view-only.
+	if !sourceupload.FilesEditable {
+		return nil, hErr(store.ErrForbidden)
+	}
 	if err := a.assertFileEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}

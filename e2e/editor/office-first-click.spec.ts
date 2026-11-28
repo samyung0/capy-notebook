@@ -1,7 +1,11 @@
 import { expect, type Page, test } from '@playwright/test';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import { officeEditMenu } from '../helpers/office';
 import { showPanelView } from '../helpers/panelView';
 import { m } from '../i18n';
+
+// Every test here edits a file.
+skipWhileFilesViewOnly();
 
 declare global {
   interface Window {

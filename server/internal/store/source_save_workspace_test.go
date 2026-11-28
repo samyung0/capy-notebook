@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // Q459 (Epo 2026-10-28, with Q447): a source save checks each person whose
@@ -14,6 +16,7 @@ import (
 // checks the file's current workspace (the drain's save is refused) or the
 // named one is ignored.
 func TestASourceSaveIsCheckedAgainstTheWorkspaceItsRoomOpened(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_q459_owner")
@@ -65,6 +68,7 @@ func TestASourceSaveIsCheckedAgainstTheWorkspaceItsRoomOpened(t *testing.T) {
 // room's save checks the contributors' roles (its next store would discard the
 // room for everyone), or admission or a direct agent edit stops checking them.
 func TestARoomsSaveStoresWhatItAdmittedFromSomeoneWhoLostTheirRole(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_q634_owner")
@@ -128,6 +132,7 @@ func TestARoomsSaveStoresWhatItAdmittedFromSomeoneWhoLostTheirRole(t *testing.T)
 // file gone or a gone owner is plain not found. Everyone reads it as not found.
 // Fails if a lost role goes unnamed, or a gone file or owner reads as one.
 func TestCheckSourceAccessNamesALostRole(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "u_role_lost_owner")

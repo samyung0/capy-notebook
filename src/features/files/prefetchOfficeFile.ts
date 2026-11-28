@@ -41,16 +41,18 @@ export function prefetchOfficeFile(
     // The view mounts once the capability that decides Edit is known. A
     // standalone file (no workspace) is its owner's, who edits it unless
     // their account is frozen (Epo 2026-10-27); one opened from the Trash
-    // takes no edits.
+    // takes no edits, and no file does while /me says files are view-only
+    // (Q853 A).
     if (file.workspaceId)
       void qc.prefetchQuery(workspaceQuery(file.workspaceId));
+    const me = await qc.ensureQueryData(meQuery());
     const canEdit =
       !file.trash &&
+      me.filesEditable &&
       (file.workspaceId
         ? (await qc.ensureQueryData(workspaceQuery(file.workspaceId)))
             .capabilities.canEditContent
-        : (await qc.ensureQueryData(meQuery())).account?.state !==
-          AccountState.over_quota_frozen);
+        : me.account?.state !== AccountState.over_quota_frozen);
     if (signal.aborted) return;
     prefetchSourceOpen(fileId, canEdit);
   })().catch(() => {

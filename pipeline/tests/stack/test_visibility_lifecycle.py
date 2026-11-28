@@ -9,6 +9,7 @@ from pipeline.retrieval import tools
 pytestmark = pytest.mark.stack
 
 
+@pytest.mark.files_view_only
 async def test_trash_restore_and_move_carry_a_files_changes(stack, turn):
     """T9: an edited, indexed file the agent trashed leaves the next turn's
     listing, passages, hints and changes, and comes back with its changes when

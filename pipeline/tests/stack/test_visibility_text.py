@@ -8,6 +8,7 @@ import pytest
 pytestmark = pytest.mark.stack
 
 
+@pytest.mark.files_view_only
 async def test_a_text_edit_reaches_the_hints_and_each_read(stack, turn):
     """T4: the collaborator's change is hinted under a message naming two of
     its words and appended to the read; after the owner's own edit that turn,

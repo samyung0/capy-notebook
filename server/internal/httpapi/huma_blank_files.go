@@ -44,6 +44,10 @@ func (a *api) createStandaloneBlankFile(ctx context.Context, in *createStandalon
 
 // blankFile builds and stores a blank Office file; wsID "" is standalone.
 func (a *api) blankFile(ctx context.Context, wsID string, b apimodel.CreateBlankFileReq) (*fileOutput, error) {
+	// A blank file is made to be edited: none while files are view-only.
+	if !sourceupload.FilesEditable {
+		return nil, hErr(store.ErrForbidden)
+	}
 	if a.blob == nil {
 		return nil, huma.Error503ServiceUnavailable("blob store not configured")
 	}

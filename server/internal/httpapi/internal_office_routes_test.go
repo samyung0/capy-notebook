@@ -21,6 +21,7 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/httpapi"
 	"github.com/samyung0/capy-notebook/server/internal/imagecheck"
 	"github.com/samyung0/capy-notebook/server/internal/store"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // officeAuthority stands in for the collaboration server's document routes
@@ -178,6 +179,7 @@ func TestTextInspectNeedsNoOfficeQuery(t *testing.T) {
 // An edit_office_document call reaches the engine in its commands, through
 // the edit route's receipt; edit_document refuses an Office file.
 func TestOfficeEditReachesTheEngineNormalized(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	fx := openDeckFiles(t)
 	authority := newOfficeAuthority(t, fx.st, map[string]string{
 		"/internal/documents/edit": `{"operationId":"op","outcome":"succeeded","kind":"edit_document","notice":"Removed 1 control character."}`,
@@ -212,6 +214,7 @@ func TestOfficeEditReachesTheEngineNormalized(t *testing.T) {
 // stores it like the agent's deck: an upload with a receipt whose Undo trashes
 // it, and a replay that neither builds nor stores it again.
 func TestOfficeCreateStoresTheFileWithItsUndo(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	fx := openDeckFiles(t)
 	content := deckPackage(pngSized(10, 10))
 	encoded, _ := json.Marshal(content)
@@ -273,6 +276,7 @@ func TestOfficeCreateStoresTheFileWithItsUndo(t *testing.T) {
 // workspace are refused before the collaboration server builds anything, and
 // nothing is stored.
 func TestOfficeCreateRefusalsBuildAndStoreNothing(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	fx := openDeckFiles(t)
 	ctx := context.Background()
 	authority := newOfficeAuthority(t, fx.st, map[string]string{
@@ -323,6 +327,7 @@ func TestOfficeCreateRefusalsBuildAndStoreNothing(t *testing.T) {
 // first attempt, which still finishes, and the retry answers the receipt that
 // attempt stored, from one collaboration call.
 func TestOfficeRetryWaitsForTheRunningAttempt(t *testing.T) {
+	testdb.SkipWhileFilesViewOnly(t)
 	fx := openDeckFiles(t)
 	xlsx := officeSource(t, fx, "grades.xlsx")
 	msgID := seedAssistantMessage(t, fx.st, fx.editor, fx.ws)

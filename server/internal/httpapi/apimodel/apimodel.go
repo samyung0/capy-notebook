@@ -61,6 +61,9 @@ func ToTagRefs(vs []TagInput) []store.TagRef {
 type User struct {
 	store.User
 	Account store.AccountStatus `json:"account"`
+	// FilesEditable is sourceupload.FilesEditable: the one place the browser
+	// learns whether any file opens in Edit or can be made blank.
+	FilesEditable bool `json:"filesEditable" doc:"Files (Office, text, CSV) can be edited and made blank; false while every file is view-only (Q853 A)"`
 }
 
 /* ------------------------------------------------------------------ responses

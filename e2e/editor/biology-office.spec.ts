@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { expect, type FrameLocator, type Page, test } from '@playwright/test';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import {
   officeEditMenu,
   officeMenu,
@@ -33,6 +34,7 @@ for (const [format, name] of [
   test(`Biology ${format} fixture opens in View/Edit and survives scenario reset`, async ({
     page,
   }) => {
+    skipWhileFilesViewOnly();
     test.setTimeout(format === 'docx' ? 180_000 : 120_000);
     const fileId = `bio-office-${format}`;
     if (format === 'docx') {
@@ -236,6 +238,7 @@ for (const [format, name] of [
 test('DOCX Insert table of contents lists the headings, and Update follows a rename', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(180_000);
   await page.setViewportSize({ height: 900, width: 1280 });
   await page.goto('/workspaces/ws_bio?file=bio-office-docx');
@@ -435,6 +438,7 @@ test('Office viewer keeps its iframe when the workspace layout changes', async (
 test('XLSX keyboard selection scrolls into view and takes typing', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
@@ -557,6 +561,7 @@ test('XLSX keyboard selection scrolls into view and takes typing', async ({
 test('XLSX zooms from View › Zoom in both modes, keeping the top-left cell, hit-testing at the zoom and still copying', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
@@ -749,6 +754,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
   test(`${format} zoom carries across View and Edit while the file is open, and stays usable while paused`, async ({
     page,
   }) => {
+    skipWhileFilesViewOnly();
     // Four frame loads, two of them editors.
     test.setTimeout(format === 'docx' ? 300_000 : 180_000);
     await page.setViewportSize({ height: 800, width: 1280 });
@@ -908,6 +914,7 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const)
   test(`${format} View's reader place and zoom are the editor's`, async ({
     page,
   }) => {
+    skipWhileFilesViewOnly();
     test.setTimeout(300_000);
     await page.setViewportSize({ height: 800, width: 1280 });
     await page.goto(`/workspaces/ws_bio?file=bio-office-${format}&mode=view`);
@@ -1102,6 +1109,7 @@ test.describe('DOCX on a phone', () => {
   test('a DOCX opens fitted and re-fits on resize in View and Edit until View › Zoom picks a level', async ({
     page,
   }) => {
+    skipWhileFilesViewOnly();
     test.setTimeout(300_000);
     const frame = await open(page);
     const narrow = await fitted(frame);
@@ -1141,6 +1149,7 @@ test.describe('DOCX on a phone', () => {
   test('a pinch zooms the document, not the page, and ends the re-fit', async ({
     page,
   }) => {
+    skipWhileFilesViewOnly();
     test.setTimeout(300_000);
     const frame = await open(page);
     const narrow = await fitted(frame);
@@ -1166,6 +1175,7 @@ test.describe('DOCX on a phone', () => {
     test(`Edit keeps the page at the top across a rotation, ${level}, leaving the caret`, async ({
       page,
     }) => {
+      skipWhileFilesViewOnly();
       test.setTimeout(300_000);
       await resize(page, 390);
       const frame = await open(page);
@@ -1301,6 +1311,7 @@ test.describe('DOCX on a phone', () => {
   test('a chat citation carries into Edit fitted, with its passage in view', async ({
     page,
   }) => {
+    skipWhileFilesViewOnly();
     test.setTimeout(300_000);
     await page.goto('/workspaces/ws_bio?view=chats');
     await page
@@ -1340,6 +1351,7 @@ test.describe('DOCX on a phone', () => {
     context,
     page,
   }) => {
+    skipWhileFilesViewOnly();
     test.setTimeout(300_000);
     // exchange-plan.docx with a comment on its first paragraph, and the room
     // state seeded from it (scripts/dev/seed-scenario-office.ts).
@@ -1393,6 +1405,7 @@ test.describe('DOCX on a phone', () => {
   });
 
   test('md and up opens a DOCX at 100% in View and Edit', async ({ page }) => {
+    skipWhileFilesViewOnly();
     test.setTimeout(300_000);
     await resize(page, 768, 1024);
     const frame = await open(page);
@@ -1404,6 +1417,7 @@ test.describe('DOCX on a phone', () => {
   test('at the fitted, fractional zoom a click places the caret, a drag selects and a double click takes the word', async ({
     page,
   }) => {
+    skipWhileFilesViewOnly();
     test.setTimeout(300_000);
     await page
       .context()
@@ -1508,6 +1522,7 @@ test.describe('DOCX on a phone', () => {
 test('XLSX cell edit ends when focus moves into Capy, not on a window switch', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(120_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio');
@@ -1602,6 +1617,7 @@ test('XLSX cell edit ends when focus moves into Capy, not on a window switch', a
 test('a newly opened XLSX grid leaves the chat box its focus, and takes typing with no click', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   await page.addInitScript(() => {
     if (!location.pathname.includes('office-runtime')) return;
@@ -1794,6 +1810,7 @@ test('a PPTX citation on a zoomed slide scrolls into view', async ({
 test('a DOCX citation carries from View into Edit, highlighted in view, with nothing to undo, until its paragraph is replaced', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   await page.goto('/workspaces/ws_bio');
   await showChatHistory(page);
@@ -1839,6 +1856,7 @@ test('a DOCX citation carries from View into Edit, highlighted in view, with not
 test('the host clears a DOCX citation in the editor already open', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   await page.goto('/workspaces/ws_bio');
   await showChatHistory(page);
@@ -1875,6 +1893,7 @@ for (const [format, quote] of [
   test(`a ${format} citation in Edit highlights its passage with nothing to undo`, async ({
     page,
   }) => {
+    skipWhileFilesViewOnly();
     test.setTimeout(180_000);
     await page.goto(`/workspaces/ws_bio?file=bio-office-${format}&mode=edit`);
     await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
@@ -1903,6 +1922,7 @@ for (const [format, quote] of [
 test('an XLSX citation on another sheet switches to it in Edit and marks the cell unselected', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(180_000);
   await page.goto('/workspaces/ws_bio?file=bio-office-xlsx&mode=edit');
   await expect(officeEditMenu(page)).toBeVisible({ timeout: 60_000 });
@@ -1930,6 +1950,7 @@ for (const [format, text] of [
   test(`a paused ${format} editor copies but takes no edit, a composition included, also after the runtime reloads`, async ({
     page,
   }) => {
+    skipWhileFilesViewOnly();
     test.setTimeout(300_000);
     // The runtime takes each `load` 1.5 s late, so the host's set-capabilities
     // comes first, as when a runtime boots before the source loads.
@@ -2112,6 +2133,7 @@ for (const paused of [false, true]) {
   test(`the first Ctrl+F in ${paused ? 'a paused' : 'an editable'} docx takes the keys typed straight after it`, async ({
     page,
   }) => {
+    skipWhileFilesViewOnly();
     test.setTimeout(180_000);
     await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
     const frame = page.frameLocator('iframe[src*="office-runtime"]');
@@ -2176,6 +2198,7 @@ for (const paused of [false, true]) {
 test('docx Find takes the selected text, a repeat Ctrl+F from the document and a switch to Replace', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(180_000);
   await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
@@ -2249,6 +2272,7 @@ test('docx Find takes the selected text, a repeat Ctrl+F from the document and a
 test('DOCX editor focus: chat typing while it opens, first open before a save receipt, resuming from a pause and an open menu', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(420_000);
   await page.addInitScript(() => {
     if (!location.pathname.includes('office-runtime')) return;
@@ -2487,6 +2511,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
 test('closing DOCX header editing gives the document the focus back', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   await page.goto('/workspaces/ws_bio');
   const panel = page.getByTestId('mock-scenario-panel');
@@ -2559,6 +2584,7 @@ test('a view-only XLSX viewer still selects and copies a cell after canEdit:fals
 test('PPTX speaker notes start hidden, and one remembered toggle serves view and edit', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(180_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio?file=bio-office-pptx');
@@ -2705,6 +2731,7 @@ test('PPTX Present fills the screen, and Presenter view drives the show from a s
 test('DOCX View › Show ruler is remembered, edit mode only, and stays usable while paused', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
@@ -2777,6 +2804,7 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
 test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit, and it pauses with the editor', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(240_000);
   await page.setViewportSize({ height: 800, width: 1280 });
   await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
@@ -2863,6 +2891,7 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
 test('below lg the chat button sits 8px above the sheet tabs, the slide strip and the notes box', async ({
   page,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(180_000);
   await page.setViewportSize({ height: 780, width: 360 });
   const tools = page.locator('[data-workspace-chat-button]');

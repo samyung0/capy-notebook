@@ -415,7 +415,9 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 		}
 	}
 	out.Access = "read"
-	if canEdit {
+	// While files are view-only every session reads (the room service's
+	// edits refuse a read session too).
+	if canEdit && sourceupload.FilesEditable {
 		var locked *AccountLockedError
 		var full *QuotaExceededError
 		switch err := s.assertContentEditableTx(ctx, tx, payer, actor); {
@@ -482,7 +484,10 @@ func (s *Store) viewSourceSession(ctx context.Context, fileID, trashed string) (
 // role on the room closing that person, the eviction outbox's revoke). Locking
 // here serialized every writer's recheck with every write in the workspace.
 func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epoch int64, edit bool) error {
-	if actor == "" {
+	// No source room admits anyone while files are view-only: a token issued
+	// before the switch is refused at the join, and an open room's writers at
+	// their next recheck.
+	if actor == "" || !sourceupload.FilesEditable {
 		return ErrForbidden
 	}
 	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{AccessMode: pgx.ReadOnly, IsoLevel: pgx.RepeatableRead})
@@ -557,7 +562,16 @@ type SourceCheckpointSaved struct {
 	Replayed bool `json:"replayed,omitempty"`
 }
 
+// SaveSourceCheckpoint saves a room's checkpoint; while files are view-only
+// every save is refused (Q853 A).
 func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in SourceCheckpoint) (SourceCheckpointSaved, error) {
+	if !sourceupload.FilesEditable {
+		return SourceCheckpointSaved{}, ErrForbidden
+	}
+	return s.saveSourceCheckpoint(ctx, fileID, in)
+}
+
+func (s *Store) saveSourceCheckpoint(ctx context.Context, fileID string, in SourceCheckpoint) (SourceCheckpointSaved, error) {
 	var out SourceCheckpointSaved
 	var effects []json.RawMessage
 	if len(in.Update) == 0 || len(in.Update) > 100<<20 || in.NetTokens < 0 || json.Unmarshal(in.PendingEffects, &effects) != nil || effects == nil {
@@ -813,7 +827,12 @@ type SourceProcessResult struct {
 
 // RequestSourceRefresh captures exactly one durable checkpoint. Credit admission
 // happens here, never while saving edits. Automatic work is funded by the owner.
+// While files are view-only no edit is processed, the room service's
+// automatic requests included; the maintenance publication still is.
 func (s *Store) RequestSourceRefresh(ctx context.Context, actor, fileID string, automatic bool) (SourceProcessResult, error) {
+	if !sourceupload.FilesEditable {
+		return SourceProcessResult{}, ErrForbidden
+	}
 	return s.requestSourceRefresh(ctx, actor, fileID, automatic, models.PaidByPlatform, false)
 }
 

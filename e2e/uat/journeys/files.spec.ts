@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createHash, randomUUID } from 'node:crypto';
 import { crc32, deflateSync } from 'node:zlib';
 import { read as readWorkbook } from 'xlsx';
+import { skipWhileFilesViewOnly } from '../../helpers/filesViewOnly';
 import { m } from '../../i18n';
 import {
   api,
@@ -45,6 +46,7 @@ for (const [format, name] of [
   test(`${format}: browser upload, collaboration, durable export, publication and purge`, async ({
     run,
   }) => {
+    skipWhileFilesViewOnly();
     test.setTimeout(2_400_000);
     const workspaceId = await workspace(run, format);
     const marker = `UAT_${randomUUID().replaceAll('-', '')}`;
@@ -172,6 +174,7 @@ function assertCells(bytes: Uint8Array) {
 test('text and image: browser edit automatically publishes durable UTF-8 source; an image is captioned', async ({
   run,
 }) => {
+  skipWhileFilesViewOnly();
   test.setTimeout(1_800_000);
   const workspaceId = await workspace(run, 'text');
   const marker = `UAT_${randomUUID().replaceAll('-', '')}`;

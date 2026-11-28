@@ -3421,7 +3421,7 @@ _UNLISTED_FILE_CALLS = [
         },
     ),
     ("inspect_document", {"target": {"kind": "source_file", "id": "f_9"}}),
-    (
+    pytest.param(
         "edit_office_document",
         {
             "file_id": "f_9",
@@ -3434,6 +3434,7 @@ _UNLISTED_FILE_CALLS = [
                 }
             ],
         },
+        marks=pytest.mark.files_view_only,
     ),
     ("inspect_office_document", {"file_id": "f_9"}),
 ]
@@ -5727,7 +5728,35 @@ def test_the_office_tools_come_last_once_offered(monkeypatch):
     before = names()
     assert not set(tools.OFFICE_TOOLS) & set(before)
     ctx.office_tools = True
-    assert names() == before + list(tools.OFFICE_TOOLS)
+    # The Office edit is registered only while files are editable (Q854 A).
+    offered = [name for name in tools.OFFICE_TOOLS if name in tools.REGISTRY]
+    assert offered[0] == "inspect_office_document"
+    assert names() == before + offered
+
+
+@pytest.mark.view_only_refusals
+def test_chat_offers_no_file_edit_while_files_are_view_only(monkeypatch):
+    """Q854 A: Go's contract leaves edit_office_document out, so no turn is
+    offered it, office_building offering the Office read alone; edit_document
+    (materials), the reads and the deck tools stay."""
+    _gateway(monkeypatch)
+    ctx = _owner_ctx()
+    ctx.edit_tools = ctx.office_tools = True
+    names = {s["function"]["name"] for s in tools.schemas_for(ctx)}
+    assert {
+        "inspect_office_document",
+        "inspect_document",
+        "edit_document",
+        "create_deck",
+        "write_slide",
+    } <= names
+    assert "edit_office_document" not in names
+    assert "edit_office_document" not in contract.DEFINITIONS
+    assert "edit_office_document" not in tools.REGISTRY
+    assert (
+        "- office_building: read before reading a Word, Excel or PowerPoint file "
+        "(it offers inspect_office_document)."
+    ) in skills.catalog("note")
 
 
 def test_a_viewer_reads_skills_and_office_files_but_edits_nothing(monkeypatch):
@@ -5785,6 +5814,7 @@ async def test_reading_editing_appends_the_write_tools(monkeypatch):
     assert events[-1]["toolEvidence"]["editTools"] is True
 
 
+@pytest.mark.files_view_only
 async def test_an_office_edit_after_office_building_alone_needs_editing(monkeypatch):
     """UAT 2026-10-22: the agent read office_building alone, inspected and
     edited; the write was refused for the editing skill, as every write is.
@@ -5830,6 +5860,7 @@ async def test_an_office_edit_after_office_building_alone_needs_editing(monkeypa
     )
 
 
+@pytest.mark.files_view_only
 async def test_office_tools_need_the_office_building_skill(monkeypatch):
     ctx = _office_ctx(monkeypatch)
     ctx.skills_read = {skills.EDITING}
@@ -6685,6 +6716,7 @@ async def test_a_long_docx_read_shows_the_paragraphs_that_fit_and_where_to_go_on
     )
 
 
+@pytest.mark.files_view_only
 async def test_an_office_edit_over_256_kb_is_refused_before_it_leaves(monkeypatch):
     posts: list[str] = []
     ctx = _office_ctx(monkeypatch, post=lambda url, **_: posts.append(url))
@@ -6739,6 +6771,7 @@ def test_a_stale_office_band_shows_its_grid_to_copy():
     )
 
 
+@pytest.mark.files_view_only
 async def test_office_edits_and_creates_reach_their_routes(monkeypatch):
     """An edit goes to the edit route marked office, a stale range comes back as
     its TSV, and a create sends the call's other commands to the create route."""
@@ -6976,6 +7009,7 @@ async def test_a_turn_ending_with_commands_unapplied_closes_the_row_with_them(
     assert (block["outcome"], block["applied"], block["total"]) == ("succeeded", 30, 32)
 
 
+@pytest.mark.files_view_only
 async def test_an_office_edit_reads_what_the_engine_left_unapplied(monkeypatch):
     """The engine alone counts the limits (Epo 2026-10-22): its notice's first
     unapplied index is how many commands it applied, a create counting."""

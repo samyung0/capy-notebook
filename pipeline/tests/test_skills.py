@@ -42,25 +42,31 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
     assert "add_questions" in editing and "Flashcards:" in editing
     assert "Edits not yet in search show up as hints" in editing
     office = (await tools._read_skill({"name": "office_building"}, ctx)).text()
-    # Per-call limits return the rest unapplied (the engine counts them, Epo
-    # 2026-10-22); 256 KB still refuses.
-    assert (
-        "edit_office_document's description lists a call's limits" in office
-        and "the rest come back unapplied, by index" in office
-    )
-    assert "at most 256 KB; a larger call is refused" in office
-    # Word files are read, edited and created (Epo 2026-10-20, phase 2).
-    assert "insert_paragraph (DOCX, PPTX)" in office
-    for command in (
-        "delete_paragraph",
-        "set_list",
-        "insert_table",
-        "delete_table",
-        "format_text",
-        "set_alignment",
-    ):
-        assert command in office, command
-    assert "a new Excel or Word file is a create command first" in office
+    if contract.FILES_EDITABLE:
+        # Per-call limits return the rest unapplied (the engine counts them, Epo
+        # 2026-10-22); 256 KB still refuses.
+        assert (
+            "edit_office_document's description lists a call's limits" in office
+            and "the rest come back unapplied, by index" in office
+        )
+        assert "at most 256 KB; a larger call is refused" in office
+        # Word files are read, edited and created (Epo 2026-10-20, phase 2).
+        assert "insert_paragraph (DOCX, PPTX)" in office
+        for command in (
+            "delete_paragraph",
+            "set_list",
+            "insert_table",
+            "delete_table",
+            "format_text",
+            "set_alignment",
+        ):
+            assert command in office, command
+        assert "a new Excel or Word file is a create command first" in office
+    else:
+        # While files are view-only it teaches the read alone (Q858 A).
+        assert "These files are view-only: they cannot be edited" in office
+        assert "Edit, one file a call" not in office
+        assert "edit_office_document" not in office
     # The agent sent bare seeded paraIds ("body:p9") in UAT (2026-10-22).
     assert (
         "The first page lists the paragraph styles by id and name. A command "

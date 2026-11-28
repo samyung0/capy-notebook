@@ -61,7 +61,10 @@ following the room on a read token. `view` remains only as what an editor drops
 to when the room turns read-only (frozen, full, an unsupported block), under its
 strip. `?mode=` on a material's link is dropped and the saved per-item mode is
 gone, so old links open as any link does; the question bank keeps its own Edit
-button. Office and text files keep theirs: they remember their last View/Edit in
+button. Office and text files keep theirs, while `/api/me` says
+`filesEditable` (Q853 A: false while files are view-only, when every file opens
+in View with no Edit, no edit session and no room token, and the draft sweep
+asks for no file's room): they remember their last View/Edit in
 localStorage, keyed by item kind and ID, take `mode=view|edit` from the URL, and
 the header toggle shows the mode it switches to; a successful toggle replaces
 that query parameter and a failed transition keeps the editor and URL as they were.

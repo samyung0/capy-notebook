@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { skipWhileFilesViewOnly } from '../helpers/filesViewOnly';
 import {
   officeEditMenu,
   officeFrame,
@@ -8,6 +9,9 @@ import {
   saveOffice,
 } from '../helpers/office';
 import { m } from '../i18n';
+
+// Every test here edits a file.
+skipWhileFilesViewOnly();
 
 const open = async (page: Page, format: 'docx' | 'xlsx' | 'pptx') => {
   // Wide enough that every Home group is in the row, none in More.
