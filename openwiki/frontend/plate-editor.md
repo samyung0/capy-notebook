@@ -3052,6 +3052,13 @@ design, option d), and the nudge's release file on 2026-10-17.
   47, so source tabs from before it (protocol 46) reload; `MIN_MATERIAL`
   stays 46 and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names
   "client protocol 46 -> 47, source 45 -> 47".
+  The lower View peak pin (pin f5b9d09d8: the WASM engines grow linear
+  memory in steps of at most 8 MiB, and DOCX layout keeps compact measure
+  input and drawing data, so DOCX View opens with a lower memory peak, Q846 A
+  a1+g+h, Q863 A) raised `CLIENT_PROTOCOL` to 48 and `MIN_SOURCE` to 48, so
+  source tabs from before it (protocol 47) reload; `MIN_MATERIAL` stays 46
+  and `OFFICE_PROTOCOL_VERSION` stays 15. Its deploy request names "client
+  protocol 47 -> 48, source 47 -> 48".
 
 #### When to bump
 
