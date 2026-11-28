@@ -1,3 +1,4 @@
+import type { DisplayPage } from '@betteroffice/docx/layout/render';
 import { parseHTML } from 'linkedom';
 import type { ComponentProps } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -70,8 +71,9 @@ vi.mock('./docxViewerWorker', () => ({
     return worker;
   },
 }));
-// What the viewer was last given to draw.
+// What the viewer was last given to draw, and its pages.
 const drawn: { more: number | undefined; pages: number }[] = [];
+let drawnPages: unknown[] = [];
 vi.mock('@betteroffice/docx-react', () => ({
   DOCX_PAGES_PRESENTED_EVENT: 'docx-pages-presented',
   DocxDisplayListViewer: ({
@@ -82,16 +84,21 @@ vi.mock('@betteroffice/docx-react', () => ({
     morePages?: { width: number };
   }) => {
     drawn.push({ more: morePages?.width, pages: displayList.pages.length });
+    drawnPages = displayList.pages;
     return null;
   },
 }));
 
-// A print draws each page without a canvas.
+// A print draws each page without a canvas; the pages it was given.
+const rasterized: DisplayPage[] = [];
 vi.mock('@betteroffice/docx/layout/render', async (importOriginal) => ({
   ...(await importOriginal<
     typeof import('@betteroffice/docx/layout/render')
   >()),
-  rasterizeDisplayPage: async () => ({ height: 1, width: 1 }),
+  rasterizeDisplayPage: async (page: DisplayPage) => {
+    rasterized.push(page);
+    return { height: 1, width: 1 };
+  },
 }));
 vi.mock('./runtimeMenus', async (importOriginal) => ({
   ...(await importOriginal<typeof import('./runtimeMenus')>()),
@@ -104,6 +111,7 @@ vi.mock('./runtimeMenus', async (importOriginal) => ({
 const { act } = await import('react');
 const { createRoot } = await import('react-dom/client');
 const { DocxViewer } = await import('./DocxViewer');
+const { DocxPage } = await import('./docxPages');
 
 afterEach(() => {
   frameWidth = 1280;
@@ -112,6 +120,8 @@ afterEach(() => {
   loads.length = 0;
   workers.length = 0;
   drawn.length = 0;
+  drawnPages = [];
+  rasterized.length = 0;
 });
 
 const families = () => [...fonts].map((face) => face.family);
@@ -272,6 +282,151 @@ it('sends a cited open no early paint: it is ready once every page is in', async
   await act(async () => root.unmount());
 });
 
+// Q864 A: a cited open reads each compact page for its quote as it comes, so
+// finding the quote once every page is in decodes none again.
+it('reads each page of a cited open for its quote as it comes', async () => {
+  const decode = vi.spyOn(DocxPage.prototype, 'decode');
+  const root = await open({ citation: { quote: 'the quoted passage' } });
+  const quoted = (pageIndex: number) => ({
+    ...size,
+    pageIndex,
+    primitives: [
+      {
+        baselineY: 80,
+        color: '#000',
+        font: '16px Arial',
+        kind: 'text',
+        paraId: `P${pageIndex}`,
+        text: pageIndex === 3 ? 'Here is the quoted passage.' : 'Other text.',
+        width: 300,
+        x: 20,
+      },
+    ],
+  });
+  const send = (from: number, to: number) =>
+    workers[0]?.send({
+      faces: [],
+      pages: Array.from({ length: to - from }, (_, i) => quoted(from + i)),
+      sliced: [],
+      type: 'pages',
+      width: size.width,
+    });
+  await act(async () => send(0, 2));
+  await settle();
+  expect(decode).toHaveBeenCalledTimes(2);
+  // The pages the mocked viewer would draw, for the highlight.
+  document.querySelector('.docx-runtime-viewer')!.innerHTML = [0, 1, 2, 3, 4]
+    .map((page) => `<div><canvas data-page-index="${page}"></canvas></div>`)
+    .join('');
+  await act(async () => {
+    send(2, 5);
+    sendReady();
+  });
+  await settle();
+  // linkedom draws no layout: the highlight's scroll does nothing.
+  const div = Object.getPrototypeOf(document.createElement('div'));
+  div.scrollIntoView = () => {};
+  await act(async () => present());
+  Reflect.deleteProperty(div, 'scrollIntoView');
+  expect(decode).toHaveBeenCalledTimes(5);
+  expect(
+    document
+      .querySelector('canvas[data-page-index="3"]')
+      ?.parentElement?.querySelector('[data-citation-highlight]')
+  ).not.toBeNull();
+  decode.mockRestore();
+  await act(async () => root.unmount());
+});
+
+// Q868 A: a citation changed in an open file is searched for at idle time,
+// a page at a time, and highlighted once every page is read; a newer citation
+// stops the search before it highlights anything.
+it('searches for a changed citation at idle time, a newer one stopping the search', async () => {
+  vi.useFakeTimers();
+  const decode = vi.spyOn(DocxPage.prototype, 'decode');
+  const div = Object.getPrototypeOf(document.createElement('div'));
+  div.scrollIntoView = () => {};
+  try {
+    const passages = [
+      '',
+      'the first passage',
+      '',
+      'the second passage',
+      'the third passage',
+    ];
+    const root = await open({ citation: { quote: passages[1]! } });
+    await act(async () => {
+      workers[0]?.send({
+        faces: [],
+        pages: passages.map((text, pageIndex) => ({
+          ...size,
+          pageIndex,
+          primitives: [
+            {
+              baselineY: 80,
+              color: '#000',
+              font: '16px Arial',
+              kind: 'text',
+              paraId: `P${pageIndex}`,
+              text: `Here is ${text || 'other text'}.`,
+              width: 300,
+              x: 20,
+            },
+          ],
+        })),
+        sliced: [],
+        type: 'pages',
+        width: size.width,
+      });
+      sendReady();
+    });
+    // The pages the mocked viewer would draw, for the highlight.
+    document.querySelector('.docx-runtime-viewer')!.innerHTML = passages
+      .map(
+        (_, page) => `<div><canvas data-page-index="${page}"></canvas></div>`
+      )
+      .join('');
+    await act(async () => {
+      for (const load of loads.splice(0)) load();
+      await vi.dynamicImportSettled();
+      await vi.runAllTimersAsync();
+    });
+    await act(async () => present());
+    const highlighted = () =>
+      [...document.querySelectorAll('[data-citation-highlight]')].map(
+        (overlay) =>
+          overlay.parentElement
+            ?.querySelector('canvas')
+            ?.getAttribute('data-page-index')
+      );
+    expect(highlighted()).toEqual(['1']);
+
+    const decoded = decode.mock.calls.length;
+    await act(async () =>
+      root.render(
+        viewer(new Uint8Array([1]), { citation: { quote: passages[3]! } })
+      )
+    );
+    // Nothing is decoded in the effect itself.
+    expect(decode).toHaveBeenCalledTimes(decoded);
+    expect(highlighted()).toEqual([]);
+    await act(async () =>
+      root.render(
+        viewer(new Uint8Array([1]), { citation: { quote: passages[4]! } })
+      )
+    );
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(highlighted()).toEqual(['4']);
+    await act(async () => root.unmount());
+  } finally {
+    Reflect.deleteProperty(div, 'scrollIntoView');
+    decode.mockRestore();
+    vi.useRealTimers();
+  }
+});
+
 it('prints every page, waiting for those still to come', async () => {
   let renderer: OfficeRenderer | null = null;
   const root = await open({
@@ -295,6 +450,147 @@ it('prints every page, waiting for those still to come', async () => {
   await settle();
   await printing;
   expect(printed).toHaveLength(5);
+  // Each page decoded for the print, in turn.
+  expect(
+    rasterized.map(({ pageIndex, primitives }) => [pageIndex, primitives])
+  ).toEqual([0, 1, 2, 3, 4].map((pageIndex) => [pageIndex, []]));
+  await act(async () => root.unmount());
+});
+
+// Q864 A: once every page is in, View keeps each page packed, its JSON
+// deflated at idle time.
+it('packs every page once all are in and the frame is idle', async () => {
+  vi.useFakeTimers();
+  try {
+    const root = await open();
+    await act(async () => {
+      sendPages(0, 5);
+      sendReady();
+    });
+    await act(async () => {
+      for (const load of loads.splice(0)) load();
+      // fflate loads once packing starts.
+      await vi.dynamicImportSettled();
+      await vi.runAllTimersAsync();
+    });
+    expect(drawnPages).toHaveLength(5);
+    expect(
+      drawnPages.every((page) => page instanceof DocxPage && page.packed)
+    ).toBe(true);
+    expect((drawnPages[4] as InstanceType<typeof DocxPage>).decode()).toEqual({
+      ...size,
+      pageIndex: 4,
+      primitives: [],
+    });
+    await act(async () => root.unmount());
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+// Q864 A: a page the worker sends again before `ready` (the first screen's
+// pages, a CJK rename run) replaces the one before; that one is packed.
+it('packs the page a worker sent again, not the one it replaced', async () => {
+  vi.useFakeTimers();
+  try {
+    const root = await open();
+    await act(async () => {
+      sendPages(0, 5);
+      workers[0]?.send({
+        faces: [],
+        pages: [{ ...size, pageIndex: 2, primitives: [{ kind: 'rect' }] }],
+        sliced: [],
+        type: 'pages',
+        width: size.width,
+      });
+      sendReady();
+    });
+    await act(async () => {
+      for (const load of loads.splice(0)) load();
+      await vi.dynamicImportSettled();
+      await vi.runAllTimersAsync();
+    });
+    const page = drawnPages[2] as InstanceType<typeof DocxPage>;
+    expect(page.packed).toBe(true);
+    expect(page.decode()).toEqual({
+      ...size,
+      pageIndex: 2,
+      primitives: [{ kind: 'rect' }],
+    });
+    await act(async () => root.unmount());
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+// Q805 A: an open that fails keeps the pages it showed, drawn and copyable as
+// they came: none is packed.
+it('keeps the pages of a failed open as they came', async () => {
+  vi.useFakeTimers();
+  try {
+    const onError = vi.fn();
+    const root = await open({ onError });
+    await act(async () => {
+      sendPages(0, 3);
+      workers[0]?.send({ message: 'broken', type: 'error' });
+    });
+    await act(async () => {
+      for (const load of loads.splice(0)) load();
+      await vi.dynamicImportSettled();
+      await vi.runAllTimersAsync();
+    });
+    expect(onError).toHaveBeenCalled();
+    expect(drawnPages).toHaveLength(3);
+    for (const page of drawnPages as InstanceType<typeof DocxPage>[]) {
+      expect(page.packed).toBe(false);
+      expect(page.decode()).toMatchObject({ pageIndex: page.pageIndex });
+    }
+    await act(async () => root.unmount());
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+// Q864 A: with no citation the viewer reads no page for one, at the open's
+// end or when a citation is cleared.
+it('decodes no page for a citation it does not have', async () => {
+  const decode = vi.spyOn(DocxPage.prototype, 'decode');
+  const root = await open();
+  await act(async () => {
+    sendPages(0, 5);
+    sendReady();
+  });
+  await settle();
+  await act(async () => present());
+  // Past the idle time a search would take.
+  const idle = () =>
+    act(() => new Promise((resolve) => setTimeout(resolve, 600)));
+  await idle();
+  expect(decode).not.toHaveBeenCalled();
+
+  // A cited open, its quote found, then the citation cleared.
+  await act(async () =>
+    root.render(viewer(new Uint8Array([2]), { citation: { quote: 'a quote' } }))
+  );
+  await act(async () => {
+    workers[1]?.send({
+      faces: [],
+      pages: [{ ...size, pageIndex: 0, primitives: [] }],
+      sliced: [],
+      type: 'pages',
+      width: size.width,
+    });
+    workers[1]?.send({ marks: {}, type: 'ready' });
+  });
+  await settle();
+  await act(async () => present());
+  const read = decode.mock.calls.length;
+  await act(async () =>
+    root.render(viewer(new Uint8Array([2]), { citation: null }))
+  );
+  await idle();
+  expect(decode).toHaveBeenCalledTimes(read);
+  decode.mockRestore();
   await act(async () => root.unmount());
 });
 

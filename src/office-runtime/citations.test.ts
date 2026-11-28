@@ -6,10 +6,15 @@ import type { SlideDisplayList } from '@betteroffice/pptx/viewer';
 import { describe, expect, it } from 'vitest';
 import {
   docxCitation,
+  docxCitationPage,
   insidePage,
   slideCitationItems,
   uniqueCitation,
 } from './citations';
+
+/** The quote's match in a DOCX layout, each page read in turn. */
+const cite = (list: DisplayList, quote: string) =>
+  docxCitation(list.pages.map(docxCitationPage), { quote });
 
 // Match current source text, never an old PDF coordinate or a reused engine ID.
 describe('native citation matching', () => {
@@ -64,9 +69,9 @@ describe('native citation matching', () => {
         },
       ],
     });
-    expect(docxCitation(list({}), { quote })?.rects).toHaveLength(2);
+    expect(cite(list({}), quote)?.rects).toHaveLength(2);
     expect(
-      docxCitation(list({ paintClip: { w: 300, x: 20 } }), { quote })?.rects
+      cite(list({ paintClip: { w: 300, x: 20 } }), quote)?.rects
     ).toHaveLength(2);
     for (const override of [
       { baselineY: 1040 },
@@ -76,7 +81,7 @@ describe('native citation matching', () => {
       { clipGroup: { clip: { h: 0, w: 0, x: 0, y: 0 } } },
       { clipGroup: { opacity: 0 } },
     ])
-      expect(docxCitation(list(override), { quote })).toBeNull();
+      expect(cite(list(override), quote)).toBeNull();
   });
   it('matches a DOCX quote across a page break inside its paragraph', () => {
     const run: TextRunPrimitive = {
@@ -101,9 +106,7 @@ describe('native citation matching', () => {
         page(1, '1A2B3C4D#1', 'and the text after it.'),
       ],
     };
-    const match = docxCitation(list, {
-      quote: 'before the page break and the text after',
-    });
+    const match = cite(list, 'before the page break and the text after');
     expect(match?.rects.map((rect) => rect.page)).toEqual([0, 1]);
   });
   it('abstains when part of a matched slide text box is off-slide or overflows', () => {

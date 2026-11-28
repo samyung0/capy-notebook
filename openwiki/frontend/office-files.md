@@ -300,6 +300,27 @@ page, and the host's minute for a Print clicked before then counts from
 opened from a citation posts no `painted`: the host keeps its skeleton until
 `ready` and the file opens at the quote (Q802 B). The worker frees its WASM
 after the last batch and goes.
+Once every page is in, the frame keeps each page packed (Q864 A,
+`src/office-runtime/docxPages.ts`): it loads fflate then (nothing on the
+open's path), and at idle time, in slices of at most 8 ms or the idle time
+left, writes each page's JSON and deflates it (fflate's fastest level), about
+39 KB a page against 187 KB of objects on the 481-page bench file, and lets
+the page go; the opening itself is unchanged, the far pages building their
+plain-text copies from the pages as they come. A packed page is decoded when
+it is needed and dropped after: painting and the positioned mirror decode the
+pages near the viewport through a cache of the 16 used last
+(`NearDisplayPages`), which decodes the page next to enter the window at idle
+time (in the direction the window moved), gives a page leaving the window its
+plain-text copy from what it keeps, and lets a replaced layout's pages go. A
+far page's plain-text copy, a copy over far pages, a print (a page at a time)
+and the reader's place for Edit decode it afresh; a cited open reads each
+page for its quote as it arrives, and an open without a citation reads none;
+a citation changed in an open file is searched for at idle time, a page
+decoded and read at a time (about 1-2 s at 481 pages), and highlighted once
+every page is read, the quote still unique in the whole file; a newer or
+cleared citation stops the search (Q868 A).
+A compact page's mirror keeps no reference to it (its positions never
+shift).
 Every editor and viewer WASM module grows its linear memory in steps as large
 as the memory already is, at most 64 MiB (`vendor/betteroffice/crates/wasm-alloc`):
 Rust's allocator alone grows it by the 64 KiB a request needs, and each grow

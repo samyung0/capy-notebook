@@ -1,4 +1,7 @@
-import type { DisplayPage } from '@betteroffice/docx/layout/render';
+import {
+  displayPageContent,
+  type ShownDisplayPage,
+} from '@betteroffice/docx/layout/render';
 import type { OfficeParagraphPoint } from '@/features/files/officeProtocol';
 
 /** Body paragraphs in the page mirrors (headers and footers repeat theirs on
@@ -64,7 +67,7 @@ const NOT_BODY =
  */
 export function textLayerSelection(
   selection: Selection | null,
-  pages: readonly DisplayPage[]
+  pages: readonly ShownDisplayPage[]
 ): { anchor: OfficeParagraphPoint; head: OfficeParagraphPoint } | null {
   if (!selection?.anchorNode || !selection.focusNode) return null;
   const anchor = paragraphPoint(
@@ -83,7 +86,7 @@ export function textLayerSelection(
 function paragraphPoint(
   node: Node,
   offset: number,
-  pages: readonly DisplayPage[]
+  pages: readonly ShownDisplayPage[]
 ): OfficeParagraphPoint | null {
   // A cluster run holds its text node alone.
   if (node.nodeType !== node.TEXT_NODE) return null;
@@ -109,14 +112,16 @@ function paragraphPoint(
 /** Where the paragraph `paraId` holding `position` opens: its first
  * fragment's start, on this page or one before it. */
 function paragraphStart(
-  pages: readonly DisplayPage[],
+  pages: readonly ShownDisplayPage[],
   pageIndex: number,
   paraId: string,
   position: number
 ) {
   for (let index = pageIndex; index >= 0; index--) {
     let start: number | null = null;
-    for (const primitive of pages[index]?.primitives ?? []) {
+    const page = pages[index];
+    // A compact page (Q864 A) is decoded for this read.
+    for (const primitive of page ? displayPageContent(page).primitives : []) {
       if (
         !('paraId' in primitive) ||
         primitive.paraId !== paraId ||
