@@ -109,7 +109,7 @@ _OFFICE_BUILDING = """{intro}
 
 Read:
 - XLSX: the sheet list first (no range), then the ranges you need, at most 2,000 cells a read. A cell shows its input, then → its shown value when that differs (a formula's result).
-- DOCX: paragraphs with their target ids, each with its style (unless the default) and list, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column; tracked-deleted text is left out. After the body come the headers', footers' and notes' paragraphs under == part == lines{replace_only}. A paragraph marked locked (with why: a picture, a field, tracked changes, the table or content control before it){locked}. The first page lists the paragraph styles by id and name. A command copies an id whole, as the read shows it.
+- DOCX: paragraphs with their target ids, each with its style (unless the default) and list, count at a time from start; a table's cells come before the paragraph after it, each marked with its table's id, row and column; tracked-deleted text is left out. After the body come the headers', footers' and notes' paragraphs under == part == lines{replace_only}.{locked} The first page lists the paragraph styles by id and name. A command copies an id whole, as the read shows it.
 - PPTX: without slide, the slides count at a time from start, each with its layout and its first shapes (id, kind, placeholder type, first line of text) and how many more it holds; the first page lists the PowerPoint's layouts. With slide (its number), that slide's shapes and paragraphs count at a time from start, each shape with its name and box in points from the slide's top left corner and then its paragraphs with their target ids, levels and table cells; the first page also gives the slide's speaker notes, cut past a length with a marker.{equation}
 - Pictures, charts, equations and drawn shapes: a DOCX read lists them under their paragraph, a PPTX slide read on their shapes (the PowerPoint read gives a picture's alt text and a chart's type and title), the XLSX sheet list under their sheet with their anchor cells. A picture shows its alt text and pixel size, or why it is not viewable (then only its alt text is known); a chart its type, title and each series' cell references and first points as [idx, category, value]; an equation or drawn shape its text.
 - ids (any format, at most 4 a call, copied whole from a read): each picture comes back as an image on the next message, counting toward the message's images and usable as a slide figure by the capture number its line names; each chart with every point; an id not found is named. These files have no page view: capture_page does not take them.{editing}""".format(
@@ -119,8 +119,9 @@ Read:
         else "How to read Word (DOCX), Excel (XLSX) and PowerPoint (PPTX) files with inspect_office_document. These files are view-only: they cannot be edited, and chat makes no Word or Excel file; a PowerPoint is made with create_deck (the deck_building skill)."
     ),
     replace_only="; they take replace_text only" if FILES_EDITABLE else "",
+    # Q865 A: the locked-paragraph sentence only explains edit refusals.
     locked=(
-        " refuses replace_text and format_text, and delete_paragraph unless it only follows a table; one marked content control or table cannot be an anchor"
+        " A paragraph marked locked (with why: a picture, a field, tracked changes, the table or content control before it) refuses replace_text and format_text, and delete_paragraph unless it only follows a table; one marked content control or table cannot be an anchor."
         if FILES_EDITABLE
         else ""
     ),

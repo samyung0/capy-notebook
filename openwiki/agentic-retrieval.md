@@ -4414,7 +4414,8 @@ says files are view-only (Epo 2026-11-28, Q858 A), each text keyed on the
 switch so turning it on brings the editing text back: the `editing` skill
 (its scope line and the files precaution), read_skill's `editing` and
 `office_building` lines, the `office_building` skill (the read alone, without
-the edit commands, the create and the limits), the `edit_document`,
+the edit commands, the create, the limits and the locked-paragraph sentence,
+Q865 A), the `edit_document`,
 `inspect_document` and `inspect_office_document` descriptions, Go's
 `officeToolsMessage`, `write_slide` on a stored deck, account chat's
 `ACCOUNT_NO_EDIT` and its Access-line rule (`skills.py`, `account_chat.py`,

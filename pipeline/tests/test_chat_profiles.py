@@ -53,7 +53,9 @@ from pipeline.retrieval.usage_extract import NormalizedUsage
 # unoffered and read_skill's office_building line while files are view-only
 # (Epo 2026-11-28, Q854 A; the schemas keys alone), and the text about files
 # saying they are view-only (Epo 2026-11-28, Q858 A; the schemas keys and
-# skills/editing and skills/office_building alone).
+# skills/editing and skills/office_building alone), and the view-only
+# office_building without its locked-paragraph sentence (Epo 2026-11-28,
+# Q865 A; skills/office_building alone).
 GOLDEN = Path(__file__).parent / "fixtures" / "workspace_chat_golden.json"
 
 OWNER = frozenset(
