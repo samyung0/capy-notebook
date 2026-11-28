@@ -37,10 +37,12 @@ it('keeps each page until it is packed, then decodes the same page from its defl
   });
   expect(kept[1]!.decode()).toBe(pages[1]);
 
+  // Idle at once, for 50 ms.
+  vi.stubGlobal('requestIdleCallback', (run: IdleRequestCallback) =>
+    setTimeout(() => run({ didTimeout: false, timeRemaining: () => 50 }))
+  );
   packDocxPages(kept);
-  await vi.waitFor(() => expect(kept.every((page) => page.packed)).toBe(true), {
-    timeout: 10_000,
-  });
+  await vi.waitFor(() => expect(kept.every((page) => page.packed)).toBe(true));
   for (const [index, page] of kept.entries()) {
     const decoded = page.decode();
     expect(decoded).toStrictEqual(pages[index]);
