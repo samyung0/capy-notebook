@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { expect, test } from '@playwright/test';
+import { FILES_EDITABLE } from '../helpers/filesViewOnly';
 import { showPanelView } from '../helpers/panelView';
 import { openWorkspaceSettings } from '../helpers/workspace';
 import { m } from '../i18n';
@@ -41,6 +42,17 @@ test('Indexing tab lists file changes, cancels queued work and processes waiting
     .click();
   await expect(row('lecture.pptx')).toHaveAttribute('data-state', 'waiting');
 
+  if (!FILES_EDITABLE) {
+    // While files are view-only (Q853 A) a waiting file offers no Process,
+    // and the processing one still finishes.
+    await expect(
+      row('Organelles cheatsheet.md').getByRole('button')
+    ).toHaveCount(0);
+    await expect(row('exchange-plan.docx')).toHaveCount(0, {
+      timeout: 20_000,
+    });
+    return;
+  }
   await row('Organelles cheatsheet.md')
     .getByRole('button', { exact: true, name: m.workspace_change_process() })
     .click();
